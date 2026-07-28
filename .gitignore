@@ -1,0 +1,6 @@
+# HwScope - Git Ignore
+output/
+*.tmp
+*.swp
+*~
+.DS_Store

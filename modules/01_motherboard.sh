@@ -1,0 +1,53 @@
+#!/bin/bash
+# =============================================================================
+# 模块: 01_motherboard.sh — 主板/BIOS/机箱 信息采集
+# 输出目录: <OUTPUT_DIR>/motherboard/
+# =============================================================================
+
+MODULE_NAME="Motherboard"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../lib/common.sh" 2>/dev/null || true
+
+run_motherboard() {
+    local output_dir="$1"
+    local dir="${output_dir}/motherboard"
+    mkdir -p "$dir"
+
+    module_start "$MODULE_NAME"
+
+    if ! check_cmd dmidecode; then
+        echo -e "${YELLOW}[SKIP] dmidecode not found, try installing dmidecode${NC}"
+        module_end "$MODULE_NAME"
+        return 0
+    fi
+
+    # 1. 整机信息
+    run_and_log "dmidecode -t system" "${dir}/dmidecode_system.log"
+
+    # 2. 主板信息
+    run_and_log "dmidecode -t baseboard" "${dir}/dmidecode_baseboard.log"
+
+    # 3. BIOS 信息
+    run_and_log "dmidecode -t bios" "${dir}/dmidecode_bios.log"
+
+    # 4. 机箱信息
+    run_and_log "dmidecode -t chassis" "${dir}/dmidecode_chassis.log"
+
+    # 5. 整机关键字段摘要
+    run_and_log "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|UUID|Family'" \
+        "${dir}/system_summary.log"
+
+    # 6. 主板关键字段摘要
+    run_and_log "dmidecode -t baseboard 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|Version|Asset Tag'" \
+        "${dir}/baseboard_summary.log"
+
+    module_end "$MODULE_NAME"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    if [ -z "$1" ]; then
+        echo "Usage: $0 <output_dir>"
+        exit 1
+    fi
+    run_motherboard "$1"
+fi
