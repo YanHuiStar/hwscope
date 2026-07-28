@@ -32,31 +32,22 @@ run_cpu() {
     run_and_log "nproc" "${dir}/cpu_core_count.log"
 
     if [ "$cpu_arch" = "aarch64" ]; then
-        # ARM: 用 implementer/part/variant 代替 model name
         run_and_log "cat /proc/cpuinfo | grep -E 'CPU implementer|CPU part|CPU variant|CPU revision|CPU architecture|Features' | sort -u" \
             "${dir}/cpu_summary.log"
     else
-        # x86: 标准格式
         run_and_log "cat /proc/cpuinfo | grep -E 'model name|physical id|siblings|core id|cpu cores' | sort -u" \
             "${dir}/cpu_summary.log"
     fi
-    # 兜底：全量 /proc/cpuinfo
     run_and_log "cat /proc/cpuinfo" "${dir}/proc_cpuinfo_full.log"
 
     # 3. CPU 拓扑
     run_and_log "lscpu -e" "${dir}/lscpu_extended.log"
     run_and_log "cat /sys/devices/system/cpu/smt/active 2>/dev/null" "${dir}/smt_status.log"
 
-    # 4. CPU 频率
-    if [ "$cpu_arch" = "aarch64" ]; then
-        run_and_log "cat /proc/cpuinfo | grep 'BogoMIPS' | awk '{s+=\\$4; c++} END{printf \"Average BogoMIPS: %.0f, Total CPUs: %d\\\\n\", s/c, c}' 2>/dev/null" \
-            "${dir}/cpu_freq.log"
-        run_and_log "lscpu | grep -E 'CPU max MHz|CPU min MHz|BogoMIPS'" "${dir}/cpu_freq_range.log"
-    else
-        run_and_log "cat /proc/cpuinfo | grep 'cpu MHz' | awk '{s+=\\$4; c++} END{printf \"Average: %.0f MHz, Total CPUs: %d\\\\n\", s/c, c}' 2>/dev/null" \
-            "${dir}/cpu_freq.log"
-        run_and_log "lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
-    fi
+    # 4. CPU 频率（避免 awk field 引用，改用 awk 内置变量）
+    run_and_log "awk -F':[ \t]*' '/cpu MHz/{s+=\$2; c++} END{printf \"Average: %.0f MHz, Total CPUs: %d\n\", s/c, c}' /proc/cpuinfo 2>/dev/null" \
+        "${dir}/cpu_freq.log"
+    run_and_log "lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
 
     module_end "$MODULE_NAME"
 }

@@ -47,7 +47,8 @@ run_and_log() {
     echo "# --- output start ---" >> "$logfile"
 
     # 执行命令，结果追加到日志（同时保留 stderr）
-    eval "$cmd" >> "$logfile" 2>&1
+    # 使用 bash -c 而非 eval：避免 awk/sed 内的 $1/$2 被 shell 变量展开
+    bash -c "$cmd" >> "$logfile" 2>&1
     local ret=$?
 
     # 追加结束标记
