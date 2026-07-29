@@ -27,18 +27,18 @@ HwScope 启动时自动检测平台类型，CPU 模块自动适配 x86 (`model n
 ## 快速开始
 
 ```bash
-# 上传到目标服务器
-scp -r hwscope root@<server_ip>:/root/
+# 推荐方式：直接从 GitHub clone（自动 LF 换行，避免 CRLF 问题）
+git clone https://github.com/YanHuiStar/hwscope.git
+cd hwscope
 
-# 安装必要工具（按需，缺少的工具会自动跳过）
-ssh root@<server_ip>
+# 安装必要工具（缺少的工具会自动跳过）
 yum install -y dmidecode pciutils ipmitool smartmontools lm_sensors
 
-# 一键采集全部硬件
-cd /root/hwscope
+# 全部采集
 sudo bash collect_all.sh
 
-# 输出在 output/<服务器SN>/<时间戳>/
+# 并行采集（2min → ~10s）
+sudo bash collect_all.sh --parallel
 ```
 
 ---
@@ -46,11 +46,20 @@ sudo bash collect_all.sh
 ## 用法
 
 ```bash
-sudo bash collect_all.sh                              # 全部采集
+# 采集模式
+sudo bash collect_all.sh                              # 全部采集（串行）
+sudo bash collect_all.sh --parallel                   # 并行执行（大幅提速）
+sudo bash collect_all.sh --quiet                      # 静默模式（只看 WARN）
+sudo bash collect_all.sh --parallel --quiet           # 并行+静默
+
+# 过滤
 sudo bash collect_all.sh --modules gpu,storage        # 只采 GPU + 存储
 sudo bash collect_all.sh --skip dcgm,nvsm             # 跳过诊断模块
+
+# 其他
 sudo bash collect_all.sh --output /data/inspect       # 指定输出目录
 sudo bash collect_all.sh --force                      # 覆盖已有目录
+bash collect_all.sh --version                         # 版本信息
 
 # 单独跑某个模块（不依赖总入口）
 sudo bash modules/04_gpu.sh /tmp/my_output
@@ -77,6 +86,58 @@ sudo bash modules/04_gpu.sh /tmp/my_output
 | 13 | **nvsm** | `nvsm` | NVIDIA System Management（仅 MGX 认证整机，未安装自动跳过） |
 | 14 | **dcgm** | `dcgmi` | DCGM Level 1 纯获取诊断（仅安装时，不产生 GPU 负载） |
 | 99 | **os** | `uname/dmesg/systemctl/numactl` | 内核/OS 版本，硬件相关 dmesg，服务状态，NUMA 拓扑，PCIe AER 错误，NVIDIA sysfs |
+
+---
+
+## 执行模式
+
+### 串行（默认）
+
+模块按 01→02→...→99 顺序逐个执行。输出即时可见，适合单机排查。
+
+```bash
+sudo bash collect_all.sh
+# 耗时：物理服务器约 1~2 分钟
+```
+
+### 并行（`--parallel`）
+
+所有模块同时启动，完成后按顺序输出结果。适合批量巡检或快速快照。
+
+```bash
+sudo bash collect_all.sh --parallel
+# 耗时：物理服务器约 5~15 秒
+```
+
+内部实现：模块在独立子进程中执行，输出写入临时文件，全部完成后按注册表顺序拼接输出到终端和日志——不会出现交叉乱序。
+
+### 静默（`--quiet`）
+
+只显示 `[WARN]` 和 `[SKIP]`，抑制 `[OK]` 和 `[N/A]`。适合 cron 定时任务。
+
+```bash
+sudo bash collect_all.sh --quiet
+```
+
+---
+
+## 终端状态标签
+
+| 标签 | 颜色 | 含义 |
+|------|------|------|
+| `[OK]` | 绿色 | 命令执行成功 (exit=0) |
+| `[N/A]` | 黄色 | 命令不存在 (exit=127)，工具未安装 |
+| `[WARN]` | 黄色 | 命令执行异常 (exit>0)，需关注 |
+| `[SKIP]` | 黄色 | 工具未安装，跳过整个模块 |
+| `[QUEUE]` | 蓝色 | 并行模式启动所有模块 |
+
+`summary.txt` 中每个模块附带 WARN 计数：
+
+```
+[14:12:59] 04.gpu (GPU 信息) - 12 files, 1s, 0 WARN
+[14:13:02] 08.storage      - 20 files, 0s, 14 WARN    ← 14 个异常，需要关注
+[14:13:04] 99.os           - 15 files, 1s, 1 WARN
+```
 
 ---
 
@@ -122,119 +183,71 @@ output/
 # 第二次运行 → output/JZ5C4X8-20260730_090000/
 
 ls output/JZ5C4X8/
-```
-├── collect_all.log                    # 执行过程日志（终端输出同步保存）
+├── collect_all.log                    # 执行过程日志（纯文本，无 ANSI 转义码）
 ├── config_backup.conf                 # 本次采集使用的配置快照
-├── motherboard/                       # 主板/BIOS/机箱
-│   ├── dmidecode_system.log
-│   ├── dmidecode_baseboard.log
-│   ├── dmidecode_bios.log
-│   ├── dmidecode_chassis.log
-│   ├── system_summary.log
-│   └── baseboard_summary.log
-├── cpu/                               # CPU（x86/ARM 自动适配）
-│   ├── dmidecode_processor.log
-│   ├── lscpu.log / lscpu_extended.log
-│   ├── cpu_core_count.log
-│   ├── cpu_summary.log                # x86: model name / ARM: CPU implementer
-│   ├── proc_cpuinfo_full.log          # 兜底全量
-│   ├── cpu_freq.log / cpu_freq_range.log
-│   └── smt_status.log
-├── memory/                            # 内存
-│   ├── dmidecode_memory_full.log
-│   ├── memory_slot_fields.log
-│   ├── memory_slot_blocks.log
-│   ├── memory_capacity.log
-│   ├── free_h.log / proc_meminfo.log
-│   └── slot_CPU1_DIMM_A1.log ... slot_CPU2_DIMM_H2.log
-├── gpu/                               # GPU
-│   ├── gpu_full.log
-│   ├── gpu_inventory.csv              # CSV，方便 Excel 导入
+├── motherboard/
+│   ├── dmidecode_system.log / baseboard.log / bios.log / chassis.log
+│   └── system_summary.log / baseboard_summary.log
+├── cpu/
+│   ├── dmidecode_processor.log / lscpu.log / cpu_summary.log
+│   └── cpu_freq.log / cpu_freq_range.log / smt_status.log
+├── memory/
+│   ├── dmidecode_memory_full.log / memory_slot_fields.log
+│   ├── memory_capacity.log / free_h.log / proc_meminfo.log
+│   └── slot_CPU1_DIMM_A1.log ... (per slot)
+├── gpu/
+│   ├── gpu_full.log / gpu_inventory.csv
 │   ├── gpu_0_detail.log ... gpu_7_detail.log
 │   ├── gpu_nvlink_status.log / gpu_nvlink_cap.log
 │   ├── gpu_ecc_full.log / gpu_ecc_inventory.csv
 │   ├── gpu_0_ecc.log ... gpu_7_ecc.log
-│   ├── gpu_pmon.log / gpu_processes.csv
-│   ├── gpu_driver_version.log
-│   └── gpu_topo.log
-├── nvswitch/                          # NVSwitch
+│   └── gpu_topo.log / gpu_pmon.log / gpu_processes.csv
+├── nvswitch/
 │   ├── nvswitch_all.log / nvswitch_0.log ... nvswitch_3.log
-│   ├── nvswitch_version.log
 │   └── fabricmanager_version.log / fabricmanager_service.log
-├── pcie/                              # PCIe 拓扑
-│   ├── lspci_all.log / lspci_tree.log
-│   ├── lspci_nvidia.log / pcie_bridge.log
-│   ├── pcie_speed_width.log
-│   ├── gpu_pcie_0.log ... gpu_pcie_7.log
-│   ├── gpu_pcie_bus_map.log
-│   ├── pci_numa_map.log
-│   └── iommu_groups.log
-├── network/                           # 网络 / IB / 光模块
+├── pcie/
+│   ├── lspci_all.log / lspci_tree.log / pcie_speed_width.log
+│   ├── gpu_pcie_0.log ... per GPU / gpu_pcie_bus_map.log
+│   └── pci_numa_map.log / iommu_groups.log
+├── network/
 │   ├── ibstat.log / ibstatus.log / ibv_devinfo.log / ibdev2netdev.log
 │   ├── mlxfwmanager.log / mlxconfig.log
 │   ├── mlxlink_mlx5_0.log / mlxlink_mlx5_0_module.log ... per device
-│   ├── ethtool_ens1f0.log / ethtool_ens1f0_driver.log / ethtool_ens1f0_module.log
-│   ├── ip_addr.log / ip_link.log / ip_route.log
-│   └── lstopo_network.txt
-├── storage/                           # 硬盘（SATA/SAS/NVMe 全覆盖）
-│   ├── block_devices_all.log / block_devices_summary.log
-│   ├── block_devices_by_type.log
+│   ├── ethtool_*  ... per interface
+│   └── ip_addr.log / ip_link.log / ip_route.log
+├── storage/
+│   ├── block_devices_all.log / block_devices_by_type.log
 │   ├── drive_type_ssd_hdd.log
-│   ├── smart_scan.log
 │   ├── smart_nvme0n1.log / smart_nvme0n1_health.log ... per NVMe
-│   ├── smart_sda.log / smart_sda_scsi.log / smart_sda_health.log ... per SATA/SAS
-│   ├── lsscsi_all.log / lsscsi_detail.log
-│   └── df_h.log / mount.log / proc_partitions.log
-├── raid/                              # RAID/HBA 控制器
-│   ├── pci_raid_hba_list.log / storcli_controllers.log
-│   ├── ctrl0_info.log / ctrl0_summary.log
-│   ├── ctrl0_vd_all.log / ctrl0_vd0.log ... per VD
+│   ├── smart_sda.log / smart_sda_scsi.log / smart_sda_health.log ... per disk
+│   └── lsscsi_all.log / df_h.log / mount.log
+├── raid/
+│   ├── ctrl0_info.log / ctrl0_summary.log / ctrl0_vd0.log
 │   ├── ctrl0_enc0_slot0.log ... per physical drive
-│   ├── ctrl0_pd_summary.log
 │   ├── ctrl0_bbu.log / ctrl0_events.log
-│   ├── sas3_hba0.log / sas3_hba0_status.log ... per HBA
-│   └── lspci_raid_0.log
-├── psu/                               # 电源
+│   └── sas3_hba0.log ... per HBA
+├── psu/
 │   ├── ipmi_psu_sensors.log / ipmi_psu_temp.log / ipmi_psu_power.log
-│   ├── sysfs_PSU0/all_fields.log ... sysfs_PSU3/
-│   └── psu_present.log
-├── fan/                               # 风扇
+│   └── sysfs_PSU0/ ... per PSU
+├── fan/
 │   ├── ipmi_fan_sensors.log / ipmi_fan_status.log
 │   ├── sensors_all.log / sensors_fan.log
-│   └── hwmon_hwmon0_*/fan_values.log ... per hwmon
-├── bmc/                               # BMC / IPMI
-│   ├── ipmi_fru.log / ipmi_fru_all.log / ipmi_fru_summary.log
-│   ├── ipmi_mc.log / ipmi_bmc_guid.log
-│   ├── ipmi_sensors.log / ipmi_sdr.log
-│   ├── ipmi_sensors_temp.log / ipmi_sensors_fan.log / ipmi_sensors_volt.log / ipmi_sensors_power.log
-│   ├── ipmi_sel.log / ipmi_sel_elist.log
-│   ├── ipmi_chassis.log / ipmi_power.log
-│   ├── ipmi_lan1.log / ipmi_lan2.log / ipmi_users.log
-│   ├── remote_bmc_fru.log / remote_bmc_sensors.log ... 远程 BMC
-│   ├── hgx_bmc_fru.log / hgx_bmc_sensors.log ... HGX 基板 BMC
-│   └── redfish_system.log / redfish_managers.log
-├── nvsm/                              # NVSM（仅 MGX 整机）
-│   ├── nvsm_dump_system.log / nvsm_dump_health.log
-│   ├── nvsm_components.log / nvsm_sensors.log / nvsm_asset.log
-│   ├── nvsm_gpu_sxm_1.log ... nvsm_gpu_sxm_8.log
-│   ├── nvsm_nvswitch_1.log ... nvsm_nvswitch_4.log
-│   ├── nvsm_nic.log / nvsm_memory.log / nvsm_psu.log / nvsm_fan.log
-│   └── nvsm_version.log
-├── dcgm/                              # DCGM（仅安装时，Level 1 纯获取）
-│   ├── dcgmi_discovery.log / dcgmi_stats.log / dcgmi_config.log
-│   ├── dcgmi_diag_level1.log
-│   ├── dcgmi_diag_gpu0.log ... dcgmi_diag_gpu7.log
-│   └── dcgmi_version.log
-├── os/                                # OS 基础
-│   ├── uname.log / os-release.log
-│   ├── kernel_modules_gpu_net.log / lsmod_all.log
-│   ├── uptime.log / loadavg.log
-│   ├── dmesg_hardware.log / dmesg_nvidia.log / dmesg_nvswitch.log
-│   ├── service_nvidia-fabricmanager.log / service_nvsmd.log
-│   ├── numa_hardware.log / numa_nodes.log / node0_cpus.log ...
-│   ├── pcie_aer.log
-│   └── sysfs_*_nvidia*.log
-└── summary.txt                        # 整体汇总报告
+│   └── hwmon_hwmon0_*/ ... per hwmon
+├── bmc/
+│   ├── ipmi_fru.log / ipmi_fru_summary.log / ipmi_mc.log
+│   ├── ipmi_sensors.log / ipmi_sdr.log / ipmi_sel.log
+│   ├── ipmi_chassis.log / ipmi_power.log / ipmi_lan1.log
+│   ├── remote_bmc_fru.log ... (远程 BMC)
+│   ├── hgx_bmc_fru.log ... (HGX 基板 BMC)
+│   └── redfish_system.log ... (Redfish API)
+├── nvsm/   ... (NVIDIA System Management)
+├── dcgm/   ... (DCGM 诊断)
+├── os/
+│   ├── uname.log / os-release.log / uptime.log
+│   ├── dmesg_hardware.log / dmesg_nvidia.log
+│   ├── service_*.log / numa_hardware.log / pcie_aer.log
+│   └── sysfs_nvidia_*.log
+└── summary.txt                        # 汇总报告（含每模块 WARN 计数）
 ```
 
 ### 日志文件格式
@@ -250,26 +263,8 @@ ls output/JZ5C4X8/
 # ============================================================
 # --- output start ---
 0, NVIDIA B300, 13245230xxxxxx, 00000000:17:00.0, 196608 MiB
-1, NVIDIA B300, 13245230xxxxx1, 00000000:35:00.0, 196608 MiB
 ...
 # --- output end (exit code: 0) ---
-```
-
-### 终端状态标签
-
-| 标签 | 颜色 | 含义 |
-|------|------|------|
-| `[OK]` | 绿色 | 命令执行成功 (exit=0) |
-| `[N/A]` | 黄色 | 命令不存在 (exit=127) |
-| `[WARN]` | 黄色 | 命令执行异常 (exit>0) |
-| `[SKIP]` | 黄色 | 工具未安装，跳过整个模块 |
-
-### 平台信息
-
-终端和 `summary.txt` 中自动输出平台识别结果：
-
-```
-[INFO] Platform: x86_64_SXM (GPU: 8)
 ```
 
 ---
@@ -307,12 +302,8 @@ MODULE_NVSM=1         # NVSM（自动检测）
 MODULE_DCGM=1         # DCGM（自动检测）
 MODULE_OS=1           # OS 基础信息
 
-# 输出目录（留空则自动: output/<机器SN>/<时间戳>/）
+# 输出目录（留空则自动: output/<机器SN>/）
 OUTPUT_BASE_DIR=""
-
-# 运行模式
-SKIP_IF_NO_CMD=1      # 命令不存在时静默跳过
-FORCE=0               # 1=覆盖已有目录
 ```
 
 ---
@@ -327,6 +318,8 @@ FORCE=0               # 1=覆盖已有目录
 - **无压测** — DCGM 仅跑 Level 1 纯获取，不产生任何 GPU 负载
 - **自动编码处理** — 非 UTF-8 环境自动尝试切换，日志头部记录实际编码
 - **多平台兼容** — x86_64 / aarch64，SXM / PCIe / 纯 CPU 服务器自动识别
+- **并行加速** — `--parallel` 15 个模块同时执行，物理服务器 2min → ~10s
+- **WARN 汇总** — `summary.txt` 每模块附带异常计数，一眼定位问题
 
 ## License
 
