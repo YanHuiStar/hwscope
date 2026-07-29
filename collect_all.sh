@@ -150,7 +150,11 @@ fi
 # ─── 输出目录初始化 ───
 local_timestamp=$(date '+%Y%m%d_%H%M%S')
 if [ -z "$OUTPUT_BASE" ]; then
-    OUTPUT_BASE="${SCRIPT_DIR}/output/${MACHINE_ID}/${local_timestamp}"
+    OUTPUT_BASE="${SCRIPT_DIR}/output/${MACHINE_ID}"
+    # 目录已存在且非强制覆盖：追加时间戳避免冲突
+    if [ -d "$OUTPUT_BASE" ] && [ "$FORCE_MODE" -ne 1 ]; then
+        OUTPUT_BASE="${SCRIPT_DIR}/output/${MACHINE_ID}-${local_timestamp}"
+    fi
 else
     # --output 用户指定了完整路径，直接使用
     :
