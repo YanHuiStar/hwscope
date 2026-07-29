@@ -156,7 +156,14 @@ echo "[$(date '+%H:%M:%S')] 日志输出到: ${LOG_FILE}"
 HW_ARCH=$(uname -m 2>/dev/null || echo "unknown"); PLATFORM="${HW_ARCH}"
 if check_cmd nvidia-smi; then
     GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l || echo 0)
+    # SXM 检测：nvswitch CLI 优先，无 CLI 则用 lspci 查 NVSwitch 硬件
+    _sxm=0
     if check_cmd nvswitch && nvswitch -q 2>/dev/null | grep -qi "Switch Name"; then
+        _sxm=1
+    elif check_cmd lspci && lspci 2>/dev/null | grep -qi "NVSwitch\|SXM.*Bridge"; then
+        _sxm=1
+    fi
+    if [ "$_sxm" -eq 1 ]; then
         PLATFORM="${HW_ARCH}_SXM"
     elif [ "$GPU_COUNT" -gt 0 ]; then
         PLATFORM="${HW_ARCH}_PCIe"
