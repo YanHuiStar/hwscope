@@ -298,3 +298,12 @@ echo ""; echo -e "${CYAN}汇总文件: ${SUMMARY_FILE}${NC}"; echo ""
 if [ -f "$LOG_FILE" ] && check_cmd sed; then
     sed -i 's/\x1b\[[0-9;]*m//g' "$LOG_FILE" 2>/dev/null || true
 fi
+
+# ─── 压缩归档 ───
+LOGS_DIR="${SCRIPT_DIR}/logs"
+ARCHIVE_NAME="${MACHINE_ID}-$(date '+%Y%m%d_%H%M%S').tar.gz"
+mkdir -p "$LOGS_DIR"
+if check_cmd tar; then
+    tar czf "${LOGS_DIR}/${ARCHIVE_NAME}" -C "$(dirname "$OUTPUT_BASE")" "$(basename "$OUTPUT_BASE")" 2>/dev/null
+    echo -e "${GREEN}[ARCHIVE]${NC} ${LOGS_DIR}/${ARCHIVE_NAME}"
+fi
