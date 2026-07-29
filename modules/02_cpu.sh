@@ -47,7 +47,7 @@ run_cpu() {
     # 4. CPU 频率（避免 awk field 引用，改用 awk 内置变量）
     run_and_log "awk -F':[ \t]*' '/cpu MHz/{s+=\$2; c++} END{printf \"Average: %.0f MHz, Total CPUs: %d\n\", s/c, c}' /proc/cpuinfo 2>/dev/null" \
         "${dir}/cpu_freq.log"
-    run_and_log "lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
+    run_and_log "LANG=C lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
 
     module_end "$MODULE_NAME"
 }

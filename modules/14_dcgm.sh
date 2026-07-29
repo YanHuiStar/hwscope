@@ -31,18 +31,10 @@ run_dcgm() {
     # 3. GPU 配置
     run_and_log "dcgmi config --list 2>&1" "${dir}/dcgmi_config.log"
 
-    # 4. 快速健康检查（Level 1，纯获取，不产生负载）
+    # 4. 快速健康检查（Level 1，纯获取，不产生负载；已覆盖所有 GPU）
     run_and_log "dcgmi diag -r 1 2>&1" "${dir}/dcgmi_diag_level1.log"
 
-    # 5. 每个 GPU 单独诊断（dcgmi 输出格式：GPU ID / GPU Index / gpu_id 等）
-    local gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
-    if [ "$gpu_count" -gt 0 ]; then
-        for ((i=0; i<gpu_count; i++)); do
-            run_and_log "dcgmi diag -r 1 -i $i 2>&1" "${dir}/dcgmi_diag_gpu${i}.log"
-        done
-    fi
-
-    # 6. dcgm 版本
+    # 5. dcgm 版本
     run_and_log "dcgmi --version 2>&1" "${dir}/dcgmi_version.log"
 
     module_end "$MODULE_NAME"

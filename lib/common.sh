@@ -104,17 +104,6 @@ module_end() {
     fi
 }
 
-# ─── 输出目录初始化 ───
-init_output_dir() {
-    local base="$1"
-    if [ -z "$base" ]; then
-        local timestamp=$(date '+%Y%m%d_%H%M%S')
-        base="./output/${timestamp}"
-    fi
-    mkdir -p "$base"
-    echo "$base"
-}
-
 # ─── 写入汇总信息 ───
 summary_append() {
     local summary_file="$1"
