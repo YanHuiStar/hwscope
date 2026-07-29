@@ -2,7 +2,10 @@
 
 > Server Hardware Inspection & Data Collection System · 服务器硬件一键巡检采集系统
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.0.0  ·  **License:** MIT
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.0.0  ·  **License:** [Apache 2.0](LICENSE)
+
+[![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
 HwScope 对服务器每个物理组件进行**逐件、逐槽、逐端口**的独立采集，每个查询命令保存到独立日志文件，方便后续定位和对比。
 
@@ -326,4 +329,14 @@ FORCE=0               # 1=覆盖已有目录
 
 ## License
 
-MIT
+本项目采用 [Apache License 2.0](LICENSE) 开源协议。
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request。
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/xxx`)
+3. 提交更改 (`git commit -m 'feat: xxx'`)
+4. 推送到分支 (`git push origin feature/xxx`)
+5. 打开 Pull Request
