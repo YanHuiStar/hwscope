@@ -34,6 +34,9 @@ cd hwscope
 # 安装必要工具（缺少的工具会自动跳过）
 yum install -y dmidecode pciutils ipmitool smartmontools lm_sensors
 
+# ⚠️ 如果文件从 Windows 复制进来，先修复 CRLF 换行符
+sed -i 's/\r$//' hwscope.sh lib/*.sh modules/*.sh conf/*.conf
+
 # 全部采集
 sudo bash hwscope.sh
 
