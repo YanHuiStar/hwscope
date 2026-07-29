@@ -21,6 +21,7 @@
 # =============================================================================
 
 set -uo pipefail
+set -uo pipefail
 
 # ─── 检查 locale（非 UTF-8 时尝试切换，不影响系统环境） ───
 if [ "$(locale charmap 2>/dev/null)" != "UTF-8" ]; then
