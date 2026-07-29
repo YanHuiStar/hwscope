@@ -8,15 +8,15 @@
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
 # 用法：
-#   sudo bash collect_all.sh                          # 完整采集
-#   sudo bash collect_all.sh --modules gpu,storage     # 只采部分模块
-#   sudo bash collect_all.sh --skip bmc,nvsm           # 跳过某些模块
-#   sudo bash collect_all.sh --parallel                # 并行采集
-#   sudo bash collect_all.sh --quiet                   # 静默模式
-#   sudo bash collect_all.sh --output /data/collect    # 指定输出目录
-#   sudo bash collect_all.sh --force                   # 覆盖已有目录
-#   sudo bash collect_all.sh --help                    # 帮助
-#   sudo bash collect_all.sh --version                 # 版本
+#   sudo bash hwscope.sh                              # 全部采集
+#   sudo bash hwscope.sh --modules gpu,storage         # 只采部分模块
+#   sudo bash hwscope.sh --skip bmc,nvsm               # 跳过某些模块
+#   sudo bash hwscope.sh --parallel                    # 并行采集
+#   sudo bash hwscope.sh --quiet                       # 静默模式
+#   sudo bash hwscope.sh --output /data/collect        # 指定输出目录
+#   sudo bash hwscope.sh --force                       # 覆盖已有目录
+#   sudo bash hwscope.sh --help                        # 帮助
+#   sudo bash hwscope.sh --version                     # 版本
 #
 # =============================================================================
 
@@ -146,7 +146,7 @@ fi
 mkdir -p "$OUTPUT_BASE"
 
 # ─── 执行日志 ───
-LOG_FILE="${OUTPUT_BASE}/collect_all.log"
+LOG_FILE="${OUTPUT_BASE}/hwscope.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "[$(date '+%H:%M:%S')] 日志输出到: ${LOG_FILE}"
 

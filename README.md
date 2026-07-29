@@ -35,10 +35,10 @@ cd hwscope
 yum install -y dmidecode pciutils ipmitool smartmontools lm_sensors
 
 # 全部采集
-sudo bash collect_all.sh
+sudo bash hwscope.sh
 
 # 并行采集（2min → ~10s）
-sudo bash collect_all.sh --parallel
+sudo bash hwscope.sh --parallel
 ```
 
 ---
@@ -47,19 +47,19 @@ sudo bash collect_all.sh --parallel
 
 ```bash
 # 采集模式
-sudo bash collect_all.sh                              # 全部采集（串行）
-sudo bash collect_all.sh --parallel                   # 并行执行（大幅提速）
-sudo bash collect_all.sh --quiet                      # 静默模式（只看 WARN）
-sudo bash collect_all.sh --parallel --quiet           # 并行+静默
+sudo bash hwscope.sh                              # 全部采集（串行）
+sudo bash hwscope.sh --parallel                   # 并行执行（大幅提速）
+sudo bash hwscope.sh --quiet                      # 静默模式（只看 WARN）
+sudo bash hwscope.sh --parallel --quiet           # 并行+静默
 
 # 过滤
-sudo bash collect_all.sh --modules gpu,storage        # 只采 GPU + 存储
-sudo bash collect_all.sh --skip dcgm,nvsm             # 跳过诊断模块
+sudo bash hwscope.sh --modules gpu,storage        # 只采 GPU + 存储
+sudo bash hwscope.sh --skip dcgm,nvsm             # 跳过诊断模块
 
 # 其他
-sudo bash collect_all.sh --output /data/inspect       # 指定输出目录
-sudo bash collect_all.sh --force                      # 覆盖已有目录
-bash collect_all.sh --version                         # 版本信息
+sudo bash hwscope.sh --output /data/inspect       # 指定输出目录
+sudo bash hwscope.sh --force                      # 覆盖已有目录
+bash hwscope.sh --version                         # 版本信息
 
 # 单独跑某个模块（不依赖总入口）
 sudo bash modules/04_gpu.sh /tmp/my_output
@@ -96,7 +96,7 @@ sudo bash modules/04_gpu.sh /tmp/my_output
 模块按 01→02→...→99 顺序逐个执行。输出即时可见，适合单机排查。
 
 ```bash
-sudo bash collect_all.sh
+sudo bash hwscope.sh
 # 耗时：物理服务器约 1~2 分钟
 ```
 
@@ -105,7 +105,7 @@ sudo bash collect_all.sh
 所有模块同时启动，完成后按顺序输出结果。适合批量巡检或快速快照。
 
 ```bash
-sudo bash collect_all.sh --parallel
+sudo bash hwscope.sh --parallel
 # 耗时：物理服务器约 5~15 秒
 ```
 
@@ -116,7 +116,7 @@ sudo bash collect_all.sh --parallel
 只显示 `[WARN]` 和 `[SKIP]`，抑制 `[OK]` 和 `[N/A]`。适合 cron 定时任务。
 
 ```bash
-sudo bash collect_all.sh --quiet
+sudo bash hwscope.sh --quiet
 ```
 
 ---
@@ -183,7 +183,7 @@ output/
 # 第二次运行 → output/JZ5C4X8-20260730_090000/
 
 ls output/JZ5C4X8/
-├── collect_all.log                    # 执行过程日志（纯文本，无 ANSI 转义码）
+├── hwscope.log                    # 执行过程日志（纯文本，无 ANSI 转义码）
 ├── config_backup.conf                 # 本次采集使用的配置快照
 ├── motherboard/
 │   ├── dmidecode_system.log / baseboard.log / bios.log / chassis.log
