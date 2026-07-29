@@ -47,8 +47,8 @@ run_and_log() {
 
     echo "# --- output end (exit code: $ret) ---" >> "$logfile"
 
-    # WARN 计数
-    if [ "$ret" -ne 0 ] && [ "$ret" -ne 127 ]; then
+    # WARN 计数（exit=1 = grep 无匹配，不报警）
+    if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
         _MODULE_WARN_COUNT=$((_MODULE_WARN_COUNT + 1))
     fi
 
@@ -56,12 +56,14 @@ run_and_log() {
     local fname=$(basename "${logfile%.*}")
     if [ "$QUIET" -eq 1 ]; then
         # 静默模式：只显示 WARN
-        if [ "$ret" -ne 0 ] && [ "$ret" -ne 127 ]; then
+        if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
             echo -e "${YELLOW}WARN${NC} ${fname} (exit=$ret)"
         fi
     else
         if [ "$ret" -eq 0 ]; then
             echo -e "${GREEN}[OK]${NC} ${fname}  (exit=0)"
+        elif [ "$ret" -eq 1 ]; then
+            echo -e "[~] ${fname}  (no match)"
         elif [ "$ret" -eq 127 ]; then
             echo -e "${YELLOW}[N/A]${NC} ${fname}  (cmd not found)"
         else

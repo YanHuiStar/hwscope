@@ -19,8 +19,9 @@
 #   sudo bash hwscope.sh --version                     # 版本
 #
 # =============================================================================
+#
+# ⚠️  CRLF error?  Run:  bash fix.sh && sudo bash hwscope.sh
 
-set -uo pipefail
 set -uo pipefail
 
 # ─── 检查 locale（非 UTF-8 时尝试切换，不影响系统环境） ───
