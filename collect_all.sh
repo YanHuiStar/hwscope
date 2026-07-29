@@ -103,8 +103,9 @@ usage() {
     echo ""
     echo "示例:"
     echo "  sudo bash $0                              # 全部采集"
-    echo "  sudo bash $0 --modules gpu,bmc,system     # 只采 GPU/BMC/主板"
+    echo "  sudo bash $0 --modules motherboard,gpu    # 只采主板+GPU"
     echo "  sudo bash $0 --skip dcgm,nvsm             # 跳过诊断模块"
+    echo "  bash $0 --version                         # 显示版本"
     exit 0
 }
 
@@ -128,6 +129,13 @@ while [[ $# -gt 0 ]]; do
             ;;
         -h|--help)
             usage
+            ;;
+        -v|--version)
+            echo "HwScope v1.0.0 (2026-07) — Hardware Scope"
+            echo "Author: YanHui / Hermes Agent"
+            echo "License: Apache 2.0"
+            echo "https://github.com/YanHuiStar/hwscope"
+            exit 0
             ;;
         *)
             echo -e "${RED}错误: 未知参数 $1${NC}"
@@ -338,3 +346,8 @@ echo ""
 echo -e "${CYAN}汇总文件: ${SUMMARY_FILE}${NC}"
 echo ""
 echo "提示: 单独跑某个模块: bash modules/04_gpu.sh <output_dir>"
+
+# ─── 清理 ANSI 颜色码（日志文件用纯文本更易读） ───
+if [ -f "$LOG_FILE" ] && check_cmd sed; then
+    sed -i 's/\x1b\[[0-9;]*m//g' "$LOG_FILE" 2>/dev/null || true
+fi
