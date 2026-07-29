@@ -76,7 +76,7 @@ MODULE_SWITCH[os]="${MODULE_OS:-1}"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
-FORCE_MODE="${FORCE:-0}"; QUIET=0; PARALLEL=0
+FORCE_MODE="${FORCE:-0}"; QUIET=0; PARALLEL=0; NO_MODULE=0
 
 usage() {
     echo "用法: $0 [OPTIONS]"
@@ -85,6 +85,7 @@ usage() {
     echo "  --modules gpu,storage           只采指定模块（逗号分隔）"
     echo "  --skip dcgm,nvsm                跳过指定模块"
     echo "  --parallel                      并行执行所有模块"
+    echo "  --no-module                     跳过光模块查询（省 40s+）"
     echo "  --output /path/to/dir           指定输出目录"
     echo "  --force                         覆盖已有输出目录"
     echo "  -q, --quiet                     静默模式（只看 WARN）"
@@ -111,6 +112,7 @@ while [[ $# -gt 0 ]]; do
         --output)   OUTPUT_BASE="$2"; shift 2 ;;
         --force)    FORCE_MODE=1; shift ;;
         --parallel) PARALLEL=1; shift ;;
+        --no-module) NO_MODULE=1; shift ;;
         -q|--quiet) QUIET=1; shift ;;
         -h|--help)  usage ;;
         -v|--version) echo "HwScope v1.0.0 (2026-07) — Hardware Scope"

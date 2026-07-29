@@ -53,14 +53,14 @@ run_network() {
             for dev_num in 0 1 2 3 4 5 6 7; do
                 if [ -e "/sys/class/net/mlx5_${dev_num}" ] || ls /sys/class/infiniband/ 2>/dev/null | grep -q "mlx5_${dev_num}"; then
                     run_and_log "mlxlink -d mlx5_${dev_num}" "${dir}/mlxlink_${dev_num}.log"
-                    run_and_log "mlxlink -d mlx5_${dev_num} -m" "${dir}/mlxlink_${dev_num}_module.log"
+                    [ "${NO_MODULE:-0}" -eq 0 ] && run_and_log "mlxlink -d mlx5_${dev_num} -m" "${dir}/mlxlink_${dev_num}_module.log"
                 fi
             done
         else
             local count=0
             while IFS= read -r dev; do
                 run_and_log "mlxlink -d $dev" "${dir}/mlxlink_${dev}.log"
-                run_and_log "mlxlink -d $dev -m" "${dir}/mlxlink_${dev}_module.log"
+                [ "${NO_MODULE:-0}" -eq 0 ] && run_and_log "mlxlink -d $dev -m" "${dir}/mlxlink_${dev}_module.log"
                 ((count++))
             done <<< "$mlx_devs"
         fi
