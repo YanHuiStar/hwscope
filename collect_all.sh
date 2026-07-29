@@ -84,6 +84,7 @@ SELECTED_MODULES=""      # 空 = 全部
 SKIP_MODULES=""          # 空 = 不跳过
 OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
 FORCE_MODE="${FORCE:-0}"
+QUIET=0                  # 0=正常 1=静默
 
 usage() {
     echo "用法: $0 [OPTIONS]"
@@ -93,7 +94,9 @@ usage() {
     echo "  --skip bmc,nvsm               跳过指定模块"
     echo "  --output /path/to/dir         指定输出目录"
     echo "  --force                       覆盖已有输出目录"
+    echo "  -q, --quiet                   静默模式（只看 WARN）"
     echo "  -h, --help                    显示此帮助"
+    echo "  -v, --version                 显示版本"
     echo ""
     echo "可用模块:"
     for mod_info in "${MODULES[@]}"; do
@@ -125,6 +128,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --force)
             FORCE_MODE=1
+            shift
+            ;;
+        -q|--quiet)
+            QUIET=1
             shift
             ;;
         -h|--help)
@@ -280,8 +287,10 @@ for mod_info in "${MODULES[@]}"; do
         # 创建模块子目录
         mkdir -p "${OUTPUT_BASE}/${id}"
 
-        # 执行模块（捕获文件数）
+        # 执行模块（捕获文件数），附带 WARN 计数
+        reset_warn_count
         "$fn" "$OUTPUT_BASE"
+        warn_count=$(get_warn_count)
 
         end_ts=$(date +%s)
         elapsed=$((end_ts - start_ts))
@@ -290,7 +299,7 @@ for mod_info in "${MODULES[@]}"; do
         mod_file_count=$(find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l)
         FILE_COUNT=$((FILE_COUNT + mod_file_count))
 
-        summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${mod_file_count} files, ${elapsed}s"
+        summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${mod_file_count} files, ${elapsed}s, ${warn_count} WARN"
         TOTAL_COUNT=$((TOTAL_COUNT + 1))
     else
         echo -e "${RED}[ERROR] 函数 ${fn} 未在 ${MODULE_SCRIPT} 中定义${NC}"
