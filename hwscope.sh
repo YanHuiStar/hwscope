@@ -73,6 +73,8 @@ MODULE_SWITCH[raid]="${MODULE_RAID:-1}"; MODULE_SWITCH[psu]="${MODULE_PSU:-1}"
 MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
+# ─── 版本声明 ───
+HWSCOPE_VERSION="v1.1.1"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -178,6 +180,7 @@ SUMMARY_FILE="${OUTPUT_BASE}/summary.txt"
 {
     echo "============================================================"
     echo "HwScope - Hardware Scope Collection"
+    echo "Version  : ${HWSCOPE_VERSION}"
     echo "Hostname : $(hostname)"; echo "Platform : ${PLATFORM} (GPU: ${GPU_COUNT:-0})"
     echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"; echo "Output   : ${OUTPUT_BASE}"
     echo "============================================================"; echo ""

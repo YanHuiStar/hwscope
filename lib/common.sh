@@ -15,6 +15,9 @@ NC='\033[0m' # No Color
 
 HOSTNAME=$(hostname 2>/dev/null || echo "unknown")
 
+# ─── 版本号（hwscope.sh 会覆盖此值） ───
+HWSCOPE_VERSION="${HWSCOPE_VERSION:-unknown}"
+
 # ─── 全局状态 ───
 _MODULE_WARN_COUNT=0
 QUIET="${QUIET:-0}"
@@ -27,6 +30,7 @@ write_header() {
         echo "# ============================================================"
         echo "# Command  : $cmd"
         echo "# Hostname : $HOSTNAME"
+        echo "# Version  : HwScope ${HWSCOPE_VERSION}"
         echo "# Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "# Encoding : $(locale charmap 2>/dev/null || echo 'UTF-8')"
         echo "# ============================================================"
