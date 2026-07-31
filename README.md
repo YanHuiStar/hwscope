@@ -2,7 +2,7 @@
 
 > Server Hardware Inspection & Data Collection System · 服务器硬件一键巡检采集系统
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.3.1  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.3.2  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
