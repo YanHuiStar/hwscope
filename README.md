@@ -17,7 +17,7 @@ HwScope 对服务器每个物理组件进行**逐件、逐槽、逐端口**的�
 git clone https://github.com/YanHuiStar/hwscope.git && cd hwscope
 
 # 如果文件从 Windows 复制进来，先修换行符
-bash fix.sh
+bash fixcrlf.sh
 
 # 安装工具（缺啥自动跳）
 yum install -y dmidecode pciutils ipmitool smartmontools lm_sensors

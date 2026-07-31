@@ -20,7 +20,7 @@
 #
 # =============================================================================
 #
-# ⚠️  CRLF error?  Run:  bash fix.sh && sudo bash hwscope.sh
+# ⚠️  CRLF error?  Run:  bash fixcrlf.sh && sudo bash hwscope.sh
 
 set -uo pipefail
 
