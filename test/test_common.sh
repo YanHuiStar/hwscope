@@ -2,30 +2,25 @@
 # =============================================================================
 # HwScope — test/ 公共函数库
 # test/test_common.sh
-# 功能：报告初始化、工具菜单、结果记录
+# 功能：日志目录初始化、工具菜单、结果记录
 # =============================================================================
 
-# 初始化报告目录 + .md + .log（输出到 test/logs/）
+# 初始化日志目录（输出到 logs/test/<时间戳>/）
 test_init() {
     local test_name="$1"
     local base="${SCRIPT_DIR}/logs/test/$(date '+%Y%m%d_%H%M%S')"
     mkdir -p "$base"
     REPORT_DIR="$base"
-    REPORT_MD="${base}/${test_name}_report.md"
     REPORT_LOG="${base}/${test_name}.log"
     {
-        echo "# ${test_name} 测试报告"
+        echo "============================================================"
+        echo "HwScope ${HWSCOPE_VERSION:-unknown} — ${test_name} 测试"
+        echo "Hostname : $(hostname 2>/dev/null || echo unknown)"
+        echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "============================================================"
         echo ""
-        echo "**主机名:** $(hostname 2>/dev/null || echo unknown)"
-        echo "**时间:** $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "**HwScope:** ${HWSCOPE_VERSION:-unknown}"
-        echo ""
-        echo "## 测试结果"
-        echo ""
-        echo "| 测试项 | 状态 | 耗时 | 关键指标 |"
-        echo "|--------|------|------|----------|"
-    } > "$REPORT_MD"
-    echo "[$(date '+%H:%M:%S')] ${test_name} 测试开始" > "$REPORT_LOG"
+    } > "$REPORT_LOG"
+    echo "[$(date '+%H:%M:%S')] ${test_name} 测试开始" >> "$REPORT_LOG"
 }
 
 # 工具菜单：显示已装/未装，返回可用列表到 TEST_AVAILABLE
@@ -55,20 +50,18 @@ test_menu() {
     return 0
 }
 
-# 记录一条测试结果（结果 + .md 追加）
+# 记录一条测试结果
 test_record() {
     local name="$1" logfile="$2" start_ts="$3"
     local end_ts=$(date +%s) elapsed=$((end_ts - start_ts))
-    local result status
-    result=$(grep -iE "events per second|events \(avg/stddev\)|passed|errors|warning|throughput|bandwidth|IOPS|read:|write:|summary" "$logfile" | head -1)
-    [ -z "$result" ] && result="查看详情: $(basename "$logfile")"
+    local status
     if grep -qiE "error|fail" "$logfile" 2>/dev/null; then
-        status="${YELLOW}异常${NC}"
+        status="异常"
     else
-        status="${GREEN}通过${NC}"
+        status="通过"
     fi
+    echo "[$(date '+%H:%M:%S')] ${name}: ${status} (${elapsed}s) — 详情: $(basename "$logfile")" >> "$REPORT_LOG"
     echo "  ${status} 耗时: ${elapsed}s" | tee -a "$REPORT_LOG"
-    echo "| ${name} | ${status} | ${elapsed}s | ${result} |" >> "$REPORT_MD"
 }
 
 # 结束报告
@@ -76,11 +69,9 @@ test_finish() {
     local test_name="$1"
     {
         echo ""
-        echo "---"
-        echo "*报告由 HwScope ${HWSCOPE_VERSION:-unknown} 于 $(date '+%Y-%m-%d %H:%M:%S') 生成*"
-    } >> "$REPORT_MD"
+        echo "[$(date '+%H:%M:%S')] ${test_name} 测试结束"
+    } >> "$REPORT_LOG"
     echo ""
     echo -e "${GREEN}测试完成${NC}"
-    echo "报告: $REPORT_MD"
     echo "日志: $REPORT_LOG"
 }
