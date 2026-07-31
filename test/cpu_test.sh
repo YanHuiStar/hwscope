@@ -9,7 +9,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || source "${SCRIPT_DIR}/../lib/common.sh" 2>/dev/null || true
 
-REPORT_DIR="${SCRIPT_DIR}/logs/test_$(date '+%Y%m%d_%H%M%S')"
+REPORT_DIR="${SCRIPT_DIR}/logs/test/$(date '+%Y%m%d_%H%M%S')"
 mkdir -p "$REPORT_DIR"
 REPORT_LOG="${REPORT_DIR}/cpu_test.log"
 REPORT_MD="${REPORT_DIR}/cpu_report.md"
