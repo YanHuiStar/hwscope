@@ -16,9 +16,16 @@ else echo -e "${RED}[ERROR] 不支持的包管理器${NC}"; exit 1; fi
 
 echo -e "${CYAN}[INFO] 包管理器: ${PKG_MGR}${NC}"
 
+# ─── 包名映射：Ubuntu apt vs Rocky yum ───
+if [ "$OS" = "debian" ]; then
+    LM_SENSORS_PKG="lm-sensors"
+else
+    LM_SENSORS_PKG="lm_sensors"
+fi
+
 # ─── 安装功能表 ───
 OPS=(
-    "1:基础采集工具:dmidecode pciutils ipmitool smartmontools lm-sensors:${PKG_MGR}"
+    "1:基础采集工具:dmidecode pciutils ipmitool smartmontools ${LM_SENSORS_PKG}:${PKG_MGR}"
     "2:压测工具:stress-ng sysbench fio iperf3 mtr:${PKG_MGR}"
     "3:IB 诊断工具:infiniband-diags perftest rdma-core:${PKG_MGR}"
     "4:DCGM 诊断:NVIDIA DCGM:manual"
