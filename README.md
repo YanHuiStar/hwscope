@@ -2,7 +2,7 @@
 
 > Server Hardware Inspection & Data Collection System · 服务器硬件一键巡检采集系统
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.1.1  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.2.0  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -83,6 +83,40 @@ bash modules/04_gpu.sh /tmp/out
 | 13 | nvsm | `nvsm` | NVIDIA System Management |
 | 14 | dcgm | `dcgmi` | Level 1 纯获取诊断 |
 | 99 | os | `uname/dmesg/systemctl` | 内核/服务/NUMA/AER |
+
+---
+
+## 硬件测试与运维工具
+
+除采集外，项目提供两类交互式脚本（均自动检测工具是否安装，未装则提示安装命令）：
+
+### `test/` — 硬件压测（只测不改）
+
+| 脚本 | 内容 | 依赖 |
+|------|------|------|
+| `cpu_test.sh` | stress-ng / sysbench / mprime 三种 CPU 压测 | stress-ng, sysbench, mprime |
+| `memory_test.sh` | 内存带宽/压力测试（待开发） | stress-ng --vm, memtester |
+| `disk_test.sh` | fio / hdparm 硬盘吞吐测试（待开发） | fio, hdparm |
+| `network_test.sh` | iperf3 / ib_write_bw 网络吞吐（待开发） | iperf3, perftest |
+
+```bash
+bash test/test_all.sh          # 聚合菜单
+bash test/cpu_test.sh          # 直接跑 CPU 测试
+```
+
+### `tools/` — 运维操作（会修改系统）
+
+| 脚本 | 内容 | 依赖 |
+|------|------|------|
+| `bmc_tool.sh` | 查 FRU/传感器/SEL、清 SEL、重置 BMC 密码、重启 BMC | ipmitool |
+| `nic_tool.sh` | 网卡端口重置/固件配置（待开发） | mlxlink, mlxconfig |
+| `install_tool.sh` | 安装 DCGM/MFT/压测工具/推理引擎（待开发） | - |
+
+```bash
+sudo bash tools/bmc_tool.sh    # BMC 操作（写操作有二次确认）
+```
+
+测试结果输出 `output/test_*/cpu_report.md`（汇总报告）+ 详细日志。
 
 ---
 
