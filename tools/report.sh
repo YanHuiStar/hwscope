@@ -61,10 +61,14 @@ if [ -f "$GPU_CSV" ]; then
     GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | tr -d ' ' | sort -u | tr '\n' ',' | sed 's/,$//')
 fi
 
-# ─── 存储 ───
+# ─── 存储（从 block_devices_all.log 按 SIZE 列求和） ───
 STO_DIR="${OUT}/storage"
 STORAGE_COUNT=$(ls "${STO_DIR}"/smart_*.log 2>/dev/null | grep -v health | grep -v scsi | wc -l)
-STORAGE_TOTAL=$(df -h "${STO_DIR}/../" 2>/dev/null | tail -1 | awk '{print $2}')
+STORAGE_TOTAL=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" 2>/dev/null | tail -n +2 | \
+    awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/) {v=$i; break}; \
+    n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
+    if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024} \
+    END{printf "%.0f GB", s}' 2>/dev/null)
 
 # ─── 网络 ───
 NET_DIR="${OUT}/network"
