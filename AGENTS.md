@@ -39,7 +39,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 | 中版本 | 新模块、新数据维度、新执行模式 | `1.1.1 → 1.2.0` |
 | 补丁 | Bug 修复、小优化、文档 | `1.1.0 → 1.1.1` |
 
-升级时需要同步修改的位置：`hwscope.sh`（头部注释 + `HWSCOPE_VERSION` + `--version` 输出）、`README.md`（头部 Version 徽章）。
+**规则：每次任务完成若有修改或新增文件，必须按上表升级版本号（补丁/中/主），并单独 commit `release: vX.Y.Z — <摘要>`。** 升级时需要同步修改的位置：`hwscope.sh`（头部注释 + `HWSCOPE_VERSION` + `--version` 输出）、`README.md`（头部 Version 徽章）。
 
 ## README 更新规则
 
