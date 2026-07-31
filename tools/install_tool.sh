@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 
 # ─── 检测包管理器 ───
 if check_cmd apt-get; then PKG_MGR="apt-get"; OS="debian"
+elif check_cmd dnf; then PKG_MGR="dnf"; OS="rhel"
 elif check_cmd yum; then PKG_MGR="yum"; OS="rhel"
 else echo -e "${RED}[ERROR] 不支持的包管理器${NC}"; exit 1; fi
 

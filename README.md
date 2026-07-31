@@ -2,7 +2,7 @@
 
 > Server Hardware Inspection & Data Collection System · 服务器硬件一键巡检采集系统
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.3.4  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.3.5  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -19,9 +19,9 @@ git clone https://github.com/YanHuiStar/hwscope.git && cd hwscope
 # 如果文件从 Windows 复制进来，先修换行符
 bash fixcrlf.sh
 
-# 安装工具（缺啥自动跳；Ubuntu 用 apt，Rocky/RHEL 用 yum）
+# 安装工具（缺啥自动跳；Ubuntu 用 apt，Rocky/RHEL 用 dnf）
 apt install -y dmidecode pciutils ipmitool smartmontools lm-sensors      # Ubuntu
-yum install -y dmidecode pciutils ipmitool smartmontools lm_sensors      # Rocky/RHEL
+dnf install -y dmidecode pciutils ipmitool smartmontools lm_sensors      # Rocky/RHEL 8+
 
 # 开跑
 sudo bash hwscope.sh                  # 全量（串行，约 1min）
