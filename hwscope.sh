@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.2.0 (2026-07)
+# Version : 1.3.0 (2026-07)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.2.0"
+HWSCOPE_VERSION="v1.3.0"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -117,7 +117,7 @@ while [[ $# -gt 0 ]]; do
         --no-module) NO_MODULE=1; shift ;;
         -q|--quiet) QUIET=1; shift ;;
         -h|--help)  usage ;;
-        -v|--version) echo "HwScope v1.2.0 (2026-07) — Hardware Scope"
+        -v|--version) echo "HwScope v1.3.0 (2026-07) — Hardware Scope"
                       echo "Author: YanHui / Hermes Agent · License: Apache 2.0"
                       echo "https://github.com/YanHuiStar/hwscope"
                       exit 0 ;;
