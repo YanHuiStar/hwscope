@@ -5,10 +5,10 @@
 # 功能：报告初始化、工具菜单、结果记录
 # =============================================================================
 
-# 初始化报告目录 + .md + .log
+# 初始化报告目录 + .md + .log（输出到 test/logs/）
 test_init() {
     local test_name="$1"
-    local base="${SCRIPT_DIR}/output/test_$(date '+%Y%m%d_%H%M%S')"
+    local base="${SCRIPT_DIR}/logs/test_$(date '+%Y%m%d_%H%M%S')"
     mkdir -p "$base"
     REPORT_DIR="$base"
     REPORT_MD="${base}/${test_name}_report.md"
