@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.5  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.6  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -21,14 +21,14 @@ git clone https://github.com/YanHuiStar/hwscope.git && cd hwscope
 # 如果文件从 Windows 复制进来，先修换行符
 bash fixcrlf.sh
 
-# 安装工具（缺啥自动跳；Ubuntu 用 apt，Rocky/RHEL 用 dnf）
+# 安装依赖工具（未安装的工具对应模块自动跳过，不影响整体采集；Ubuntu 使用 apt，Rocky/RHEL 8+ 使用 dnf）
 apt install -y dmidecode pciutils ipmitool smartmontools lm-sensors      # Ubuntu
 dnf install -y dmidecode pciutils ipmitool smartmontools lm_sensors      # Rocky/RHEL 8+
 
-# 开跑
-sudo bash hwscope.sh                  # 全量（串行，约 1min）
-sudo bash hwscope.sh --parallel       # 全量（并行，约 10s）
-sudo bash hwscope.sh --quiet          # 只看异常
+# 执行采集
+sudo bash hwscope.sh                  # 全量采集（串行，约 1min）
+sudo bash hwscope.sh --parallel       # 全量采集（并行，约 10s）
+sudo bash hwscope.sh --quiet          # 静默模式（仅输出异常）
 ```
 
 ---
@@ -48,7 +48,7 @@ bash hwscope.sh --skip dcgm,nvsm      # 跳过部分
 # 其他
 bash hwscope.sh --output /data/x      # 指定输出目录
 bash hwscope.sh --force               # 覆盖已有目录
-bash hwscope.sh --no-module           # 跳过光模块查询（省 ~48s）
+bash hwscope.sh --no-module           # 跳过光模块查询（缩短采集时长约 48s）
 bash hwscope.sh --version             # 版本
 
 # 单独跑模块
@@ -92,9 +92,9 @@ bash modules/04_gpu.sh /tmp/out
 
 ## 硬件测试与运维工具
 
-除采集外，项目提供两类交互式脚本（均自动检测工具是否安装，未装则提示安装命令）：
+除采集外，项目提供两类交互式脚本（自动检测依赖工具是否安装，未安装时提示安装命令）：
 
-### `test/` — 硬件压测（只测不改）
+### `test/` — 硬件压测（仅执行只读测试，不修改硬件配置）
 
 | 脚本 | 内容 | 依赖 |
 |------|------|------|
@@ -104,20 +104,20 @@ bash modules/04_gpu.sh /tmp/out
 | `network_test.sh` | iperf3 / ib_write_bw / mtr 网络测试 | iperf3, perftest, mtr |
 
 ```bash
-bash test/test_all.sh          # 聚合菜单
-bash test/cpu_test.sh          # 直接跑 CPU 测试
+bash test/test_all.sh          # 聚合菜单入口
+bash test/cpu_test.sh          # 直接执行 CPU 测试
 ```
 
 测试日志输出至 `logs/test/<时间戳>/`（汇总 + 每项详细日志）。
 
-### `tools/` — 运维操作（会修改系统）
+### `tools/` — 运维操作（含写操作，执行前二次确认）
 
 | 脚本 | 内容 | 依赖 |
 |------|------|------|
-| `bmc_tool.sh` | 查 FRU/传感器/SEL、清 SEL、重置 BMC 密码、重启 BMC | ipmitool |
-| `nic_tool.sh` | 网卡状态/光模块/固件查询、端口复位、MTU 设置 | mlxlink, mlxfwmanager |
-| `install_tool.sh` | 一键安装采集/压测/IB/DCGM/MFT/推理引擎 | apt/dnf 自动检测 |
-| `report.sh` | 从采集结果生成汇总报告（json/md/txt） | 采集完成后自动调用 |
+| `bmc_tool.sh` | FRU/传感器/SEL 查询、SEL 清空、BMC 密码重置、BMC 重启 | ipmitool |
+| `nic_tool.sh` | 网卡状态/光模块/固件查询、端口复位、MTU 配置 | mlxlink, mlxfwmanager |
+| `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT/推理引擎），apt/dnf 自动识别 | - |
+| `report.sh` | 从采集结果提取关键信息，生成 json/md/txt 汇总报告 | 采集完成后自动调用 |
 
 ---
 
