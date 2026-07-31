@@ -29,6 +29,25 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - CRLF 修复: `bash fixcrlf.sh`
 - 语法检查: `bash -n <script.sh>`
 
+## Git 提交规范
+
+提交信息格式: `<type>: <摘要>`，摘要用英文，动词开头，一句话说清改动。
+
+| type | 用途 | 示例 |
+|------|------|------|
+| `feat` | 新功能/新模块 | `feat: add memory_test.sh` |
+| `fix` | Bug 修复 | `fix: platform detection fallback to lspci` |
+| `docs` | 文档 | `docs: update README quick start` |
+| `refactor` | 重构（行为不变） | `refactor: rename fix.sh to fixcrlf.sh` |
+| `perf` | 性能优化 | `perf: skip module queries with --no-module` |
+| `release` | 版本发布 | `release: v1.2.0 — add test/tools modules` |
+
+规则：
+- **改动完成立即 `git commit` 到本地**，不等待、不批量攒
+- **不主动 `git push`** — 只有用户明确说"提交到远程/推送"才 push
+- 版本升级与功能改动分开 commit（release 单独一条）
+- CRLF 等纯换行修复：`refactor` 或并入同主题 commit
+
 ## 新增模块流程
 
 1. 创建 `modules/<NN>_<name>.sh`，定义 `run_<name>()` 函数
