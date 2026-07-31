@@ -181,8 +181,56 @@ EOF
     echo -e "${GREEN}[REPORT] MD: ${f}${NC}"
 }
 
+# ─── 生成 TXT（纯文本，cat/less 直接看） ───
+gen_txt() {
+    local f="${OUT}/hwscope_report.txt"
+    cat > "$f" << EOF
+============================================
+HwScope 硬件巡检报告
+============================================
+版本: ${VERSION:-unknown}    主机: ${HOSTNAME:-unknown}
+平台: ${PLATFORM:-unknown}   时间: ${TIMESTAMP:-unknown}
+
+[主板]
+  制造商 : ${MB_MANUFACTURER:-N/A}
+  型号   : ${MB_PRODUCT:-N/A}
+  SN     : ${MB_SN:-N/A}
+  BIOS   : ${BIOS_VERSION:-N/A}
+
+[CPU]
+  型号   : ${CPU_MODEL:-N/A}
+  核心数 : ${CPU_CORES:-N/A}
+  插槽数 : ${CPU_SOCKETS:-N/A}
+
+[内存]
+  总量   : ${MEM_TOTAL:-N/A}
+  速率   : ${MEM_SPEED:-N/A}
+  插槽数 : ${MEM_SLOTS:-N/A}
+
+[GPU]
+  数量   : ${GPU_COUNT:-0}
+  型号   : ${GPU_NAMES:-N/A}
+
+[存储]
+  盘数   : ${STORAGE_COUNT:-0}
+  总容量 : ${STORAGE_TOTAL:-N/A}
+
+[网络]
+  IB设备 : ${IB_COUNT:-0}
+  IB速率 : ${IB_SPEED:-N/A}
+
+[BMC]
+  型号   : ${BMC_FRU:-N/A}
+
+--------------------------------------------
+由 HwScope ${VERSION:-unknown} 自动生成
+EOF
+    echo -e "${GREEN}[REPORT] TXT: ${f}${NC}"
+}
+
 case "$FORMAT" in
     --json) gen_json ;;
     --md)   gen_md ;;
-    *)      gen_json; gen_md ;;
+    --txt)  gen_txt ;;
+    *)      gen_json; gen_md; gen_txt ;;
 esac
