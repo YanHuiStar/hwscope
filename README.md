@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.3  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.4  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -48,6 +48,7 @@ bash hwscope.sh --skip dcgm,nvsm      # 跳过部分
 # 其他
 bash hwscope.sh --output /data/x      # 指定输出目录
 bash hwscope.sh --force               # 覆盖已有目录
+bash hwscope.sh --no-module           # 跳过光模块查询（省 ~48s）
 bash hwscope.sh --version             # 版本
 
 # 单独跑模块
@@ -98,28 +99,25 @@ bash modules/04_gpu.sh /tmp/out
 | 脚本 | 内容 | 依赖 |
 |------|------|------|
 | `cpu_test.sh` | stress-ng / sysbench / mprime 三种 CPU 压测 | stress-ng, sysbench, mprime |
-| `memory_test.sh` | 内存带宽/压力测试（待开发） | stress-ng --vm, memtester |
-| `disk_test.sh` | fio / hdparm 硬盘吞吐测试（待开发） | fio, hdparm |
-| `network_test.sh` | iperf3 / ib_write_bw 网络吞吐（待开发） | iperf3, perftest |
+| `memory_test.sh` | stress-ng --vm / memtester / sysbench memory 内存测试 | stress-ng, memtester, sysbench |
+| `disk_test.sh` | fio 随机 IOPS / hdparm / dd 硬盘吞吐 | fio, hdparm |
+| `network_test.sh` | iperf3 / ib_write_bw / mtr 网络测试 | iperf3, perftest, mtr |
 
 ```bash
 bash test/test_all.sh          # 聚合菜单
 bash test/cpu_test.sh          # 直接跑 CPU 测试
 ```
 
+测试日志输出至 `logs/test/<时间戳>/`（汇总 + 每项详细日志）。
+
 ### `tools/` — 运维操作（会修改系统）
 
 | 脚本 | 内容 | 依赖 |
 |------|------|------|
 | `bmc_tool.sh` | 查 FRU/传感器/SEL、清 SEL、重置 BMC 密码、重启 BMC | ipmitool |
-| `nic_tool.sh` | 网卡端口重置/固件配置（待开发） | mlxlink, mlxconfig |
-| `install_tool.sh` | 安装 DCGM/MFT/压测工具/推理引擎（待开发） | - |
-
-```bash
-sudo bash tools/bmc_tool.sh    # BMC 操作（写操作有二次确认）
-```
-
-测试结果输出 `output/test_*/cpu_report.md`（汇总报告）+ 详细日志。
+| `nic_tool.sh` | 网卡状态/光模块/固件查询、端口复位、MTU 设置 | mlxlink, mlxfwmanager |
+| `install_tool.sh` | 一键安装采集/压测/IB/DCGM/MFT/推理引擎 | apt/dnf 自动检测 |
+| `report.sh` | 从采集结果生成汇总报告（json/md/txt） | 采集完成后自动调用 |
 
 ---
 
@@ -172,9 +170,13 @@ output/
 单次采集典型结构：
 
 ```
-output/JZ5C4X8/
+output/SN123456789/
 ├── hwscope.log              # 执行日志（纯文本）
 ├── config_backup.conf       # 配置快照
+├── summary.txt              # 汇总（含 WARN 计数）
+├── hwscope_report.json      # 汇总报告（结构化）
+├── hwscope_report.md        # 汇总报告（Markdown）
+├── hwscope_report.txt       # 汇总报告（纯文本）
 ├── motherboard/             # dmidecode 日志 ×6
 ├── cpu/                     # dmidecode + lscpu ×8
 ├── memory/                  # dmidecode + 每槽 ×N
@@ -188,7 +190,9 @@ output/JZ5C4X8/
 ├── fan/                     # IPMI + hwmon ×5+
 ├── bmc/                     # IPMI + Redfish ×20+
 ├── nvsm/ / dcgm/ / os/     # 条件 + OS ×15+
-└── summary.txt              # 汇总（含 WARN 计数）
+└── (logs/)                  # 采集归档 tar.gz（项目根目录）
+
+采集完成后自动归档至 logs/<SN>-<时间戳>.tar.gz，并生成三份汇总报告。
 ```
 
 ---
