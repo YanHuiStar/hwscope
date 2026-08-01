@@ -48,12 +48,15 @@ MB_MANUFACTURER=$(extract "Manufacturer" "${MB_DIR}/dmidecode_system.log")
 MB_PRODUCT=$(extract "Product Name" "${MB_DIR}/dmidecode_system.log")
 MB_SN=$(extract "Serial Number" "${MB_DIR}/dmidecode_system.log")
 BIOS_VERSION=$(extract "Version" "${MB_DIR}/dmidecode_bios.log" | head -c 80)
+CHASSIS_SN=$(extract "Serial Number" "${MB_DIR}/dmidecode_chassis.log")
 
 # ─── CPU ───
 CPU_DIR="${OUT}/cpu"
 CPU_MODEL=$(grep -m1 -iE "^model name" "${CPU_DIR}/cpu_summary.log" 2>/dev/null | cut -d':' -f2- | tr -d '\t' | sed 's/^ *//' | head -c 100)
 CPU_CORES=$(grep -m1 -iE "^cpu cores|^Core Count" "${CPU_DIR}/cpu_summary.log" 2>/dev/null | cut -d':' -f2- | tr -d ' \t')
 CPU_SOCKETS=$(grep "physical id" "${CPU_DIR}/proc_cpuinfo_full.log" 2>/dev/null | cut -d':' -f2- | sort -u | wc -l)
+CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${CPU_DIR}/dmidecode_processor.log" 2>/dev/null | awk '{print $(NF-1)}')
+CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${CPU_DIR}/dmidecode_processor.log" 2>/dev/null | awk '{print $(NF-1)}')
 
 # ─── 内存 ───
 MEM_DIR="${OUT}/memory"
@@ -94,6 +97,8 @@ fi
 if [ -f "$GPU_ECC_CSV" ]; then
     GPU_ECC=$(grep -v "^#" "$GPU_ECC_CSV" | tail -n +2 | awk -F',' '{e+=$4+$5+$6+$7; mode=$3; gsub(/^ /,"",mode)} END{printf "%s, errors: %d", mode, e}')
 fi
+# GPU 序列号列表（资产追踪）
+GPU_SERIALS=$(grep -v "^#" "$GPU_CSV" 2>/dev/null | tail -n +2 | awk -F',' '{print $3}' | tr '\n' ',' | sed 's/,$//')
 
 # ─── 存储（只统计物理盘 TYPE=disk，避免把分区/LVM 计入容量） ───
 STO_DIR="${OUT}/storage"
@@ -117,6 +122,19 @@ ETH_LINK_UP=$(grep -h "Link detected: yes" "${NET_DIR}"/ethtool_*.log 2>/dev/nul
 # ─── BMC ───
 BMC_DIR="${OUT}/bmc"
 BMC_FRU=$(extract "Product Name|Product Part Number" "${BMC_DIR}/ipmi_fru_summary.log" | head -c 80)
+BMC_FW=$(extract "Firmware Revision" "${BMC_DIR}/ipmi_mc.log")
+BMC_IP=$(grep "IP Address" "${BMC_DIR}/ipmi_lan1.log" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+BMC_MAC=$(grep -m1 "MAC Address" "${BMC_DIR}/ipmi_lan1.log" 2>/dev/null | awk '{print $NF}')
+SEL_TOTAL=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | wc -l)
+SEL_CRIT=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -ciE "critical|fatal")
+
+# ─── 风扇（IPMI 传感器，| 分隔格式） ───
+FAN_DIR="${OUT}/fan"
+FAN_COUNT=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{c++} END{print c+0}')
+FAN_MIN=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | head -1)
+FAN_MAX=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | tail -1)
+FAN_SPEED=""
+[ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 
 # ─── 生成 JSON ───
 gen_json() {
@@ -149,12 +167,15 @@ gen_json() {
     "manufacturer": "${MB_MANUFACTURER:-N/A}",
     "product": "${MB_PRODUCT:-N/A}",
     "serial": "${MB_SN:-N/A}",
-    "bios": "${BIOS_VERSION:-N/A}"
+    "bios": "${BIOS_VERSION:-N/A}",
+    "chassis_sn": "${CHASSIS_SN:-N/A}"
   },
   "cpu": {
     "model": "${CPU_MODEL:-N/A}",
     "cores": "${CPU_CORES:-N/A}",
-    "sockets": "${CPU_SOCKETS:-N/A}"
+    "sockets": "${CPU_SOCKETS:-N/A}",
+    "max_speed": "${CPU_MAX_SPEED:-N/A}",
+    "current_speed": "${CPU_CUR_SPEED:-N/A}"
   },
   "memory": {
     "total": "${MEM_TOTAL:-N/A}",
@@ -171,7 +192,8 @@ ${dimms_json}
     "memory_total": "${GPU_MEM:-N/A}",
     "power_limit": "${GPU_POWER:-N/A}",
     "temp": "${GPU_TEMP:-N/A}",
-    "ecc": "${GPU_ECC:-N/A}"
+    "ecc": "${GPU_ECC:-N/A}",
+    "serials": "${GPU_SERIALS:-N/A}"
   },
   "storage": {
     "disk_count": "${STORAGE_COUNT:-0}",
@@ -184,7 +206,16 @@ ${dimms_json}
     "eth_link_up": "${ETH_LINK_UP:-0}"
   },
   "bmc": {
-    "fru": "${BMC_FRU:-N/A}"
+    "fru": "${BMC_FRU:-N/A}",
+    "firmware": "${BMC_FW:-N/A}",
+    "ip": "${BMC_IP:-N/A}",
+    "mac": "${BMC_MAC:-N/A}",
+    "sel_total": "${SEL_TOTAL:-0}",
+    "sel_critical": "${SEL_CRIT:-0}"
+  },
+  "fan": {
+    "count": "${FAN_COUNT:-0}",
+    "speed": "${FAN_SPEED:-N/A}"
   }
 }
 EOF
@@ -223,6 +254,7 @@ gen_md() {
 | 型号 | ${MB_PRODUCT:-N/A} |
 | SN | ${MB_SN:-N/A} |
 | BIOS | ${BIOS_VERSION:-N/A} |
+| 机箱 SN | ${CHASSIS_SN:-N/A} |
 
 ## CPU
 | 项 | 值 |
@@ -230,6 +262,7 @@ gen_md() {
 | 型号 | ${CPU_MODEL:-N/A} |
 | 核心数 | ${CPU_CORES:-N/A} |
 | 插槽数 | ${CPU_SOCKETS:-N/A} |
+| 频率 | ${CPU_MAX_SPEED:-N/A}（当前 ${CPU_CUR_SPEED:-N/A}） |
 
 ## 内存
 | 项 | 值 |
@@ -252,6 +285,7 @@ $(printf '%s' "$dimms_md")
 | 功耗上限 | ${GPU_POWER:-N/A} |
 | 温度 | ${GPU_TEMP:-N/A} |
 | ECC | ${GPU_ECC:-N/A} |
+| SN | ${GPU_SERIALS:-N/A} |
 
 ## 存储
 | 项 | 值 |
@@ -271,6 +305,16 @@ $(printf '%s' "$dimms_md")
 | 项 | 值 |
 |----|----|
 | 型号 | ${BMC_FRU:-N/A} |
+| 固件 | ${BMC_FW:-N/A} |
+| IP | ${BMC_IP:-N/A} |
+| MAC | ${BMC_MAC:-N/A} |
+| SEL 事件 | ${SEL_TOTAL:-0}（Critical ${SEL_CRIT:-0}） |
+
+## 风扇
+| 项 | 值 |
+|----|----|
+| 数量 | ${FAN_COUNT:-0} |
+| 转速 | ${FAN_SPEED:-N/A} |
 
 ---
 *由 HwScope ${VERSION:-unknown} 自动生成*
@@ -308,11 +352,13 @@ HwScope 硬件巡检报告
   型号   : ${MB_PRODUCT:-N/A}
   SN     : ${MB_SN:-N/A}
   BIOS   : ${BIOS_VERSION:-N/A}
+  机箱SN : ${CHASSIS_SN:-N/A}
 
 [CPU]
   型号   : ${CPU_MODEL:-N/A}
   核心数 : ${CPU_CORES:-N/A}
   插槽数 : ${CPU_SOCKETS:-N/A}
+  频率   : ${CPU_MAX_SPEED:-N/A} (当前 ${CPU_CUR_SPEED:-N/A})
 
 [内存]
   总量   : ${MEM_TOTAL:-N/A}
@@ -327,6 +373,7 @@ $(printf '%s' "$dimms_txt")
   功耗   : ${GPU_POWER:-N/A}
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
+  SN     : ${GPU_SERIALS:-N/A}
 
 [存储]
   盘数   : ${STORAGE_COUNT:-0}
@@ -340,6 +387,14 @@ $(printf '%s' "$dimms_txt")
 
 [BMC]
   型号   : ${BMC_FRU:-N/A}
+  固件   : ${BMC_FW:-N/A}
+  IP     : ${BMC_IP:-N/A}
+  MAC    : ${BMC_MAC:-N/A}
+  SEL    : ${SEL_TOTAL:-0} (Critical ${SEL_CRIT:-0})
+
+[风扇]
+  数量   : ${FAN_COUNT:-0}
+  转速   : ${FAN_SPEED:-N/A}
 
 --------------------------------------------
 由 HwScope ${VERSION:-unknown} 自动生成
