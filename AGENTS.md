@@ -80,6 +80,12 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **BMC 密码禁止 `-P` 内嵌命令字符串**（会明文进日志 header / ps），必须 `export IPMI_PASSWORD` 后用干净命令（`bash -c` 子进程自动继承）
 - `HGX_BMC_IP` 默认留空（防非 HGX 机器白连 192.168.1.1 浪费 24s+ 产生 WARN），SXM 平台自行填写
 - 采集只读无害：不写硬件、不改配置；DCGM 仅 Level 1
+- **隐私数据红线**：真实采集数据（服务器/机箱/GPU/内存 SN、MAC 地址、BMC IP 与凭据、SEL 日志等）**禁止进入 git 索引，更禁止 push 到远程**：
+  - `output/`、`logs/` 已被 .gitignore 排除，**禁用 `git add -A` / `git add .`** 强制添加
+  - 提交前必须 `git status` 审查；默认 `git add <指定文件>` 逐文件确认
+  - push 前复查 `git ls-files`，确认无 `bmc/`、`gpu/`、`memory/` 等采集日志目录混入
+  - 误提交已 push：立即在远程删除并重写历史（filter-repo），同时轮换受影响凭据
+- 允许提交**脱敏示例数据**（SN/IP 替换为 FAKE 值，如 `FAKESN123`），禁止真实值
 
 ## 新增模块流程
 
