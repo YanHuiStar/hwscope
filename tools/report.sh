@@ -61,6 +61,22 @@ MEM_TOTAL=$(grep -m1 "MemTotal" "${MEM_DIR}/proc_meminfo.log" 2>/dev/null | awk 
 MEM_SPEED=$(extract "Configured Clock Speed|Speed:" "${MEM_DIR}/dmidecode_memory_full.log")
 MEM_SLOTS=$(grep -c "Memory Device" "${MEM_DIR}/dmidecode_memory_full.log" 2>/dev/null)
 MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${MEM_DIR}/dmidecode_memory_full.log" 2>/dev/null)
+# 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率），空槽跳过
+# 行模式状态机：从 "Memory Device" 段头开始，空行结束（Size 行在 Locator 之前）
+MEM_DIMMS=""
+if [ -f "${MEM_DIR}/dmidecode_memory_full.log" ]; then
+    MEM_DIMMS=$(awk '
+        /^Memory Device/ { in_dimm=1; slot=""; size=""; mfr=""; sn=""; pn=""; cspd=""; spd=""; next }
+        in_dimm && /^[[:space:]]*Locator:/ && !/Bank Locator/ {slot=$0;  sub(/^[[:space:]]*Locator:[[:space:]]*/,"",slot); next}
+        in_dimm && /^[[:space:]]*Size:/              {size=$0; sub(/^[[:space:]]*Size:[[:space:]]*/,"",size); sub(/ No Module.*/,"",size); next}
+        in_dimm && /^[[:space:]]*Manufacturer:/      {mfr=$0;  sub(/^[[:space:]]*Manufacturer:[[:space:]]*/,"",mfr); next}
+        in_dimm && /^[[:space:]]*Serial Number:/     {sn=$0;   sub(/^[[:space:]]*Serial Number:[[:space:]]*/,"",sn); next}
+        in_dimm && /^[[:space:]]*Part Number:/       {pn=$0;   sub(/^[[:space:]]*Part Number:[[:space:]]*/,"",pn); sub(/[[:space:]]+$/,"",pn); next}
+        in_dimm && /^[[:space:]]*Speed:/             {spd=$0;  sub(/^[[:space:]]*Speed:[[:space:]]*/,"",spd); next}
+        in_dimm && /^[[:space:]]*Configured Memory Speed:/ {cspd=$0; sub(/^[[:space:]]*Configured Memory Speed:[[:space:]]*/,"",cspd); next}
+        in_dimm && /^[[:space:]]*$/ { if(size!="") printf "%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, cspd, spd; in_dimm=0 }
+    ' "${MEM_DIR}/dmidecode_memory_full.log" 2>/dev/null)
+fi
 
 # ─── GPU（解析 inventory.csv） ───
 GPU_CSV="${OUT}/gpu/gpu_inventory.csv"
@@ -105,6 +121,16 @@ BMC_FRU=$(extract "Product Name|Product Part Number" "${BMC_DIR}/ipmi_fru_summar
 # ─── 生成 JSON ───
 gen_json() {
     local f="${OUT}/hwscope_report.json"
+    # 内存插槽明细 JSON 数组（slot|size|mfr|sn|pn|cspd|spd）
+    local dimms_json=""
+    if [ -n "$MEM_DIMMS" ]; then
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dcspd dspd; do
+            [ -z "$dslot" ] && continue
+            dimms_json="${dimms_json}      {\"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"configured_speed\": \"${dcspd}\", \"speed\": \"${dspd}\"},
+"
+        done <<< "$MEM_DIMMS"
+        dimms_json=$(printf '%s' "$dimms_json" | sed '$ s/,$//')
+    fi
     cat > "$f" << EOF
 {
   "hwscope": {
@@ -134,7 +160,10 @@ gen_json() {
     "total": "${MEM_TOTAL:-N/A}",
     "speed": "${MEM_SPEED:-N/A}",
     "slots": "${MEM_SLOTS:-N/A}",
-    "populated": "${MEM_POPULATED:-0}"
+    "populated": "${MEM_POPULATED:-0}",
+    "dimms": [
+${dimms_json}
+    ]
   },
   "gpu": {
     "count": "${GPU_COUNT:-0}",
@@ -165,6 +194,15 @@ EOF
 # ─── 生成 Markdown ───
 gen_md() {
     local f="${OUT}/hwscope_report.md"
+    # 内存插槽明细 Markdown 表
+    local dimms_md=""
+    if [ -n "$MEM_DIMMS" ]; then
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dcspd dspd; do
+            [ -z "$dslot" ] && continue
+            dimms_md="${dimms_md}| ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dcspd} | ${dspd} |
+"
+        done <<< "$MEM_DIMMS"
+    fi
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
 
@@ -199,6 +237,11 @@ gen_md() {
 | 总量 | ${MEM_TOTAL:-N/A} |
 | 速率 | ${MEM_SPEED:-N/A} |
 | 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
+
+### 插槽明细
+| 插槽 | 容量 | 厂商 | SN | 部件号 | 原速率 | 现速率 |
+|------|------|------|----|--------|--------|--------|
+$(printf '%s' "$dimms_md")
 
 ## GPU
 | 项 | 值 |
@@ -238,6 +281,15 @@ EOF
 # ─── 生成 TXT（纯文本，cat/less 直接看） ───
 gen_txt() {
     local f="${OUT}/hwscope_report.txt"
+    # 内存插槽明细纯文本（紧凑单行）
+    local dimms_txt=""
+    if [ -n "$MEM_DIMMS" ]; then
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dcspd dspd; do
+            [ -z "$dslot" ] && continue
+            dimms_txt="${dimms_txt}    ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  ${dcspd}/${dspd}
+"
+        done <<< "$MEM_DIMMS"
+    fi
     cat > "$f" << EOF
 ============================================
 HwScope 硬件巡检报告
@@ -266,6 +318,7 @@ HwScope 硬件巡检报告
   总量   : ${MEM_TOTAL:-N/A}
   速率   : ${MEM_SPEED:-N/A}
   插槽   : ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A}
+$(printf '%s' "$dimms_txt")
 
 [GPU]
   数量   : ${GPU_COUNT:-0}
