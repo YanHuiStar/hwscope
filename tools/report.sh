@@ -31,6 +31,7 @@ extract() {
 SUMMARY="${OUT}/summary.txt"
 HOSTNAME=$(extract "Hostname" "$SUMMARY")
 VERSION=$(extract "Version" "$SUMMARY")
+[ -z "$VERSION" ] && VERSION="N/A"   # 老版本采集数据无 Version 行
 PLATFORM=$(grep -m1 "^Platform" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 's/^ //')
 
@@ -58,7 +59,7 @@ GPU_CSV="${OUT}/gpu/gpu_inventory.csv"
 GPU_COUNT=0; GPU_NAMES=""
 if [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
-    GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | tr -d ' ' | sort -u | tr '\n' ',' | sed 's/,$//')
+    GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ',' | sed 's/,$//')
 fi
 
 # ─── 存储（从 block_devices_all.log 按 SIZE 列求和） ───
@@ -72,12 +73,13 @@ STORAGE_TOTAL=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" 2>/dev/null | ta
 
 # ─── 网络 ───
 NET_DIR="${OUT}/network"
-IB_COUNT=$(ls "${NET_DIR}"/mlxlink_mlx5_*.log 2>/dev/null | grep -v module | grep -v _m | wc -l)
-IB_SPEED=$(extract "Active Speed|Rate:" "${NET_DIR}/ibstat.log")
+IB_COUNT=$(grep -c "State: Active" "${NET_DIR}/ibstat.log" 2>/dev/null)
+IB_SPEED=$(grep -A2 "State: Active" "${NET_DIR}/ibstat.log" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | tail -1)
+[ -n "$IB_SPEED" ] && IB_SPEED="${IB_SPEED} Gb/s"
 
 # ─── BMC ───
 BMC_DIR="${OUT}/bmc"
-BMC_FRU=$(extract "Product Name" "${BMC_DIR}/ipmi_fru_summary.log" | head -c 80)
+BMC_FRU=$(extract "Product Name|Product Part Number" "${BMC_DIR}/ipmi_fru_summary.log" | head -c 80)
 
 # ─── 生成 JSON ───
 gen_json() {
