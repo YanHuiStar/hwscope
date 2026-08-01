@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.6.5 (2026-08)
+# Version : 1.6.6 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.6.5"
+HWSCOPE_VERSION="v1.6.6"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -327,11 +327,6 @@ find "${OUTPUT_BASE}" -type d | sort | while read d; do
 done
 echo ""; echo -e "${CYAN}汇总文件: ${SUMMARY_FILE}${NC}"; echo ""
 
-# ─── 清理 ANSI ───
-if [ -f "$LOG_FILE" ] && check_cmd sed; then
-    sed -i 's/\x1b\[[0-9;]*m//g' "$LOG_FILE" 2>/dev/null || true
-fi
-
 # ─── 压缩归档 ───
 LOGS_DIR="${SCRIPT_DIR}/logs"
 ARCHIVE_TS=$(date '+%Y%m%d_%H%M%S')
@@ -359,3 +354,10 @@ if check_cmd tar; then
         echo -e "${GREEN}[ARCHIVE]${NC} ${REPORT_ARCHIVE}"
     fi
 fi
+
+# ─── 清理 ANSI（放最后：sed -i 替换 inode 会令 tee 后续写入丢失，故须在所有输出之后） ───
+echo -e "${GREEN}归档完成: ${LOGS_DIR}/${ARCHIVE_NAME}${NC}"
+if [ -f "$LOG_FILE" ] && check_cmd sed; then
+    sed -i 's/\x1b\[[0-9;]*m//g' "$LOG_FILE" 2>/dev/null || true
+fi
+exit 0
