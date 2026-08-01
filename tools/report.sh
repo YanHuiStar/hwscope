@@ -56,7 +56,9 @@ CPU_MODEL=$(grep -m1 -iE "^model name" "${CPU_DIR}/cpu_summary.log" 2>/dev/null 
 CPU_CORES=$(grep -m1 -iE "^cpu cores|^Core Count" "${CPU_DIR}/cpu_summary.log" 2>/dev/null | cut -d':' -f2- | tr -d ' \t')
 CPU_SOCKETS=$(grep "physical id" "${CPU_DIR}/proc_cpuinfo_full.log" 2>/dev/null | cut -d':' -f2- | sort -u | wc -l)
 CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${CPU_DIR}/dmidecode_processor.log" 2>/dev/null | awk '{print $(NF-1)}')
+[ -z "$CPU_MAX_SPEED" ] && CPU_MAX_SPEED=$(grep -m1 "CPU max MHz" "${CPU_DIR}/lscpu.log" 2>/dev/null | awk '{print $NF}')
 CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${CPU_DIR}/dmidecode_processor.log" 2>/dev/null | awk '{print $(NF-1)}')
+[ -z "$CPU_CUR_SPEED" ] && CPU_CUR_SPEED=$(grep -m1 "CPU MHz" "${CPU_DIR}/lscpu.log" 2>/dev/null | awk '{print $NF}')
 
 # ─── 内存 ───
 MEM_DIR="${OUT}/memory"
@@ -97,8 +99,8 @@ fi
 if [ -f "$GPU_ECC_CSV" ]; then
     GPU_ECC=$(grep -v "^#" "$GPU_ECC_CSV" | tail -n +2 | awk -F',' '{e+=$4+$5+$6+$7; mode=$3; gsub(/^ /,"",mode)} END{printf "%s, errors: %d", mode, e}')
 fi
-# GPU 序列号列表（资产追踪）
-GPU_SERIALS=$(grep -v "^#" "$GPU_CSV" 2>/dev/null | tail -n +2 | awk -F',' '{print $3}' | tr '\n' ',' | sed 's/,$//')
+# GPU 序列号列表（资产追踪；消费卡 serial=0 时忽略）
+GPU_SERIALS=$(grep -v "^#" "$GPU_CSV" 2>/dev/null | tail -n +2 | awk -F',' '{gsub(/^ +/,"",$3); gsub(/ +$/,"",$3); if($3!="" && $3!="0" && $3!="[N/A]") print $3}' | tr '\n' ',' | sed 's/,$//')
 
 # ─── 存储（只统计物理盘 TYPE=disk，避免把分区/LVM 计入容量） ───
 STO_DIR="${OUT}/storage"
@@ -109,7 +111,7 @@ if [ -f "${STO_DIR}/block_devices_all.log" ]; then
         n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
         if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024} \
         END{printf "%.0f GB", s}' 2>/dev/null)
-    STORAGE_MODELS=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/) {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | tr '\n' ',' | sed 's/,$//')
+    STORAGE_MODELS=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/) {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
 fi
 
 # ─── 网络 ───
@@ -125,8 +127,8 @@ BMC_FRU=$(extract "Product Name|Product Part Number" "${BMC_DIR}/ipmi_fru_summar
 BMC_FW=$(extract "Firmware Revision" "${BMC_DIR}/ipmi_mc.log")
 BMC_IP=$(grep "IP Address" "${BMC_DIR}/ipmi_lan1.log" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | head -1)
 BMC_MAC=$(grep -m1 "MAC Address" "${BMC_DIR}/ipmi_lan1.log" 2>/dev/null | awk '{print $NF}')
-SEL_TOTAL=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | wc -l)
-SEL_CRIT=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -ciE "critical|fatal")
+SEL_TOTAL=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -vE "Could not open|Unable|No such file|Error|failed" | wc -l)
+SEL_CRIT=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -vE "Could not open|Unable|No such file|Error|failed" | grep -ciE "critical|fatal")
 
 # ─── 风扇（IPMI 传感器，| 分隔格式） ───
 FAN_DIR="${OUT}/fan"
