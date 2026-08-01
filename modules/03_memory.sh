@@ -28,12 +28,12 @@ run_memory() {
     run_and_log "dmidecode -t memory 2>/dev/null | grep -E 'Locator|Size|Type:|Speed|Manufacturer|Serial Number|Part Number|Rank|Configured Clock'" \
         "${dir}/memory_slot_fields.log"
     # 每槽完整的段落输出
-    run_and_log "dmidecode -t memory 2>/dev/null | awk '/^[[:space:]]*Locator:/{if(seg) print seg; seg=\$0; next} /^[[:space:]]/{seg=seg ORS \$0} END{print seg}'" \
+    run_and_log "dmidecode -t memory 2>/dev/null | awk '/^[[:space:]]*Locator:/{if(seg) print seg; seg=$\$0; next} /^[[:space:]]/{seg=seg ORS $\$0} END{print seg}'" \
         "${dir}/memory_slot_blocks.log"
 
     # 3. 内存容量统计
     run_and_log "echo 'Total Memory Modules:' && dmidecode -t memory 2>/dev/null | grep -c 'Size:' && \
-        echo 'Total Capacity (GB):' && dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module' | awk '{sum+=\$2} END{print sum}'" \
+        echo 'Total Capacity (GB):' && dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module' | awk '{sum+=$\$2} END{print sum}'" \
         "${dir}/memory_capacity.log"
 
     # 4. 每个插槽单独记录（用简单 while 循环分段，避免复杂 eval）

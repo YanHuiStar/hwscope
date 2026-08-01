@@ -50,7 +50,7 @@ run_psu() {
             done
 
             # 也做一个汇总
-            run_and_log "for f in ${psu}/*; do echo \"\$(basename \$f): \$(cat \$f 2>/dev/null)\"; done 2>/dev/null" \
+            run_and_log "for f in ${psu}/*; do echo \"$\$(basename $\$f): $\$(cat $\$f 2>/dev/null)\"; done 2>/dev/null" \
                 "${psu_dir}/all_fields.log"
         done
     else

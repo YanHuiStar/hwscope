@@ -39,8 +39,8 @@ TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 
 OS_DIR="${OUT}/os"
 OS_NAME=$(grep -m1 "PRETTY_NAME" "${OS_DIR}/os-release.log" 2>/dev/null | cut -d'"' -f2)
 KERNEL=$(grep -m1 -v "^#" "${OS_DIR}/uname.log" 2>/dev/null | awk '{print $3}')
-GPU_DRIVER=$(grep -m1 "Driver Version" "${OUT}/gpu/gpu_full.log" 2>/dev/null | awk '{print $NF}')
-GPU_CUDA=$(grep -m1 "CUDA Version" "${OUT}/gpu/gpu_full.log" 2>/dev/null | awk '{print $NF}')
+GPU_DRIVER=$(grep -m1 "Driver Version" "${OUT}/gpu/gpu_full.log" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
+GPU_CUDA=$(grep -m1 "CUDA Version" "${OUT}/gpu/gpu_full.log" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 
 # ─── 主板 ───
 MB_DIR="${OUT}/motherboard"

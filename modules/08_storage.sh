@@ -41,7 +41,7 @@ run_storage() {
 
     # ─── 硬盘类型标签：区分 SSD 和 HDD（rotational=1 为机械盘） ───
     if check_cmd lsblk; then
-        run_and_log "echo '=== ROTA=1 (HDD) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=\$(cat /sys/block/\$n/queue/rotational 2>/dev/null); [ \"\$rota\" = \"1\" ] && echo \"\$n \$m \$s \$t (HDD)\"; done && echo '=== ROTA=0 (SSD/NVMe) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=\$(cat /sys/block/\$n/queue/rotational 2>/dev/null); [ \"\$rota\" = \"0\" ] && echo \"\$n \$m \$s \$t (SSD)\"; done" \
+        run_and_log "echo '=== ROTA=1 (HDD) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=$\$(cat /sys/block/$\$n/queue/rotational 2>/dev/null); [ \"$\$rota\" = \"1\" ] && echo \"$\$n $\$m $\$s $\$t (HDD)\"; done && echo '=== ROTA=0 (SSD/NVMe) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=$\$(cat /sys/block/$\$n/queue/rotational 2>/dev/null); [ \"$\$rota\" = \"0\" ] && echo \"$\$n $\$m $\$s $\$t (SSD)\"; done" \
             "${dir}/drive_type_ssd_hdd.log"
     fi
 

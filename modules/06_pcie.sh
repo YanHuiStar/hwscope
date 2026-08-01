@@ -54,12 +54,12 @@ run_pcie() {
 
     # 7. NUMA 拓扑
     if [ -d /sys/bus/pci/devices ]; then
-        run_and_log "for d in /sys/bus/pci/devices/*/numa_node; do echo \"\$(basename \$(dirname \$d)) -> node \$(cat \$d)\"; done 2>/dev/null" \
+        run_and_log "for d in /sys/bus/pci/devices/*/numa_node; do echo \"$\$(basename $\$(dirname $\$d)) -> node $\$(cat $\$d)\"; done 2>/dev/null" \
             "${dir}/pci_numa_map.log"
     fi
 
     # 8. IOMMU 分组
-    run_and_log "for g in /sys/kernel/iommu_groups/*; do echo \"IOMMU Group \$(basename \$g):\"; for d in \$g/devices/*; do echo \"  \$(basename \$d) - \$(lspci -n -s \$(basename \$d) 2>/dev/null)\"; done; done 2>/dev/null" \
+    run_and_log "for g in /sys/kernel/iommu_groups/*; do echo \"IOMMU Group $\$(basename $\$g):\"; for d in $\$g/devices/*; do echo \"  $\$(basename $\$d) - $\$(lspci -n -s $\$(basename $\$d) 2>/dev/null)\"; done; done 2>/dev/null" \
         "${dir}/iommu_groups.log"
 
     module_end "$MODULE_NAME"
