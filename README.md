@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.10  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.11  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -66,6 +66,8 @@ bash modules/04_gpu.sh /tmp/out
 
 启动时自动检测。CPU 模块自动适配 x86 (`model name`) 和 ARM (`CPU implementer`) 格式。
 
+SXM 三重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanager` 进程（HGX 平台专属守护进程，兜底 lspci 不显示 NVSwitch 设备的场景）。
+
 ---
 
 ## 模块总览
@@ -77,9 +79,9 @@ bash modules/04_gpu.sh /tmp/out
 | 03 | memory | `dmidecode` + `free` | 每 DIMM 独立日志 |
 | 04 | gpu | `nvidia-smi` | 每 GPU + NVLink + ECC |
 | 05 | nvswitch | `nvswitch` | 每颗 NVSwitch + Fabric Manager |
-| 06 | pcie | `lspci` | 拓扑/速率/NUMA/IOMMU |
+| 06 | pcie | `lspci` | 拓扑/速率/NUMA/IOMMU（缺 lspci 时 SKIP 落盘） |
 | 07 | network | `ibstat` + `mlxlink` + `ethtool` | 每 IB 端口 + 每网口 + 光模块 |
-| 08 | storage | `lsblk` + `smartctl` | 全类型盘 + SMART 健康 |
+| 08 | storage | `lsblk` + `smartctl` | 全类型盘 + SMART 健康（WSL 虚拟盘自动跳过） |
 | 09 | raid | `storcli64` + `sas3ircu` | 控管器/VD/BBU/事件 |
 | 10 | psu | `ipmitool` + `sysfs` | 每 PSU 功率/温度 |
 | 11 | fan | `ipmitool` + `sensors` + `hwmon` | 每风扇转速/占空比 |
@@ -182,9 +184,9 @@ output/SN123456789/
 ├── memory/                  # dmidecode + 每槽 ×N
 ├── gpu/                     # nvidia-smi 每卡 + ECC ×30+
 ├── nvswitch/                # nvswitch 每颗 ×7
-├── pcie/                    # lspci 拓扑 ×10+
+├── pcie/                    # lspci 拓扑 ×10+（缺 lspci 时 00_skip_lspci.log）
 ├── network/                 # IB + mlx + ethtool ×30+
-├── storage/                 # lsblk + smartctl 每盘 ×20+
+├── storage/                 # lsblk + smartctl 每盘 ×20+（WSL 时 00_skip_smart_wsl.log）
 ├── raid/                    # storcli + sas3ircu ×10+
 ├── psu/                     # IPMI + sysfs ×5+
 ├── fan/                     # IPMI + hwmon ×5+
@@ -219,7 +221,8 @@ MODULE_GPU=1; MODULE_STORAGE=1; MODULE_OS=1 ...
 - **只读无害** — 全部只读查询，不写不改
 - **自动跳过** — 工具未安装静默跳过，不中断
 - **无压测** — DCGM 仅 Level 1 纯获取
-- **平台自适配** — x86/ARM、SXM/PCIe 自动识别
+- **平台自适配** — x86/ARM、SXM/PCIe 自动识别（SXM 三重检测含 fabric manager）
+- **环境自适配** — WSL 虚拟磁盘自动跳过 SMART，避免误报
 - **并行提速** — `--parallel` 2min → ~10s
 
 ## License
