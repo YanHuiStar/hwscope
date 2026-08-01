@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 模块: 11_raid.sh — RAID/HBA 卡控制器信息采集
+# 模块: 09_raid.sh — RAID/HBA 卡控制器信息采集
 # 输出目录: <OUTPUT_DIR>/raid/
 #
 # 覆盖的硬件：
@@ -8,7 +8,7 @@
 #   - Broadcom HBA (sas3ircu / sas2ircu)
 #   - 其他 RAID 卡（通过 lspci 兜底识别）
 #
-# 注意：硬盘本身的信息（lsblk / smartctl / lsscsi）在 12_storage.sh
+# 注意：硬盘本身的信息（lsblk / smartctl / lsscsi）在 08_storage.sh
 # =============================================================================
 
 MODULE_NAME="RAID-HBA"
@@ -31,8 +31,8 @@ run_raid() {
         # 列出所有控制器
         run_and_log "storcli64 show all 2>&1" "${dir}/storcli_controllers.log"
 
-        # 自动发现控制器数量，逐卡采集
-        local ctrl_count=$(storcli64 show all 2>/dev/null | grep -c "Controller = " || echo 1)
+        # 自动发现控制器数量，逐卡采集（grep -c 无匹配时输出 0，勿加 || echo 兜底会拼出多行）
+        local ctrl_count=$(storcli64 show all 2>/dev/null | grep -c "Controller = ")
         for ((c=0; c<ctrl_count; c++)); do
             # 控制器基本信息
             run_and_log "storcli64 /c${c} show all 2>&1" "${dir}/ctrl${c}_info.log"
@@ -42,7 +42,7 @@ run_raid() {
                 "${dir}/ctrl${c}_summary.log"
 
             # Virtual Drive 信息
-            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -c "^Virtual Drives" || echo 0)
+            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -c "^Virtual Drives")
             if [ "$vd_count" -gt 0 ]; then
                 run_and_log "storcli64 /c${c} /vx show all 2>&1" "${dir}/ctrl${c}_vd_all.log"
                 for ((v=0; v<vd_count; v++)); do
@@ -62,7 +62,7 @@ run_raid() {
 
     # ─── Broadcom SAS3 HBA — sas3ircu ───
     if check_cmd sas3ircu; then
-        local hba_count=$(sas3ircu list 2>/dev/null | grep -c "^Index" || sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\." || echo 0)
+        local hba_count=$(sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\.|^Index")
         if [ "$hba_count" -eq 0 ]; then
             run_and_log "sas3ircu 0 display 2>&1" "${dir}/sas3_hba0.log"
             run_and_log "sas3ircu 0 status 2>&1" "${dir}/sas3_hba0_status.log"

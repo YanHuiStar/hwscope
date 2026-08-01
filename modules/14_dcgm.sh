@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 模块: 10_dcgm.sh — DCGM (Data Center GPU Manager) 诊断
+# 模块: 14_dcgm.sh — DCGM (Data Center GPU Manager) 诊断
 # 输出目录: <OUTPUT_DIR>/dcgm/
 # 说明：需要安装 datacenter-gpu-manager，无则静默跳过
 # =============================================================================

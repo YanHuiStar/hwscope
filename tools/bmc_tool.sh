@@ -25,11 +25,18 @@ CONF="${SCRIPT_DIR}/conf/hwscope.conf"
 BMC_IP="${BMC_IP:-}"
 BMC_USER="${BMC_USER:-admin}"
 BMC_PASS="${BMC_PASS:-admin}"
+# 密码通过环境变量传给 ipmitool，避免出现在命令行/日志/ps 中
+export IPMI_PASSWORD="${BMC_PASS}"
 LOCAL=""
-[ -z "$BMC_IP" ] && LOCAL=1 && echo -e "${CYAN}[INFO] BMC_IP 为空，使用本地 IPMI${NC}" || echo -e "${CYAN}[INFO] 远程 BMC: ${BMC_USER}@${BMC_IP}${NC}"
+if [ -z "$BMC_IP" ]; then
+    LOCAL=1
+    echo -e "${CYAN}[INFO] BMC_IP 为空，使用本地 IPMI${NC}"
+else
+    echo -e "${CYAN}[INFO] 远程 BMC: ${BMC_USER}@${BMC_IP}${NC}"
+fi
 
 IPMI_CMD="ipmitool"
-[ -n "$BMC_IP" ] && IPMI_CMD="ipmitool -H ${BMC_IP} -U ${BMC_USER} -P ${BMC_PASS} -I lanplus"
+[ -n "$BMC_IP" ] && IPMI_CMD="ipmitool -H ${BMC_IP} -U ${BMC_USER} -I lanplus"
 
 # ─── 功能表 ───
 OPS=(
@@ -39,7 +46,7 @@ OPS=(
     "4:清空 SEL:${IPMI_CMD} sel clear 2>&1:写入操作"
     "5:查看 BMC 信息:${IPMI_CMD} mc info 2>&1 | head -15:只读"
     "6:重启 BMC:${IPMI_CMD} mc reset cold 2>&1:写入操作"
-    "7:修改密码:${IPMI_CMD} user set password 2 2>&1:写入操作"
+    "7:修改密码:${IPMI_CMD} user set password 2:写入操作"
     "8:查看网络:${IPMI_CMD} lan print 1 2>&1 | head -20:只读"
 )
 
@@ -70,6 +77,12 @@ for sel in "${SELECTED[@]}"; do
             if [ "$warn" = "写入操作" ]; then
                 read -p " ${YELLOW}⚠ 此操作会修改 BMC，确认? (y/N)${NC} " -r confirm
                 [[ ! "$confirm" =~ ^[Yy] ]] && echo "  跳过" && continue
+            fi
+            # 修改密码：读取新密码并附加到命令（User ID 2）
+            if [ "$num" = "7" ]; then
+                read -s -p " 输入新密码 (User ID 2): " NEW_PASS; echo ""
+                [ -z "$NEW_PASS" ] && echo "  密码为空，跳过" && continue
+                cmd="${cmd} ${NEW_PASS} 2>&1"
             fi
             LOGFILE="${REPORT_DIR}/${name// /_}.log"
             bash -c "$cmd" | tee "$LOGFILE"

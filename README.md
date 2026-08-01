@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.11  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.12  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -207,7 +207,7 @@ output/SN123456789/
 ```bash
 # BMC（留空只查本地 IPMI）
 BMC_IP=""; BMC_USER="admin"; BMC_PASS="admin"
-HGX_BMC_IP="192.168.1.1"      # HGX 基板 BMC
+HGX_BMC_IP=""              # HGX 基板 BMC（SXM 平台填写，默认留空不连接）
 
 # 模块开关（1=启用）
 MODULE_GPU=1; MODULE_STORAGE=1; MODULE_OS=1 ...

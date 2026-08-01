@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 模块: 08_bmc.sh — BMC/IPMI 信息采集
+# 模块: 12_bmc.sh — BMC/IPMI 信息采集
 # 输出目录: <OUTPUT_DIR>/bmc/
 # =============================================================================
 
@@ -63,10 +63,11 @@ run_bmc() {
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi
 
-    # ─── 远程 BMC（通过配置 IP，加 8s 超时防卡死） ───
+    # ─── 远程 BMC（通过配置 IP，加 8s 超时防卡死；密码经 IPMI_PASSWORD 环境变量传递，命令字符串不含密码，杜绝明文落盘） ───
     if [ -n "$BMC_IP" ] && check_cmd ipmitool; then
         echo -e "${BLUE}[BMC] Remote BMC: ${BMC_IP}${NC}"
-        local ipmi_cmd="timeout 8 ipmitool -H ${BMC_IP} -U ${BMC_USER} -P '${BMC_PASS}' -I ${BMC_INTERFACE}"
+        export IPMI_PASSWORD="${BMC_PASS}"
+        local ipmi_cmd="timeout 8 ipmitool -H ${BMC_IP} -U ${BMC_USER} -I ${BMC_INTERFACE}"
 
         run_and_log "${ipmi_cmd} fru print" "${dir}/remote_bmc_fru.log"
         run_and_log "${ipmi_cmd} mc info" "${dir}/remote_bmc_mc.log"
@@ -77,10 +78,11 @@ run_bmc() {
         echo -e "${YELLOW}[SKIP] Remote BMC not configured (BMC_IP is empty)${NC}"
     fi
 
-    # ─── HGX 基板 BMC（独立管理 GPU/NVSwitch，加 8s 超时防卡死） ───
+    # ─── HGX 基板 BMC（独立管理 GPU/NVSwitch，加 8s 超时防卡死；仅配置了 HGX_BMC_IP 时启用） ───
     if [ -n "$HGX_BMC_IP" ] && check_cmd ipmitool; then
         echo -e "${BLUE}[BMC] HGX Baseboard BMC: ${HGX_BMC_IP}${NC}"
-        local hgx_cmd="timeout 8 ipmitool -H ${HGX_BMC_IP} -U ${HGX_BMC_USER} -P '${HGX_BMC_PASS}'"
+        export IPMI_PASSWORD="${HGX_BMC_PASS}"
+        local hgx_cmd="timeout 8 ipmitool -H ${HGX_BMC_IP} -U ${HGX_BMC_USER}"
 
         run_and_log "${hgx_cmd} fru print 2>&1" "${dir}/hgx_bmc_fru.log"
         run_and_log "${hgx_cmd} sensor list 2>&1" "${dir}/hgx_bmc_sensors.log"

@@ -15,8 +15,8 @@ for s in "${S[@]}"; do
     s=$(echo "$s" | tr -d ' ')
     case "$s" in
         1) bash "${SCRIPT_DIR}/cpu_test.sh" ;;
-        2) echo "[待开发] memory_test.sh" ;;
-        3) echo "[待开发] disk_test.sh" ;;
-        4) echo "[待开发] network_test.sh" ;;
+        2) bash "${SCRIPT_DIR}/memory_test.sh" ;;
+        3) bash "${SCRIPT_DIR}/disk_test.sh" ;;
+        4) bash "${SCRIPT_DIR}/network_test.sh" ;;
     esac
 done

@@ -61,7 +61,7 @@ run_fan() {
     fi
 
     # ─── 4. /proc 风扇信息（ACPI） ───
-    if [ -f /proc/acpi/fan ]; then
+    if [ -d /proc/acpi/fan ]; then
         run_and_log "cat /proc/acpi/fan/*/state 2>/dev/null" "${dir}/acpi_fan.log"
     fi
 
