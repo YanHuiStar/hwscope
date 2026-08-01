@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 模块: 05_pcie.sh — PCIe 拓扑/速率信息采集
+# 模块: 06_pcie.sh — PCIe 拓扑/速率信息采集
 # 输出目录: <OUTPUT_DIR>/pcie/
 # =============================================================================
 
@@ -17,6 +17,7 @@ run_pcie() {
 
     if ! check_cmd lspci; then
         echo -e "${YELLOW}[SKIP] lspci not found, install pciutils${NC}"
+        echo "[SKIP] lspci not found (install pciutils) — PCIe 模块跳过" > "${dir}/00_skip_lspci.log"
         module_end "$MODULE_NAME"
         return 0
     fi

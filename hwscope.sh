@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.4.9 (2026-07)
+# Version : 1.4.10 (2026-07)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.4.9"
+HWSCOPE_VERSION="v1.4.10"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -188,11 +188,13 @@ echo "[$(date '+%H:%M:%S')] 日志输出到: ${LOG_FILE}"
 HW_ARCH=$(uname -m 2>/dev/null || echo "unknown"); PLATFORM="${HW_ARCH}"
 if check_cmd nvidia-smi; then
     GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l || echo 0)
-    # SXM 检测：nvswitch CLI 优先，无 CLI 则用 lspci 查 NVSwitch 硬件
+    # SXM 检测：nvswitch CLI 优先，无 CLI 则 lspci 查 NVSwitch，最后查 nv-fabricmanager 进程（HGX 平台专属守护进程，lspci 可能看不到 NVSwitch 设备）
     _sxm=0
     if check_cmd nvswitch && nvswitch -q 2>/dev/null | grep -qi "Switch Name"; then
         _sxm=1
     elif check_cmd lspci && lspci 2>/dev/null | grep -qi "NVSwitch\|SXM.*Bridge"; then
+        _sxm=1
+    elif pgrep -x nv-fabricmanager >/dev/null 2>&1; then
         _sxm=1
     fi
     if [ "$_sxm" -eq 1 ]; then

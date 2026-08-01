@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 模块: 02_nvswitch.sh — NVSwitch 信息采集
+# 模块: 05_nvswitch.sh — NVSwitch 信息采集
 # 输出目录: <OUTPUT_DIR>/nvswitch/
 # =============================================================================
 
@@ -30,9 +30,9 @@ run_nvswitch() {
         echo -e "${YELLOW}[SKIP] nvswitch command not found${NC}"
     fi
 
-    # 4. Fabric Manager 状态（nvidia-fabricmanager 是守护进程，不是 CLI 查询工具）
-    if check_cmd nvidia-fabricmanager; then
-        run_and_log "nvidia-fabricmanager --version 2>&1" "${dir}/fabricmanager_version.log"
+    # 4. Fabric Manager 状态（nv-fabricmanager 是守护进程，不是 CLI 查询工具）
+    if check_cmd nv-fabricmanager || check_cmd nvidia-fabricmanager; then
+        run_and_log "nv-fabricmanager --version 2>&1 || nvidia-fabricmanager --version 2>&1" "${dir}/fabricmanager_version.log"
     fi
     if check_cmd systemctl; then
         run_and_log "systemctl status nvidia-fabricmanager 2>&1 | head -40" "${dir}/fabricmanager_service.log"

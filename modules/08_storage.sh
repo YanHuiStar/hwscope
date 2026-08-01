@@ -23,6 +23,10 @@ run_storage() {
 
     module_start "$MODULE_NAME"
 
+    # WSL 环境检测（虚拟磁盘 ext4.vhdx 不支持 SMART）
+    local IS_WSL=0
+    grep -qi microsoft /proc/version 2>/dev/null && IS_WSL=1
+
     # ─── 通用块设备总览（覆盖所有类型：SATA/SAS/NVMe/HDD/SSD） ───
     run_and_log "lsblk -o NAME,MODEL,SERIAL,SIZE,TRAN,ROTA,MOUNTPOINT,FSTYPE,TYPE 2>/dev/null" \
         "${dir}/block_devices_all.log"
@@ -43,6 +47,10 @@ run_storage() {
 
     # ─── SMART 信息（smartctl 覆盖所有支持 SMART 的盘） ───
     if check_cmd smartctl; then
+        if [ "$IS_WSL" -eq 1 ]; then
+            # WSL 虚拟磁盘（ext4.vhdx）不支持 SMART，跳过避免误报 WARN
+            echo "[SKIP] WSL 虚拟磁盘不支持 SMART，跳过 smartctl 详细检测" > "${dir}/00_skip_smart_wsl.log"
+        else
         run_and_log "smartctl --scan 2>&1" "${dir}/smart_scan.log"
 
         # 找出所有物理盘（非分区、非 dm、非 loop）
@@ -80,6 +88,7 @@ run_storage() {
                 esac
             done <<< "$smart_devs"
         fi
+        fi  # IS_WSL
     else
         echo -e "${YELLOW}[SKIP] smartctl not found (install smartmontools)${NC}"
     fi
