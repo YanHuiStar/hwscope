@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.6  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.4.7  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -191,8 +191,9 @@ output/SN123456789/
 ├── bmc/                     # IPMI + Redfish ×20+
 ├── nvsm/ / dcgm/ / os/     # 条件 + OS ×15+
 └── (logs/)                  # 采集归档 tar.gz（项目根目录）
+    └── report/              # 报告归档 tar.gz（单独打包）
 
-采集完成后自动归档至 logs/<SN>-<时间戳>.tar.gz，并生成三份汇总报告。
+采集完成后自动归档至 `logs/<SN>-<时间戳>.tar.gz`（详细分级日志），报告三件套另打包至 `logs/report/<SN>-<时间戳>-report.tar.gz`。
 ```
 
 ---
