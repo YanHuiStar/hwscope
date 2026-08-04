@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.6.6 (2026-08)
+# Version : 1.6.7 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.6.6"
+HWSCOPE_VERSION="v1.6.7"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -87,10 +87,10 @@ usage() {
     echo "  --modules gpu,storage           只采指定模块（逗号分隔）"
     echo "  --skip dcgm,nvsm                跳过指定模块"
     echo "  --parallel                      并行执行所有模块"
-    echo "  --no-module                     跳过光模块查询（省 40s+）"
+    echo "  --no-module                     跳过光模块查询（缩短采集时长约 48s）"
     echo "  --output /path/to/dir           指定输出目录"
     echo "  --force                         覆盖已有输出目录"
-    echo "  -q, --quiet                     静默模式（只看 WARN）"
+    echo "  -q, --quiet                     静默模式（仅输出异常）"
     echo "  -h, --help                      显示此帮助"
     echo "  -v, --version                   显示版本"
     echo ""
