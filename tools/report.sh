@@ -121,6 +121,23 @@ IB_SPEED=$(grep -A2 "State: Active" "${NET_DIR}/ibstat.log" 2>/dev/null | grep -
 [ -n "$IB_SPEED" ] && IB_SPEED="${IB_SPEED} Gb/s"
 ETH_LINK_UP=$(grep -h "Link detected: yes" "${NET_DIR}"/ethtool_*.log 2>/dev/null | wc -l)
 
+# 线缆类型检测（DAC 铜缆 / 光模块 / 空口）
+CABLE_SUMMARY=""
+for f in "${NET_DIR}"/mlxlink_mlx5_*_module.log; do
+    [ -f "$f" ] || continue
+    dev=$(basename "$f" | sed 's/mlxlink_\(.*\)_module.log/\1/')
+    [ -z "$dev" ] && continue
+    cable=$(grep -iE "Cable Type|cable type" "$f" | head -1 | cut -d':' -f2- | tr -d ' \t')
+    if [ -n "$cable" ] && [ "$cable" != "N/A" ]; then
+        case "$cable" in
+            *Copper*) CABLE_SUMMARY="${CABLE_SUMMARY}${dev}:DAC," ;;
+            *Optical*|*Fiber*) CABLE_SUMMARY="${CABLE_SUMMARY}${dev}:Optical," ;;
+            *) CABLE_SUMMARY="${CABLE_SUMMARY}${dev}:${cable}," ;;
+        esac
+    fi
+done
+CABLE_SUMMARY=$(echo "$CABLE_SUMMARY" | sed 's/,$//')
+
 # ─── BMC ───
 BMC_DIR="${OUT}/bmc"
 BMC_FRU=$(extract "Product Name|Product Part Number" "${BMC_DIR}/ipmi_fru_summary.log" | head -c 80)
@@ -205,7 +222,8 @@ ${dimms_json}
   "network": {
     "ib_devices": "${IB_COUNT:-0}",
     "ib_speed": "${IB_SPEED:-N/A}",
-    "eth_link_up": "${ETH_LINK_UP:-0}"
+    "eth_link_up": "${ETH_LINK_UP:-0}",
+    "cables": "${CABLE_SUMMARY:-N/A}"
   },
   "bmc": {
     "fru": "${BMC_FRU:-N/A}",
@@ -301,6 +319,7 @@ $(printf '%s' "$dimms_md")
 |----|----|
 | IB 设备数 | ${IB_COUNT:-0} |
 | IB 速率 | ${IB_SPEED:-N/A} |
+| 线缆类型 | ${CABLE_SUMMARY:-N/A} |
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 
 ## BMC
@@ -385,6 +404,7 @@ $(printf '%s' "$dimms_txt")
 [网络]
   IB设备 : ${IB_COUNT:-0}
   IB速率 : ${IB_SPEED:-N/A}
+  线缆   : ${CABLE_SUMMARY:-N/A}
   网口up : ${ETH_LINK_UP:-0}
 
 [BMC]
