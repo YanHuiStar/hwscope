@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.13.0  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.14.0  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -136,18 +136,25 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `wol.ps1` / `.bat` | 远程唤醒 | Wake-on-LAN 魔术包，服务器断电后从 MAC 唤醒 |
 | `ssh_batch.ps1` / `.bat` | 批量命令 | 对多台服务器执行同一条命令（OpenSSH 自带） |
 | `fetch_report.ps1` / `.bat` | 巡检汇总 | 拉取各机 hwscope 报告三件套，按主机名归档到桌面 |
+| `dhcp_server.ps1` / `.bat` | **直连自动分配 IP** | 笔记本开 DHCP 服务（纯 PowerShell 零依赖，DISCOVER/OFFER/REQUEST/ACK + 租约），服务器侧跑 net_dhcp.sh 即插线即通 |
 | `unblock_ps.ps1` / `.bat` | 首次使用前 | 解除 .ps1 运行限制（执行策略 RemoteSigned + 解除下载标记） |
 
 ```powershell
 # 首次使用：解除脚本运行限制（当前用户，无需管理员）
 .\unblock_ps.ps1
 
-# 典型流程：直连服务器后
+# 场景一：直连服务器（网线直连，无交换机）
+.\dhcp_server.ps1 -Subnet 192.168.50   # 1. 笔记本开 DHCP（需管理员，自动设 192.168.50.1/24）
+#   服务器侧: sudo bash tools/net_dhcp.sh   # 2. 服务器自动获取 IP
+.\scan_ip.ps1                          # 3. 扫出服务器 IP
+.\detect_bmc.ps1 -Hosts 192.168.1.1,... # 4. 确认 BMC
+.\ipmi_power.ps1 -BmcIP <BMC_IP> -Action on    # 5. 远程开机
+#   Ctrl+C 停 DHCP 后网卡自动恢复
+
+# 场景二：服务器已有固定 IP（直连配网）
 .\nic_switch.ps1 -Action Set -IP 192.168.1.100   # 1. 设同网段 IP（需管理员）
 .\scan_ip.ps1                 # 2. 扫描找服务器 IP
-.\detect_bmc.ps1 -Hosts 192.168.1.1,192.168.1.100 # 3. 确认 BMC
-.\ipmi_power.ps1 -BmcIP 192.168.1.1 -Action on    # 4. 远程开机
-.\nic_switch.ps1 -Action Restore   # 5. 完事恢复 DHCP
+.\nic_switch.ps1 -Action Restore   # 3. 完事恢复 DHCP
 
 # 集群巡检（SSH 免密后）
 .\fetch_report.ps1 -Hosts root@192.168.1.100,root@192.168.1.101
