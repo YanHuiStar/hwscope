@@ -83,17 +83,33 @@ if [ -f "${MEM_DIR}/dmidecode_memory_full.log" ]; then
     ' "${MEM_DIR}/dmidecode_memory_full.log" 2>/dev/null)
 fi
 
-# ─── GPU（解析 inventory.csv） ───
+# ─── GPU（解析 inventory.csv；列: 1=idx 2=name 3=serial 4=bdf 5=uuid 6=mem.total 7=mem.used 8=power.limit 9=power.draw 10=temp 11=util 12-13=clocks 14=ecc.mode 15=gen.cur 16=width.cur 17=gen.max 18=width.max） ───
 GPU_CSV="${OUT}/gpu/gpu_inventory.csv"
 GPU_ECC_CSV="${OUT}/gpu/gpu_ecc_inventory.csv"
-GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""
+GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""
 if [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
     GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ',' | sed 's/,$//')
-    # 显存总量 / 功耗上限 / 温度（列: 6=mem.total, 8=power.limit, 9=temp）
+    # 显存总量 / 功耗上限 / 温度
     GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ MiB/,"",$6); sum+=$6} END{printf "%.0f GB", sum/1024}')
     GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ W/,"",$8); if($8+0>max+0) max=$8} END{printf "%.0f W", max}')
-    GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{sum+=$9; if($9+0>tmax+0) tmax=$9} END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
+    GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{sum+=$10; if($10+0>tmax+0) tmax=$10} END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
+    # 每卡明细行（idx|name|serial|mem|power|temp|util|gen.cur/width.cur/gen.max/width.max）
+    while IFS=',' read -r gidx gname gsn gbdf guuid gmem gused glimit gdraw gtemp gutil gclk gcclk gecc ggen gwidth ggenmax gwidthmax; do
+        gname=$(echo "$gname" | sed 's/^ *//;s/ *$//')
+        gmem_f=$(echo "$gmem" | tr -d ' ')
+        gutil_f=$(echo "$gutil" | tr -d ' ')
+        gwidth=$(echo "$gwidth" | tr -d ' ')
+        gwidthmax=$(echo "$gwidthmax" | tr -d ' ')
+        ggen=$(echo "$ggen" | tr -d ' ')
+        ggenmax=$(echo "$ggenmax" | tr -d ' ')
+        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw}|${gtemp}|${gutil_f}|${ggen}/${gwidth}|${ggenmax}/${gwidthmax}"$'\n'
+        # PCIe 宽度降级检测（宽度空闲不变，是最可靠信号；gen 低可能是省电不算）
+        if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
+            GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
+        fi
+    done <<< "$(grep -v '^#' "$GPU_CSV" | tail -n +2)"
+    GPU_DETAILS=$(printf '%b' "$GPU_DETAILS")
 fi
 # ECC 模式与累计错误（列: 3=mode, 4-7=错误计数）
 if [ -f "$GPU_ECC_CSV" ]; then
@@ -146,6 +162,24 @@ BMC_IP=$(grep "IP Address" "${BMC_DIR}/ipmi_lan1.log" 2>/dev/null | grep -oE "[0
 BMC_MAC=$(grep -m1 "MAC Address" "${BMC_DIR}/ipmi_lan1.log" 2>/dev/null | awk '{print $NF}')
 SEL_TOTAL=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -vE "Could not open|Unable|No such file|Error|failed" | wc -l)
 SEL_CRIT=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -vE "Could not open|Unable|No such file|Error|failed" | grep -ciE "critical|fatal")
+SEL_PCIE_ERR=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -vE "Could not open|Unable|No such file|Error|failed" | grep -icE "pcie|aer|uncorrectable")
+
+# ─── 线缆配对检测（同一根线两端 EEPROM serial 相同） ───
+CABLE_PAIRS=""
+declare -A CABLE_SERIALS
+for f in "${NET_DIR}"/mlxlink_mlx5_*_module.log; do
+    [ -f "$f" ] || continue
+    dev=$(basename "$f" | sed 's/mlxlink_\(.*\)_module.log/\1/')
+    [ -z "$dev" ] && continue
+    serial=$(grep -iE "Serial Number|serial number" "$f" | head -1 | cut -d':' -f2- | tr -d ' \t')
+    [ -z "$serial" ] || [ "$serial" = "N/A" ] && continue
+    if [ -n "${CABLE_SERIALS[$serial]}" ]; then
+        CABLE_PAIRS="${CABLE_PAIRS}${CABLE_SERIALS[$serial]}↔${dev},"
+    else
+        CABLE_SERIALS[$serial]="$dev"
+    fi
+done
+CABLE_PAIRS=$(echo "$CABLE_PAIRS" | sed 's/,$//')
 
 # ─── 风扇（IPMI 传感器，| 分隔格式） ───
 FAN_DIR="${OUT}/fan"
@@ -163,10 +197,18 @@ gen_json() {
     if [ -n "$MEM_DIMMS" ]; then
         while IFS='|' read -r dslot dsize dmfr dsn dpn dcspd dspd; do
             [ -z "$dslot" ] && continue
-            dimms_json="${dimms_json}      {\"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"configured_speed\": \"${dcspd}\", \"speed\": \"${dspd}\"},
-"
+            dimms_json="${dimms_json}      {\"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"configured_speed\": \"${dcspd}\", \"speed\": \"${dspd}\"},"$'\n'
         done <<< "$MEM_DIMMS"
         dimms_json=$(printf '%s' "$dimms_json" | sed '$ s/,$//')
+    fi
+    # GPU 每卡明细 JSON 数组（idx|name|serial|mem|power|temp|util|pcie_cur|pcie_max）
+    local gpu_details_json=""
+    if [ -n "$GPU_DETAILS" ]; then
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+            [ -z "$gidx" ] && continue
+            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"util\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\"},"$'\n'
+        done <<< "$GPU_DETAILS"
+        gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
     cat > "$f" << EOF
 {
@@ -212,7 +254,10 @@ ${dimms_json}
     "power_limit": "${GPU_POWER:-N/A}",
     "temp": "${GPU_TEMP:-N/A}",
     "ecc": "${GPU_ECC:-N/A}",
-    "serials": "${GPU_SERIALS:-N/A}"
+    "serials": "${GPU_SERIALS:-N/A}",
+    "details": [
+${gpu_details_json}
+    ]
   },
   "storage": {
     "disk_count": "${STORAGE_COUNT:-0}",
@@ -236,6 +281,11 @@ ${dimms_json}
   "fan": {
     "count": "${FAN_COUNT:-0}",
     "speed": "${FAN_SPEED:-N/A}"
+  },
+  "health": {
+    "gpu_pcie_degraded": "${GPU_DEGRADED:-OK}",
+    "sel_pcie_errors": "${SEL_PCIE_ERR:-0}",
+    "cable_pairs": "${CABLE_PAIRS:-N/A}"
   }
 }
 EOF
@@ -250,9 +300,16 @@ gen_md() {
     if [ -n "$MEM_DIMMS" ]; then
         while IFS='|' read -r dslot dsize dmfr dsn dpn dcspd dspd; do
             [ -z "$dslot" ] && continue
-            dimms_md="${dimms_md}| ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dcspd} | ${dspd} |
-"
+            dimms_md="${dimms_md}| ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dcspd} | ${dspd} |"$'\n'
         done <<< "$MEM_DIMMS"
+    fi
+    # GPU 每卡明细 Markdown 表
+    local gpu_details_md=""
+    if [ -n "$GPU_DETAILS" ]; then
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+            [ -z "$gidx" ] && continue
+            gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
+        done <<< "$GPU_DETAILS"
     fi
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
@@ -307,6 +364,11 @@ $(printf '%s' "$dimms_md")
 | ECC | ${GPU_ECC:-N/A} |
 | SN | ${GPU_SERIALS:-N/A} |
 
+### 每卡明细
+| 卡 | 型号 | SN | 显存 | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
+|----|------|----|----|------|------|--------|----------|-----------|
+$(printf '%s' "$gpu_details_md")
+
 ## 存储
 | 项 | 值 |
 |----|----|
@@ -337,6 +399,13 @@ $(printf '%s' "$dimms_md")
 | 数量 | ${FAN_COUNT:-0} |
 | 转速 | ${FAN_SPEED:-N/A} |
 
+## 健康检查
+| 项 | 状态 |
+|----|------|
+| GPU PCIe 链路 | ${GPU_DEGRADED:-✓ 全部正常} |
+| SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |
+| 线缆配对 | ${CABLE_PAIRS:-N/A} |
+
 ---
 *由 HwScope ${VERSION:-unknown} 自动生成*
 EOF
@@ -351,9 +420,16 @@ gen_txt() {
     if [ -n "$MEM_DIMMS" ]; then
         while IFS='|' read -r dslot dsize dmfr dsn dpn dcspd dspd; do
             [ -z "$dslot" ] && continue
-            dimms_txt="${dimms_txt}    ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  ${dcspd}/${dspd}
-"
+            dimms_txt="${dimms_txt}    ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  ${dcspd}/${dspd}"$'\n'
         done <<< "$MEM_DIMMS"
+    fi
+    # GPU 每卡明细纯文本
+    local gpu_details_txt=""
+    if [ -n "$GPU_DETAILS" ]; then
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+            [ -z "$gidx" ] && continue
+            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
+        done <<< "$GPU_DETAILS"
     fi
     cat > "$f" << EOF
 ============================================
@@ -395,6 +471,7 @@ $(printf '%s' "$dimms_txt")
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
   SN     : ${GPU_SERIALS:-N/A}
+$(printf '%s' "$gpu_details_txt")
 
 [存储]
   盘数   : ${STORAGE_COUNT:-0}
@@ -417,6 +494,11 @@ $(printf '%s' "$dimms_txt")
 [风扇]
   数量   : ${FAN_COUNT:-0}
   转速   : ${FAN_SPEED:-N/A}
+
+[健康检查]
+  PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}
+  SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
+  线缆配对 : ${CABLE_PAIRS:-N/A}
 
 --------------------------------------------
 由 HwScope ${VERSION:-unknown} 自动生成

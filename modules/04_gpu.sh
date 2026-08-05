@@ -25,8 +25,8 @@ run_gpu() {
     # 1. GPU 全量信息
     run_and_log "nvidia-smi -q" "${dir}/gpu_full.log"
 
-    # 2. GPU 资产清单（CSV格式，方便后续导入）
-    run_and_log "nvidia-smi --query-gpu=index,name,serial,pci.bus_id,gpu_uuid,memory.total,memory.used,power.limit,temperature.gpu,clocks.current.graphics,clocks.current.memory,ecc.mode.current --format=csv" \
+    # 2. GPU 资产清单（CSV格式，方便后续导入；含 PCIe 链路与利用率供降级检测）
+    run_and_log "nvidia-smi --query-gpu=index,name,serial,pci.bus_id,gpu_uuid,memory.total,memory.used,power.limit,power.draw,temperature.gpu,utilization.gpu,clocks.current.graphics,clocks.current.memory,ecc.mode.current,pcie.link.gen.current,pcie.link.width.current,pcie.link.gen.max,pcie.link.width.max --format=csv" \
         "${dir}/gpu_inventory.csv"
 
     # 3. 每个 GPU 的详细信息（按索引拆分，方便定位单个 GPU）
