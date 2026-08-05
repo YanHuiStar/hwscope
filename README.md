@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.12.0  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.13.0  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -134,25 +134,22 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `nic_switch.ps1` / `.bat` | 直连前配网 | 自动识别插线网卡，一键设固定 IP，扫完恢复 DHCP（原配置自动记录） |
 | `ipmi_power.ps1` / `.bat` | BMC 远程电源控制 | 开机/关机/重启/状态（密码走 IPMI_PASSWORD 环境变量，不落盘） |
 | `wol.ps1` / `.bat` | 远程唤醒 | Wake-on-LAN 魔术包，服务器断电后从 MAC 唤醒 |
-| `gpu_status.ps1` / `.bat` | 多机 GPU 巡检 | SSH 批量 nvidia-smi（温度/利用率/功耗/显存），高负载标 ⚠ |
 | `ssh_batch.ps1` / `.bat` | 批量命令 | 对多台服务器执行同一条命令（OpenSSH 自带） |
 | `fetch_report.ps1` / `.bat` | 巡检汇总 | 拉取各机 hwscope 报告三件套，按主机名归档到桌面 |
-| `ping_monitor.ps1` / `.bat` | 在线监控 | 定时 ping，宕机弹桌面通知 + 声音 |
-| `port_scan.ps1` / `.bat` | 判断设备类型 | 并发 TCP 端口探测 |
-| `check_link.ps1` / `.bat` | 物理链路排查 | 网卡 link 状态/速率 |
-| `wifi_guard.ps1` / `.bat` | 直连防路由冲突 | 一键断开/恢复 Wi-Fi（需管理员） |
+| `unblock_ps.ps1` / `.bat` | 首次使用前 | 解除 .ps1 运行限制（执行策略 RemoteSigned + 解除下载标记） |
 
 ```powershell
+# 首次使用：解除脚本运行限制（当前用户，无需管理员）
+.\unblock_ps.ps1
+
 # 典型流程：直连服务器后
-.\check_link.ps1              # 1. 确认物理链路 up
-.\nic_switch.ps1 -Action Set -IP 192.168.1.100   # 2. 设同网段 IP（需管理员）
-.\scan_ip.ps1                 # 3. 扫描找服务器 IP
-.\detect_bmc.ps1 -Hosts 192.168.1.1,192.168.1.100 # 4. 确认 BMC
-.\ipmi_power.ps1 -BmcIP 192.168.1.1 -Action on    # 5. 远程开机
-.\nic_switch.ps1 -Action Restore   # 6. 完事恢复 DHCP
+.\nic_switch.ps1 -Action Set -IP 192.168.1.100   # 1. 设同网段 IP（需管理员）
+.\scan_ip.ps1                 # 2. 扫描找服务器 IP
+.\detect_bmc.ps1 -Hosts 192.168.1.1,192.168.1.100 # 3. 确认 BMC
+.\ipmi_power.ps1 -BmcIP 192.168.1.1 -Action on    # 4. 远程开机
+.\nic_switch.ps1 -Action Restore   # 5. 完事恢复 DHCP
 
 # 集群巡检（SSH 免密后）
-.\gpu_status.ps1 -Hosts root@192.168.1.100,root@192.168.1.101
 .\fetch_report.ps1 -Hosts root@192.168.1.100,root@192.168.1.101
 ```
 
