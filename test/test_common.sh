@@ -50,15 +50,17 @@ test_menu() {
     return 0
 }
 
-# 记录一条测试结果
+# 记录一条测试结果（状态按命令 exit code 判定，避免日志内容误判）
 test_record() {
-    local name="$1" logfile="$2" start_ts="$3"
+    local name="$1" logfile="$2" start_ts="$3" exit_code="${4:-0}"
     local end_ts=$(date +%s) elapsed=$((end_ts - start_ts))
     local status
-    if grep -qiE "error|fail" "$logfile" 2>/dev/null; then
-        status="异常"
-    else
+    if [ "$exit_code" -eq 0 ]; then
         status="通过"
+    elif [ "$exit_code" -eq 127 ]; then
+        status="工具缺失"
+    else
+        status="异常 (exit=$exit_code)"
     fi
     echo "[$(date '+%H:%M:%S')] ${name}: ${status} (${elapsed}s) — 详情: $(basename "$logfile")" >> "$REPORT_LOG"
     echo "  ${status} 耗时: ${elapsed}s" | tee -a "$REPORT_LOG"

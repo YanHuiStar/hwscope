@@ -96,7 +96,7 @@ for sel in "${SELECTED[@]}"; do
         start_ts=$(date +%s)
         LOGFILE="${REPORT_DIR}/${name}_detail.log"
         run_and_log "${BIN_DIR}/${name} -b ${MSG_B} -e ${MSG_E} -f 2 -g ${GPU_N} -n ${ITERS} -w 5 2>&1" "$LOGFILE"
-        test_record "$name" "$LOGFILE" "$start_ts"
+        test_record "$name" "$LOGFILE" "$start_ts" "$?"
     done
 done
 

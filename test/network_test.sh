@@ -56,7 +56,7 @@ for sel in "${SELECTED[@]}"; do
                 run_and_log "mtr -rw -c 10 8.8.8.8 2>&1" "$LOGFILE"
                 ;;
         esac
-        test_record "$name" "$LOGFILE" "$start_ts"
+        test_record "$name" "$LOGFILE" "$start_ts" "$?"
     done
 done
 

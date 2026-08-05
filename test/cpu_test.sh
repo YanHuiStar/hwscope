@@ -42,7 +42,7 @@ for sel in "${SELECTED[@]}"; do
                 run_and_log "mprime -t -w${REPORT_DIR} 2>&1" "$LOGFILE"
                 ;;
         esac
-        test_record "$name" "$LOGFILE" "$start_ts"
+        test_record "$name" "$LOGFILE" "$start_ts" "$?"
     done
 done
 

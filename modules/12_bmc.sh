@@ -82,7 +82,7 @@ run_bmc() {
     if [ -n "$HGX_BMC_IP" ] && check_cmd ipmitool; then
         echo -e "${BLUE}[BMC] HGX Baseboard BMC: ${HGX_BMC_IP}${NC}"
         export IPMI_PASSWORD="${HGX_BMC_PASS}"
-        local hgx_cmd="timeout 8 ipmitool -H ${HGX_BMC_IP} -U ${HGX_BMC_USER}"
+        local hgx_cmd="timeout 8 ipmitool -H ${HGX_BMC_IP} -U ${HGX_BMC_USER} -I ${BMC_INTERFACE}"
 
         run_and_log "${hgx_cmd} fru print 2>&1" "${dir}/hgx_bmc_fru.log"
         run_and_log "${hgx_cmd} sensor list 2>&1" "${dir}/hgx_bmc_sensors.log"
@@ -91,13 +91,18 @@ run_bmc() {
         echo -e "${YELLOW}[SKIP] HGX Baseboard BMC not configured${NC}"
     fi
 
-    # ─── Redfish 检查（如果装了 curl/jq） ───
+    # ─── Redfish 检查（如果装了 curl/jq；密码经 CURL_NETRC 临时文件传递，不落盘日志） ───
     if [ -n "$BMC_IP" ] && check_cmd curl; then
         echo -e "${BLUE}[BMC] Redfish API check: ${BMC_IP}${NC}"
-        run_and_log "curl -sk --connect-timeout 5 -u '${BMC_USER}:${BMC_PASS}' https://${BMC_IP}/redfish/v1/Systems/System.Embedded.1 2>&1 | head -100" \
+        # 临时 netrc（权限 600，用完即删）：curl --netrc-file 读取，命令字符串不含密码
+        NETRC_TMP=$(mktemp)
+        chmod 600 "$NETRC_TMP"
+        printf 'machine %s login %s password %s\n' "$BMC_IP" "$BMC_USER" "$BMC_PASS" > "$NETRC_TMP"
+        run_and_log "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Systems/System.Embedded.1 2>&1 | head -100" \
             "${dir}/redfish_system.log"
-        run_and_log "curl -sk --connect-timeout 5 -u '${BMC_USER}:${BMC_PASS}' https://${BMC_IP}/redfish/v1/Managers 2>&1 | head -100" \
+        run_and_log "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Managers 2>&1 | head -100" \
             "${dir}/redfish_managers.log"
+        rm -f "$NETRC_TMP"
     fi
 
     module_end "$MODULE_NAME"

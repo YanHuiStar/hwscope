@@ -78,11 +78,9 @@ for sel in "${SELECTED[@]}"; do
                 read -p " ${YELLOW}⚠ 此操作会修改 BMC，确认? (y/N)${NC} " -r confirm
                 [[ ! "$confirm" =~ ^[Yy] ]] && echo "  跳过" && continue
             fi
-            # 修改密码：读取新密码并附加到命令（User ID 2）
+            # 修改密码：不带密码参数，由 ipmitool 交互式输入（避免密码出现在命令行/ps 中）
             if [ "$num" = "7" ]; then
-                read -s -p " 输入新密码 (User ID 2): " NEW_PASS; echo ""
-                [ -z "$NEW_PASS" ] && echo "  密码为空，跳过" && continue
-                cmd="${cmd} ${NEW_PASS} 2>&1"
+                echo -e "${YELLOW}  将提示输入新密码 (User ID 2)${NC}"
             fi
             LOGFILE="${REPORT_DIR}/${name// /_}.log"
             bash -c "$cmd" | tee "$LOGFILE"

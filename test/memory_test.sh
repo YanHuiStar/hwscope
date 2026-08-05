@@ -45,7 +45,7 @@ for sel in "${SELECTED[@]}"; do
                 run_and_log "sysbench memory --memory-block-size=1M --memory-total-size=10G --threads=4 run 2>&1" "$LOGFILE"
                 ;;
         esac
-        test_record "$name" "$LOGFILE" "$start_ts"
+        test_record "$name" "$LOGFILE" "$start_ts" "$?"
     done
 done
 

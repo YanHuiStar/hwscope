@@ -57,7 +57,7 @@ for sel in "${SELECTED[@]}"; do
                 run_and_log "dd if=${DISK} of=/dev/null bs=1M count=1024 2>&1" "$LOGFILE"
                 ;;
         esac
-        test_record "$name" "$LOGFILE" "$start_ts"
+        test_record "$name" "$LOGFILE" "$start_ts" "$?"
     done
 done
 

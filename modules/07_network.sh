@@ -49,12 +49,14 @@ run_network() {
     if check_cmd mlxlink; then
         local mlx_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
         if [ -z "$mlx_devs" ]; then
-            # 回退：按设备号探测
-            for dev_num in 0 1 2 3 4 5 6 7; do
+            # 回退：动态探测设备号（B300 平台最多 12+ 个 mlx5 设备，避免硬编码漏采）
+            local dev_num=0
+            while [ "$dev_num" -lt 24 ]; do
                 if [ -e "/sys/class/net/mlx5_${dev_num}" ] || ls /sys/class/infiniband/ 2>/dev/null | grep -q "mlx5_${dev_num}"; then
                     run_and_log "mlxlink -d mlx5_${dev_num}" "${dir}/mlxlink_${dev_num}.log"
                     [ "${NO_MODULE:-0}" -eq 0 ] && run_and_log "mlxlink -d mlx5_${dev_num} -m" "${dir}/mlxlink_${dev_num}_module.log"
                 fi
+                ((dev_num++))
             done
         else
             local count=0
