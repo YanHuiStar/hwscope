@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.7.0  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.8.0  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -118,7 +118,8 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 |------|------|------|
 | `bmc_tool.sh` | FRU/传感器/SEL 查询、SEL 清空、BMC 密码重置、BMC 重启 | ipmitool |
 | `nic_tool.sh` | 网卡状态/光模块/固件查询、端口复位、MTU 配置 | mlxlink, mlxfwmanager |
-| `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT/推理引擎），apt/dnf 自动识别 | - |
+| `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT），apt/dnf 自动识别 | - |
+| `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
 | `report.sh` | 从采集结果提取关键信息，生成 json/md/txt 汇总报告（环境/主板/CPU/内存每槽/GPU/存储/网络/BMC/风扇） | 采集完成后自动调用 |
 
 ---
