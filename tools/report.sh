@@ -114,7 +114,7 @@ if [ -f "$GPU_CSV" ]; then
         fi
         [ -n "$gtemp_f" ] && [ "$gtemp_f" != "N/A" ] && [ "$gtemp_f" != "[N/A]" ] && gtemp_f="${gtemp_f}°C"
         # PCIe 显示：两侧都 N/A 时合并为单个 N/A（避免 N/A/N/A/N/A/N/A）
-        local gpcie_cur="N/A" gpcie_max="N/A"
+        gpcie_cur="N/A"; gpcie_max="N/A"
         [ "$ggen" != "N/A" ] && [ -n "$ggen" ] && gpcie_cur="${ggen}x${gwidth}"
         [ "$ggenmax" != "N/A" ] && [ -n "$ggenmax" ] && gpcie_max="${ggenmax}x${gwidthmax}"
         [ "$gpcie_cur" = "N/A" ] && [ "$gpcie_max" != "N/A" ] && gpcie_cur="?"
@@ -382,7 +382,6 @@ $(printf '%s' "$dimms_md")
 | 功耗上限 | ${GPU_POWER:-N/A} |
 | 温度 | ${GPU_TEMP:-N/A} |
 | ECC | ${GPU_ECC:-N/A} |
-| SN | ${GPU_SERIALS_SHORT:-N/A} |
 
 ### 每卡明细
 | 卡 | 型号 | SN | 显存 | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
@@ -490,7 +489,6 @@ $(printf '%s' "$dimms_txt")
   功耗   : ${GPU_POWER:-N/A}
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
-  SN     : ${GPU_SERIALS_SHORT:-N/A}
 $(printf '%s' "$gpu_details_txt")
 
 [存储]
