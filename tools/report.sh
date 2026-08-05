@@ -97,6 +97,7 @@ if [ -f "$GPU_CSV" ]; then
     # 每卡明细行（兼容新旧 CSV：新 18 列含 PCIe/利用率，旧 12 列降级为 N/A）
     while IFS=',' read -r gidx gname gsn gbdf guuid gmem gused glimit gdraw gtemp gutil gclk gcclk gecc ggen gwidth ggenmax gwidthmax; do
         gname=$(echo "$gname" | sed 's/^ *//;s/ *$//')
+        gsn=$(echo "$gsn" | sed 's/^ *//;s/ *$//')
         gmem_f=$(echo "$gmem" | tr -d ' ')
         gdraw_f=$(echo "$gdraw" | tr -d ' ')
         gtemp_f=$(echo "$gtemp" | tr -d ' ')
@@ -112,7 +113,12 @@ if [ -f "$GPU_CSV" ]; then
             gutil_f="N/A"; gdraw_f="N/A"
         fi
         [ -n "$gtemp_f" ] && [ "$gtemp_f" != "N/A" ] && [ "$gtemp_f" != "[N/A]" ] && gtemp_f="${gtemp_f}°C"
-        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${ggen}/${gwidth}|${ggenmax}/${gwidthmax}"$'\n'
+        # PCIe 显示：两侧都 N/A 时合并为单个 N/A（避免 N/A/N/A/N/A/N/A）
+        local gpcie_cur="N/A" gpcie_max="N/A"
+        [ "$ggen" != "N/A" ] && [ -n "$ggen" ] && gpcie_cur="${ggen}x${gwidth}"
+        [ "$ggenmax" != "N/A" ] && [ -n "$ggenmax" ] && gpcie_max="${ggenmax}x${gwidthmax}"
+        [ "$gpcie_cur" = "N/A" ] && [ "$gpcie_max" != "N/A" ] && gpcie_cur="?"
+        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}"$'\n'
         # PCIe 宽度降级检测（宽度空闲不变，是最可靠信号；gen 低可能是省电不算）
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
@@ -126,6 +132,11 @@ if [ -f "$GPU_ECC_CSV" ]; then
 fi
 # GPU 序列号列表（资产追踪；消费卡 serial=0 时忽略）
 GPU_SERIALS=$(grep -v "^#" "$GPU_CSV" 2>/dev/null | tail -n +2 | awk -F',' '{gsub(/^ +/,"",$3); gsub(/ +$/,"",$3); if($3!="" && $3!="0" && $3!="[N/A]") print $3}' | tr '\n' ',' | sed 's/,$//')
+# 汇总表 SN 截断（完整列表在每卡明细），避免表格超宽换行
+GPU_SERIALS_SHORT="N/A"
+if [ -n "$GPU_SERIALS" ] && [ "$GPU_SERIALS" != "N/A" ]; then
+    GPU_SERIALS_SHORT=$(echo "$GPU_SERIALS" | cut -d',' -f1-2)" … 共 ${GPU_COUNT} 个"
+fi
 
 # ─── 存储（只统计物理盘 TYPE=disk，避免把分区/LVM 计入容量） ───
 STO_DIR="${OUT}/storage"
@@ -371,7 +382,7 @@ $(printf '%s' "$dimms_md")
 | 功耗上限 | ${GPU_POWER:-N/A} |
 | 温度 | ${GPU_TEMP:-N/A} |
 | ECC | ${GPU_ECC:-N/A} |
-| SN | ${GPU_SERIALS:-N/A} |
+| SN | ${GPU_SERIALS_SHORT:-N/A} |
 
 ### 每卡明细
 | 卡 | 型号 | SN | 显存 | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
@@ -479,7 +490,7 @@ $(printf '%s' "$dimms_txt")
   功耗   : ${GPU_POWER:-N/A}
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
-  SN     : ${GPU_SERIALS:-N/A}
+  SN     : ${GPU_SERIALS_SHORT:-N/A}
 $(printf '%s' "$gpu_details_txt")
 
 [存储]
