@@ -93,17 +93,26 @@ if [ -f "$GPU_CSV" ]; then
     # 显存总量 / 功耗上限 / 温度
     GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ MiB/,"",$6); sum+=$6} END{printf "%.0f GB", sum/1024}')
     GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ W/,"",$8); if($8+0>max+0) max=$8} END{printf "%.0f W", max}')
-    GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{sum+=$10; if($10+0>tmax+0) tmax=$10} END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
-    # 每卡明细行（idx|name|serial|mem|power|temp|util|gen.cur/width.cur/gen.max/width.max）
+    GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{t=(NF>=17)?$10:$9; sum+=t; if(t+0>tmax+0) tmax=t} END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
+    # 每卡明细行（兼容新旧 CSV：新 18 列含 PCIe/利用率，旧 12 列降级为 N/A）
     while IFS=',' read -r gidx gname gsn gbdf guuid gmem gused glimit gdraw gtemp gutil gclk gcclk gecc ggen gwidth ggenmax gwidthmax; do
         gname=$(echo "$gname" | sed 's/^ *//;s/ *$//')
         gmem_f=$(echo "$gmem" | tr -d ' ')
+        gdraw_f=$(echo "$gdraw" | tr -d ' ')
+        gtemp_f=$(echo "$gtemp" | tr -d ' ')
         gutil_f=$(echo "$gutil" | tr -d ' ')
         gwidth=$(echo "$gwidth" | tr -d ' ')
         gwidthmax=$(echo "$gwidthmax" | tr -d ' ')
         ggen=$(echo "$ggen" | tr -d ' ')
         ggenmax=$(echo "$ggenmax" | tr -d ' ')
-        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw}|${gtemp}|${gutil_f}|${ggen}/${gwidth}|${ggenmax}/${gwidthmax}"$'\n'
+        # 旧 12 列 CSV 无 PCIe/利用率字段 → 识别并置 N/A（旧列: $9=temp $10=clk $11=clk $12=ecc）
+        if [ -z "$ggen" ] && [ -z "$gwidth" ]; then
+            gtemp_f="$gdraw"    # 旧布局 $9 是温度（被 gdraw 变量接住）
+            ggen="N/A"; gwidth="N/A"; ggenmax="N/A"; gwidthmax="N/A"
+            gutil_f="N/A"; gdraw_f="N/A"
+        fi
+        [ -n "$gtemp_f" ] && [ "$gtemp_f" != "N/A" ] && [ "$gtemp_f" != "[N/A]" ] && gtemp_f="${gtemp_f}°C"
+        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${ggen}/${gwidth}|${ggenmax}/${gwidthmax}"$'\n'
         # PCIe 宽度降级检测（宽度空闲不变，是最可靠信号；gen 低可能是省电不算）
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
