@@ -17,6 +17,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - `conf/hwscope.conf` — 模块开关、BMC 凭据、输出目录配置
 - `test/` — 硬件压测脚本（cpu/memory/disk/network），只测不改
 - `tools/` — 运维操作脚本（BMC/网卡/安装），会修改系统
+- `tools/win/` — Windows 配套工具（.ps1/.bat）
 - `fixcrlf.sh` — Windows→Linux CRLF 换行符修复
 - `output/` — 采集结果（gitignored），`logs/` — 压缩归档（gitignored）
 

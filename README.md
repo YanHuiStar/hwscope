@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.9.4  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.10.0  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -121,6 +121,28 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT），apt/dnf 自动识别 | - |
 | `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
 | `report.sh` | 从采集结果提取关键信息，生成 json/md/txt 汇总报告（环境/主板/CPU/内存每槽/GPU/存储/网络/BMC/风扇） | 采集完成后自动调用 |
+
+### `tools/win/` — Windows 配套工具
+
+网线直连服务器时找 BMC、配网用，不参与服务器采集。双击 .bat 或 PowerShell 运行：
+
+| 脚本 | 场景 | 说明 |
+|------|------|------|
+| `scan_ip.ps1` / `.bat` | 不知道服务器 IP | 并发 ping 网段 + ARP 关联 MAC，找在线设备（BMC 常见网段优先） |
+| `detect_bmc.ps1` / `.bat` | 确认哪个 IP 是 BMC | MAC 厂商前缀 + 端口评分（623=IPMI/443=Web/5900=noVNC） |
+| `nic_switch.ps1` / `.bat` | 直连前配网 | 网卡一键设固定 IP，扫完恢复 DHCP（原配置自动记录） |
+| `port_scan.ps1` / `.bat` | 判断设备类型 | 并发 TCP 端口探测 |
+| `check_link.ps1` / `.bat` | 物理链路排查 | 网卡 link 状态/速率 |
+| `wifi_guard.ps1` / `.bat` | 直连防路由冲突 | 一键断开/恢复 Wi-Fi（需管理员） |
+
+```powershell
+# 典型流程：直连服务器后
+.\check_link.ps1              # 1. 确认物理链路 up
+.\nic_switch.ps1 -Action Set -IP 192.168.1.100   # 2. 设同网段 IP（需管理员）
+.\scan_ip.ps1                 # 3. 扫描找服务器 IP
+.\detect_bmc.ps1 -Hosts 192.168.1.1,192.168.1.100 # 4. 确认 BMC
+.\nic_switch.ps1 -Action Restore   # 5. 完事恢复 DHCP
+```
 
 ---
 
