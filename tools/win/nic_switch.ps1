@@ -37,9 +37,34 @@ if (-not $isAdmin) {
     exit 1
 }
 
-# ── 选网卡 ──
-$adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'Virtual|Loopback|Wireless|Wi-?Fi|Bluetooth|蓝牙' } | Select-Object -First 1
-if ($AdapterName) { $adapter = Get-NetAdapter -Name $AdapterName -ErrorAction SilentlyContinue }
+# ── 选网卡：优先自动识别"插着网线"的那块（MediaConnectionState=Connected） ──
+$adapter = $null
+if ($AdapterName) {
+    $adapter = Get-NetAdapter -Name $AdapterName -ErrorAction SilentlyContinue
+} else {
+    $candidates = @(Get-NetAdapter | Where-Object {
+        $_.Status -eq 'Up' -and
+        $_.InterfaceDescription -notmatch 'Virtual|Loopback|Wireless|Wi-?Fi|Bluetooth|蓝牙'
+    })
+    $plugged = @($candidates | Where-Object { $_.MediaConnectionState -eq 'Connected' })
+    if ($plugged.Count -eq 1) {
+        $adapter = $plugged[0]
+        Write-Host "[识别] 检测到插线网卡: $($adapter.Name)" -ForegroundColor Cyan
+    } elseif ($plugged.Count -gt 1) {
+        Write-Host "检测到多块插线网卡，请选择（对应实际连服务器网线的网卡）:" -ForegroundColor Cyan
+        for ($i = 0; $i -lt $plugged.Count; $i++) {
+            Write-Host "  [$($i+1)] $($plugged[$i].Name)  ($($plugged[$i].InterfaceDescription))"
+        }
+        $sel = Read-Host "选择 (1-$($plugged.Count))"
+        $adapter = $plugged[[int]$sel - 1]
+    } elseif ($candidates.Count -eq 1) {
+        $adapter = $candidates[0]
+        Write-Host "[提示] 没有检测到插线网卡，使用唯一有线网卡: $($adapter.Name)" -ForegroundColor Yellow
+    } else {
+        Write-Host "找不到可用有线网卡。请确认：1) 网线已插入 2) 网卡已启用" -ForegroundColor Yellow
+        exit 1
+    }
+}
 if (-not $adapter) {
     Write-Host "找不到可用有线网卡。" -ForegroundColor Yellow; exit 1
 }
