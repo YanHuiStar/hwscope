@@ -43,6 +43,12 @@ run_network() {
 
     if check_cmd mlxconfig; then
         run_and_log "mlxconfig query" "${dir}/mlxconfig.log"
+        # 每口 LINK_TYPE 模式（IB/ETH/VPI，现场判断网络模式的关键）
+        local mlx_cfg_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5 | head -12)
+        for cfg_dev in $mlx_cfg_devs; do
+            run_and_log "mlxconfig query -d ${cfg_dev} 2>/dev/null | grep -E 'LINK_TYPE_P[12]'" \
+                "${dir}/mlxconfig_${cfg_dev}_linktype.log"
+        done
     fi
 
     # ─── mlxlink：遍历所有 mlx5 设备 ───

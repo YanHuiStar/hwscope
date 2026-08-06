@@ -33,6 +33,7 @@ OPS=(
     "4:查看配置:mlxconfig query -d DEV 2>&1 | head -20:只读"
     "5:端口复位:mlxlink -d DEV -r 2>&1:写入操作"
     "6:设置 MTU (9000):ip link set DEV mtu 9000 2>&1:写入操作"
+    "7:切换端口模式 (IB↔ETH):模式切换子菜单:写入操作"
 )
 
 echo -e "${CYAN}========================================${NC}"
@@ -54,6 +55,67 @@ read -p "选择设备 (默认 ${DEVS%% *}): " -r dev
 REPORT_DIR="${SCRIPT_DIR}/output/nic_tool_$(date '+%Y%m%d_%H%M%S')"
 mkdir -p "$REPORT_DIR"
 
+# ─── 模式切换子菜单（选项 7） ───
+switch_port_mode() {
+    local dev="$1"
+    echo -e "${CYAN}━━━ 端口模式切换 (${dev}) ━━━${NC}"
+
+    # 当前模式
+    local modes
+    modes=$(mlxconfig query -d "$dev" 2>/dev/null | grep -E "LINK_TYPE_P[12]")
+    if [ -z "$modes" ]; then
+        echo -e "${YELLOW}[WARN] 未获取到 LINK_TYPE 配置（该设备可能不支持或需 mst start）${NC}"
+        return 1
+    fi
+    echo -e "当前配置:"
+    echo "$modes" | sed 's/^/  /'
+
+    # 目标模式
+    echo ""
+    echo "目标模式:"
+    echo "  [1] InfiniBand  (LINK_TYPE=1)"
+    echo "  [2] Ethernet    (LINK_TYPE=2)"
+    read -p "选择目标模式 (1/2, Enter 取消): " -r target
+    [ -z "$target" ] && echo "取消" && return 0
+    case "$target" in
+        1) target_val=1 ;;
+        2) target_val=2 ;;
+        *) echo -e "${RED}[ERROR] 无效选择${NC}"; return 1 ;;
+    esac
+
+    # 确认（写入操作）
+    read -p " ${YELLOW}⚠ 修改端口模式需要重启/重置才生效，确认修改所有 P1/P2 为模式 ${target_val}? (y/N)${NC} " -r confirm
+    [[ ! "$confirm" =~ ^[Yy] ]] && echo "跳过" && return 0
+
+    # 批量修改（仅改与目标不同的端口）
+    local changed=0
+    while IFS= read -r line; do
+        local port=$(echo "$line" | awk '{print $1}')
+        local cur=$(echo "$line" | awk '{print $2}' | grep -oE '[0-9]+' | head -1)
+        [ -z "$port" ] && continue
+        if [ -z "$cur" ]; then
+            echo -e "${YELLOW}[SKIP] ${port} 无法解析当前值${NC}"
+            continue
+        fi
+        if [ "$cur" = "$target_val" ]; then
+            echo -e "${GREEN}[OK] ${port} 已是模式 ${cur}，跳过${NC}"
+        else
+            echo -e "${YELLOW}修改 ${port}: ${cur} → ${target_val}${NC}"
+            echo yes | mlxconfig -d "$dev" set "${port}=${target_val}" 2>&1 | tail -3
+            changed=1
+        fi
+    done <<< "$modes"
+
+    if [ "$changed" -eq 1 ]; then
+        echo ""
+        echo -e "${YELLOW}⚠ 配置已修改，需重启系统或 mlxfwreset 生效:${NC}"
+        echo "  sudo mlxfwreset -d $dev r -y   # 热重置（不重启主机）"
+        echo "  或重启主机"
+    else
+        echo -e "${GREEN}无需修改${NC}"
+    fi
+}
+
 IFS=',' read -ra SELECTED <<< "$choices"
 for sel in "${SELECTED[@]}"; do
     sel=$(echo "$sel" | tr -d ' ')
@@ -64,6 +126,10 @@ for sel in "${SELECTED[@]}"; do
         if [ "$warn" = "写入操作" ]; then
             read -p " ${YELLOW}⚠ 此操作会修改网卡配置，确认? (y/N)${NC} " -r confirm
             [[ ! "$confirm" =~ ^[Yy] ]] && echo "  跳过" && continue
+        fi
+        if [ "$num" = "7" ]; then
+            switch_port_mode "$dev"
+            continue
         fi
         final_cmd=$(echo "$cmd" | sed "s/DEV/${dev}/g")
         LOGFILE="${REPORT_DIR}/${name// /_}.log"

@@ -201,6 +201,19 @@ for f in "${NET_DIR}"/mlxlink_mlx5_*_module.log; do
 done
 CABLE_PAIRS=$(echo "$CABLE_PAIRS" | sed 's/,$//')
 
+# 端口模式汇总（mlxconfig_*_linktype.log：每口 IB/ETH 模式）
+LINKTYPE_SUMMARY=""
+for f in "${NET_DIR}"/mlxconfig_*_linktype.log; do
+    [ -f "$f" ] || continue
+    cfg_dev=$(basename "$f" | sed 's/mlxconfig_\(.*\)_linktype.log/\1/')
+    [ -z "$cfg_dev" ] && continue
+    p1=$(grep "LINK_TYPE_P1" "$f" | awk '{print $2}' | head -1)
+    p2=$(grep "LINK_TYPE_P2" "$f" | awk '{print $2}' | head -1)
+    [ -z "$p1" ] && [ -z "$p2" ] && continue
+    LINKTYPE_SUMMARY="${LINKTYPE_SUMMARY}${cfg_dev}:P1=${p1:-N/A} P2=${p2:-N/A},"
+done
+LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')
+
 # ─── 风扇（IPMI 传感器，| 分隔格式） ───
 FAN_DIR="${OUT}/fan"
 FAN_COUNT=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{c++} END{print c+0}')
@@ -288,7 +301,9 @@ ${gpu_details_json}
     "ib_devices": "${IB_COUNT:-0}",
     "ib_speed": "${IB_SPEED:-N/A}",
     "eth_link_up": "${ETH_LINK_UP:-0}",
-    "cables": "${CABLE_SUMMARY:-N/A}"
+    "cables": "${CABLE_SUMMARY:-N/A}",
+    "cable_pairs": "${CABLE_PAIRS:-N/A}",
+    "port_modes": "${LINKTYPE_SUMMARY:-N/A}"
   },
   "bmc": {
     "fru": "${BMC_FRU:-N/A}",
@@ -401,6 +416,8 @@ $(printf '%s' "$gpu_details_md")
 | IB 设备数 | ${IB_COUNT:-0} |
 | IB 速率 | ${IB_SPEED:-N/A} |
 | 线缆类型 | ${CABLE_SUMMARY:-N/A} |
+| 线缆配对 | ${CABLE_PAIRS:-N/A} |
+| 端口模式 | ${LINKTYPE_SUMMARY:-N/A} |
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 
 ## BMC
@@ -500,6 +517,8 @@ $(printf '%s' "$gpu_details_txt")
   IB设备 : ${IB_COUNT:-0}
   IB速率 : ${IB_SPEED:-N/A}
   线缆   : ${CABLE_SUMMARY:-N/A}
+  配对   : ${CABLE_PAIRS:-N/A}
+  端口模式: ${LINKTYPE_SUMMARY:-N/A}
   网口up : ${ETH_LINK_UP:-0}
 
 [BMC]
