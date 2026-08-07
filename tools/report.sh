@@ -144,14 +144,22 @@ fi
 # ─── 存储（只统计物理盘 TYPE=disk，避免把分区/LVM 计入容量） ───
 STO_DIR="${OUT}/storage"
 STORAGE_COUNT=0; STORAGE_TOTAL="N/A"; STORAGE_MODELS=""
+# 系统盘识别：根文件系统 / 挂载所在的物理盘（lsblk 树形回溯父盘）
+SYS_DISK=""
 if [ -f "${STO_DIR}/block_devices_all.log" ]; then
-    # 物理盘行遍历找 size 字段（model 可能含空格导致列偏移，不能用固定列）
-    STORAGE_COUNT=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") c++} END{print c+0}')
-    STORAGE_TOTAL=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {v=""; for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {v=$i; break}; \
+    SYS_DISK=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '
+        $1 ~ /^[a-zA-Z0-9_]+$/ {cur=$1}
+        $0 ~ / \/ / && $0 !~ /\/boot/ {print cur; exit}
+    ')
+fi
+if [ -f "${STO_DIR}/block_devices_all.log" ]; then
+    # 物理盘行遍历找 size 字段（model 可能含空格导致列偏移，不能用固定列）；默认排除系统盘
+    STORAGE_COUNT=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") c++} END{print c+0}')
+    STORAGE_TOTAL=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {v=""; for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {v=$i; break}; \
         if(v!=""){n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
         if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024}} \
         END{printf "%.0f GB", s}' 2>/dev/null)
-    STORAGE_MODELS=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+    STORAGE_MODELS=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
 fi
 
 # 盘明细（disk_inventory.csv: name|type|size|model|serial|fw|bdf|power_on）
@@ -160,6 +168,7 @@ if [ -f "${STO_DIR}/disk_inventory.csv" ]; then
     while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
         [ -z "$dname" ] || [ "$dname" = "N/A" ] && continue
         [ "$dname" = "#" ] && continue
+        [ "$dname" = "$SYS_DISK" ] && continue   # 默认排除系统盘
         DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}"$'\n'
     done < <(grep -v "^#" "${STO_DIR}/disk_inventory.csv" 2>/dev/null)
 fi
@@ -292,8 +301,9 @@ if [ -f "${OUT}/psu/ipmi_psu_fru.log" ]; then
             *"Product Serial"*)        psn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
         esac
     done < <(grep -v "^#" "${OUT}/psu/ipmi_psu_fru.log" 2>/dev/null)
-    # 补最后一只 PSU 的 PN/SN（PSU_DETAILS 行尾追加）
-    PSU_DETAILS=$(echo "$PSU_DETAILS" | sed "s/|$//; s/$/|${ppn:-N\/A}|${psn:-N\/A}/")
+    # 补最后一只 PSU 的 PN/SN（awk 追加，避免 sed 分隔符与数据中的 / 冲突；/xxx/ 占位垃圾值视为 N/A）
+    PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v pn="${ppn:-N/A}" -v sn="${psn:-N/A}" '
+        { if (pn ~ /^\/.*\/$/) pn="N/A"; if (sn ~ /^\/.*\/$/) sn="N/A"; sub(/\|$/,""); print $0 "|" pn "|" sn }')
 fi
 
 # ─── 生成 JSON ───
@@ -402,6 +412,7 @@ ${gpu_details_json}
     "disk_count": "${STORAGE_COUNT:-0}",
     "total_capacity": "${STORAGE_TOTAL:-N/A}",
     "disk_models": "${STORAGE_MODELS:-N/A}",
+    "system_disk_excluded": "${SYS_DISK:-N/A}",
     "disks": [
 ${disk_details_json}
     ]
@@ -430,7 +441,7 @@ ${nic_details_json}
     "speed": "${FAN_SPEED:-N/A}"
   },
   "psu": {
-    "list": "${PSU_DETAILS:-N/A}"
+    "list": "$(printf '%s' "${PSU_DETAILS:-N/A}" | tr '\n' '; ' | sed 's/; $//')"
   },
   "nvswitch": [
 $(printf '%s' "$nvs_json")
@@ -556,6 +567,7 @@ $(printf '%s' "$gpu_details_md")
 | 盘数 | ${STORAGE_COUNT:-0} |
 | 总容量 | ${STORAGE_TOTAL:-N/A} |
 | 盘型号 | ${STORAGE_MODELS:-N/A} |
+| 系统盘(已排除) | ${SYS_DISK:-N/A} |
 
 ### 盘明细
 | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% |
@@ -706,6 +718,7 @@ $(printf '%s' "$gpu_details_txt")
   盘数   : ${STORAGE_COUNT:-0}
   总容量 : ${STORAGE_TOTAL:-N/A}
   盘型号 : ${STORAGE_MODELS:-N/A}
+  系统盘 : ${SYS_DISK:-N/A} (已从统计排除)
 $(printf '%s' "$disk_details_txt")
 
 [网络]
