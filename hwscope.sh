@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.18.0 (2026-08)
+# Version : 1.19.0 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,11 +74,11 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.18.0"
+HWSCOPE_VERSION="v1.19.0"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
-FORCE_MODE="${FORCE:-0}"; QUIET=0; PARALLEL=0; NO_MODULE=0
+FORCE_MODE="${FORCE:-0}"; QUIET=0; PARALLEL=1; NO_MODULE=0
 
 usage() {
     echo "用法: $0 [OPTIONS]"
@@ -86,7 +86,8 @@ usage() {
     echo "选项:"
     echo "  --modules gpu,storage           只采指定模块（逗号分隔）"
     echo "  --skip dcgm,nvsm                跳过指定模块"
-    echo "  --parallel                      并行执行所有模块"
+    echo "  --parallel                      并行执行所有模块（默认开启）"
+    echo "  --serial                        串行执行（实时输出每模块结果）"
     echo "  --no-module                     跳过光模块查询（缩短采集时长约 48s）"
     echo "  --output /path/to/dir           指定输出目录"
     echo "  --force                         覆盖已有输出目录"
@@ -101,8 +102,9 @@ usage() {
     done
     echo ""
     echo "示例:"
-    echo "  sudo bash $0                              # 全部采集（串行）"
-    echo "  sudo bash $0 --parallel --quiet           # 并行静默采集"
+    echo "  sudo bash $0                              # 全部采集（默认并行）"
+    echo "  sudo bash $0 --serial                     # 串行采集（实时输出）"
+    echo "  sudo bash $0 --quiet                      # 并行静默采集"
     echo "  sudo bash $0 --modules gpu,storage        # 只采 GPU+存储"
     exit 0
 }
@@ -114,6 +116,7 @@ while [[ $# -gt 0 ]]; do
         --output)   OUTPUT_BASE="$2"; shift 2 ;;
         --force)    FORCE_MODE=1; shift ;;
         --parallel) PARALLEL=1; shift ;;
+        --serial)   PARALLEL=0; shift ;;
         --no-module) NO_MODULE=1; shift ;;
         -q|--quiet) QUIET=1; shift ;;
         -h|--help)  usage ;;
@@ -234,6 +237,27 @@ if [ "$PARALLEL" -eq 1 ]; then
     echo -e "${CYAN}[QUEUE]${NC} 并行启动所有模块..."
     echo ""
 
+    # ─── 进度动画（旋转 + 完成计数；仅 TTY 显示，重定向时跳过避免污染日志） ───
+    SPINNER_PID=""
+    start_spinner() {
+        [ -t 1 ] || return 0
+        local total="$1"
+        (
+            local chars='/-\|' i=0 done=0
+            while :; do
+                done=$(ls "${OUTPUT_BASE}"/.done_* 2>/dev/null | wc -l)
+                printf "\r\033[36m%c\033[0m 正在并行采集... %s/%s 模块完成" "${chars:$((i%4)):1}" "$done" "$total"
+                i=$((i+1)); sleep 0.2
+            done
+        ) &
+        SPINNER_PID=$!
+    }
+    stop_spinner() {
+        [ -n "$SPINNER_PID" ] && kill "$SPINNER_PID" 2>/dev/null; wait "$SPINNER_PID" 2>/dev/null
+        SPINNER_PID=""
+        [ -t 1 ] && printf "\r\033[K"
+    }
+
     PIDS=(); MODULE_INFO=()
     for mod_info in "${MODULES[@]}"; do
         IFS=':' read -r num id fn desc <<< "$mod_info"
@@ -254,13 +278,16 @@ if [ "$PARALLEL" -eq 1 ]; then
                 echo "$(( $(date +%s) - start_ts ))" > "${OUTPUT_BASE}/.${id}_time"
                 echo "$(get_warn_count)" > "${OUTPUT_BASE}/.${id}_warn"
                 find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l > "${OUTPUT_BASE}/.${id}_files"
+                touch "${OUTPUT_BASE}/.${id}_done"
             ) > "${OUTPUT_BASE}/.${id}_log" 2>&1 &
             PIDS+=($!); MODULE_INFO+=("${num}|${id}|${desc}")
         fi
     done
 
-    # 等待全部完成
+    # 等待全部完成（期间显示进度动画）
+    start_spinner ${#MODULE_INFO[@]}
     for pid in "${PIDS[@]}"; do wait $pid 2>/dev/null; done
+    stop_spinner
 
     # 按注册表顺序输出 + 汇总
     for info in "${MODULE_INFO[@]}"; do
@@ -273,7 +300,7 @@ if [ "$PARALLEL" -eq 1 ]; then
         summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${files} files, ${mtime}s, ${warn} WARN"
         MOD_TIMES="${MOD_TIMES}${num}.${id}|${mtime}"$'\n'
         TOTAL_COUNT=$((TOTAL_COUNT + 1))
-        rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_files" "${OUTPUT_BASE}/.${id}_time"
+        rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_files" "${OUTPUT_BASE}/.${id}_time" "${OUTPUT_BASE}/.${id}_done"
     done
 else
     # ═══════════════ 串行模式 ═══════════════
