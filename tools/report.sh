@@ -168,6 +168,35 @@ if [ -f "${OUT}/gpu/gpu_remapped_rows.csv" ]; then
     GPU_REMAP=$(grep -v "^#" "${OUT}/gpu/gpu_remapped_rows.csv" | grep -v "^$" | awk -F',' '{gsub(/ /,"",$1); gsub(/ /,"",$2); gsub(/ /,"",$3); gsub(/ /,"",$4); c+=$1; u+=$2; p+=$3; f+=$4} END{if(NR>0) printf "CE:%d UE:%d pending:%d fail:%d", c, u, p, f; else print "N/A"}')
 fi
 
+# NVLink 链路（gpu_nvlink_status.log：每 GPU 链路数 + 速率 + 异常链路）
+NV_LINK_SUMMARY="N/A"
+if [ -f "${OUT}/gpu/gpu_nvlink_status.log" ]; then
+    NV_GPU_LINKS=$(grep -c "Link [0-9]" "${OUT}/gpu/gpu_nvlink_status.log" 2>/dev/null)
+    NV_GPU_COUNT=$(grep -c "^GPU " "${OUT}/gpu/gpu_nvlink_status.log" 2>/dev/null)
+    NV_LINK_RATE=$(grep -m1 "Link 0:" "${OUT}/gpu/gpu_nvlink_status.log" 2>/dev/null | awk '{print $(NF-1)" "$NF}')
+    # 异常链路：速率明确为 0 / N/A / Down / Off（避免匹配 "200.0" 里的 0）
+    NV_LINK_DOWN=$(grep -E "Link [0-9]+: *(0|N/A|Down|Off)( |$)" "${OUT}/gpu/gpu_nvlink_status.log" 2>/dev/null | wc -l)
+    if [ "$NV_GPU_COUNT" -gt 0 ] 2>/dev/null; then
+        NV_LINK_SUMMARY="${NV_GPU_COUNT}卡 × ${NV_LINK_RATE}"
+        [ "$NV_LINK_DOWN" -gt 0 ] && NV_LINK_SUMMARY="${NV_LINK_SUMMARY} ⚠️${NV_LINK_DOWN}链路异常"
+    fi
+fi
+
+# NVSwitch（nvswitch_*.log：状态/温度/端口）
+NVS_DETAILS=""
+if ls ${OUT}/nvswitch/nvswitch_*.log >/dev/null 2>&1; then
+    for nf in ${OUT}/nvswitch/nvswitch_*.log; do
+        nidx=$(basename "$nf" | sed 's/nvswitch_//; s/\.log//')
+        nstate=$(grep -m1 "Switch State" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
+        ntemp=$(grep -m1 "Temperature" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ' | sed 's/C$//')
+        nports=$(grep -m1 "Active Nvlink Ports" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
+        ntotal=$(grep -m1 "Total Nvlink Ports" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
+        nstat="${nstate:-N/A}"
+        [ "$nstat" != "Active" ] && [ "$nstat" != "N/A" ] && nstat="${nstat} ⚠️"
+        NVS_DETAILS="${NVS_DETAILS}${nidx}|${nstat}|${ntemp:-N/A}°C|${nports:-N/A}/${ntotal:-N/A}"$'\n'
+    done
+fi
+
 # ─── 网络 ───
 NET_DIR="${OUT}/network"
 IB_COUNT=$(grep -c "State: Active" "${NET_DIR}/ibstat.log" 2>/dev/null)
@@ -304,6 +333,15 @@ gen_json() {
         done <<< "$NIC_DETAILS"
         nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
     fi
+    # NVSwitch JSON 数组
+    local nvs_json=""
+    if [ -n "$NVS_DETAILS" ]; then
+        while IFS='|' read -r nidx nstat ntemp nports; do
+            [ -z "$nidx" ] && continue
+            nvs_json="${nvs_json}      {\"id\": \"${nidx}\", \"state\": \"${nstat}\", \"temp\": \"${ntemp}\", \"ports\": \"${nports}\"},"$'\n'
+        done <<< "$NVS_DETAILS"
+        nvs_json=$(printf '%s' "$nvs_json" | sed '$ s/,$//')
+    fi
     cat > "$f" << EOF
 {
   "hwscope": {
@@ -350,6 +388,7 @@ ${dimms_json}
     "temp": "${GPU_TEMP:-N/A}",
     "ecc": "${GPU_ECC:-N/A}",
     "remapped_rows": "${GPU_REMAP:-N/A}",
+    "nvlink": "${NV_LINK_SUMMARY:-N/A}",
     "serials": "${GPU_SERIALS:-N/A}",
     "details": [
 ${gpu_details_json}
@@ -389,6 +428,9 @@ ${nic_details_json}
   "psu": {
     "list": "${PSU_DETAILS:-N/A}"
   },
+  "nvswitch": [
+$(printf '%s' "$nvs_json")
+  ],
   "health": {
     "gpu_pcie_degraded": "${GPU_DEGRADED:-OK}",
     "sel_pcie_errors": "${SEL_PCIE_ERR:-0}",
@@ -433,6 +475,14 @@ gen_md() {
             [ -z "$nnic" ] && continue
             nic_details_md="${nic_details_md}| ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} | ${npsid} |"$'\n'
         done <<< "$NIC_DETAILS"
+    fi
+    # NVSwitch Markdown 表
+    local nvs_md=""
+    if [ -n "$NVS_DETAILS" ]; then
+        while IFS='|' read -r nidx nstat ntemp nports; do
+            [ -z "$nidx" ] && continue
+            nvs_md="${nvs_md}| ${nidx} | ${nstat} | ${ntemp} | ${nports} |"$'\n'
+        done <<< "$NVS_DETAILS"
     fi
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
@@ -487,6 +537,7 @@ $(printf '%s' "$dimms_md")
 | 温度 | ${GPU_TEMP:-N/A} |
 | ECC | ${GPU_ECC:-N/A} |
 | 退役行 | ${GPU_REMAP:-N/A} |
+| NVLink | ${NV_LINK_SUMMARY:-N/A} |
 
 ### 每卡明细
 | 卡 | 型号 | SN | 显存 | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
@@ -538,6 +589,11 @@ $(printf '%s' "$nic_details_md")
 ## 电源 PSU
 ${PSU_DETAILS:-N/A}
 
+## NVSwitch
+| 编号 | 状态 | 温度 | 活动/总端口 |
+|------|------|------|-------------|
+$(printf '%s' "$nvs_md")
+
 ## 健康检查
 | 项 | 状态 |
 |----|------|
@@ -586,6 +642,14 @@ gen_txt() {
             nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  ${nspd}/${nwd}  PSID:${npsid}"$'\n'
         done <<< "$NIC_DETAILS"
     fi
+    # NVSwitch 纯文本
+    local nvs_txt=""
+    if [ -n "$NVS_DETAILS" ]; then
+        while IFS='|' read -r nidx nstat ntemp nports; do
+            [ -z "$nidx" ] && continue
+            nvs_txt="${nvs_txt}    NVSwitch${nidx}  ${nstat}  ${ntemp}  端口:${nports}"$'\n'
+        done <<< "$NVS_DETAILS"
+    fi
     cat > "$f" << EOF
 ============================================
 HwScope 硬件巡检报告
@@ -627,6 +691,7 @@ $(printf '%s' "$dimms_txt")
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
   退役行 : ${GPU_REMAP:-N/A}
+  NVLink : ${NV_LINK_SUMMARY:-N/A}
 $(printf '%s' "$gpu_details_txt")
 
 [存储]
@@ -657,6 +722,9 @@ $(printf '%s' "$nic_details_txt")
 
 [电源PSU]
 ${PSU_DETAILS:-N/A}
+
+[NVSwitch]
+$(printf '%s' "$nvs_txt")
 
 [健康检查]
   PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}
