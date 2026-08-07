@@ -66,22 +66,29 @@ run_and_log() {
         _MODULE_WARN_COUNT=$((_MODULE_WARN_COUNT + 1))
     fi
 
-    # 终端状态显示
+    # 终端状态显示（带每条命令耗时：亚秒显示小数 0.20s，≥1s 用 M:SSs）
+    local esec=${elapsed%.*}; [ -z "$esec" ] && esec=0
+    local fmt_elapsed
+    if [ "$esec" -lt 1 ] 2>/dev/null; then
+        fmt_elapsed="${elapsed}s"
+    else
+        fmt_elapsed=$(printf "%d:%02ds" $((esec/60)) $((esec%60)))
+    fi
     local fname=$(basename "${logfile%.*}")
     if [ "$QUIET" -eq 1 ]; then
         # 静默模式：只显示 WARN
         if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
-            echo -e "${YELLOW}WARN${NC} ${fname} (exit=$ret)"
+            echo -e "${YELLOW}WARN${NC} ${fname} (exit=$ret)  [ ${fmt_elapsed} ]"
         fi
     else
         if [ "$ret" -eq 0 ]; then
-            echo -e "${GREEN}[OK]${NC} ${fname}  (exit=0)"
+            echo -e "${GREEN}[OK]${NC} ${fname}  (exit=0)  [ ${fmt_elapsed} ]"
         elif [ "$ret" -eq 1 ]; then
-            echo -e "[~] ${fname}  (no match)"
+            echo -e "[~] ${fname}  (no match)  [ ${fmt_elapsed} ]"
         elif [ "$ret" -eq 127 ]; then
-            echo -e "${YELLOW}[N/A]${NC} ${fname}  (cmd not found)"
+            echo -e "${YELLOW}[N/A]${NC} ${fname}  (cmd not found)  [ ${fmt_elapsed} ]"
         else
-            echo -e "${YELLOW}[WARN]${NC} ${fname}  (exit=$ret)"
+            echo -e "${YELLOW}[WARN]${NC} ${fname}  (exit=$ret)  [ ${fmt_elapsed} ]"
         fi
     fi
     return $ret

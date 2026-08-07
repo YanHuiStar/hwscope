@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.19.0 (2026-08)
+# Version : 1.19.1 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.19.0"
+HWSCOPE_VERSION="v1.19.1"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -289,7 +289,7 @@ if [ "$PARALLEL" -eq 1 ]; then
     for pid in "${PIDS[@]}"; do wait $pid 2>/dev/null; done
     stop_spinner
 
-    # 按注册表顺序输出 + 汇总
+    # 按注册表顺序输出（每条命令带耗时）+ 汇总
     for info in "${MODULE_INFO[@]}"; do
         IFS='|' read -r num id desc <<< "$info"
         cat "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
