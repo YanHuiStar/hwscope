@@ -113,12 +113,15 @@ if [ -f "$GPU_CSV" ]; then
             gutil_f="N/A"; gdraw_f="N/A"
         fi
         [ -n "$gtemp_f" ] && [ "$gtemp_f" != "N/A" ] && [ "$gtemp_f" != "[N/A]" ] && gtemp_f="${gtemp_f}°C"
+        # GPU 卡板号（从每卡 detail.log 提取 Board Part Number）
+        gbpn="N/A"
+        [ -f "${OUT}/gpu/gpu_${gidx}_detail.log" ] && gbpn=$(grep -m1 "Board Part Number" "${OUT}/gpu/gpu_${gidx}_detail.log" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
         # PCIe 显示：两侧都 N/A 时合并为单个 N/A（避免 N/A/N/A/N/A/N/A）
         gpcie_cur="N/A"; gpcie_max="N/A"
         [ "$ggen" != "N/A" ] && [ -n "$ggen" ] && gpcie_cur="${ggen}x${gwidth}"
         [ "$ggenmax" != "N/A" ] && [ -n "$ggenmax" ] && gpcie_max="${ggenmax}x${gwidthmax}"
         [ "$gpcie_cur" = "N/A" ] && [ "$gpcie_max" != "N/A" ] && gpcie_cur="?"
-        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}"$'\n'
+        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}|${gbpn}"$'\n'
         # PCIe 宽度降级检测（宽度空闲不变，是最可靠信号；gen 低可能是省电不算）
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
@@ -237,9 +240,9 @@ gen_json() {
     # GPU 每卡明细 JSON 数组（idx|name|serial|mem|power|temp|util|pcie_cur|pcie_max）
     local gpu_details_json=""
     if [ -n "$GPU_DETAILS" ]; then
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gbpn; do
             [ -z "$gidx" ] && continue
-            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"util\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\"},"$'\n'
+            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"util\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\", \"board_pn\": \"${gbpn}\"},"$'\n'
         done <<< "$GPU_DETAILS"
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
@@ -341,9 +344,9 @@ gen_md() {
     # GPU 每卡明细 Markdown 表
     local gpu_details_md=""
     if [ -n "$GPU_DETAILS" ]; then
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gbpn; do
             [ -z "$gidx" ] && continue
-            gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
+            gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} | ${gbpn} |"$'\n'
         done <<< "$GPU_DETAILS"
     fi
     cat > "$f" << EOF
@@ -399,8 +402,8 @@ $(printf '%s' "$dimms_md")
 | ECC | ${GPU_ECC:-N/A} |
 
 ### 每卡明细
-| 卡 | 型号 | SN | 显存 | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
-|----|------|----|----|------|------|--------|----------|-----------|
+| 卡 | 型号 | SN | 显存 | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 | 板号 |
+|----|------|----|----|------|------|--------|----------|-----------|------|
 $(printf '%s' "$gpu_details_md")
 
 ## 存储
@@ -462,9 +465,9 @@ gen_txt() {
     # GPU 每卡明细纯文本
     local gpu_details_txt=""
     if [ -n "$GPU_DETAILS" ]; then
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gbpn; do
             [ -z "$gidx" ] && continue
-            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
+            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}  板号:${gbpn}"$'\n'
         done <<< "$GPU_DETAILS"
     fi
     cat > "$f" << EOF
