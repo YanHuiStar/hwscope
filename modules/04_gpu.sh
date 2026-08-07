@@ -58,6 +58,10 @@ run_gpu() {
     # 8. GPU topology
     run_and_log "nvidia-smi topo -m" "${dir}/gpu_topo.log"
 
+    # 9. 退役行数（HBM 坏块退役信号；独立查询防驱动版本兼容问题）
+    run_and_log "nvidia-smi --query-remapped-rows=remapped_rows.correctable,remapped_rows.uncorrectable,remapped_rows.pending,remapped_rows.failure --format=csv" \
+        "${dir}/gpu_remapped_rows.csv"
+
     module_end "$MODULE_NAME"
 }
 
