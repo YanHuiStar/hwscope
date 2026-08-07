@@ -272,12 +272,46 @@ for f in "${NET_DIR}"/mlxconfig_*_linktype.log; do
 done
 LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')
 
-# 网卡明细（nic_inventory.csv: dev|bdf|mac|sn|pn|fw|speed|width）
+# 网卡明细（nic_inventory.csv: dev|bdf|mac|sn|pn|fw|speed|width|psid）
+# IB 控制器型号识别：ibstat CA type + ibdev2netdev 映射（mlx5_N ↔ ibp*），附加到 PN 列
+declare -A CA_MODEL NETDEV_CA
+if [ -f "${NET_DIR}/ibstat.log" ]; then
+    cur_ca=""
+    while IFS= read -r il; do
+        case "$il" in
+            *"CA '"*) cur_ca=$(echo "$il" | sed "s/.*'\(.*\)'.*/\1/") ;;
+            *"CA type:"*) [ -n "$cur_ca" ] && CA_MODEL[$cur_ca]=$(echo "$il" | awk '{print $NF}') ;;
+        esac
+    done < <(grep -v "^#" "${NET_DIR}/ibstat.log")
+fi
+if [ -f "${NET_DIR}/ibdev2netdev.log" ]; then
+    while IFS= read -r nl; do
+        ca=$(echo "$nl" | awk '{print $1}'); dev=$(echo "$nl" | awk '{print $5}')
+        [ -n "$ca" ] && [ -n "$dev" ] && NETDEV_CA[$dev]=$ca
+    done < <(grep -v "^#" "${NET_DIR}/ibdev2netdev.log")
+fi
+mt_model() {
+    case "$1" in
+        MT4131|MT4129) echo "ConnectX-8" ;;
+        MT4125) echo "ConnectX-7" ;;
+        MT4124) echo "ConnectX-6 Lx" ;;
+        MT4123) echo "ConnectX-6 Dx" ;;
+        MT4121|MT4122) echo "ConnectX-6" ;;
+        MT2892|MT2893) echo "ConnectX-5" ;;
+        MT2884|MT2883) echo "ConnectX-4" ;;
+        *) echo "Mellanox" ;;
+    esac
+}
 NIC_DETAILS=""
 if [ -f "${NET_DIR}/nic_inventory.csv" ]; then
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
+        # IB 设备（ibp*/ibs*）附加控制器型号
+        if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
+            mt="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
+            [ -n "$mt" ] && npn="${npn} [$(mt_model "$mt")]"
+        fi
         NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}|${npsid}"$'\n'
     done < <(grep -v "^#" "${NET_DIR}/nic_inventory.csv" 2>/dev/null)
 fi
