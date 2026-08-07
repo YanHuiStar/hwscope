@@ -155,10 +155,10 @@ fi
 # 盘明细（disk_inventory.csv: name|type|size|model|serial|fw|bdf|power_on）
 DISK_DETAILS=""
 if [ -f "${STO_DIR}/disk_inventory.csv" ]; then
-    while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo; do
+    while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
         [ -z "$dname" ] || [ "$dname" = "N/A" ] && continue
         [ "$dname" = "#" ] && continue
-        DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}"$'\n'
+        DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}"$'\n'
     done < <(grep -v "^#" "${STO_DIR}/disk_inventory.csv" 2>/dev/null)
 fi
 
@@ -235,10 +235,10 @@ LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')
 # 网卡明细（nic_inventory.csv: dev|bdf|mac|sn|pn|fw|speed|width）
 NIC_DETAILS=""
 if [ -f "${NET_DIR}/nic_inventory.csv" ]; then
-    while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd; do
+    while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
-        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}"$'\n'
+        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}|${npsid}"$'\n'
     done < <(grep -v "^#" "${NET_DIR}/nic_inventory.csv" 2>/dev/null)
 fi
 
@@ -249,6 +249,21 @@ FAN_MIN=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|'
 FAN_MAX=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | tail -1)
 FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
+
+# ─── PSU 清单（ipmi_psu_fru.log：FRU 描述/型号/PN/SN） ───
+PSU_DETAILS=""
+if [ -f "${OUT}/psu/ipmi_psu_fru.log" ]; then
+    while IFS= read -r pline; do
+        case "$pline" in
+            *"FRU Device Description"*) pdesc=$(echo "$pline" | cut -d: -f2- | xargs) ;;
+            *"Product Name"*)          pmodel=$(echo "$pline" | cut -d: -f2- | xargs); [ -n "$pdesc" ] && PSU_DETAILS="${PSU_DETAILS}${pdesc}|${pmodel}|"$'\n'; pdesc="" ;;
+            *"Product Part Number"*)   ppn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
+            *"Product Serial"*)        psn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
+        esac
+    done < <(grep -v "^#" "${OUT}/psu/ipmi_psu_fru.log" 2>/dev/null)
+    # 补最后一只 PSU 的 PN/SN（PSU_DETAILS 行尾追加）
+    PSU_DETAILS=$(echo "$PSU_DETAILS" | sed "s/|$//; s/$/|${ppn:-N\/A}|${psn:-N\/A}/")
+fi
 
 # ─── 生成 JSON ───
 gen_json() {
@@ -274,18 +289,18 @@ gen_json() {
     # 盘明细 JSON 数组（name|type|size|model|sn|fw|bdf|power_on）
     local disk_details_json=""
     if [ -n "$DISK_DETAILS" ]; then
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
             [ -z "$dname" ] && continue
-            disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\"},"$'\n'
+            disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\", \"power_cyc\": \"${dpc}\", \"spare\": \"${dspare}\"},"$'\n'
         done <<< "$DISK_DETAILS"
         disk_details_json=$(printf '%s' "$disk_details_json" | sed '$ s/,$//')
     fi
     # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
     local nic_details_json=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
             [ -z "$nnic" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"firmware\": \"${nfw}\", \"speed\": \"${nspd}\", \"width\": \"${nwd}\"},"$'\n'
+            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"firmware\": \"${nfw}\", \"speed\": \"${nspd}\", \"width\": \"${nwd}\", \"psid\": \"${npsid}\"},"$'\n'
         done <<< "$NIC_DETAILS"
         nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
     fi
@@ -371,6 +386,9 @@ ${nic_details_json}
     "count": "${FAN_COUNT:-0}",
     "speed": "${FAN_SPEED:-N/A}"
   },
+  "psu": {
+    "list": "${PSU_DETAILS:-N/A}"
+  },
   "health": {
     "gpu_pcie_degraded": "${GPU_DEGRADED:-OK}",
     "sel_pcie_errors": "${SEL_PCIE_ERR:-0}",
@@ -403,17 +421,17 @@ gen_md() {
     # 盘明细 Markdown 表
     local disk_details_md=""
     if [ -n "$DISK_DETAILS" ]; then
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
             [ -z "$dname" ] && continue
-            disk_details_md="${disk_details_md}| ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} |"$'\n'
+            disk_details_md="${disk_details_md}| ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc} | ${dspare} |"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细 Markdown 表
     local nic_details_md=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
             [ -z "$nnic" ] && continue
-            nic_details_md="${nic_details_md}| ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} |"$'\n'
+            nic_details_md="${nic_details_md}| ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} | ${npsid} |"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     cat > "$f" << EOF
@@ -483,8 +501,8 @@ $(printf '%s' "$gpu_details_md")
 | 盘型号 | ${STORAGE_MODELS:-N/A} |
 
 ### 盘明细
-| 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) |
-|------|------|------|------|----|------|-----|---------|
+| 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% |
+|------|------|------|------|----|------|-----|---------|----------|-------|
 $(printf '%s' "$disk_details_md")
 
 ## 网络
@@ -498,8 +516,8 @@ $(printf '%s' "$disk_details_md")
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 
 ### 网卡明细
-| 接口 | BDF | MAC | SN | 型号 | 固件 | 速率 | 宽度 |
-|------|-----|-----|----|------|------|------|------|
+| 接口 | BDF | MAC | SN | 型号 | 固件 | 速率 | 宽度 | PSID |
+|------|-----|-----|----|------|------|------|------|------|
 $(printf '%s' "$nic_details_md")
 
 ## BMC
@@ -516,6 +534,9 @@ $(printf '%s' "$nic_details_md")
 |----|----|
 | 数量 | ${FAN_COUNT:-0} |
 | 转速 | ${FAN_SPEED:-N/A} |
+
+## 电源 PSU
+${PSU_DETAILS:-N/A}
 
 ## 健康检查
 | 项 | 状态 |
@@ -552,17 +573,17 @@ gen_txt() {
     # 盘明细纯文本
     local disk_details_txt=""
     if [ -n "$DISK_DETAILS" ]; then
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
             [ -z "$dname" ] && continue
-            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h"$'\n'
+            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}  spare:${dspare}"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细纯文本
     local nic_details_txt=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
             [ -z "$nnic" ] && continue
-            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  ${nspd}/${nwd}"$'\n'
+            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  ${nspd}/${nwd}  PSID:${npsid}"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     cat > "$f" << EOF
@@ -633,6 +654,9 @@ $(printf '%s' "$nic_details_txt")
 [风扇]
   数量   : ${FAN_COUNT:-0}
   转速   : ${FAN_SPEED:-N/A}
+
+[电源PSU]
+${PSU_DETAILS:-N/A}
 
 [健康检查]
   PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}

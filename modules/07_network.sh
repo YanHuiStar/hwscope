@@ -120,6 +120,14 @@ run_network() {
             if check_cmd ethtool; then
                 nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | awk '{print $2}')
             fi
+            # PSID（Mellanox 卡用 mstflint/flint 查询；非 Mellanox 卡置 N/A）
+            local npsid="N/A"
+            if check_cmd mstflint && [[ "$npn" == *"Mellanox"* || "$npn" == *"ConnectX"* || "$npn" == *"MLX"* ]]; then
+                local mstdev=$(mst status 2>/dev/null | grep -i "$nbdf" | awk '{print $1}' | head -1)
+                [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep -i "${nbdf//:}" | head -1)
+                [ -n "$mstdev" ] && npsid=$(mstflint -d "$mstdev" q 2>/dev/null | grep "PSID" | awk '{print $NF}')
+                [ -z "$npsid" ] && npsid="N/A"
+            fi
             local nspd="N/A" nwd="N/A"
             if check_cmd lspci; then
                 local lnksta=$(lspci -vv -s "$nbdf" 2>/dev/null | grep "LnkSta:" | head -1)
@@ -127,7 +135,7 @@ run_network() {
                 nwd=$(echo "$lnksta" | grep -oE "x[0-9]+" | head -1)
             fi
             [ -z "$nspd" ] && nspd="N/A"; [ -z "$nwd" ] && nwd="N/A"
-            echo "${ndev}|${nbdf}|${nmac:-N/A}|${nsn}|${npn:-N/A}|${nfw}|${nspd}|${nwd}"
+            echo "${ndev}|${nbdf}|${nmac:-N/A}|${nsn}|${npn:-N/A}|${nfw}|${nspd}|${nwd}|${npsid}"
         done
     } > "${dir}/nic_inventory.csv" 2>/dev/null || true
 

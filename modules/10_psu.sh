@@ -28,6 +28,9 @@ run_psu() {
             "${dir}/ipmi_psu_temp.log"
         run_and_log "ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons'" \
             "${dir}/ipmi_psu_power.log"
+        # 每只 PSU 资产清单（FRU：型号/SN/功率）
+        run_and_log "ipmitool fru print 2>/dev/null | grep -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply' | head -80" \
+            "${dir}/ipmi_psu_fru.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi
