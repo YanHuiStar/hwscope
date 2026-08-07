@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.17.5 (2026-08)
+# Version : 1.18.0 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.17.5"
+HWSCOPE_VERSION="v1.18.0"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -227,6 +227,7 @@ echo "========================================"
 echo ""
 
 TOTAL_COUNT=0; FILE_COUNT=0
+START_TS=$(date +%s); MOD_TIMES=""
 
 if [ "$PARALLEL" -eq 1 ]; then
     # ═══════════════ 并行模式 ═══════════════
@@ -247,8 +248,10 @@ if [ "$PARALLEL" -eq 1 ]; then
         if declare -F "$fn" >/dev/null 2>&1; then
             mkdir -p "${OUTPUT_BASE}/${id}"
             (
+                start_ts=$(date +%s)
                 reset_warn_count
                 "$fn" "$OUTPUT_BASE" 2>&1
+                echo "$(( $(date +%s) - start_ts ))" > "${OUTPUT_BASE}/.${id}_time"
                 echo "$(get_warn_count)" > "${OUTPUT_BASE}/.${id}_warn"
                 find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l > "${OUTPUT_BASE}/.${id}_files"
             ) > "${OUTPUT_BASE}/.${id}_log" 2>&1 &
@@ -265,10 +268,12 @@ if [ "$PARALLEL" -eq 1 ]; then
         cat "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
         warn=$(cat "${OUTPUT_BASE}/.${id}_warn" 2>/dev/null || echo 0)
         files=$(cat "${OUTPUT_BASE}/.${id}_files" 2>/dev/null || echo 0)
+        mtime=$(cat "${OUTPUT_BASE}/.${id}_time" 2>/dev/null || echo 0)
         FILE_COUNT=$((FILE_COUNT + files))
-        summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${files} files, -, ${warn} WARN"
+        summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${files} files, ${mtime}s, ${warn} WARN"
+        MOD_TIMES="${MOD_TIMES}${num}.${id}|${mtime}"$'\n'
         TOTAL_COUNT=$((TOTAL_COUNT + 1))
-        rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_files"
+        rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_files" "${OUTPUT_BASE}/.${id}_time"
     done
 else
     # ═══════════════ 串行模式 ═══════════════
@@ -291,6 +296,7 @@ else
             mod_file_count=$(find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l)
             FILE_COUNT=$((FILE_COUNT + mod_file_count))
             summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${mod_file_count} files, ${elapsed}s, ${warn_count} WARN"
+            MOD_TIMES="${MOD_TIMES}${num}.${id}|${elapsed}"$'\n'
             TOTAL_COUNT=$((TOTAL_COUNT + 1))
         else
             echo -e "${RED}[ERROR] 函数 ${fn} 未在 ${MODULE_SCRIPT} 中定义${NC}"
@@ -314,9 +320,22 @@ fi
     echo "  └── summary.txt"; echo ""
 } >> "$SUMMARY_FILE"
 
+# ─── 耗时统计（总时长 + 模块 Top5） ───
+TOTAL_ELAPSED=$(( $(date +%s) - START_TS ))
+{
+    echo "========== 耗时统计 =========="
+    echo "总时长      : ${TOTAL_ELAPSED}s"
+    echo "模块耗时 Top5:"
+    echo "$MOD_TIMES" | grep -v "^$" | sort -t'|' -k2 -rn | head -5 | while IFS='|' read -r mt_name mt_sec; do
+        pct=$(awk "BEGIN{printf \"%d%%\", $mt_sec*100/$TOTAL_ELAPSED}")
+        echo "  ${mt_name}  ${mt_sec}s  (${pct})"
+    done
+    echo "============================================================"
+} >> "$SUMMARY_FILE"
+
 echo ""
 echo "========================================"
-echo -e "${GREEN}采集完成！${NC}"; echo "输出目录: ${OUTPUT_BASE}"; echo "总日志数: ${FILE_COUNT}"
+echo -e "${GREEN}采集完成！${NC}"; echo "输出目录: ${OUTPUT_BASE}"; echo "总日志数: ${FILE_COUNT}"; echo -e "${CYAN}总耗时: ${TOTAL_ELAPSED}s${NC}"
 echo "========================================"
 echo ""
 find "${OUTPUT_BASE}" -type d | sort | while read d; do
