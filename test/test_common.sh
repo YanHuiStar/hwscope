@@ -53,7 +53,10 @@ test_menu() {
 # 记录一条测试结果（状态按命令 exit code 判定，避免日志内容误判）
 test_record() {
     local name="$1" logfile="$2" start_ts="$3" exit_code="${4:-0}"
-    local end_ts=$(date +%s) elapsed=$((end_ts - start_ts))
+    local end_ts
+    local elapsed
+    end_ts=$(date +%s)
+    elapsed=$((end_ts - start_ts))
     local status
     if [ "$exit_code" -eq 0 ]; then
         status="通过"

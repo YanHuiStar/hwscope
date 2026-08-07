@@ -104,9 +104,9 @@ run_storage() {
     run_and_log "mount" "${dir}/mount.log"
     run_and_log "cat /proc/partitions" "${dir}/proc_partitions.log"
 
-    # ─── 盘一览清单（name|type|size|model|sn|fw|bdf|power_on）───
+    # ─── 盘一览清单（name|type|size|model|sn|fw|bdf|power_on|power_cyc|spare）───
     {
-        echo "# disk inventory: name|type|size|model|serial|firmware|bdf|power_on_hours"
+        echo "# disk inventory: name|type|size|model|serial|firmware|bdf|power_on_hours|power_cycles|spare_percent"
         # NVMe
         for ndev in /dev/nvme*n1; do
             [ -b "$ndev" ] || continue
@@ -117,12 +117,17 @@ run_storage() {
             local nsn=$(cat "/sys/block/${nname}/device/serial" 2>/dev/null | xargs)
             local nfw=$(cat "/sys/block/${nname}/device/firmware_rev" 2>/dev/null | xargs)
             local nbdf=$(basename "$(readlink -f "/sys/class/nvme/${ctrl}/device" 2>/dev/null)" 2>/dev/null | sed 's/^0000://')
-            local npo=""
+            local npo="" npc="" nspare=""
             if check_cmd nvme; then
-                npo=$(nvme smart-log "$ndev" 2>/dev/null | grep "power_on_hours" | awk '{print $3}')
+                local nsmart=$(nvme smart-log "$ndev" 2>/dev/null)
+                npo=$(echo "$nsmart" | grep "power_on_hours" | awk '{print $3}')
+                npc=$(echo "$nsmart" | grep "power_cycles" | awk '{print $3}')
+                nspare=$(echo "$nsmart" | grep "percent_used" | awk '{print $3}')
+                # percent_used 是已用百分比，Spare% = 100 - used
+                [ -n "$nspare" ] && nspare=$((100 - nspare))
             fi
-            [ -z "$npo" ] && npo="0"
-            echo "${nname}|NVMe|${nsize:-N/A}|${nmodel:-N/A}|${nsn:-N/A}|${nfw:-N/A}|${nbdf:-N/A}|${npo}"
+            [ -z "$npo" ] && npo="0"; [ -z "$npc" ] && npc="0"; [ -z "$nspare" ] && nspare="N/A"
+            echo "${nname}|NVMe|${nsize:-N/A}|${nmodel:-N/A}|${nsn:-N/A}|${nfw:-N/A}|${nbdf:-N/A}|${npo}|${npc}|${nspare}%"
         done
         # SATA/SAS
         for sdev in /dev/sd[a-z]; do
@@ -145,7 +150,9 @@ run_storage() {
             local spo=$(smartctl -A "$sdev" 2>/dev/null | grep -i "Power_On_Hours" | awk '{print $10}')
             [ -z "$spo" ] && spo=$(smartctl -A "$sdev" 2>/dev/null | grep -i "Power_On_Hours" | awk '{print $4}')
             [ -z "$spo" ] && spo="0"
-            echo "${sname}|SATA|${ssize:-N/A}|${smodel:-N/A}|${ssn:-N/A}|${sfw:-N/A}|${sinter}|${spo}"
+            local spc=$(smartctl -A "$sdev" 2>/dev/null | grep -i "Power_Cycle" | awk '{print $10}')
+            [ -z "$spc" ] && spc="0"
+            echo "${sname}|SATA|${ssize:-N/A}|${smodel:-N/A}|${ssn:-N/A}|${sfw:-N/A}|${sinter}|${spo}|${spc}|N/A"
         done
     } > "${dir}/disk_inventory.csv" 2>/dev/null || true
 
