@@ -325,19 +325,24 @@ FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 
 # ─── PSU 清单（ipmi_psu_fru.log：FRU 描述/型号/PN/SN） ───
+# 状态机：desc 行出现时输出上一个 FRU（PN/SN 在 Name 之后，须延迟一行）；
+# 只保留 PSU 行（PSU1_FRU/PSU4_FRU/Power Supply），过滤风扇/背板/PDB 等其他 FRU
 PSU_DETAILS=""
 if [ -f "${OUT}/psu/ipmi_psu_fru.log" ]; then
+    pdesc=""; pmodel=""; ppn=""; psn=""; pending=""
     while IFS= read -r pline; do
         case "$pline" in
-            *"FRU Device Description"*) pdesc=$(echo "$pline" | cut -d: -f2- | xargs) ;;
-            *"Product Name"*)          pmodel=$(echo "$pline" | cut -d: -f2- | xargs); [ -n "$pdesc" ] && PSU_DETAILS="${PSU_DETAILS}${pdesc}|${pmodel}|"$'\n'; pdesc="" ;;
+            *"FRU Device Description"*)
+                [ -n "$pending" ] && PSU_DETAILS="${PSU_DETAILS}${pending}${ppn:-N/A}|${psn:-N/A}"$'\n'
+                pdesc=$(echo "$pline" | cut -d: -f2- | xargs); pmodel=""; ppn=""; psn=""; pending="" ;;
+            *"Product Name"*)          pmodel=$(echo "$pline" | cut -d: -f2- | xargs); [ -n "$pdesc" ] && pending="${pdesc}|${pmodel}|" ;;
             *"Product Part Number"*)   ppn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
             *"Product Serial"*)        psn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
         esac
     done < <(grep -v "^#" "${OUT}/psu/ipmi_psu_fru.log" 2>/dev/null)
-    # 补最后一只 PSU 的 PN/SN（awk 追加，避免 sed 分隔符与数据中的 / 冲突；/xxx/ 占位垃圾值视为 N/A）
-    PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v pn="${ppn:-N/A}" -v sn="${psn:-N/A}" '
-        { if (pn ~ /^\/.*\/$/) pn="N/A"; if (sn ~ /^\/.*\/$/) sn="N/A"; sub(/\|$/,""); print $0 "|" pn "|" sn }')
+    [ -n "$pending" ] && PSU_DETAILS="${PSU_DETAILS}${pending}${ppn:-N/A}|${psn:-N/A}"$'\n'
+    # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）
+    PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|Power Supply")
 fi
 
 # ─── 生成 JSON ───
@@ -475,7 +480,18 @@ ${nic_details_json}
     "speed": "${FAN_SPEED:-N/A}"
   },
   "psu": {
-    "list": "$(printf '%s' "${PSU_DETAILS:-N/A}" | tr '\n' '; ' | sed 's/; $//')"
+    "list": "$(printf '%s' "${PSU_DETAILS:-N/A}" | tr '\n' '; ' | sed 's/; $//')",
+    "details": [
+$(if [ -n "$PSU_DETAILS" ]; then
+    local pseq=0
+    while IFS='|' read -r pdesc pmodel ppn psn; do
+        [ -z "$pdesc" ] && continue
+        pseq=$((pseq+1))
+        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s"},' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn"
+        printf '\n'
+    done <<< "$PSU_DETAILS" | sed '$ s/,$//'
+fi)
+    ]
   },
   "nvswitch": [
 $(printf '%s' "$nvs_json")
@@ -639,7 +655,16 @@ $(printf '%s' "$nic_details_md")
 | 转速 | ${FAN_SPEED:-N/A} |
 
 ## 电源 PSU
-${PSU_DETAILS:-N/A}
+| # | 描述 | 型号 | 部件号 | 序列号 |
+|----|------|------|--------|--------|
+$(if [ -n "$PSU_DETAILS" ]; then
+    local pseq=0
+    while IFS='|' read -r pdesc pmodel ppn psn; do
+        [ -z "$pdesc" ] && continue
+        pseq=$((pseq+1))
+        printf '| %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn"
+    done <<< "$PSU_DETAILS"
+fi)
 
 ## NVSwitch
 | 编号 | 状态 | 温度 | 活动/总端口 |
@@ -776,7 +801,14 @@ $(printf '%s' "$nic_details_txt")
   转速   : ${FAN_SPEED:-N/A}
 
 [电源PSU]
-${PSU_DETAILS:-N/A}
+$(if [ -n "$PSU_DETAILS" ]; then
+    local pseq=0
+    while IFS='|' read -r pdesc pmodel ppn psn; do
+        [ -z "$pdesc" ] && continue
+        pseq=$((pseq+1))
+        printf '  %s. %s  %s  PN:%s  SN:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn"
+    done <<< "$PSU_DETAILS"
+else echo "  N/A"; fi)
 
 [NVSwitch]
 $(printf '%s' "$nvs_txt")
