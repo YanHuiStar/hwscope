@@ -24,7 +24,7 @@ echo -e "${CYAN}[REPORT] 解析目录: ${OUT}${NC}"
 extract() {
     local pattern="$1" file="$2"
     [ -f "$file" ] || { echo ""; return; }
-    grep -iE "$pattern" "$file" 2>/dev/null | grep -v "^#" | head -1 | cut -d':' -f2- | tr -d ' \t' | head -c 200
+    grep -iE "$pattern" "$file" 2>/dev/null | grep -v "^#" | head -1 | cut -d':' -f2- | sed 's/^ *//;s/ *$//' | head -c 200
 }
 
 # ─── 收集基础信息 ───
@@ -144,12 +144,13 @@ fi
 STO_DIR="${OUT}/storage"
 STORAGE_COUNT=0; STORAGE_TOTAL="N/A"; STORAGE_MODELS=""
 if [ -f "${STO_DIR}/block_devices_all.log" ]; then
-    STORAGE_COUNT=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk"' | wc -l)
-    STORAGE_TOTAL=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/) {v=$i; break}; \
-        n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
-        if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024} \
+    # 物理盘行遍历找 size 字段（model 可能含空格导致列偏移，不能用固定列）
+    STORAGE_COUNT=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") c++} END{print c+0}')
+    STORAGE_TOTAL=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {v=""; for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {v=$i; break}; \
+        if(v!=""){n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
+        if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024}} \
         END{printf "%.0f GB", s}' 2>/dev/null)
-    STORAGE_MODELS=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/) {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+    STORAGE_MODELS=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
 fi
 
 # 盘明细（disk_inventory.csv: name|type|size|model|serial|fw|bdf|power_on）
