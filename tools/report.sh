@@ -55,6 +55,8 @@ CPU_DIR="${OUT}/cpu"
 CPU_MODEL=$(grep -m1 -iE "^model name" "${CPU_DIR}/cpu_summary.log" 2>/dev/null | cut -d':' -f2- | tr -d '\t' | sed 's/^ *//' | head -c 100)
 CPU_CORES=$(grep -m1 -iE "^cpu cores|^Core Count" "${CPU_DIR}/cpu_summary.log" 2>/dev/null | cut -d':' -f2- | tr -d ' \t')
 CPU_SOCKETS=$(grep "physical id" "${CPU_DIR}/proc_cpuinfo_full.log" 2>/dev/null | cut -d':' -f2- | sort -u | wc -l)
+CPU_STEPPING=$(grep -m1 "^Stepping" "${CPU_DIR}/cpu_stepping.log" 2>/dev/null | awk '{print $2}')
+[ -z "$CPU_STEPPING" ] && CPU_STEPPING=$(grep -m1 "Stepping:" "${CPU_DIR}/lscpu.log" 2>/dev/null | awk '{print $2}')
 CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${CPU_DIR}/dmidecode_processor.log" 2>/dev/null | awk '{print $(NF-1)}')
 [ -z "$CPU_MAX_SPEED" ] && CPU_MAX_SPEED=$(grep -m1 "CPU max MHz" "${CPU_DIR}/lscpu.log" 2>/dev/null | awk '{print $NF}')
 CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${CPU_DIR}/dmidecode_processor.log" 2>/dev/null | awk '{print $(NF-1)}')
@@ -150,6 +152,22 @@ if [ -f "${STO_DIR}/block_devices_all.log" ]; then
     STORAGE_MODELS=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '$NF=="disk" {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/) {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
 fi
 
+# 盘明细（disk_inventory.csv: name|type|size|model|serial|fw|bdf|power_on）
+DISK_DETAILS=""
+if [ -f "${STO_DIR}/disk_inventory.csv" ]; then
+    while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo; do
+        [ -z "$dname" ] || [ "$dname" = "N/A" ] && continue
+        [ "$dname" = "#" ] && continue
+        DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}"$'\n'
+    done < <(grep -v "^#" "${STO_DIR}/disk_inventory.csv" 2>/dev/null)
+fi
+
+# GPU 退役行数（gpu_remapped_rows.csv）
+GPU_REMAP="N/A"
+if [ -f "${OUT}/gpu/gpu_remapped_rows.csv" ]; then
+    GPU_REMAP=$(grep -v "^#" "${OUT}/gpu/gpu_remapped_rows.csv" | grep -v "^$" | awk -F',' '{gsub(/ /,"",$1); gsub(/ /,"",$2); gsub(/ /,"",$3); gsub(/ /,"",$4); c+=$1; u+=$2; p+=$3; f+=$4} END{if(NR>0) printf "CE:%d UE:%d pending:%d fail:%d", c, u, p, f; else print "N/A"}')
+fi
+
 # ─── 网络 ───
 NET_DIR="${OUT}/network"
 IB_COUNT=$(grep -c "State: Active" "${NET_DIR}/ibstat.log" 2>/dev/null)
@@ -214,6 +232,16 @@ for f in "${NET_DIR}"/mlxconfig_*_linktype.log; do
 done
 LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')
 
+# 网卡明细（nic_inventory.csv: dev|bdf|mac|sn|pn|fw|speed|width）
+NIC_DETAILS=""
+if [ -f "${NET_DIR}/nic_inventory.csv" ]; then
+    while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd; do
+        [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
+        [ "$nnic" = "#" ] && continue
+        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}"$'\n'
+    done < <(grep -v "^#" "${NET_DIR}/nic_inventory.csv" 2>/dev/null)
+fi
+
 # ─── 风扇（IPMI 传感器，| 分隔格式） ───
 FAN_DIR="${OUT}/fan"
 FAN_COUNT=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{c++} END{print c+0}')
@@ -243,6 +271,24 @@ gen_json() {
         done <<< "$GPU_DETAILS"
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
+    # 盘明细 JSON 数组（name|type|size|model|sn|fw|bdf|power_on）
+    local disk_details_json=""
+    if [ -n "$DISK_DETAILS" ]; then
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo; do
+            [ -z "$dname" ] && continue
+            disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\"},"$'\n'
+        done <<< "$DISK_DETAILS"
+        disk_details_json=$(printf '%s' "$disk_details_json" | sed '$ s/,$//')
+    fi
+    # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
+    local nic_details_json=""
+    if [ -n "$NIC_DETAILS" ]; then
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd; do
+            [ -z "$nnic" ] && continue
+            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"firmware\": \"${nfw}\", \"speed\": \"${nspd}\", \"width\": \"${nwd}\"},"$'\n'
+        done <<< "$NIC_DETAILS"
+        nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
+    fi
     cat > "$f" << EOF
 {
   "hwscope": {
@@ -268,6 +314,7 @@ gen_json() {
     "model": "${CPU_MODEL:-N/A}",
     "cores": "${CPU_CORES:-N/A}",
     "sockets": "${CPU_SOCKETS:-N/A}",
+    "stepping": "${CPU_STEPPING:-N/A}",
     "max_speed": "${CPU_MAX_SPEED:-N/A}",
     "current_speed": "${CPU_CUR_SPEED:-N/A}"
   },
@@ -287,6 +334,7 @@ ${dimms_json}
     "power_limit": "${GPU_POWER:-N/A}",
     "temp": "${GPU_TEMP:-N/A}",
     "ecc": "${GPU_ECC:-N/A}",
+    "remapped_rows": "${GPU_REMAP:-N/A}",
     "serials": "${GPU_SERIALS:-N/A}",
     "details": [
 ${gpu_details_json}
@@ -295,7 +343,10 @@ ${gpu_details_json}
   "storage": {
     "disk_count": "${STORAGE_COUNT:-0}",
     "total_capacity": "${STORAGE_TOTAL:-N/A}",
-    "disk_models": "${STORAGE_MODELS:-N/A}"
+    "disk_models": "${STORAGE_MODELS:-N/A}",
+    "disks": [
+${disk_details_json}
+    ]
   },
   "network": {
     "ib_devices": "${IB_COUNT:-0}",
@@ -303,7 +354,10 @@ ${gpu_details_json}
     "eth_link_up": "${ETH_LINK_UP:-0}",
     "cables": "${CABLE_SUMMARY:-N/A}",
     "cable_pairs": "${CABLE_PAIRS:-N/A}",
-    "port_modes": "${LINKTYPE_SUMMARY:-N/A}"
+    "port_modes": "${LINKTYPE_SUMMARY:-N/A}",
+    "nics": [
+${nic_details_json}
+    ]
   },
   "bmc": {
     "fru": "${BMC_FRU:-N/A}",
@@ -346,6 +400,22 @@ gen_md() {
             gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
         done <<< "$GPU_DETAILS"
     fi
+    # 盘明细 Markdown 表
+    local disk_details_md=""
+    if [ -n "$DISK_DETAILS" ]; then
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo; do
+            [ -z "$dname" ] && continue
+            disk_details_md="${disk_details_md}| ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} |"$'\n'
+        done <<< "$DISK_DETAILS"
+    fi
+    # 网卡明细 Markdown 表
+    local nic_details_md=""
+    if [ -n "$NIC_DETAILS" ]; then
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd; do
+            [ -z "$nnic" ] && continue
+            nic_details_md="${nic_details_md}| ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} |"$'\n'
+        done <<< "$NIC_DETAILS"
+    fi
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
 
@@ -374,6 +444,7 @@ gen_md() {
 | 型号 | ${CPU_MODEL:-N/A} |
 | 核心数 | ${CPU_CORES:-N/A} |
 | 插槽数 | ${CPU_SOCKETS:-N/A} |
+| Stepping | ${CPU_STEPPING:-N/A} |
 | 频率 | ${CPU_MAX_SPEED:-N/A}（当前 ${CPU_CUR_SPEED:-N/A}） |
 
 ## 内存
@@ -397,6 +468,7 @@ $(printf '%s' "$dimms_md")
 | 功耗上限 | ${GPU_POWER:-N/A} |
 | 温度 | ${GPU_TEMP:-N/A} |
 | ECC | ${GPU_ECC:-N/A} |
+| 退役行 | ${GPU_REMAP:-N/A} |
 
 ### 每卡明细
 | 卡 | 型号 | SN | 显存 | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
@@ -410,6 +482,11 @@ $(printf '%s' "$gpu_details_md")
 | 总容量 | ${STORAGE_TOTAL:-N/A} |
 | 盘型号 | ${STORAGE_MODELS:-N/A} |
 
+### 盘明细
+| 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) |
+|------|------|------|------|----|------|-----|---------|
+$(printf '%s' "$disk_details_md")
+
 ## 网络
 | 项 | 值 |
 |----|----|
@@ -419,6 +496,11 @@ $(printf '%s' "$gpu_details_md")
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
 | 端口模式 | ${LINKTYPE_SUMMARY:-N/A} |
 | 以太网口 up | ${ETH_LINK_UP:-0} |
+
+### 网卡明细
+| 接口 | BDF | MAC | SN | 型号 | 固件 | 速率 | 宽度 |
+|------|-----|-----|----|------|------|------|------|
+$(printf '%s' "$nic_details_md")
 
 ## BMC
 | 项 | 值 |
@@ -467,6 +549,22 @@ gen_txt() {
             gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
         done <<< "$GPU_DETAILS"
     fi
+    # 盘明细纯文本
+    local disk_details_txt=""
+    if [ -n "$DISK_DETAILS" ]; then
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo; do
+            [ -z "$dname" ] && continue
+            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h"$'\n'
+        done <<< "$DISK_DETAILS"
+    fi
+    # 网卡明细纯文本
+    local nic_details_txt=""
+    if [ -n "$NIC_DETAILS" ]; then
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd; do
+            [ -z "$nnic" ] && continue
+            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  ${nspd}/${nwd}"$'\n'
+        done <<< "$NIC_DETAILS"
+    fi
     cat > "$f" << EOF
 ============================================
 HwScope 硬件巡检报告
@@ -491,6 +589,7 @@ HwScope 硬件巡检报告
   型号   : ${CPU_MODEL:-N/A}
   核心数 : ${CPU_CORES:-N/A}
   插槽数 : ${CPU_SOCKETS:-N/A}
+  Stepping: ${CPU_STEPPING:-N/A}
   频率   : ${CPU_MAX_SPEED:-N/A} (当前 ${CPU_CUR_SPEED:-N/A})
 
 [内存]
@@ -506,12 +605,14 @@ $(printf '%s' "$dimms_txt")
   功耗   : ${GPU_POWER:-N/A}
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
+  退役行 : ${GPU_REMAP:-N/A}
 $(printf '%s' "$gpu_details_txt")
 
 [存储]
   盘数   : ${STORAGE_COUNT:-0}
   总容量 : ${STORAGE_TOTAL:-N/A}
   盘型号 : ${STORAGE_MODELS:-N/A}
+$(printf '%s' "$disk_details_txt")
 
 [网络]
   IB设备 : ${IB_COUNT:-0}
@@ -520,6 +621,7 @@ $(printf '%s' "$gpu_details_txt")
   配对   : ${CABLE_PAIRS:-N/A}
   端口模式: ${LINKTYPE_SUMMARY:-N/A}
   网口up : ${ETH_LINK_UP:-0}
+$(printf '%s' "$nic_details_txt")
 
 [BMC]
   型号   : ${BMC_FRU:-N/A}

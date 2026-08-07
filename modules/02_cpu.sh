@@ -30,6 +30,8 @@ run_cpu() {
     # 2. CPU OS 视角（lscpu / /proc/cpuinfo）
     run_and_log "lscpu" "${dir}/lscpu.log"
     run_and_log "nproc" "${dir}/cpu_core_count.log"
+    # CPU Stepping / ID（lscpu 优先，dmidecode 兜底；ID 低 4 位即 stepping）
+    run_and_log "lscpu | grep -E 'Stepping|CPU(s)|Model name' | head -5" "${dir}/cpu_stepping.log"
 
     if [ "$cpu_arch" = "aarch64" ]; then
         run_and_log "cat /proc/cpuinfo | grep -E 'CPU implementer|CPU part|CPU variant|CPU revision|CPU architecture|Features' | sort -u" \

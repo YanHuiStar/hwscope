@@ -96,6 +96,41 @@ run_network() {
     run_and_log "ip link show" "${dir}/ip_link.log"
     run_and_log "ip route show" "${dir}/ip_route.log"
 
+    # ─── 网卡一览清单（dev|bdf|mac|sn|pn|fw|speed|width）───
+    {
+        echo "# nic inventory: dev|bdf|mac|serial|part_number|firmware|speed|width"
+        for ndev in $(ls /sys/class/net/ 2>/dev/null); do
+            [ "$ndev" = "lo" ] && continue
+            # 仅 PCIe 网卡
+            local ndev_path=$(readlink -f "/sys/class/net/${ndev}/device" 2>/dev/null)
+            [[ "$ndev_path" != *pci* ]] && continue
+            local nbdf=$(grep "PCI_SLOT_NAME" "/sys/class/net/${ndev}/device/uevent" 2>/dev/null | cut -d'=' -f2 | sed 's/^0000://')
+            [ -z "$nbdf" ] && nbdf=$(basename "$ndev_path" | sed 's/^0000://')
+            local nmac=$(cat "/sys/class/net/${ndev}/address" 2>/dev/null)
+            # IB 长地址取后 6 字节
+            if [ ${#nmac} -gt 17 ]; then
+                nmac=$(echo "$nmac" | awk -F: '{for(i=13;i<=NF;i++) printf "%s%s", $i, (i<NF?":":"")}')
+            fi
+            local nsn=$(cat "/sys/class/net/${ndev}/device/serial" 2>/dev/null)
+            [ -z "$nsn" ] && nsn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Serial Number" | head -1 | awk '{print $NF}')
+            [ -z "$nsn" ] && nsn="N/A"
+            local npn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Part Number" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
+            [ -z "$npn" ] && npn=$(lspci -s "$nbdf" 2>/dev/null | cut -d' ' -f4-)
+            local nfw="N/A"
+            if check_cmd ethtool; then
+                nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | awk '{print $2}')
+            fi
+            local nspd="N/A" nwd="N/A"
+            if check_cmd lspci; then
+                local lnksta=$(lspci -vv -s "$nbdf" 2>/dev/null | grep "LnkSta:" | head -1)
+                nspd=$(echo "$lnksta" | grep -oE "[0-9]+GT/s" | head -1)
+                nwd=$(echo "$lnksta" | grep -oE "x[0-9]+" | head -1)
+            fi
+            [ -z "$nspd" ] && nspd="N/A"; [ -z "$nwd" ] && nwd="N/A"
+            echo "${ndev}|${nbdf}|${nmac:-N/A}|${nsn}|${npn:-N/A}|${nfw}|${nspd}|${nwd}"
+        done
+    } > "${dir}/nic_inventory.csv" 2>/dev/null || true
+
     # ─── 网络拓扑 ───
     if check_cmd lstopo; then
         run_and_log "lstopo --no-io --output-format txt" "${dir}/lstopo_network.txt"

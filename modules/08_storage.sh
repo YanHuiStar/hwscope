@@ -104,6 +104,51 @@ run_storage() {
     run_and_log "mount" "${dir}/mount.log"
     run_and_log "cat /proc/partitions" "${dir}/proc_partitions.log"
 
+    # ─── 盘一览清单（name|type|size|model|sn|fw|bdf|power_on）───
+    {
+        echo "# disk inventory: name|type|size|model|serial|firmware|bdf|power_on_hours"
+        # NVMe
+        for ndev in /dev/nvme*n1; do
+            [ -b "$ndev" ] || continue
+            local nname=$(basename "$ndev")
+            local ctrl="${nname%n1}"
+            local nsize=$(lsblk -d -n -o SIZE "$ndev" 2>/dev/null)
+            local nmodel=$(cat "/sys/block/${nname}/device/model" 2>/dev/null | xargs)
+            local nsn=$(cat "/sys/block/${nname}/device/serial" 2>/dev/null | xargs)
+            local nfw=$(cat "/sys/block/${nname}/device/firmware_rev" 2>/dev/null | xargs)
+            local nbdf=$(basename "$(readlink -f "/sys/class/nvme/${ctrl}/device" 2>/dev/null)" 2>/dev/null | sed 's/^0000://')
+            local npo=""
+            if check_cmd nvme; then
+                npo=$(nvme smart-log "$ndev" 2>/dev/null | grep "power_on_hours" | awk '{print $3}')
+            fi
+            [ -z "$npo" ] && npo="0"
+            echo "${nname}|NVMe|${nsize:-N/A}|${nmodel:-N/A}|${nsn:-N/A}|${nfw:-N/A}|${nbdf:-N/A}|${npo}"
+        done
+        # SATA/SAS
+        for sdev in /dev/sd[a-z]; do
+            [ -b "$sdev" ] || continue
+            local sz=$(blockdev --getsize64 "$sdev" 2>/dev/null)
+            [ -z "$sz" ] || [ "$sz" = "0" ] && continue
+            local sname=$(basename "$sdev")
+            local ssize=$(lsblk -d -n -o SIZE "$sdev" 2>/dev/null)
+            local smodel="" ssn="" sfw="" sinter="SATA"
+            if check_cmd smartctl; then
+                local sinfo=$(smartctl -i "$sdev" 2>/dev/null)
+                ssn=$(echo "$sinfo" | grep "Serial Number:" | awk '{print $3}')
+                smodel=$(echo "$sinfo" | grep "Device Model:" | cut -d':' -f2- | xargs)
+                sfw=$(echo "$sinfo" | grep "Firmware Version:" | awk '{print $3}')
+                sinter=$(echo "$sinfo" | grep "SATA Version is" | cut -d':' -f2- | xargs | sed 's/ *(current:.*//')
+                [ -z "$sinter" ] && sinter="SATA"
+            fi
+            [ -z "$smodel" ] && smodel=$(cat "/sys/block/${sname}/device/model" 2>/dev/null | xargs)
+            [ -z "$ssn" ] && ssn=$(cat "/sys/block/${sname}/device/serial" 2>/dev/null | xargs)
+            local spo=$(smartctl -A "$sdev" 2>/dev/null | grep -i "Power_On_Hours" | awk '{print $10}')
+            [ -z "$spo" ] && spo=$(smartctl -A "$sdev" 2>/dev/null | grep -i "Power_On_Hours" | awk '{print $4}')
+            [ -z "$spo" ] && spo="0"
+            echo "${sname}|SATA|${ssize:-N/A}|${smodel:-N/A}|${ssn:-N/A}|${sfw:-N/A}|${sinter}|${spo}"
+        done
+    } > "${dir}/disk_inventory.csv" 2>/dev/null || true
+
     module_end "$MODULE_NAME"
 }
 
