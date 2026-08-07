@@ -35,6 +35,10 @@ VERSION=$(extract "Version" "$SUMMARY")
 PLATFORM=$(grep -m1 "^Platform" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 's/^ //')
 
+# ─── 采集耗时（summary 耗时统计段） ───
+TIMING_TOTAL=$(grep -m1 "^总时长" "$SUMMARY" 2>/dev/null | awk '{print $3}')
+TIMING_TOP=$(grep -A6 "^模块耗时 Top5:" "$SUMMARY" 2>/dev/null | grep -E "^[[:space:]]*[0-9]" | sed 's/^ *//;s/ *$//' | tr '\n' '; ' | sed 's/; $//')
+
 # ─── 环境（OS/内核/驱动/CUDA） ───
 OS_DIR="${OUT}/os"
 OS_NAME=$(grep -m1 "PRETTY_NAME" "${OS_DIR}/os-release.log" 2>/dev/null | cut -d'"' -f2)
@@ -409,6 +413,10 @@ gen_json() {
     "driver": "${GPU_DRIVER:-N/A}",
     "cuda": "${GPU_CUDA:-N/A}"
   },
+  "timing": {
+    "total": "${TIMING_TOTAL:-N/A}",
+    "top_modules": "${TIMING_TOP:-N/A}"
+  },
   "motherboard": {
     "manufacturer": "${MB_MANUFACTURER:-N/A}",
     "product": "${MB_PRODUCT:-N/A}",
@@ -563,6 +571,7 @@ gen_md() {
 | 内核 | ${KERNEL:-N/A} |
 | 驱动 | ${GPU_DRIVER:-N/A} |
 | CUDA | ${GPU_CUDA:-N/A} |
+| 采集耗时 | ${TIMING_TOTAL:-N/A}（最耗时: ${TIMING_TOP:-N/A}） |
 
 ## 主板
 | 项 | 值 |
@@ -741,6 +750,7 @@ HwScope 硬件巡检报告
   内核   : ${KERNEL:-N/A}
   驱动   : ${GPU_DRIVER:-N/A}
   CUDA   : ${GPU_CUDA:-N/A}
+  采集耗时 : ${TIMING_TOTAL:-N/A}  (Top: ${TIMING_TOP:-N/A})
 
 [主板]
   制造商 : ${MB_MANUFACTURER:-N/A}

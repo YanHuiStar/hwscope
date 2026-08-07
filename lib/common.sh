@@ -46,10 +46,20 @@ run_and_log() {
     write_header "$logfile" "$cmd"
     echo "# --- output start ---" >> "$logfile"
 
+    local start_ns=$(date +%s%N 2>/dev/null || date +%s)
     bash -c "$cmd" >> "$logfile" 2>&1
     local ret=$?
+    local end_ns=$(date +%s%N 2>/dev/null || date +%s)
 
-    echo "# --- output end (exit code: $ret) ---" >> "$logfile"
+    # 耗时（GNU date 纳秒 → 秒保留 2 位；fallback 整数秒）
+    local elapsed
+    if [ "${#start_ns}" -gt 10 ]; then
+        elapsed=$(awk "BEGIN{printf \"%.2f\", ($end_ns-$start_ns)/1000000000}")
+    else
+        elapsed=$((end_ns - start_ns))
+    fi
+
+    echo "# --- output end (exit code: $ret, 耗时: ${elapsed}s) ---" >> "$logfile"
 
     # WARN 计数（exit=1 = grep 无匹配，不报警）
     if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
