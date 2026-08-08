@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.19.13 (2026-08)
+# Version : 1.19.14 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.19.13"
+HWSCOPE_VERSION="v1.19.14"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -406,6 +406,7 @@ if check_cmd tar; then
     fi
 fi
 echo -e "${GREEN}[ARCHIVE] 归档完成${NC}"
+echo ""
 
 # ─── 清理 ANSI（放最后：sed -i 替换 inode 会令 tee 后续写入丢失，故须在所有输出之后） ───
 if [ -f "$LOG_FILE" ] && check_cmd sed; then
