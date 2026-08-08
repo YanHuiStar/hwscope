@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.19.12 (2026-08)
+# Version : 1.19.13 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.19.12"
+HWSCOPE_VERSION="v1.19.13"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -186,6 +186,7 @@ mkdir -p "$OUTPUT_BASE"
 # ─── 执行日志 ───
 LOG_FILE="${OUTPUT_BASE}/hwscope.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
+echo ""
 echo "[$(date '+%H:%M:%S')] 日志输出到: ${LOG_FILE}"
 
 # ─── 平台检测 ───
@@ -226,7 +227,8 @@ cp "$CONF_FILE" "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null || true
 echo ""
 echo "========================================"
 echo -e "${BLUE}HwScope - 服务器硬件巡检采集${NC}"
-echo "平台: ${PLATFORM}  输出: ${OUTPUT_BASE}"
+echo "平台: ${PLATFORM}"
+echo "输出: ${OUTPUT_BASE}"
 echo "========================================"
 echo ""
 
