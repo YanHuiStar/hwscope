@@ -18,6 +18,9 @@ fi
 [ -z "$OUT" ] || [ ! -d "$OUT" ] && echo -e "${RED}[ERROR] 未找到采集目录: $OUT${NC}" && exit 1
 
 FORMAT="${2:-both}"
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}[REPORT] 开始生成报告...${NC}"
+echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}[REPORT] 解析目录: ${OUT}${NC}"
 
 # ─── 提取辅助：从日志取字段（第一个匹配，去注释，保留冒号后全部） ───
@@ -840,3 +843,7 @@ case "$FORMAT" in
     --txt)  gen_txt ;;
     *)      gen_json; gen_md; gen_txt ;;
 esac
+
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}[REPORT] 生成完成${NC}"
+echo -e "${CYAN}========================================${NC}"
