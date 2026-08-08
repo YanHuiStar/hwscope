@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.19.10 (2026-08)
+# Version : 1.19.11 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.19.10"
+HWSCOPE_VERSION="v1.19.11"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -378,17 +378,21 @@ if [ -f "${SCRIPT_DIR}/tools/report.sh" ]; then
     bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE"
 fi
 
-# ─── 压缩归档 ───
+# ─── 打包归档（与 REPORT 阶段分隔，独立排版） ───
+echo ""
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}[ARCHIVE] 开始打包归档...${NC}"
+echo -e "${CYAN}========================================${NC}"
 LOGS_DIR="${SCRIPT_DIR}/logs"
 ARCHIVE_TS=$(date '+%Y%m%d_%H%M%S')
 ARCHIVE_NAME="${MACHINE_ID}-${ARCHIVE_TS}.tar.gz"
 mkdir -p "$LOGS_DIR"
 if check_cmd tar; then
     tar czf "${LOGS_DIR}/${ARCHIVE_NAME}" -C "$(dirname "$OUTPUT_BASE")" "$(basename "$OUTPUT_BASE")" 2>/dev/null
-    echo -e "${GREEN}[ARCHIVE]${NC} ${LOGS_DIR}/${ARCHIVE_NAME}"
+    echo -e "${GREEN}[ARCHIVE]${NC} 日志包: ${LOGS_DIR}/${ARCHIVE_NAME}"
 fi
 
-# ─── 报告单独打包到 logs/report/（与详细日志包对应） ───
+# 报告单独打包到 logs/report/（与详细日志包对应）
 if check_cmd tar; then
     REPORT_DIR="${LOGS_DIR}/report"
     mkdir -p "$REPORT_DIR"
@@ -396,12 +400,12 @@ if check_cmd tar; then
         REPORT_ARCHIVE="${REPORT_DIR}/${MACHINE_ID}-${ARCHIVE_TS}-report.tar.gz"
         tar czf "$REPORT_ARCHIVE" -C "$OUTPUT_BASE" \
             hwscope_report.json hwscope_report.md hwscope_report.txt
-        echo -e "${GREEN}[ARCHIVE]${NC} ${REPORT_ARCHIVE}"
+        echo -e "${GREEN}[ARCHIVE]${NC} 报告包: ${REPORT_ARCHIVE}"
     fi
 fi
+echo -e "${GREEN}[ARCHIVE] 归档完成${NC}"
 
 # ─── 清理 ANSI（放最后：sed -i 替换 inode 会令 tee 后续写入丢失，故须在所有输出之后） ───
-echo -e "${GREEN}归档完成: ${LOGS_DIR}/${ARCHIVE_NAME}${NC}"
 if [ -f "$LOG_FILE" ] && check_cmd sed; then
     sed -i 's/\x1b\[[0-9;]*m//g' "$LOG_FILE" 2>/dev/null || true
 fi
