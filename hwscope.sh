@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.20.1 (2026-08)
+# Version : 1.20.2 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.20.1"
+HWSCOPE_VERSION="v1.20.2"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -210,6 +210,19 @@ if check_cmd nvidia-smi; then
         PLATFORM="${HW_ARCH}_PCIe"
     else PLATFORM="${HW_ARCH}_none"; fi
 else PLATFORM="${HW_ARCH}_none"; fi
+
+# ─── BMC/IPMI 预热（虚空跑一次，不计入日志：触发驱动加载/BMC 初始化，避免首次命令失败） ───
+if [ "${IPMI_PREHEAT:-1}" -eq 1 ] 2>/dev/null && check_cmd ipmitool; then
+    _preheat_start=$(date +%s%N 2>/dev/null || date +%s)
+    ipmitool mc info >/dev/null 2>&1
+    _preheat_end=$(date +%s%N 2>/dev/null || date +%s)
+    if [ "${#_preheat_start}" -gt 10 ]; then
+        _preheat_elapsed=$(awk "BEGIN{printf \"%.2f\", ($_preheat_end-$_preheat_start)/1000000000}")
+    else
+        _preheat_elapsed=$((_preheat_end - _preheat_start))
+    fi
+    echo -e "${CYAN}[PREHEAT]${NC} IPMI 预热完成 [ ${_preheat_elapsed}s ]"
+fi
 
 # ─── 汇总文件 ───
 SUMMARY_FILE="${OUTPUT_BASE}/summary.txt"
