@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.19.17 (2026-08)
+# Version : 1.19.18 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.19.17"
+HWSCOPE_VERSION="v1.19.18"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -275,7 +275,17 @@ if [ "$PARALLEL" -eq 1 ]; then
             [ -f "${OUTPUT_BASE}/.${id}_done" ] || continue
             [ -f "${OUTPUT_BASE}/.${id}_printed" ] && continue
             [ -t 1 ] && printf "\r\033[K"
-            cat "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
+            if [ "$QUIET" -eq 1 ]; then
+                # 静默：模块完成输出摘要行（耗时 + 状态）+ 异常细节
+                mtime=$(cat "${OUTPUT_BASE}/.${id}_time" 2>/dev/null || echo 0)
+                warn=$(cat "${OUTPUT_BASE}/.${id}_warn" 2>/dev/null || echo 0)
+                fmt=$(printf "%d:%02ds" $((mtime/60)) $((mtime%60)))
+                st="OK"; [ "$warn" -gt 0 ] && st="WARN"
+                echo -e "${CYAN}[${id}]${NC} ${st} [ ${fmt} ]"
+                grep -E "\[WARN\]|SKIP" "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
+            else
+                cat "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
+            fi
             touch "${OUTPUT_BASE}/.${id}_printed"
             declared=$((declared+1))
         done
