@@ -113,7 +113,6 @@ module_start() {
         echo -e "${CYAN}========================================${NC}"
         echo -e "${CYAN}[$name] 开始采集...${NC}"
         echo -e "${CYAN}========================================${NC}"
-        echo ""   # 第一个日志前空行
     fi
 }
 
@@ -122,7 +121,6 @@ module_end() {
     if [ "$QUIET" -eq 1 ]; then
         :  # 静默不输出完成提示
     else
-        echo ""   # 最后一个日志后空行
         echo -e "${GREEN}[$name] 采集完成${NC}"
     fi
 }
