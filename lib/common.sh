@@ -78,17 +78,17 @@ run_and_log() {
     if [ "$QUIET" -eq 1 ]; then
         # 静默模式：只显示 WARN
         if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
-            echo -e "${YELLOW}WARN${NC} ${fname} (exit=$ret)  [ ${fmt_elapsed} ]"
+            printf "${YELLOW}%-6s${NC} %s (exit=%s)  [ %s ]\n" "WARN" "$fname" "$ret" "$fmt_elapsed"
         fi
     else
         if [ "$ret" -eq 0 ]; then
-            echo -e "${GREEN}[OK]${NC} ${fname}  (exit=0)  [ ${fmt_elapsed} ]"
+            printf "${GREEN}%-6s${NC} %s  %s  [ %s ]\n" "[OK]" "$fname" "(exit=0)" "$fmt_elapsed"
         elif [ "$ret" -eq 1 ]; then
-            echo -e "[~] ${fname}  (no match)  [ ${fmt_elapsed} ]"
+            printf "%-6s %s  %s  [ %s ]\n" "[~]" "$fname" "(no match)" "$fmt_elapsed"
         elif [ "$ret" -eq 127 ]; then
-            echo -e "${YELLOW}[N/A]${NC} ${fname}  (cmd not found)  [ ${fmt_elapsed} ]"
+            printf "${YELLOW}%-6s${NC} %s  %s  [ %s ]\n" "[N/A]" "$fname" "(cmd not found)" "$fmt_elapsed"
         else
-            echo -e "${YELLOW}[WARN]${NC} ${fname}  (exit=$ret)  [ ${fmt_elapsed} ]"
+            printf "${YELLOW}%-6s${NC} %s  %s  [ %s ]\n" "[WARN]" "$fname" "(exit=$ret)" "$fmt_elapsed"
         fi
     fi
     return $ret

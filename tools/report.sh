@@ -844,6 +844,4 @@ case "$FORMAT" in
     *)      gen_json; gen_md; gen_txt ;;
 esac
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}[REPORT] 生成完成${NC}"
-echo -e "${CYAN}========================================${NC}"
+echo -e "${GREEN}[REPORT] 生成完成${NC}"
