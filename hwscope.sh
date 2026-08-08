@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.19.9 (2026-08)
+# Version : 1.19.10 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.19.9"
+HWSCOPE_VERSION="v1.19.10"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -342,15 +342,19 @@ fi
     echo "  └── summary.txt"; echo ""
 } >> "$SUMMARY_FILE"
 
-# ─── 耗时统计（总时长 + 模块 Top5） ───
+# ─── 耗时统计（总时长 + 模块 Top5，写入 summary.txt） ───
 TOTAL_ELAPSED=$(( $(date +%s) - START_TS ))
 {
-    echo "========== 耗时统计 =========="
+    echo ""
+    echo "============================================================"
+    echo "耗时统计"
+    echo "============================================================"
     echo "总时长      : ${TOTAL_ELAPSED}s"
     echo "模块耗时 Top5:"
     echo "$MOD_TIMES" | grep -v "^$" | sort -t'|' -k2 -rn | head -5 | while IFS='|' read -r mt_name mt_sec; do
-        pct=$(awk "BEGIN{printf \"%d%%\", $mt_sec*100/$TOTAL_ELAPSED}")
-        echo "  ${mt_name}  ${mt_sec}s  (${pct})"
+        pct="0%"
+        [ "$TOTAL_ELAPSED" -gt 0 ] && pct=$(awk "BEGIN{printf \"%d%%\", $mt_sec*100/$TOTAL_ELAPSED}")
+        printf "  %-16s %4ss  (%s)\n" "$mt_name" "$mt_sec" "$pct"
     done
     echo "============================================================"
 } >> "$SUMMARY_FILE"
