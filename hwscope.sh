@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.19.6 (2026-08)
+# Version : 1.19.7 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.19.6"
+HWSCOPE_VERSION="v1.19.7"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -238,27 +238,6 @@ if [ "$PARALLEL" -eq 1 ]; then
     echo -e "${CYAN}[QUEUE]${NC} 并行启动所有模块..."
     echo ""
 
-    # ─── 进度动画（旋转 + 完成计数；仅 TTY 显示，重定向时跳过避免污染日志） ───
-    SPINNER_PID=""
-    start_spinner() {
-        [ -t 1 ] || return 0
-        local total="$1"
-        (
-            local chars='/-\|' i=0 done=0
-            while :; do
-                done=$(ls "${OUTPUT_BASE}"/.done_* 2>/dev/null | wc -l)
-                printf "\r\033[36m%c\033[0m 正在并行采集... %s/%s 模块完成" "${chars:$((i%4)):1}" "$done" "$total"
-                i=$((i+1)); sleep 0.2
-            done
-        ) &
-        SPINNER_PID=$!
-    }
-    stop_spinner() {
-        [ -n "$SPINNER_PID" ] && kill "$SPINNER_PID" 2>/dev/null; wait "$SPINNER_PID" 2>/dev/null
-        SPINNER_PID=""
-        [ -t 1 ] && printf "\r\033[K"
-    }
-
     PIDS=(); MODULE_INFO=()
     for mod_info in "${MODULES[@]}"; do
         IFS=':' read -r num id fn desc <<< "$mod_info"
@@ -285,15 +264,30 @@ if [ "$PARALLEL" -eq 1 ]; then
         fi
     done
 
-    # 等待全部完成（期间显示进度动画）
-    start_spinner ${#MODULE_INFO[@]}
-    for pid in "${PIDS[@]}"; do wait $pid 2>/dev/null; done
-    stop_spinner
+    # ─── 等待循环：动画 + 模块完成即输出该模块完整日志 ───
+    total=${#MODULE_INFO[@]}
+    declared=0; chars='/-\|'; i=0
+    while [ "$declared" -lt "$total" ]; do
+        # 动画行（仅 TTY）
+        [ -t 1 ] && printf "\r\033[36m%c\033[0m 正在并行采集... %s/%s 模块完成" "${chars:$((i%4)):1}" "$declared" "$total"
+        # 新完成模块 → 立即输出该模块日志
+        for info in "${MODULE_INFO[@]}"; do
+            IFS='|' read -r num id desc <<< "$info"
+            [ -f "${OUTPUT_BASE}/.${id}_done" ] || continue
+            [ -f "${OUTPUT_BASE}/.${id}_printed" ] && continue
+            [ -t 1 ] && printf "\r\033[K"
+            cat "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
+            touch "${OUTPUT_BASE}/.${id}_printed"
+            declared=$((declared+1))
+        done
+        [ "$declared" -ge "$total" ] && break
+        i=$((i+1)); sleep 0.2
+    done
+    [ -t 1 ] && printf "\r\033[K"
 
-    # 按注册表顺序输出（每条命令带耗时）+ 汇总
+    # 汇总（summary.txt 按注册表顺序）
     for info in "${MODULE_INFO[@]}"; do
         IFS='|' read -r num id desc <<< "$info"
-        cat "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
         warn=$(cat "${OUTPUT_BASE}/.${id}_warn" 2>/dev/null || echo 0)
         files=$(cat "${OUTPUT_BASE}/.${id}_files" 2>/dev/null || echo 0)
         mtime=$(cat "${OUTPUT_BASE}/.${id}_time" 2>/dev/null || echo 0)
@@ -301,7 +295,7 @@ if [ "$PARALLEL" -eq 1 ]; then
         summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${files} files, ${mtime}s, ${warn} WARN"
         MOD_TIMES="${MOD_TIMES}${num}.${id}|${mtime}"$'\n'
         TOTAL_COUNT=$((TOTAL_COUNT + 1))
-        rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_files" "${OUTPUT_BASE}/.${id}_time" "${OUTPUT_BASE}/.${id}_done"
+        rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_files" "${OUTPUT_BASE}/.${id}_time" "${OUTPUT_BASE}/.${id}_done" "${OUTPUT_BASE}/.${id}_printed"
     done
 else
     # ═══════════════ 串行模式 ═══════════════
