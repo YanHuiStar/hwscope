@@ -47,6 +47,12 @@ run_and_log() {
     echo "# --- output start ---" >> "$logfile"
 
     local start_ns=$(date +%s%N 2>/dev/null || date +%s)
+
+    # 模拟模式：每条命令随机延迟 0.2-0.5s（计入耗时，SIM_DELAY>0 时生效）
+    if [ "${SIM_DELAY:-0}" -gt 0 ] 2>/dev/null; then
+        sleep "$(awk 'BEGIN{srand(); printf "%.2f", 0.2 + rand() * 0.3}')"
+    fi
+
     bash -c "$cmd" >> "$logfile" 2>&1
     local ret=$?
     local end_ns=$(date +%s%N 2>/dev/null || date +%s)
@@ -106,6 +112,7 @@ get_warn_count()   { echo "$_MODULE_WARN_COUNT"; }
 # ─── 模块开始/结束提示 ───
 module_start() {
     local name="$1"
+    SIM_MOD_START=$(date +%s)   # 模拟模式：记录模块开始
     if [ "$QUIET" -eq 1 ]; then
         echo -e "${CYAN}[${name}]${NC}"
     else
@@ -118,6 +125,13 @@ module_start() {
 
 module_end() {
     local name="$1"
+    # 模拟模式：模块总时长不足 SIM_DELAY 秒则补足
+    if [ "${SIM_DELAY:-0}" -gt 0 ] 2>/dev/null && [ -n "$SIM_MOD_START" ]; then
+        _sim_elapsed=$(( $(date +%s) - SIM_MOD_START ))
+        if [ "$_sim_elapsed" -lt "$SIM_DELAY" ]; then
+            sleep $((SIM_DELAY - _sim_elapsed))
+        fi
+    fi
     if [ "$QUIET" -eq 1 ]; then
         :  # 静默不输出完成提示
     else
