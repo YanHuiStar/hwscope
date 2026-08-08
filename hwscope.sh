@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.19.15 (2026-08)
+# Version : 1.19.16 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -74,7 +74,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.19.15"
+HWSCOPE_VERSION="v1.19.16"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -369,7 +369,8 @@ find "${OUTPUT_BASE}" -type d | sort | while read d; do
     for ((i=0; i<level-1; i++)); do prefix="${prefix}  "; done
     [ "$level" -gt 0 ] && echo "${prefix}├── $(basename "$d")/"
 done
-echo ""; echo -e "${CYAN}汇总文件: ${SUMMARY_FILE}${NC}"; echo ""
+echo ""; echo -e "${CYAN}汇总文件: ${SUMMARY_FILE}${NC}"
+echo -e "${CYAN}日志文件: ${LOG_FILE}${NC}"; echo ""
 
 # ─── 生成汇总报告（json + md + txt） ───
 if [ -f "${SCRIPT_DIR}/tools/report.sh" ]; then
