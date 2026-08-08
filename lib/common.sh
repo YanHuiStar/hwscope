@@ -78,7 +78,7 @@ run_and_log() {
     if [ "$QUIET" -eq 1 ]; then
         # 静默模式：只显示 WARN
         if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
-            printf "${YELLOW}%-6s${NC} %s (exit=%s)  [ %s ]\n" "WARN" "$fname" "$ret" "$fmt_elapsed"
+            printf "${YELLOW}%-6s${NC} %s (exit=%s)  [ %s ]\n" "[WARN]" "$fname" "$ret" "$fmt_elapsed"
         fi
     else
         if [ "$ret" -eq 0 ]; then
