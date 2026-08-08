@@ -5,3 +5,7 @@ output/
 *~
 .DS_Store
 logs/
+
+# 开发/测试工具（不进仓库）
+fakebin/
+scripts/
