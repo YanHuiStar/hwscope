@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.19.2  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.19.3  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -26,8 +26,8 @@ apt install -y dmidecode pciutils ipmitool smartmontools lm-sensors      # Ubunt
 dnf install -y dmidecode pciutils ipmitool smartmontools lm_sensors      # Rocky/RHEL 8+
 
 # 执行采集
-sudo bash hwscope.sh                  # 全量采集（串行，约 1min）
-sudo bash hwscope.sh --parallel       # 全量采集（并行，约 10s）
+sudo bash hwscope.sh                  # 全量采集（默认并行，约 10s）
+sudo bash hwscope.sh --serial         # 串行采集（实时逐命令输出）
 sudo bash hwscope.sh --quiet          # 静默模式（仅输出异常）
 ```
 
@@ -37,9 +37,9 @@ sudo bash hwscope.sh --quiet          # 静默模式（仅输出异常）
 
 ```bash
 # 模式
-bash hwscope.sh                       # 串行（默认）
-bash hwscope.sh --parallel            # 并行
-bash hwscope.sh --parallel --quiet    # 并行 + 静默
+bash hwscope.sh                       # 并行（默认，动画 + 完成后逐命令输出，带每条耗时）
+bash hwscope.sh --serial              # 串行（实时逐命令输出，带每条耗时）
+bash hwscope.sh --quiet               # 并行 + 静默
 
 # 过滤
 bash hwscope.sh --modules gpu,storage # 只采部分
@@ -173,6 +173,7 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `[WARN]` | 异常 (exit≠0/1/127) |
 | `[SKIP]` | 模块跳过 |
 | `[QUEUE]` | 并行启动 |
+| `[ M:SSs ]` | 每条命令耗时（亚秒显示小数，如 `0.42s`；≥1s 显示 `0:05s`/`1:34s`） |
 
 `summary.txt` 每模块附带异常计数：
 

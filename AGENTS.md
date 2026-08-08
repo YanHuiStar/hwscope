@@ -23,7 +23,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 ## 常用命令
 
-- 全量采集: `sudo bash hwscope.sh` / 并行: `sudo bash hwscope.sh --parallel`
+- 全量采集: `sudo bash hwscope.sh`（默认并行，旋转动画 + 完成计数；串行用 `--serial`）
 - 只采部分: `sudo bash hwscope.sh --modules gpu,cpu`
 - 跳光模块: `sudo bash hwscope.sh --no-module`
 - 单模块: `bash modules/04_gpu.sh /path/output`
