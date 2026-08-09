@@ -22,78 +22,75 @@ run_raid() {
 
     module_start "$MODULE_NAME"
 
-    # 检测硬件：有哪些 RAID / HBA / SAS 控制器
+    # Phase 1: 串行获取所有设备数量 / 列表（后续命令依赖这些值）
     run_and_log "lspci 2>/dev/null | grep -iE 'RAID|SAS|SATA|MegaRAID|Broadcom|LSI|AVAGO|MR'" \
         "${dir}/pci_raid_hba_list.log"
 
-    # ─── Broadcom MegaRAID — storcli64 ───
+    local ctrl_count=0 hba_count=0 hba2_count=0 raid_buses=""
     if check_cmd storcli64; then
-        # 列出所有控制器
         run_and_log "storcli64 show all 2>&1" "${dir}/storcli_controllers.log"
+        ctrl_count=$(storcli64 show all 2>/dev/null | grep -c "Controller = ")
+    fi
+    if check_cmd sas3ircu; then
+        hba_count=$(sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\\.|^Index")
+    fi
+    if check_cmd sas2ircu; then
+        hba2_count=$(sas2ircu list 2>/dev/null | grep -c "^Index" || echo 0)
+    fi
+    raid_buses=$(lspci -D 2>/dev/null | grep -iE 'RAID|SAS|MegaRAID|Broadcom.*SAS' | awk '{print $1}')
 
-        # 自动发现控制器数量，逐卡采集（grep -c 无匹配时输出 0，勿加 || echo 兜底会拼出多行）
-        local ctrl_count=$(storcli64 show all 2>/dev/null | grep -c "Controller = ")
+    # Phase 2: 构建并行任务数组
+    local raid_jobs=()
+
+    # MegaRAID 每控制器
+    if check_cmd storcli64; then
         for ((c=0; c<ctrl_count; c++)); do
-            # 控制器基本信息
-            run_and_log "storcli64 /c${c} show all 2>&1" "${dir}/ctrl${c}_info.log"
-
-            # 控制器固件 / SN / 型号摘要
-            run_and_log "storcli64 /c${c} show all 2>&1 | grep -iE 'Model|Serial|Firmware|BIOS|Boot|Board Type|Ctrl Rate|ROC temperature|Product Name'" \
-                "${dir}/ctrl${c}_summary.log"
-
-            # Virtual Drive 信息
-            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -c "^Virtual Drives")
-            if [ "$vd_count" -gt 0 ]; then
-                run_and_log "storcli64 /c${c} /vx show all 2>&1" "${dir}/ctrl${c}_vd_all.log"
+            raid_jobs+=("storcli64 /c${c} show all 2>&1" "${dir}/ctrl${c}_info.log")
+            raid_jobs+=("storcli64 /c${c} show all 2>&1 | grep -iE 'Model|Serial|Firmware|BIOS|Boot|Board Type|Ctrl Rate|ROC temperature|Product Name'" "${dir}/ctrl${c}_summary.log")
+            raid_jobs+=("storcli64 /c${c} /bbu show all 2>&1" "${dir}/ctrl${c}_bbu.log")
+            raid_jobs+=("storcli64 /c${c} show event 2>&1 | tail -100" "${dir}/ctrl${c}_events.log")
+            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -c "^Virtual Drives" || echo 0)
+            if [ "${vd_count:-0}" -gt 0 ]; then
+                raid_jobs+=("storcli64 /c${c} /vx show all 2>&1" "${dir}/ctrl${c}_vd_all.log")
                 for ((v=0; v<vd_count; v++)); do
-                    run_and_log "storcli64 /c${c} /v${v} show all 2>&1" "${dir}/ctrl${c}_vd${v}.log"
+                    raid_jobs+=("storcli64 /c${c} /v${v} show all 2>&1" "${dir}/ctrl${c}_vd${v}.log")
                 done
             fi
-
-            # BBU 信息
-            run_and_log "storcli64 /c${c} /bbu show all 2>&1" "${dir}/ctrl${c}_bbu.log"
-
-            # 卡事件日志
-            run_and_log "storcli64 /c${c} show event 2>&1 | tail -100" "${dir}/ctrl${c}_events.log"
         done
-    else
-        echo -e "${YELLOW}[SKIP] storcli64 not found (install from Broadcom)${NC}"
     fi
 
-    # ─── Broadcom SAS3 HBA — sas3ircu ───
+    # SAS3 HBA
     if check_cmd sas3ircu; then
-        local hba_count=$(sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\.|^Index")
         if [ "$hba_count" -eq 0 ]; then
-            run_and_log "sas3ircu 0 display 2>&1" "${dir}/sas3_hba0.log"
-            run_and_log "sas3ircu 0 status 2>&1" "${dir}/sas3_hba0_status.log"
+            raid_jobs+=("sas3ircu 0 display 2>&1" "${dir}/sas3_hba0.log")
+            raid_jobs+=("sas3ircu 0 status 2>&1" "${dir}/sas3_hba0_status.log")
         else
             for ((h=0; h<hba_count; h++)); do
-                run_and_log "sas3ircu ${h} display 2>&1" "${dir}/sas3_hba${h}.log"
-                run_and_log "sas3ircu ${h} status 2>&1" "${dir}/sas3_hba${h}_status.log"
+                raid_jobs+=("sas3ircu ${h} display 2>&1" "${dir}/sas3_hba${h}.log")
+                raid_jobs+=("sas3ircu ${h} status 2>&1" "${dir}/sas3_hba${h}_status.log")
             done
         fi
-    else
-        echo -e "${YELLOW}[SKIP] sas3ircu not found (for HBA cards)${NC}"
     fi
 
-    # ─── Broadcom SAS2 HBA — sas2ircu（旧平台兜底） ───
+    # SAS2 HBA
     if check_cmd sas2ircu; then
-        local hba2_count=$(sas2ircu list 2>/dev/null | grep -c "^Index" || echo 0)
         for ((h=0; h<hba2_count; h++)); do
-            run_and_log "sas2ircu ${h} display 2>&1" "${dir}/sas2_hba${h}.log"
-            run_and_log "sas2ircu ${h} status 2>&1" "${dir}/sas2_hba${h}_status.log"
+            raid_jobs+=("sas2ircu ${h} display 2>&1" "${dir}/sas2_hba${h}.log")
+            raid_jobs+=("sas2ircu ${h} status 2>&1" "${dir}/sas2_hba${h}_status.log")
         done
     fi
 
-    # ─── lspci 深度：确认检测到的 RAID/HBA 详细信息 ───
-    local raid_buses=$(lspci -D 2>/dev/null | grep -iE 'RAID|SAS|MegaRAID|Broadcom.*SAS' | awk '{print $1}')
+    # lspci 深度
     if [ -n "$raid_buses" ]; then
-        local count=0
+        local lspci_count=0
         while IFS= read -r bus; do
-            run_and_log "lspci -vvv -s '$bus' 2>/dev/null | head -60" "${dir}/lspci_raid_${count}.log"
-            ((count++))
+            raid_jobs+=("lspci -vvv -s '$bus' 2>/dev/null | head -60" "${dir}/lspci_raid_${lspci_count}.log")
+            ((lspci_count++))
         done <<< "$raid_buses"
     fi
+
+    # Phase 3: 并行执行所有采集任务
+    [ "${#raid_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${raid_jobs[@]}" 
 
     module_end "$MODULE_NAME"
 }

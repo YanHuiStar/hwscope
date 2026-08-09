@@ -15,41 +15,29 @@ run_network() {
 
     module_start "$MODULE_NAME"
 
-    # ─── InfiniBand ───
-    if check_cmd ibstat; then
-        run_and_log "ibstat" "${dir}/ibstat.log"
-    else
+    # ─── InfiniBand + Mellanox / NVIDIA NIC 工具（并行） ───
+    if ! check_cmd ibstat; then
         echo -e "${YELLOW}[SKIP] ibstat not found${NC}"
     fi
-
-    if check_cmd ibstatus; then
-        run_and_log "ibstatus" "${dir}/ibstatus.log"
-    fi
-
-    if check_cmd ibv_devinfo; then
-        run_and_log "ibv_devinfo" "${dir}/ibv_devinfo.log"
-    fi
-
-    if check_cmd ibdev2netdev; then
-        run_and_log "ibdev2netdev" "${dir}/ibdev2netdev.log"
-    fi
-
-    # ─── Mellanox / NVIDIA NIC 工具 ───
-    if check_cmd mlxfwmanager; then
-        run_and_log "mlxfwmanager" "${dir}/mlxfwmanager.log"
-    else
+    if ! check_cmd mlxfwmanager; then
         echo -e "${YELLOW}[SKIP] mlxfwmanager not found${NC}"
     fi
 
+    local ib_jobs=()
+    check_cmd ibstat       && ib_jobs+=("ibstat" "${dir}/ibstat.log")
+    check_cmd ibstatus     && ib_jobs+=("ibstatus" "${dir}/ibstatus.log")
+    check_cmd ibv_devinfo  && ib_jobs+=("ibv_devinfo" "${dir}/ibv_devinfo.log")
+    check_cmd ibdev2netdev && ib_jobs+=("ibdev2netdev" "${dir}/ibdev2netdev.log")
+    check_cmd mlxfwmanager && ib_jobs+=("mlxfwmanager" "${dir}/mlxfwmanager.log")
     if check_cmd mlxconfig; then
-        run_and_log "mlxconfig query" "${dir}/mlxconfig.log"
+        ib_jobs+=("mlxconfig query" "${dir}/mlxconfig.log")
         # 每口 LINK_TYPE 模式（IB/ETH/VPI，现场判断网络模式的关键）
         local mlx_cfg_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5 | head -12)
         for cfg_dev in $mlx_cfg_devs; do
-            run_and_log "mlxconfig query -d ${cfg_dev} 2>/dev/null | grep -E 'LINK_TYPE_P[12]'" \
-                "${dir}/mlxconfig_${cfg_dev}_linktype.log"
+            ib_jobs+=("mlxconfig query -d ${cfg_dev} 2>/dev/null | grep -E 'LINK_TYPE_P[12]'" "${dir}/mlxconfig_${cfg_dev}_linktype.log")
         done
     fi
+    [ "${#ib_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${ib_jobs[@]}" 
 
     # ─── mlxlink：遍历所有 mlx5 设备（并行） ───
     if check_cmd mlxlink; then

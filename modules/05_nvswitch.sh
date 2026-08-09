@@ -30,10 +30,13 @@ run_nvswitch() {
         echo -e "${YELLOW}[SKIP] nvswitch command not found${NC}"
     fi
 
-    # 4~5. Fabric Manager 相关（独立于 nvswitch 命令，并行采集）
-    run_and_log_parallel 2 \
-        "nv-fabricmanager --version 2>&1 || nvidia-fabricmanager --version 2>&1" "${dir}/fabricmanager_version.log" \
-        "systemctl status nvidia-fabricmanager 2>&1 | head -40" "${dir}/fabricmanager_service.log"
+    # 4~5. Fabric Manager 相关（独立于 nvswitch 命令，条件执行）
+    if check_cmd nv-fabricmanager || check_cmd nvidia-fabricmanager; then
+        run_and_log "nv-fabricmanager --version 2>&1 || nvidia-fabricmanager --version 2>&1" "${dir}/fabricmanager_version.log"
+    fi
+    if check_cmd systemctl; then
+        run_and_log "systemctl status nvidia-fabricmanager 2>&1 | head -40" "${dir}/fabricmanager_service.log"
+    fi
 
     module_end "$MODULE_NAME"
 }
