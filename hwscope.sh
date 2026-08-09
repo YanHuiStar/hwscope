@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.23.4 (2026-08)
+# Version : 1.23.5 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -26,12 +26,18 @@ set -uo pipefail
 
 # ─── 检查 locale（非 UTF-8 时尝试切换，不影响系统环境） ───
 if [ "$(locale charmap 2>/dev/null)" != "UTF-8" ]; then
-    for _try in LC_ALL=C.UTF-8 LC_ALL=en_US.UTF-8 LANG=C.UTF-8 LANG=en_US.UTF-8; do
+    for _try in LC_ALL=C.UTF-8 LC_ALL=C.utf8 LC_ALL=en_US.UTF-8 LANG=C.UTF-8 LANG=C.utf8 LANG=en_US.UTF-8; do
         if export "$_try" 2>/dev/null && [ "$(locale charmap 2>/dev/null)" = "UTF-8" ]; then
-            echo "[INFO] 临时切换 locale -> $(locale charmap)（仅本进程有效）"
             break
         fi
     done
+    # 最终兜底：仍非 UTF-8 则强制 LC_ALL=C.UTF-8（即使 locale -a 没列出，部分系统仍可用）
+    if [ "$(locale charmap 2>/dev/null)" != "UTF-8" ]; then
+        export LC_ALL=C.UTF-8 2>/dev/null
+        if [ "$(locale charmap 2>/dev/null)" != "UTF-8" ]; then
+            echo "[WARN] 无可用 UTF-8 locale，中文日志可能乱码。安装: sudo locale-gen C.UTF-8" >&2
+        fi
+    fi
     unset _try
 fi
 
@@ -75,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.23.4"
+HWSCOPE_VERSION="v1.23.5"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
