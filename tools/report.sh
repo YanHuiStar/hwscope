@@ -99,6 +99,26 @@ CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${dmidecode_processor}" 2>/dev/null | awk 
 CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${dmidecode_processor}" 2>/dev/null | awk '{print $(NF-1)}')
 [ -z "$CPU_CUR_SPEED" ] && CPU_CUR_SPEED=$(grep -m1 "CPU MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
 
+# CPU 每颗明细（从 dmidecode_processor.log 按 Processor Information 块解析）
+CPU_DETAILS=""
+if [ -f "${dmidecode_processor}" ]; then
+    CPU_DETAILS=$(awk '/^Processor Information/{
+        socket=""; model=""; cores=""; threads=""; maxspd=""; curspd=""; step=""
+        while((getline line) > 0) {
+            if(line ~ /^$/) break
+            if(line ~ /Handle 0x/) break
+            if(line ~ /Socket Designation:/) {sub(/.*: /,"",line); socket=line}
+            if(line ~ /Version:/) {sub(/.*: /,"",line); model=line}
+            if(line ~ /Core Count:/) {sub(/.*: /,"",line); cores=line}
+            if(line ~ /Thread Count:/) {sub(/.*: /,"",line); threads=line}
+            if(line ~ /Max Speed:/) {sub(/.*: /,"",line); maxspd=line}
+            if(line ~ /Current Speed:/) {sub(/.*: /,"",line); curspd=line}
+            if(line ~ /Stepping:/) {sub(/.*: /,"",line); step=line}
+        }
+        if(socket!="") print socket"|"model"|"cores"|"threads"|"maxspd"|"curspd"|"step
+    }' "${dmidecode_processor}" 2>/dev/null)
+fi
+
 # ─── 内存 ───
 MEM_DIR="${OUT}/memory"
 load_manifest "${MEM_DIR}" proc_meminfo "proc_meminfo.log"
@@ -295,6 +315,16 @@ SEL_TOTAL=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not o
 SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
 SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -icE "pcie|aer|uncorrectable")
 
+# SEL 最近 20 条事件明细
+SEL_DETAILS=""
+if [ -f "${ipmi_sel_elist}" ]; then
+    SEL_DETAILS=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev|^$" | tail -20 | awk -F'|' '{
+        gsub(/^ +| +$/,"",$1); gsub(/^ +| +$/,"",$2); gsub(/^ +| +$/,"",$3)
+        gsub(/^ +| +$/,"",$4); gsub(/^ +| +$/,"",$5); gsub(/^ +| +$/,"",$6)
+        if($1!="" && $2!="") print $1"|"$2"|"$3"|"$4"|"$5
+    }')
+fi
+
 # ─── 线缆配对检测（同一根线两端 EEPROM serial 相同） ───
 CABLE_PAIRS=""
 declare -A CABLE_SERIALS
@@ -378,6 +408,17 @@ FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[
 FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 
+# 风扇每风扇明细
+FAN_DETAILS=""
+if [ -f "${ipmi_fan_sensors}" ]; then
+    FAN_DETAILS=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{
+        name=$1; gsub(/^ +| +$/,"",name)
+        val=$2; gsub(/^ +| +$/,"",val)
+        status=$4; gsub(/^ +| +$/,"",status)
+        print name"|"val"|"status
+    }')
+fi
+
 # ─── PSU 清单（ipmi_psu_fru.log：FRU 描述/型号/PN/SN） ───
 # 状态机：desc 行出现时输出上一个 FRU（PN/SN 在 Name 之后，须延迟一行）；
 # 只保留 PSU 行（PSU1_FRU/PSU4_FRU/Power Supply），过滤风扇/背板/PDB 等其他 FRU
@@ -451,6 +492,33 @@ gen_json() {
         done <<< "$NVS_DETAILS"
         nvs_json=$(printf '%s' "$nvs_json" | sed '$ s/,$//')
     fi
+    # CPU 每 Socket 明细 JSON 数组
+    local cpu_details_json=""
+    if [ -n "$CPU_DETAILS" ]; then
+        while IFS='|' read -r csocket cmodel ccores cthreads cmaxspd ccurspd cstep; do
+            [ -z "$csocket" ] && continue
+            cpu_details_json="${cpu_details_json}      {\"socket\": \"${csocket}\", \"model\": \"${cmodel}\", \"cores\": \"${ccores}\", \"threads\": \"${cthreads}\", \"max_speed\": \"${cmaxspd}\", \"cur_speed\": \"${ccurspd}\", \"stepping\": \"${cstep}\"},"$'\n'
+        done <<< "$CPU_DETAILS"
+        cpu_details_json=$(printf '%s' "$cpu_details_json" | sed '$ s/,$//')
+    fi
+    # SEL 最近事件 JSON 数组
+    local sel_details_json=""
+    if [ -n "$SEL_DETAILS" ]; then
+        while IFS='|' read -r sid sdate stime stype sdesc; do
+            [ -z "$sid" ] && continue
+            sel_details_json="${sel_details_json}      {\"id\": \"${sid}\", \"date\": \"${sdate}\", \"time\": \"${stime}\", \"type\": \"${stype}\", \"description\": \"${sdesc}\"},"$'\n'
+        done <<< "$SEL_DETAILS"
+        sel_details_json=$(printf '%s' "$sel_details_json" | sed '$ s/,$//')
+    fi
+    # 风扇明细 JSON 数组
+    local fan_details_json=""
+    if [ -n "$FAN_DETAILS" ]; then
+        while IFS='|' read -r fname frpm fstatus; do
+            [ -z "$fname" ] && continue
+            fan_details_json="${fan_details_json}      {\"name\": \"${fname}\", \"rpm\": \"${frpm}\", \"status\": \"${fstatus}\"},"$'\n'
+        done <<< "$FAN_DETAILS"
+        fan_details_json=$(printf '%s' "$fan_details_json" | sed '$ s/,$//')
+    fi
     cat > "$f" << EOF
 {
   "hwscope": {
@@ -482,7 +550,14 @@ gen_json() {
     "sockets": "${CPU_SOCKETS:-N/A}",
     "stepping": "${CPU_STEPPING:-N/A}",
     "max_speed": "${CPU_MAX_SPEED:-N/A}",
-    "current_speed": "${CPU_CUR_SPEED:-N/A}"
+    "current_speed": "${CPU_CUR_SPEED:-N/A}",
+    "details": [
+$(if [ -n "$CPU_DETAILS" ]; then
+    echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep; do
+        printf '      {"socket": "%s", "model": "%s", "cores": "%s", "threads": "%s", "max_speed": "%s", "cur_speed": "%s", "stepping": "%s"},\n' "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep"
+    done | sed '$ s/,$//'
+fi)
+    ]
   },
   "memory": {
     "total": "${MEM_TOTAL:-N/A}",
@@ -533,11 +608,25 @@ ${nic_details_json}
     "ip": "${BMC_IP:-N/A}",
     "mac": "${BMC_MAC:-N/A}",
     "sel_total": "${SEL_TOTAL:-0}",
-    "sel_critical": "${SEL_CRIT:-0}"
+    "sel_critical": "${SEL_CRIT:-0}",
+    "sel_details": [
+$(if [ -n "$SEL_DETAILS" ]; then
+    echo "$SEL_DETAILS" | while IFS='|' read -r sid sdate stime stype sdesc; do
+        printf '      {"id": "%s", "date": "%s", "time": "%s", "type": "%s", "description": "%s"},\n' "$sid" "$sdate" "$stime" "$stype" "$sdesc"
+    done | sed '$ s/,$//'
+fi)
+    ]
   },
   "fan": {
     "count": "${FAN_COUNT:-0}",
-    "speed": "${FAN_SPEED:-N/A}"
+    "speed": "${FAN_SPEED:-N/A}",
+    "details": [
+$(if [ -n "$FAN_DETAILS" ]; then
+    echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do
+        printf '      {"name": "%s", "rpm": "%s", "status": "%s"},\n' "$fname" "$fval" "$fstatus"
+    done | sed '$ s/,$//'
+fi)
+    ]
   },
   "psu": {
     "list": "$(printf '%s' "${PSU_DETAILS:-N/A}" | tr '\n' '; ' | sed 's/; $//')",
@@ -611,6 +700,30 @@ gen_md() {
             nvs_md="${nvs_md}| ${nidx} | ${nstat} | ${ntemp} | ${nports} |"$'\n'
         done <<< "$NVS_DETAILS"
     fi
+    # CPU 每 Socket 明细 Markdown 表
+    local cpu_details_md=""
+    if [ -n "$CPU_DETAILS" ]; then
+        while IFS='|' read -r csocket cmodel ccores cthreads cmaxspd ccurspd cstep; do
+            [ -z "$csocket" ] && continue
+            cpu_details_md="${cpu_details_md}| ${csocket} | ${cmodel} | ${ccores} | ${cthreads} | ${cmaxspd} | ${ccurspd} | ${cstep} |"$'\n'
+        done <<< "$CPU_DETAILS"
+    fi
+    # SEL 最近事件 Markdown 表
+    local sel_details_md=""
+    if [ -n "$SEL_DETAILS" ]; then
+        while IFS='|' read -r sid sdate stime stype sdesc; do
+            [ -z "$sid" ] && continue
+            sel_details_md="${sel_details_md}| ${sid} | ${sdate} | ${stime} | ${stype} | ${sdesc} |"$'\n'
+        done <<< "$SEL_DETAILS"
+    fi
+    # 风扇明细 Markdown 表
+    local fan_details_md=""
+    if [ -n "$FAN_DETAILS" ]; then
+        while IFS='|' read -r fname frpm fstatus; do
+            [ -z "$fname" ] && continue
+            fan_details_md="${fan_details_md}| ${fname} | ${frpm} | ${fstatus} |"$'\n'
+        done <<< "$FAN_DETAILS"
+    fi
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
 
@@ -642,6 +755,14 @@ gen_md() {
 | 插槽数 | ${CPU_SOCKETS:-N/A} |
 | Stepping | ${CPU_STEPPING:-N/A} |
 | 频率 | ${CPU_MAX_SPEED:-N/A}（当前 ${CPU_CUR_SPEED:-N/A}） |
+$(if [ -n "$CPU_DETAILS" ]; then
+    echo "### CPU 明细"
+    echo "| Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping |"
+    echo "|--------|------|------|------|---------|---------|----------|"
+    echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep; do
+        echo "| ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} |"
+    done
+fi)
 
 ## 内存
 | 项 | 值 |
@@ -708,12 +829,30 @@ $(printf '%s' "$nic_details_md")
 | IP | ${BMC_IP:-N/A} |
 | MAC | ${BMC_MAC:-N/A} |
 | SEL 事件 | ${SEL_TOTAL:-0}（Critical ${SEL_CRIT:-0}） |
+$(if [ -n "$SEL_DETAILS" ]; then
+    echo "### SEL 事件（最近 20 条）"
+    echo "| # | 日期 | 时间 | 类型 | 描述 |"
+    echo "|---|------|------|------|------|"
+    local sel_seq=0
+    echo "$SEL_DETAILS" | while IFS='|' read -r sid sdate stime stype sdesc; do
+        sel_seq=$((sel_seq+1))
+        echo "| ${sid} | ${sdate} | ${stime} | ${stype} | ${sdesc} |"
+    done
+fi)
 
 ## 风扇
 | 项 | 值 |
 |----|----|
 | 数量 | ${FAN_COUNT:-0} |
 | 转速 | ${FAN_SPEED:-N/A} |
+$(if [ -n "$FAN_DETAILS" ]; then
+    echo "### 风扇明细"
+    echo "| 风扇 | 转速(RPM) | 状态 |"
+    echo "|------|----------|------|"
+    echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do
+        echo "| ${fname} | ${fval} | ${fstatus} |"
+    done
+fi)
 
 ## 电源 PSU
 | # | 描述 | 型号 | 部件号 | 序列号 |
@@ -790,6 +929,30 @@ gen_txt() {
             nvs_txt="${nvs_txt}    NVSwitch${nidx}  ${nstat}  ${ntemp}  端口:${nports}"$'\n'
         done <<< "$NVS_DETAILS"
     fi
+    # CPU 每 Socket 明细纯文本
+    local cpu_details_txt=""
+    if [ -n "$CPU_DETAILS" ]; then
+        while IFS='|' read -r csocket cmodel ccores cthreads cmaxspd ccurspd cstep; do
+            [ -z "$csocket" ] && continue
+            cpu_details_txt="${cpu_details_txt}    ${csocket}  ${cmodel}  ${ccores}C/${cthreads}T  ${cmaxspd}/${ccurspd}  ${cstep}"$'\n'
+        done <<< "$CPU_DETAILS"
+    fi
+    # SEL 最近事件纯文本
+    local sel_details_txt=""
+    if [ -n "$SEL_DETAILS" ]; then
+        while IFS='|' read -r sid sdate stime stype sdesc; do
+            [ -z "$sid" ] && continue
+            sel_details_txt="${sel_details_txt}    ${sid}  ${sdate} ${stime}  ${stype}  ${sdesc}"$'\n'
+        done <<< "$SEL_DETAILS"
+    fi
+    # 风扇明细纯文本
+    local fan_details_txt=""
+    if [ -n "$FAN_DETAILS" ]; then
+        while IFS='|' read -r fname frpm fstatus; do
+            [ -z "$fname" ] && continue
+            fan_details_txt="${fan_details_txt}    ${fname}  ${frpm} RPM  ${fstatus}"$'\n'
+        done <<< "$FAN_DETAILS"
+    fi
     cat > "$f" << EOF
 ============================================
 HwScope 硬件巡检报告
@@ -817,6 +980,12 @@ HwScope 硬件巡检报告
   插槽数 : ${CPU_SOCKETS:-N/A}
   Stepping: ${CPU_STEPPING:-N/A}
   频率   : ${CPU_MAX_SPEED:-N/A} (当前 ${CPU_CUR_SPEED:-N/A})
+$(if [ -n "$CPU_DETAILS" ]; then
+    echo "  CPU明细:"
+    echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep; do
+        printf "    %-6s %-30s %sC/%sT  %s/%s  %s\n" "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep"
+    done
+fi)
 
 [内存]
   总量   : ${MEM_TOTAL:-N/A}
@@ -857,10 +1026,22 @@ $(printf '%s' "$nic_details_txt")
   IP     : ${BMC_IP:-N/A}
   MAC    : ${BMC_MAC:-N/A}
   SEL    : ${SEL_TOTAL:-0} (Critical ${SEL_CRIT:-0})
+$(if [ -n "$SEL_DETAILS" ]; then
+    echo "  SEL事件(最近20条):"
+    echo "$SEL_DETAILS" | while IFS='|' read -r sid sdate stime stype sdesc; do
+        printf "    %-4s %-12s %-10s %-25s %s\n" "$sid" "$sdate" "$stime" "$stype" "$sdesc"
+    done
+fi)
 
 [风扇]
   数量   : ${FAN_COUNT:-0}
   转速   : ${FAN_SPEED:-N/A}
+$(if [ -n "$FAN_DETAILS" ]; then
+    echo "  风扇明细:"
+    echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do
+        printf "    %-16s %8s RPM  %s\n" "$fname" "$fval" "$fstatus"
+    done
+fi)
 
 [电源PSU]
 $(if [ -n "$PSU_DETAILS" ]; then
