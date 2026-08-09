@@ -51,6 +51,15 @@ run_memory() {
     }' "$mem_dump_file" 2>/dev/null
     rm -f "$mem_dump_file"
 
+# NOTE: slot_* files are generated dynamically per DIMM slot (e.g. slot_DIMM_A1.log)
+    write_manifest "${dir}/manifest.txt" \
+        "dmidecode_memory_full" "dmidecode_memory_full.log" \
+        "memory_slot_fields" "memory_slot_fields.log" \
+        "free_h" "free_h.log" \
+        "proc_meminfo" "proc_meminfo.log" \
+        "memory_slot_blocks" "memory_slot_blocks.log" \
+        "memory_capacity" "memory_capacity.log"
+
     module_end "$MODULE_NAME"
 }
 

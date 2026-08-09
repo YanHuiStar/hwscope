@@ -67,6 +67,15 @@ run_psu() {
     # ─── 4. 电源系统总览 ───
     run_and_log "cat /sys/class/power_supply/*/present 2>/dev/null" "${dir}/psu_present.log"
 
+# NOTE: sysfs_PSU_NAME/info.log, sysfs_PSU_NAME/all_fields.log per PSU
+    # NOTE: i2c_busN.log per i2c bus (conditional)
+    write_manifest "${dir}/manifest.txt" \
+        "ipmi_psu_sensors" "ipmi_psu_sensors.log" \
+        "ipmi_psu_temp" "ipmi_psu_temp.log" \
+        "ipmi_psu_power" "ipmi_psu_power.log" \
+        "ipmi_psu_fru" "ipmi_psu_fru.log" \
+        "psu_present" "psu_present.log"
+
     module_end "$MODULE_NAME"
 }
 

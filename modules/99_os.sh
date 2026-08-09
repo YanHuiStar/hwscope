@@ -73,6 +73,23 @@ run_os() {
         fi
     done
 
+# NOTE: os-release.log, redhat-release.log, etc. are conditional (file existence)
+    # NOTE: service_*.log per nvidia service (conditional - systemctl)
+    # NOTE: nodeN_cpus.log per NUMA node (loop)
+    # NOTE: sysfs_*.log per nvidia sysfs path (loop, conditional)
+    write_manifest "${dir}/manifest.txt" \
+        "uname" "uname.log" \
+        "kernel_modules_gpu_net" "kernel_modules_gpu_net.log" \
+        "lsmod_all" "lsmod_all.log" \
+        "uptime" "uptime.log" \
+        "loadavg" "loadavg.log" \
+        "dmesg_hardware" "dmesg_hardware.log" \
+        "dmesg_nvidia" "dmesg_nvidia.log" \
+        "dmesg_nvswitch" "dmesg_nvswitch.log" \
+        "numa_hardware" "numa_hardware.log" \
+        "numa_nodes" "numa_nodes.log" \
+        "pcie_aer" "pcie_aer.log"
+
     module_end "$MODULE_NAME"
 }
 

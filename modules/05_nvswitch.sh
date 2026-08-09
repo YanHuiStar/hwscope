@@ -38,6 +38,13 @@ run_nvswitch() {
         run_and_log "systemctl status nvidia-fabricmanager 2>&1 | head -40" "${dir}/fabricmanager_service.log"
     fi
 
+# NOTE: nvswitch_N.log are generated per NVSwitch (N=0,1,2,3)
+    write_manifest "${dir}/manifest.txt" \
+        "nvswitch_all" "nvswitch_all.log" \
+        "nvswitch_version" "nvswitch_version.log" \
+        "fabricmanager_version" "fabricmanager_version.log" \
+        "fabricmanager_service" "fabricmanager_service.log"
+
     module_end "$MODULE_NAME"
 }
 

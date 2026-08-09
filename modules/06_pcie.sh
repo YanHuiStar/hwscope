@@ -52,6 +52,18 @@ run_pcie() {
         "for g in /sys/kernel/iommu_groups/*; do echo \"IOMMU Group \$(basename \$g):\"; for d in \$g/devices/*; do echo \"  \$(basename \$d) - \$(lspci -n -s \$(basename \$d) 2>/dev/null)\"; done; done 2>/dev/null" \
             "${dir}/iommu_groups.log"
 
+# NOTE: gpu_pcie_N.log are generated per GPU bus (N=0,1,...)
+    write_manifest "${dir}/manifest.txt" \
+        "skip_lspci" "00_skip_lspci.log" \
+        "lspci_all" "lspci_all.log" \
+        "lspci_tree" "lspci_tree.log" \
+        "lspci_nvidia" "lspci_nvidia.log" \
+        "pcie_bridge" "pcie_bridge.log" \
+        "pcie_speed_width" "pcie_speed_width.log" \
+        "gpu_pcie_bus_map" "gpu_pcie_bus_map.log" \
+        "pci_numa_map" "pci_numa_map.log" \
+        "iommu_groups" "iommu_groups.log"
+
     module_end "$MODULE_NAME"
 }
 

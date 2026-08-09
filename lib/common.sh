@@ -201,3 +201,18 @@ summary_append() {
         echo "[$(date '+%H:%M:%S')] $module_name - $info"
     } >> "$summary_file"
 }
+
+# ─── 模块输出清单（manifest）───
+# 格式：bash key=value（可直接 source）
+# 用法：write_manifest "${dir}/manifest.txt" "gpu_full" "gpu_full.log" "gpu_inventory" "gpu_inventory.csv" ...
+write_manifest() {
+    local manifest_file="$1"; shift
+    {
+        echo "# HwScope module output manifest"
+        echo "# Generated: $(date '+%Y-%m-%d %H:%M:%S')"
+        while [ $# -ge 2 ]; do
+            echo "${1}=${2}"
+            shift 2
+        done
+    } > "$manifest_file"
+}

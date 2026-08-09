@@ -92,6 +92,13 @@ run_raid() {
     # Phase 3: 并行执行所有采集任务
     [ "${#raid_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${raid_jobs[@]}" 
 
+# NOTE: ctrlC_info.log, ctrlC_summary.log, ctrlC_bbu.log, ctrlC_events.log,
+    #       ctrlC_vd_all.log, ctrlC_vdV.log, sas3_hbaH.log, sas3_hbaH_status.log,
+    #       sas2_hbaH.log, sas2_hbaH_status.log, lspci_raid_N.log are generated per controller/device
+    write_manifest "${dir}/manifest.txt" \
+        "pci_raid_hba_list" "pci_raid_hba_list.log" \
+        "storcli_controllers" "storcli_controllers.log"
+
     module_end "$MODULE_NAME"
 }
 
