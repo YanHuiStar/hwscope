@@ -26,14 +26,17 @@ detect_platform() {
 
     if check_cmd nvidia-smi; then
         GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l || echo 0)
-        # SXM 检测：nvswitch CLI → lspci NVSwitch → nv-fabricmanager 进程
+        # SXM 四重检测：nvswitch CLI → lspci NVSwitch → nv-fabricmanager 进程(需 NVLink 交叉验证) → nvidia-smi topo
         local _sxm=0
         if check_cmd nvswitch && nvswitch -q 2>/dev/null | grep -qi "Switch Name"; then
             _sxm=1
         elif check_cmd lspci && lspci 2>/dev/null | grep -qi "NVSwitch\|SXM.*Bridge"; then
             _sxm=1
         elif pgrep -f nv-fabricmanager >/dev/null 2>&1; then
-            _sxm=1
+            # 进程检测有误判风险：交叉验证 NVLink 是否存在（SXM 机器必有 NVLink）
+            if nvidia-smi nvlink --status 2>/dev/null | grep -qi "GPU\|active\|link"; then
+                _sxm=1
+            fi
         fi
         if [ "$_sxm" -eq 1 ]; then
             PLATFORM="${hw_arch}_SXM"
