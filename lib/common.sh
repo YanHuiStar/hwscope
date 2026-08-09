@@ -65,7 +65,8 @@ run_and_log() {
         elapsed=$((end_ns - start_ns))
     fi
 
-    echo "# --- output end (exit code: $ret, 耗时: ${elapsed}s) ---" >> "$logfile"
+    echo "# --- output end ---" >> "$logfile"
+    echo "# --- exit code: $ret, [ ${elapsed}s ] ---" >> "$logfile"
 
     # WARN 计数（exit=1 = grep 无匹配，不报警）
     if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
