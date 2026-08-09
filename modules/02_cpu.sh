@@ -48,6 +48,19 @@ run_cpu() {
         "awk -F':[ \\\\t]*' '/cpu MHz/{s+=\$2; c++} END{if(c>0) printf \"Average: %.0f MHz, Total CPUs: %d\\n\", s/c, c; else print \"N/A (no cpu MHz in cpuinfo)\"}' /proc/cpuinfo 2>/dev/null" "${dir}/cpu_freq.log" \
         "LANG=C lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
 
+write_manifest "${dir}/manifest.txt" \
+        "dmidecode_processor" "dmidecode_processor.log" \
+        "dmidecode_processor_summary" "dmidecode_processor_summary.log" \
+        "cpu_summary" "cpu_summary.log" \
+        "lscpu" "lscpu.log" \
+        "cpu_core_count" "cpu_core_count.log" \
+        "cpu_stepping" "cpu_stepping.log" \
+        "proc_cpuinfo_full" "proc_cpuinfo_full.log" \
+        "lscpu_extended" "lscpu_extended.log" \
+        "smt_status" "smt_status.log" \
+        "cpu_freq" "cpu_freq.log" \
+        "cpu_freq_range" "cpu_freq_range.log"
+
     module_end "$MODULE_NAME"
 }
 

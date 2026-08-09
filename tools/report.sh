@@ -30,6 +30,24 @@ extract() {
     grep -iE "$pattern" "$file" 2>/dev/null | grep -v "^#" | head -1 | cut -d':' -f2- | sed 's/^ *//;s/ *$//' | head -c 200
 }
 
+# ─── 清单加载：从 manifest.txt 读取模块输出文件名，回退到默认值 ───
+# 用法: load_manifest <目录> <key> [默认文件名]
+# 若 <目录>/manifest.txt 存在且含 <key>=<value>，设置 shell 变量 $key 为完整路径；
+# 否则使用 <目录>/<默认文件名>（默认文件名 = key 本身）。
+load_manifest() {
+    local dir="$1" key="$2" default="${3:-$2}"
+    local manifest="${dir}/manifest.txt"
+    if [ -f "$manifest" ]; then
+        local val
+        val=$(grep "^${key}=" "$manifest" 2>/dev/null | tail -1 | cut -d'=' -f2-)
+        if [ -n "$val" ]; then
+            eval "${key}=\"${dir}/${val}\""
+            return
+        fi
+    fi
+    eval "${key}=\"${dir}/${default}\""
+}
+
 # ─── 收集基础信息 ───
 SUMMARY="${OUT}/summary.txt"
 HOSTNAME=$(extract "Hostname" "$SUMMARY")
@@ -44,42 +62,56 @@ TIMING_TOP=$(grep -A6 "^模块耗时 Top5:" "$SUMMARY" 2>/dev/null | grep -E "^[
 
 # ─── 环境（OS/内核/驱动/CUDA） ───
 OS_DIR="${OUT}/os"
-OS_NAME=$(grep -m1 "PRETTY_NAME" "${OS_DIR}/os-release.log" 2>/dev/null | cut -d'"' -f2)
-KERNEL=$(grep -m1 -v "^#" "${OS_DIR}/uname.log" 2>/dev/null | awk '{print $3}')
-GPU_DRIVER=$(grep -m1 "Driver Version" "${OUT}/gpu/gpu_full.log" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
-GPU_CUDA=$(grep -m1 "CUDA Version" "${OUT}/gpu/gpu_full.log" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
+load_manifest "${OS_DIR}" os_release "os-release.log"
+load_manifest "${OS_DIR}" os_uname "uname.log"
+OS_NAME=$(grep -m1 "PRETTY_NAME" "${os_release}" 2>/dev/null | cut -d'"' -f2)
+KERNEL=$(grep -m1 -v "^#" "${os_uname}" 2>/dev/null | awk '{print $3}')
+GPU_DIR="${OUT}/gpu"
+load_manifest "${GPU_DIR}" gpu_full "gpu_full.log"
+GPU_DRIVER=$(grep -m1 "Driver Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
+GPU_CUDA=$(grep -m1 "CUDA Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 
 # ─── 主板 ───
 MB_DIR="${OUT}/motherboard"
-MB_MANUFACTURER=$(extract "Manufacturer" "${MB_DIR}/dmidecode_system.log")
-MB_PRODUCT=$(extract "Product Name" "${MB_DIR}/dmidecode_system.log")
-MB_SN=$(extract "Serial Number" "${MB_DIR}/dmidecode_system.log")
-BIOS_VERSION=$(extract "Version" "${MB_DIR}/dmidecode_bios.log" | head -c 80)
-CHASSIS_SN=$(extract "Serial Number" "${MB_DIR}/dmidecode_chassis.log")
+load_manifest "${MB_DIR}" dmidecode_system "dmidecode_system.log"
+load_manifest "${MB_DIR}" dmidecode_bios "dmidecode_bios.log"
+load_manifest "${MB_DIR}" dmidecode_chassis "dmidecode_chassis.log"
+MB_MANUFACTURER=$(extract "Manufacturer" "${dmidecode_system}")
+MB_PRODUCT=$(extract "Product Name" "${dmidecode_system}")
+MB_SN=$(extract "Serial Number" "${dmidecode_system}")
+BIOS_VERSION=$(extract "Version" "${dmidecode_bios}" | head -c 80)
+CHASSIS_SN=$(extract "Serial Number" "${dmidecode_chassis}")
 
 # ─── CPU ───
 CPU_DIR="${OUT}/cpu"
-CPU_MODEL=$(grep -m1 -iE "^model name" "${CPU_DIR}/cpu_summary.log" 2>/dev/null | cut -d':' -f2- | tr -d '\t' | sed 's/^ *//' | head -c 100)
-CPU_CORES=$(grep -m1 -iE "^cpu cores|^Core Count" "${CPU_DIR}/cpu_summary.log" 2>/dev/null | cut -d':' -f2- | tr -d ' \t')
-CPU_SOCKETS=$(grep "physical id" "${CPU_DIR}/proc_cpuinfo_full.log" 2>/dev/null | cut -d':' -f2- | sort -u | wc -l)
-CPU_STEPPING=$(grep -m1 "^Stepping" "${CPU_DIR}/cpu_stepping.log" 2>/dev/null | awk '{print $2}')
-[ -z "$CPU_STEPPING" ] && CPU_STEPPING=$(grep -m1 "Stepping:" "${CPU_DIR}/lscpu.log" 2>/dev/null | awk '{print $2}')
-CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${CPU_DIR}/dmidecode_processor.log" 2>/dev/null | awk '{print $(NF-1)}')
-[ -z "$CPU_MAX_SPEED" ] && CPU_MAX_SPEED=$(grep -m1 "CPU max MHz" "${CPU_DIR}/lscpu.log" 2>/dev/null | awk '{print $NF}')
-CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${CPU_DIR}/dmidecode_processor.log" 2>/dev/null | awk '{print $(NF-1)}')
-[ -z "$CPU_CUR_SPEED" ] && CPU_CUR_SPEED=$(grep -m1 "CPU MHz" "${CPU_DIR}/lscpu.log" 2>/dev/null | awk '{print $NF}')
+load_manifest "${CPU_DIR}" cpu_summary "cpu_summary.log"
+load_manifest "${CPU_DIR}" proc_cpuinfo_full "proc_cpuinfo_full.log"
+load_manifest "${CPU_DIR}" cpu_stepping "cpu_stepping.log"
+load_manifest "${CPU_DIR}" lscpu "lscpu.log"
+load_manifest "${CPU_DIR}" dmidecode_processor "dmidecode_processor.log"
+CPU_MODEL=$(grep -m1 -iE "^model name" "${cpu_summary}" 2>/dev/null | cut -d':' -f2- | tr -d '\t' | sed 's/^ *//' | head -c 100)
+CPU_CORES=$(grep -m1 -iE "^cpu cores|^Core Count" "${cpu_summary}" 2>/dev/null | cut -d':' -f2- | tr -d ' \t')
+CPU_SOCKETS=$(grep "physical id" "${proc_cpuinfo_full}" 2>/dev/null | cut -d':' -f2- | sort -u | wc -l)
+CPU_STEPPING=$(grep -m1 "^Stepping" "${cpu_stepping}" 2>/dev/null | awk '{print $2}')
+[ -z "$CPU_STEPPING" ] && CPU_STEPPING=$(grep -m1 "Stepping:" "${lscpu}" 2>/dev/null | awk '{print $2}')
+CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${dmidecode_processor}" 2>/dev/null | awk '{print $(NF-1)}')
+[ -z "$CPU_MAX_SPEED" ] && CPU_MAX_SPEED=$(grep -m1 "CPU max MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
+CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${dmidecode_processor}" 2>/dev/null | awk '{print $(NF-1)}')
+[ -z "$CPU_CUR_SPEED" ] && CPU_CUR_SPEED=$(grep -m1 "CPU MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
 
 # ─── 内存 ───
 MEM_DIR="${OUT}/memory"
-MEM_TOTAL=$(grep -m1 "MemTotal" "${MEM_DIR}/proc_meminfo.log" 2>/dev/null | awk '{printf "%.1f GB", $2/1024/1024}')
-MEM_SPEED=$(extract "Configured Clock Speed|Speed:" "${MEM_DIR}/dmidecode_memory_full.log")
-MEM_SLOTS=$(grep -c "Memory Device" "${MEM_DIR}/dmidecode_memory_full.log" 2>/dev/null)
-MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${MEM_DIR}/dmidecode_memory_full.log" 2>/dev/null)
+load_manifest "${MEM_DIR}" proc_meminfo "proc_meminfo.log"
+load_manifest "${MEM_DIR}" dmidecode_memory_full "dmidecode_memory_full.log"
+MEM_TOTAL=$(grep -m1 "MemTotal" "${proc_meminfo}" 2>/dev/null | awk '{printf "%.1f GB", $2/1024/1024}')
+MEM_SPEED=$(extract "Configured Clock Speed|Speed:" "${dmidecode_memory_full}")
+MEM_SLOTS=$(grep -c "Memory Device" "${dmidecode_memory_full}" 2>/dev/null)
+MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${dmidecode_memory_full}" 2>/dev/null)
 # 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率），空槽跳过
 # 行模式状态机：从 "Memory Device" 段头开始，空行结束（Size 行在 Locator 之前）
 # 速率语义：Speed=模块标称（原速率），Configured Memory Speed=当前实际运行（现速率）
 MEM_DIMMS=""
-if [ -f "${MEM_DIR}/dmidecode_memory_full.log" ]; then
+if [ -f "${dmidecode_memory_full}" ]; then
     MEM_DIMMS=$(awk '
         /^Memory Device/ { in_dimm=1; slot=""; size=""; mfr=""; sn=""; pn=""; nom=""; cur=""; next }
         in_dimm && /^[[:space:]]*Locator:/ && !/Bank Locator/ {slot=$0;  sub(/^[[:space:]]*Locator:[[:space:]]*/,"",slot); next}
@@ -90,12 +122,14 @@ if [ -f "${MEM_DIR}/dmidecode_memory_full.log" ]; then
         in_dimm && /^[[:space:]]*Speed:/             {nom=$0;  sub(/^[[:space:]]*Speed:[[:space:]]*/,"",nom); next}
         in_dimm && /^[[:space:]]*Configured Memory Speed:/ {cur=$0; sub(/^[[:space:]]*Configured Memory Speed:[[:space:]]*/,"",cur); next}
         in_dimm && /^[[:space:]]*$/ { if(size!="") printf "%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur; in_dimm=0 }
-    ' "${MEM_DIR}/dmidecode_memory_full.log" 2>/dev/null)
+    ' "${dmidecode_memory_full}" 2>/dev/null)
 fi
 
 # ─── GPU（解析 inventory.csv；列: 1=idx 2=name 3=serial 4=bdf 5=uuid 6=mem.total 7=mem.used 8=power.limit 9=power.draw 10=temp 11=util 12-13=clocks 14=ecc.mode 15=gen.cur 16=width.cur 17=gen.max 18=width.max） ───
-GPU_CSV="${OUT}/gpu/gpu_inventory.csv"
-GPU_ECC_CSV="${OUT}/gpu/gpu_ecc_inventory.csv"
+load_manifest "${GPU_DIR}" gpu_inventory "gpu_inventory.csv"
+load_manifest "${GPU_DIR}" gpu_ecc_inventory "gpu_ecc_inventory.csv"
+GPU_CSV="${gpu_inventory}"
+GPU_ECC_CSV="${gpu_ecc_inventory}"
 GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""
 if [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
@@ -150,50 +184,54 @@ fi
 
 # ─── 存储（只统计物理盘 TYPE=disk，避免把分区/LVM 计入容量） ───
 STO_DIR="${OUT}/storage"
+load_manifest "${STO_DIR}" block_devices_all "block_devices_all.log"
+load_manifest "${STO_DIR}" disk_inventory "disk_inventory.csv"
 STORAGE_COUNT=0; STORAGE_TOTAL="N/A"; STORAGE_MODELS=""
 # 系统盘识别：根文件系统 / 挂载所在的物理盘（lsblk 树形回溯父盘）
 SYS_DISK=""
-if [ -f "${STO_DIR}/block_devices_all.log" ]; then
-    SYS_DISK=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk '
+if [ -f "${block_devices_all}" ]; then
+    SYS_DISK=$(grep -v "^#" "${block_devices_all}" | awk '
         $1 ~ /^[a-zA-Z0-9_]+$/ {cur=$1}
         $0 ~ / \/ / && $0 !~ /\/boot/ {print cur; exit}
     ')
 fi
-if [ -f "${STO_DIR}/block_devices_all.log" ]; then
+if [ -f "${block_devices_all}" ]; then
     # 物理盘行遍历找 size 字段（model 可能含空格导致列偏移，不能用固定列）；默认排除系统盘
-    STORAGE_COUNT=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") c++} END{print c+0}')
-    STORAGE_TOTAL=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {v=""; for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {v=$i; break}; \
+    STORAGE_COUNT=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") c++} END{print c+0}')
+    STORAGE_TOTAL=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {v=""; for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {v=$i; break}; \
         if(v!=""){n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
         if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024}} \
         END{printf "%.0f GB", s}' 2>/dev/null)
-    STORAGE_MODELS=$(grep -v "^#" "${STO_DIR}/block_devices_all.log" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+    STORAGE_MODELS=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
 fi
 
 # 盘明细（disk_inventory.csv: name|type|size|model|serial|fw|bdf|power_on）
 DISK_DETAILS=""
-if [ -f "${STO_DIR}/disk_inventory.csv" ]; then
+if [ -f "${disk_inventory}" ]; then
     while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
         [ -z "$dname" ] || [ "$dname" = "N/A" ] && continue
         [ "$dname" = "#" ] && continue
         [ "$dname" = "$SYS_DISK" ] && continue   # 默认排除系统盘
         DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}"$'\n'
-    done < <(grep -v "^#" "${STO_DIR}/disk_inventory.csv" 2>/dev/null)
+    done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
 fi
 
 # GPU 退役行数（gpu_remapped_rows.csv）
 GPU_REMAP="N/A"
-if [ -f "${OUT}/gpu/gpu_remapped_rows.csv" ]; then
-    GPU_REMAP=$(grep -v "^#" "${OUT}/gpu/gpu_remapped_rows.csv" | grep -v "^$" | awk -F',' '{gsub(/ /,"",$1); gsub(/ /,"",$2); gsub(/ /,"",$3); gsub(/ /,"",$4); c+=$1; u+=$2; p+=$3; f+=$4} END{if(NR>0) printf "CE:%d UE:%d pending:%d fail:%d", c, u, p, f; else print "N/A"}')
+load_manifest "${GPU_DIR}" gpu_remapped_rows "gpu_remapped_rows.csv"
+if [ -f "${gpu_remapped_rows}" ]; then
+    GPU_REMAP=$(grep -v "^#" "${gpu_remapped_rows}" | grep -v "^$" | awk -F',' '{gsub(/ /,"",$1); gsub(/ /,"",$2); gsub(/ /,"",$3); gsub(/ /,"",$4); c+=$1; u+=$2; p+=$3; f+=$4} END{if(NR>0) printf "CE:%d UE:%d pending:%d fail:%d", c, u, p, f; else print "N/A"}')
 fi
 
 # NVLink 链路（gpu_nvlink_status.log：每 GPU 链路数 + 速率 + 异常链路）
 NV_LINK_SUMMARY="N/A"
-if [ -f "${OUT}/gpu/gpu_nvlink_status.log" ]; then
-    NV_GPU_LINKS=$(grep -c "Link [0-9]" "${OUT}/gpu/gpu_nvlink_status.log" 2>/dev/null)
-    NV_GPU_COUNT=$(grep -c "^GPU " "${OUT}/gpu/gpu_nvlink_status.log" 2>/dev/null)
-    NV_LINK_RATE=$(grep -m1 "Link 0:" "${OUT}/gpu/gpu_nvlink_status.log" 2>/dev/null | awk '{print $(NF-1)" "$NF}')
+load_manifest "${GPU_DIR}" gpu_nvlink_status "gpu_nvlink_status.log"
+if [ -f "${gpu_nvlink_status}" ]; then
+    NV_GPU_LINKS=$(grep -c "Link [0-9]" "${gpu_nvlink_status}" 2>/dev/null)
+    NV_GPU_COUNT=$(grep -c "^GPU " "${gpu_nvlink_status}" 2>/dev/null)
+    NV_LINK_RATE=$(grep -m1 "Link 0:" "${gpu_nvlink_status}" 2>/dev/null | awk '{print $(NF-1)" "$NF}')
     # 异常链路：速率明确为 0 / N/A / Down / Off（避免匹配 "200.0" 里的 0）
-    NV_LINK_DOWN=$(grep -E "Link [0-9]+: *(0|N/A|Down|Off)( |$)" "${OUT}/gpu/gpu_nvlink_status.log" 2>/dev/null | wc -l)
+    NV_LINK_DOWN=$(grep -E "Link [0-9]+: *(0|N/A|Down|Off)( |$)" "${gpu_nvlink_status}" 2>/dev/null | wc -l)
     if [ "$NV_GPU_COUNT" -gt 0 ] 2>/dev/null; then
         NV_LINK_SUMMARY="${NV_GPU_COUNT}卡 × ${NV_LINK_RATE}"
         [ "$NV_LINK_DOWN" -gt 0 ] && NV_LINK_SUMMARY="${NV_LINK_SUMMARY} ⚠️${NV_LINK_DOWN}链路异常"
@@ -201,9 +239,10 @@ if [ -f "${OUT}/gpu/gpu_nvlink_status.log" ]; then
 fi
 
 # NVSwitch（nvswitch_*.log：状态/温度/端口）
+NVS_DIR="${OUT}/nvswitch"
 NVS_DETAILS=""
-if ls ${OUT}/nvswitch/nvswitch_*.log >/dev/null 2>&1; then
-    for nf in ${OUT}/nvswitch/nvswitch_*.log; do
+if ls ${NVS_DIR}/nvswitch_*.log >/dev/null 2>&1; then
+    for nf in ${NVS_DIR}/nvswitch_*.log; do
         nidx=$(basename "$nf" | sed 's/nvswitch_//; s/\.log//')
         nstate=$(grep -m1 "Switch State" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
         ntemp=$(grep -m1 "Temperature" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ' | sed 's/C$//')
@@ -217,8 +256,11 @@ fi
 
 # ─── 网络 ───
 NET_DIR="${OUT}/network"
-IB_COUNT=$(grep -c "State: Active" "${NET_DIR}/ibstat.log" 2>/dev/null)
-IB_SPEED=$(grep -A2 "State: Active" "${NET_DIR}/ibstat.log" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | tail -1)
+load_manifest "${NET_DIR}" ibstat "ibstat.log"
+load_manifest "${NET_DIR}" ibdev2netdev "ibdev2netdev.log"
+load_manifest "${NET_DIR}" nic_inventory "nic_inventory.csv"
+IB_COUNT=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
+IB_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | tail -1)
 [ -n "$IB_SPEED" ] && IB_SPEED="${IB_SPEED} Gb/s"
 ETH_LINK_UP=$(grep -h "Link detected: yes" "${NET_DIR}"/ethtool_*.log 2>/dev/null | wc -l)
 
@@ -241,13 +283,17 @@ CABLE_SUMMARY=$(echo "$CABLE_SUMMARY" | sed 's/,$//')
 
 # ─── BMC ───
 BMC_DIR="${OUT}/bmc"
-BMC_FRU=$(extract "Product Name|Product Part Number" "${BMC_DIR}/ipmi_fru_summary.log" | head -c 80)
-BMC_FW=$(extract "Firmware Revision" "${BMC_DIR}/ipmi_mc.log")
-BMC_IP=$(grep "IP Address" "${BMC_DIR}/ipmi_lan1.log" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | head -1)
-BMC_MAC=$(grep -m1 "MAC Address" "${BMC_DIR}/ipmi_lan1.log" 2>/dev/null | awk '{print $NF}')
-SEL_TOTAL=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | wc -l)
-SEL_CRIT=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
-SEL_PCIE_ERR=$(grep -v "^#" "${BMC_DIR}/ipmi_sel_elist.log" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -icE "pcie|aer|uncorrectable")
+load_manifest "${BMC_DIR}" ipmi_fru_summary "ipmi_fru_summary.log"
+load_manifest "${BMC_DIR}" ipmi_mc "ipmi_mc.log"
+load_manifest "${BMC_DIR}" ipmi_lan1 "ipmi_lan1.log"
+load_manifest "${BMC_DIR}" ipmi_sel_elist "ipmi_sel_elist.log"
+BMC_FRU=$(extract "Product Name|Product Part Number" "${ipmi_fru_summary}" | head -c 80)
+BMC_FW=$(extract "Firmware Revision" "${ipmi_mc}")
+BMC_IP=$(grep "IP Address" "${ipmi_lan1}" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+BMC_MAC=$(grep -m1 "MAC Address" "${ipmi_lan1}" 2>/dev/null | awk '{print $NF}')
+SEL_TOTAL=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | wc -l)
+SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
+SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -icE "pcie|aer|uncorrectable")
 
 # ─── 线缆配对检测（同一根线两端 EEPROM serial 相同） ───
 CABLE_PAIRS=""
@@ -282,20 +328,20 @@ LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')
 # 网卡明细（nic_inventory.csv: dev|bdf|mac|sn|pn|fw|speed|width|psid）
 # IB 控制器型号识别：ibstat CA type + ibdev2netdev 映射（mlx5_N ↔ ibp*），附加到 PN 列
 declare -A CA_MODEL NETDEV_CA
-if [ -f "${NET_DIR}/ibstat.log" ]; then
+if [ -f "${ibstat}" ]; then
     cur_ca=""
     while IFS= read -r il; do
         case "$il" in
             *"CA '"*) cur_ca=$(echo "$il" | sed "s/.*'\(.*\)'.*/\1/") ;;
             *"CA type:"*) [ -n "$cur_ca" ] && CA_MODEL[$cur_ca]=$(echo "$il" | awk '{print $NF}') ;;
         esac
-    done < <(grep -v "^#" "${NET_DIR}/ibstat.log")
+    done < <(grep -v "^#" "${ibstat}")
 fi
-if [ -f "${NET_DIR}/ibdev2netdev.log" ]; then
+if [ -f "${ibdev2netdev}" ]; then
     while IFS= read -r nl; do
         ca=$(echo "$nl" | awk '{print $1}'); dev=$(echo "$nl" | awk '{print $5}')
         [ -n "$ca" ] && [ -n "$dev" ] && NETDEV_CA[$dev]=$ca
-    done < <(grep -v "^#" "${NET_DIR}/ibdev2netdev.log")
+    done < <(grep -v "^#" "${ibdev2netdev}")
 fi
 mt_model() {
     case "$1" in
@@ -310,7 +356,7 @@ mt_model() {
     esac
 }
 NIC_DETAILS=""
-if [ -f "${NET_DIR}/nic_inventory.csv" ]; then
+if [ -f "${nic_inventory}" ]; then
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
@@ -320,22 +366,25 @@ if [ -f "${NET_DIR}/nic_inventory.csv" ]; then
             [ -n "$mt" ] && npn="${npn} [$(mt_model "$mt")]"
         fi
         NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}|${npsid}"$'\n'
-    done < <(grep -v "^#" "${NET_DIR}/nic_inventory.csv" 2>/dev/null)
+    done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
 
 # ─── 风扇（IPMI 传感器，| 分隔格式） ───
 FAN_DIR="${OUT}/fan"
-FAN_COUNT=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{c++} END{print c+0}')
-FAN_MIN=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | head -1)
-FAN_MAX=$(grep -v "^#" "${FAN_DIR}/ipmi_fan_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | tail -1)
+load_manifest "${FAN_DIR}" ipmi_fan_sensors "ipmi_fan_sensors.log"
+FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{c++} END{print c+0}')
+FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | head -1)
+FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | tail -1)
 FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 
 # ─── PSU 清单（ipmi_psu_fru.log：FRU 描述/型号/PN/SN） ───
 # 状态机：desc 行出现时输出上一个 FRU（PN/SN 在 Name 之后，须延迟一行）；
 # 只保留 PSU 行（PSU1_FRU/PSU4_FRU/Power Supply），过滤风扇/背板/PDB 等其他 FRU
+PSU_DIR="${OUT}/psu"
+load_manifest "${PSU_DIR}" ipmi_psu_fru "ipmi_psu_fru.log"
 PSU_DETAILS=""
-if [ -f "${OUT}/psu/ipmi_psu_fru.log" ]; then
+if [ -f "${ipmi_psu_fru}" ]; then
     pdesc=""; pmodel=""; ppn=""; psn=""; pending=""
     while IFS= read -r pline; do
         case "$pline" in
@@ -346,7 +395,7 @@ if [ -f "${OUT}/psu/ipmi_psu_fru.log" ]; then
             *"Product Part Number"*)   ppn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
             *"Product Serial"*)        psn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
         esac
-    done < <(grep -v "^#" "${OUT}/psu/ipmi_psu_fru.log" 2>/dev/null)
+    done < <(grep -v "^#" "${ipmi_psu_fru}" 2>/dev/null)
     [ -n "$pending" ] && PSU_DETAILS="${PSU_DETAILS}${pending}${ppn:-N/A}|${psn:-N/A}"$'\n'
     # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）
     PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|Power Supply")

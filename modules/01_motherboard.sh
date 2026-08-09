@@ -30,6 +30,14 @@ run_motherboard() {
         "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|UUID|Family'" "${dir}/system_summary.log" \
         "dmidecode -t baseboard 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|Version|Asset Tag'" "${dir}/baseboard_summary.log"
 
+write_manifest "${dir}/manifest.txt" \
+        "dmidecode_system" "dmidecode_system.log" \
+        "dmidecode_baseboard" "dmidecode_baseboard.log" \
+        "dmidecode_bios" "dmidecode_bios.log" \
+        "dmidecode_chassis" "dmidecode_chassis.log" \
+        "system_summary" "system_summary.log" \
+        "baseboard_summary" "baseboard_summary.log"
+
     module_end "$MODULE_NAME"
 }
 

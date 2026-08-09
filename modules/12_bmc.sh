@@ -88,6 +88,36 @@ run_bmc() {
         rm -f "$NETRC_TMP"
     fi
 
+write_manifest "${dir}/manifest.txt" \
+        "ipmi_fru" "ipmi_fru.log" \
+        "ipmi_mc" "ipmi_mc.log" \
+        "ipmi_sensors" "ipmi_sensors.log" \
+        "ipmi_sdr" "ipmi_sdr.log" \
+        "ipmi_sel" "ipmi_sel.log" \
+        "ipmi_sel_elist" "ipmi_sel_elist.log" \
+        "ipmi_chassis" "ipmi_chassis.log" \
+        "ipmi_power" "ipmi_power.log" \
+        "ipmi_lan1" "ipmi_lan1.log" \
+        "ipmi_lan2" "ipmi_lan2.log" \
+        "ipmi_bmc_guid" "ipmi_bmc_guid.log" \
+        "ipmi_users" "ipmi_users.log" \
+        "ipmi_fru_all" "ipmi_fru_all.log" \
+        "ipmi_fru_summary" "ipmi_fru_summary.log" \
+        "ipmi_sensors_temp" "ipmi_sensors_temp.log" \
+        "ipmi_sensors_fan" "ipmi_sensors_fan.log" \
+        "ipmi_sensors_volt" "ipmi_sensors_volt.log" \
+        "ipmi_sensors_power" "ipmi_sensors_power.log" \
+        "remote_bmc_fru" "remote_bmc_fru.log" \
+        "remote_bmc_mc" "remote_bmc_mc.log" \
+        "remote_bmc_sensors" "remote_bmc_sensors.log" \
+        "remote_bmc_sel" "remote_bmc_sel.log" \
+        "remote_bmc_chassis" "remote_bmc_chassis.log" \
+        "hgx_bmc_fru" "hgx_bmc_fru.log" \
+        "hgx_bmc_sensors" "hgx_bmc_sensors.log" \
+        "hgx_bmc_sdr" "hgx_bmc_sdr.log" \
+        "redfish_system" "redfish_system.log" \
+        "redfish_managers" "redfish_managers.log"
+
     module_end "$MODULE_NAME"
 }
 

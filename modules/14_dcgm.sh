@@ -30,6 +30,13 @@ run_dcgm() {
         "dcgmi diag -r 1 2>&1" "${dir}/dcgmi_diag_level1.log" \
         "dcgmi --version 2>&1" "${dir}/dcgmi_version.log"
 
+write_manifest "${dir}/manifest.txt" \
+        "dcgmi_discovery" "dcgmi_discovery.log" \
+        "dcgmi_stats" "dcgmi_stats.log" \
+        "dcgmi_config" "dcgmi_config.log" \
+        "dcgmi_diag_level1" "dcgmi_diag_level1.log" \
+        "dcgmi_version" "dcgmi_version.log"
+
     module_end "$MODULE_NAME"
 }
 

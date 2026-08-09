@@ -49,6 +49,20 @@ run_gpu() {
 
     run_and_log_parallel 8 "${gpu_jobs[@]}" 
 
+# NOTE: gpu_N_detail.log and gpu_N_ecc.log are generated per GPU (N=0,1,...)
+    write_manifest "${dir}/manifest.txt" \
+        "gpu_full" "gpu_full.log" \
+        "gpu_inventory" "gpu_inventory.csv" \
+        "gpu_nvlink_status" "gpu_nvlink_status.log" \
+        "gpu_nvlink_cap" "gpu_nvlink_cap.log" \
+        "gpu_ecc_full" "gpu_ecc_full.log" \
+        "gpu_ecc_inventory" "gpu_ecc_inventory.csv" \
+        "gpu_pmon" "gpu_pmon.log" \
+        "gpu_processes" "gpu_processes.csv" \
+        "gpu_driver_version" "gpu_driver_version.log" \
+        "gpu_topo" "gpu_topo.log" \
+        "gpu_remapped_rows" "gpu_remapped_rows.csv"
+
     module_end "$MODULE_NAME"
 }
 

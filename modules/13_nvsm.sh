@@ -47,6 +47,30 @@ run_nvsm() {
         "nvsm show component FAN 2>&1" "${dir}/nvsm_fan.log" \
         "nvsm --version 2>&1" "${dir}/nvsm_version.log"
 
+write_manifest "${dir}/manifest.txt" \
+        "nvsm_dump_system" "nvsm_dump_system.log" \
+        "nvsm_dump_health" "nvsm_dump_health.log" \
+        "nvsm_components" "nvsm_components.log" \
+        "nvsm_sensors" "nvsm_sensors.log" \
+        "nvsm_asset" "nvsm_asset.log" \
+        "nvsm_gpu_sxm_1" "nvsm_gpu_sxm_1.log" \
+        "nvsm_gpu_sxm_2" "nvsm_gpu_sxm_2.log" \
+        "nvsm_gpu_sxm_3" "nvsm_gpu_sxm_3.log" \
+        "nvsm_gpu_sxm_4" "nvsm_gpu_sxm_4.log" \
+        "nvsm_gpu_sxm_5" "nvsm_gpu_sxm_5.log" \
+        "nvsm_gpu_sxm_6" "nvsm_gpu_sxm_6.log" \
+        "nvsm_gpu_sxm_7" "nvsm_gpu_sxm_7.log" \
+        "nvsm_gpu_sxm_8" "nvsm_gpu_sxm_8.log" \
+        "nvsm_nvswitch_1" "nvsm_nvswitch_1.log" \
+        "nvsm_nvswitch_2" "nvsm_nvswitch_2.log" \
+        "nvsm_nvswitch_3" "nvsm_nvswitch_3.log" \
+        "nvsm_nvswitch_4" "nvsm_nvswitch_4.log" \
+        "nvsm_nic" "nvsm_nic.log" \
+        "nvsm_memory" "nvsm_memory.log" \
+        "nvsm_psu" "nvsm_psu.log" \
+        "nvsm_fan" "nvsm_fan.log" \
+        "nvsm_version" "nvsm_version.log"
+
     module_end "$MODULE_NAME"
 }
 

@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.21.0 (2026-08)
+# Version : 1.22.0 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -39,6 +39,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ─── 加载公共库 ───
 source "${SCRIPT_DIR}/lib/common.sh"
+source "${SCRIPT_DIR}/lib/platform.sh"
 
 # ─── 加载配置 ───
 CONF_FILE="${SCRIPT_DIR}/conf/hwscope.conf"
@@ -74,7 +75,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.21.0"
+HWSCOPE_VERSION="v1.22.0"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -164,13 +165,7 @@ validate_module_names() {
 [ -n "$SKIP_MODULES" ] && validate_module_names "$SKIP_MODULES" "--skip"
 
 # ─── 机器标识 ───
-MACHINE_ID=""
-if check_cmd dmidecode; then
-    MACHINE_ID=$(dmidecode -t system 2>/dev/null | grep -i 'Serial Number' | grep -v 'Not Specified' | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
-    [ -z "$MACHINE_ID" ] && MACHINE_ID=$(dmidecode -t baseboard 2>/dev/null | grep -i 'Serial Number' | grep -v 'Not Specified' | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
-    [ -z "$MACHINE_ID" ] && MACHINE_ID=$(dmidecode -t system 2>/dev/null | grep -i 'UUID' | head -1 | awk -F': ' '{print $2}' | tr -d ' -')
-fi
-[ -z "$MACHINE_ID" ] && MACHINE_ID=$(date '+%Y%m%d_%H%M%S')
+MACHINE_ID=$(detect_machine_id)
 
 # ─── 输出目录 ───
 local_timestamp=$(date '+%Y%m%d_%H%M%S')
@@ -194,37 +189,10 @@ LOG_FILE="${OUTPUT_BASE}/hwscope.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 # ─── 平台检测 ───
-HW_ARCH=$(uname -m 2>/dev/null || echo "unknown"); PLATFORM="${HW_ARCH}"
-if check_cmd nvidia-smi; then
-    GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l || echo 0)
-    # SXM 检测：nvswitch CLI 优先，无 CLI 则 lspci 查 NVSwitch，最后查 nv-fabricmanager 进程（HGX 平台专属守护进程，lspci 可能看不到 NVSwitch 设备）
-    _sxm=0
-    if check_cmd nvswitch && nvswitch -q 2>/dev/null | grep -qi "Switch Name"; then
-        _sxm=1
-    elif check_cmd lspci && lspci 2>/dev/null | grep -qi "NVSwitch\|SXM.*Bridge"; then
-        _sxm=1
-    elif pgrep -f nv-fabricmanager >/dev/null 2>&1; then
-        _sxm=1
-    fi
-    if [ "$_sxm" -eq 1 ]; then
-        PLATFORM="${HW_ARCH}_SXM"
-    elif [ "$GPU_COUNT" -gt 0 ]; then
-        PLATFORM="${HW_ARCH}_PCIe"
-    else PLATFORM="${HW_ARCH}_none"; fi
-else PLATFORM="${HW_ARCH}_none"; fi
+detect_platform
 
-# ─── BMC/IPMI 预热（虚空跑一次，不计入日志：触发驱动加载/BMC 初始化，避免首次命令失败） ───
-if [ "${IPMI_PREHEAT:-1}" -eq 1 ] 2>/dev/null && check_cmd ipmitool; then
-    _preheat_start=$(date +%s%N 2>/dev/null || date +%s)
-    ipmitool mc info >/dev/null 2>&1
-    _preheat_end=$(date +%s%N 2>/dev/null || date +%s)
-    if [ "${#_preheat_start}" -gt 10 ]; then
-        _preheat_elapsed=$(awk "BEGIN{printf \"%.2f\", ($_preheat_end-$_preheat_start)/1000000000}")
-    else
-        _preheat_elapsed=$((_preheat_end - _preheat_start))
-    fi
-    echo -e "${CYAN}[PREHEAT]${NC} IPMI 预热完成 [ ${_preheat_elapsed}s ]"
-fi
+# ─── IPMI 预热 ───
+ipmi_preheat
 
 # ─── 汇总文件 ───
 SUMMARY_FILE="${OUTPUT_BASE}/summary.txt"

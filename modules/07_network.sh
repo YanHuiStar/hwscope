@@ -135,6 +135,21 @@ run_network() {
         run_and_log "lstopo --no-io --output-format txt" "${dir}/lstopo_network.txt"
     fi
 
+# NOTE: mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log,
+    #       ethtool_*.log, ethtool_*_driver.log, ethtool_*_module.log are generated per device
+    write_manifest "${dir}/manifest.txt" \
+        "ibstat" "ibstat.log" \
+        "ibstatus" "ibstatus.log" \
+        "ibv_devinfo" "ibv_devinfo.log" \
+        "ibdev2netdev" "ibdev2netdev.log" \
+        "mlxfwmanager" "mlxfwmanager.log" \
+        "mlxconfig" "mlxconfig.log" \
+        "ip_addr" "ip_addr.log" \
+        "ip_link" "ip_link.log" \
+        "ip_route" "ip_route.log" \
+        "nic_inventory" "nic_inventory.csv" \
+        "lstopo_network" "lstopo_network.txt"
+
     module_end "$MODULE_NAME"
 }
 

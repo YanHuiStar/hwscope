@@ -145,6 +145,22 @@ run_storage() {
         done
     } > "${dir}/disk_inventory.csv" 2>/dev/null || true
 
+# NOTE: smart_N.log, smart_N_health.log, smart_N_scsi.log are generated per disk
+    # NOTE: sysfs_*/info.log, sysfs_*/all_fields.log are generated per PSU (conditional)
+    write_manifest "${dir}/manifest.txt" \
+        "block_devices_all" "block_devices_all.log" \
+        "block_devices_summary" "block_devices_summary.log" \
+        "block_devices_by_type" "block_devices_by_type.log" \
+        "drive_type_ssd_hdd" "drive_type_ssd_hdd.log" \
+        "smart_scan" "smart_scan.log" \
+        "skip_smart_wsl" "00_skip_smart_wsl.log" \
+        "lsscsi_all" "lsscsi_all.log" \
+        "lsscsi_detail" "lsscsi_detail.log" \
+        "df_h" "df_h.log" \
+        "mount" "mount.log" \
+        "proc_partitions" "proc_partitions.log" \
+        "disk_inventory" "disk_inventory.csv"
+
     module_end "$MODULE_NAME"
 }
 

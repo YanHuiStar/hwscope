@@ -65,6 +65,14 @@ run_fan() {
         run_and_log "cat /proc/acpi/fan/*/state 2>/dev/null" "${dir}/acpi_fan.log"
     fi
 
+# NOTE: hwmon_*/fan_values.log per hwmon device with fan inputs (conditional)
+    write_manifest "${dir}/manifest.txt" \
+        "ipmi_fan_sensors" "ipmi_fan_sensors.log" \
+        "ipmi_fan_status" "ipmi_fan_status.log" \
+        "sensors_all" "sensors_all.log" \
+        "sensors_fan" "sensors_fan.log" \
+        "acpi_fan" "acpi_fan.log"
+
     module_end "$MODULE_NAME"
 }
 
