@@ -72,10 +72,10 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 ## 报告与归档
 
-- 采集完成自动调用 `tools/report.sh`：从各模块日志 grep/awk 提取关键字段，生成 `hwscope_report.{json,md,txt}` 三件套（环境/主板/CPU/内存每槽/GPU/存储/网络/BMC/风扇）
+- 采集完成自动调用 `tools/report.sh`：从各模块日志提取关键字段，生成 `hwscope_report.{json,md,txt}` 三件套（含 9 张明细表：内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇）
 - 报告**只读日志、不重新采集**，可对同一份数据反复生成；日志缺失字段显示 N/A
 - 双压缩包：`logs/<SN>-<ARCHIVE_TS>.tar.gz`（详细分级日志）+ `logs/report/<SN>-<ARCHIVE_TS>-report.tar.gz`（报告三件套），共用同一 `ARCHIVE_TS` 变量（勿各自调 date，时间戳必须一致）
-- 修改 report.sh 后必须用真实采集数据回归验证（桌面有 HGX/WSL 两份样例数据）
+- 修改 report.sh 后必须用真实采集数据回归验证（桌面有 HGX B200 / B300 两份样例数据）
 
 ## 安全约定
 
