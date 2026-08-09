@@ -12,7 +12,8 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 ## 目录结构
 
 - `hwscope.sh` — 主入口：参数解析、平台检测、串行/并行执行、汇总、归档
-- `lib/common.sh` — 公共函数：run_and_log / check_cmd / module_start / WARN 计数
+- `lib/common.sh` — 公共函数：run_and_log / run_and_log_parallel / write_manifest / check_cmd / module_start / WARN 计数
+- `lib/platform.sh` — 平台检测：detect_machine_id / detect_platform / ipmi_preheat
 - `modules/*.sh` — 15 个采集模块（01_motherboard … 99_os），每个一物理组件
 - `conf/hwscope.conf` — 模块开关、BMC 凭据、输出目录配置
 - `test/` — 硬件压测脚本（cpu/memory/disk/network），只测不改
@@ -23,7 +24,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 ## 常用命令
 
-- 全量采集: `sudo bash hwscope.sh`（默认并行，旋转动画 + 完成计数；串行用 `--serial`）
+- 全量采集: `sudo bash hwscope.sh`（默认双层并行，旋转动画 + 完成计数；串行用 `--serial`；禁模块内并行用 `--no-parallel`）
 - 只采部分: `sudo bash hwscope.sh --modules gpu,cpu`
 - 跳光模块: `sudo bash hwscope.sh --no-module`
 - 单模块: `bash modules/04_gpu.sh /path/output`
@@ -106,14 +107,15 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 1. 创建 `modules/<NN>_<name>.sh`，定义 `run_<name>()` 函数
 2. 加入 `hwscope.sh` 的 MODULES 注册表 + MODULE_SWITCH 开关
 3. `conf/hwscope.conf` 加对应开关变量
-4. 所有采集命令必须走 `run_and_log "cmd" "path.log"`（自动记录命令+退出码）
-5. 工具不存在用 `check_cmd` 检测后 `[SKIP]`，不中断
-6. 版本号：主=输出不兼容，中=新模块/新功能，补=修复/文档
+4. 所有采集命令必须走 `run_and_log "cmd" "path.log"`（自动记录命令+退出码）；独立命令可用 `run_and_log_parallel N "cmd1" "log1" "cmd2" "log2" ...` 并行采集
+5. 每个模块末尾调 `write_manifest "${dir}/manifest.txt" "key1" "file1" ...` 声明输出文件（report.sh 读 manifest 解耦）
+6. 工具不存在用 `check_cmd` 检测后 `[SKIP]`，不中断
+7. 版本号：主=输出不兼容，中=新模块/新功能，补=修复/文档
 
 ## 设计约束（勿违反）
 
 - 只读无害：采集命令不写硬件、不改配置；DCGM 仅 Level 1 纯获取，无 GPU 压测负载
-- 模块零耦合：每模块可独立执行，不依赖其他模块
+- 模块零耦合：每模块可独立执行，不依赖其他模块；模块通过 `write_manifest` 声明输出文件，report.sh 读 manifest 解耦（不硬编码文件名）
 - 不用 eval（已踩坑：awk 变量展开 bug，统一用 bash -c）
 - **run_and_log 转义层数**：cmd 字符串经 bash -c 双层解析，awk 内 `$` 变量写 `\$`（单反斜杠），**禁止 `\\$`（双反斜杠）**——会在第一层被 bash 展开成位置参数，set -u 下直接崩溃（v1.5.1 真机踩坑）
 - locale 切换仅进程内，不修改系统环境

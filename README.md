@@ -26,8 +26,9 @@ apt install -y dmidecode pciutils ipmitool smartmontools lm-sensors      # Ubunt
 dnf install -y dmidecode pciutils ipmitool smartmontools lm_sensors      # Rocky/RHEL 8+
 
 # 执行采集
-sudo bash hwscope.sh                  # 全量采集（默认并行，约 10s）
+sudo bash hwscope.sh                  # 全量采集（默认双层并行，约 10s）
 sudo bash hwscope.sh --serial         # 串行采集（实时逐命令输出）
+sudo bash hwscope.sh --no-parallel    # 禁用模块内命令并行（仅模块间并行）
 sudo bash hwscope.sh --quiet          # 静默模式（仅输出异常）
 ```
 
@@ -37,8 +38,9 @@ sudo bash hwscope.sh --quiet          # 静默模式（仅输出异常）
 
 ```bash
 # 模式
-bash hwscope.sh                       # 并行（默认，动画 + 完成后逐命令输出，带每条耗时）
-bash hwscope.sh --serial              # 串行（实时逐命令输出，带每条耗时）
+bash hwscope.sh                       # 双层并行（默认，模块间 + 模块内命令并发）
+bash hwscope.sh --serial              # 模块串行（模块内仍并行）
+bash hwscope.sh --no-parallel         # 禁用模块内命令并行（仅模块间并行）
 bash hwscope.sh --quiet               # 并行 + 静默
 
 # 过滤
@@ -264,7 +266,8 @@ MODULE_GPU=1; MODULE_STORAGE=1; MODULE_OS=1 ...
 - **无压测** — DCGM 仅 Level 1 纯获取
 - **平台自适配** — x86/ARM、SXM/PCIe 自动识别（SXM 三重检测含 fabric manager）
 - **环境自适配** — WSL 虚拟磁盘自动跳过 SMART，避免误报
-- **并行提速** — `--parallel` 2min → ~10s
+- **双层并行** — 模块间 + 模块内命令并发；`--no-parallel` 可降级
+- **manifest 解耦** — 模块声明输出文件，报告生成器读 manifest，改文件名不连累报告
 
 ## License
 
