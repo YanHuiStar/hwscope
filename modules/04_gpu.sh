@@ -22,45 +22,32 @@ run_gpu() {
         return 0
     fi
 
-    # 1. GPU 全量信息
-    run_and_log "nvidia-smi -q" "${dir}/gpu_full.log"
-
-    # 2. GPU 资产清单（CSV格式，方便后续导入；含 PCIe 链路与利用率供降级检测）
-    run_and_log "nvidia-smi --query-gpu=index,name,serial,pci.bus_id,gpu_uuid,memory.total,memory.used,power.limit,power.draw,temperature.gpu,utilization.gpu,clocks.current.graphics,clocks.current.memory,ecc.mode.current,pcie.link.gen.current,pcie.link.width.current,pcie.link.gen.max,pcie.link.width.max --format=csv" \
-        "${dir}/gpu_inventory.csv"
-
-    # 3. 每个 GPU 的详细信息（按索引拆分，方便定位单个 GPU）
+    # Phase 1: 串行获取 GPU 数量（后续命令依赖此值）
     local gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+
+    # Phase 2: 构建并行任务数组
+    local gpu_jobs=()
+    # 每 GPU 的 detail + ECC
     for ((i=0; i<gpu_count; i++)); do
-        run_and_log "nvidia-smi -i $i -q" "${dir}/gpu_${i}_detail.log"
+        gpu_jobs+=("nvidia-smi -i $i -q" "${dir}/gpu_${i}_detail.log")
+        gpu_jobs+=("nvidia-smi -i $i -q -d ECC" "${dir}/gpu_${i}_ecc.log")
     done
+    # 独立命令（不分设备）
+    gpu_jobs+=(
+        "nvidia-smi -q"                                                              "${dir}/gpu_full.log"
+        "nvidia-smi --query-gpu=index,name,serial,pci.bus_id,gpu_uuid,memory.total,memory.used,power.limit,power.draw,temperature.gpu,utilization.gpu,clocks.current.graphics,clocks.current.memory,ecc.mode.current,pcie.link.gen.current,pcie.link.width.current,pcie.link.gen.max,pcie.link.width.max --format=csv" "${dir}/gpu_inventory.csv"
+        "nvidia-smi nvlink --status"                                                  "${dir}/gpu_nvlink_status.log"
+        "nvidia-smi nvlink --capabilities"                                            "${dir}/gpu_nvlink_cap.log"
+        "nvidia-smi -q -d ECC"                                                        "${dir}/gpu_ecc_full.log"
+        "nvidia-smi --query-gpu=index,name,ecc.mode.current,ecc.errors.corrected.volatile.total,ecc.errors.uncorrected.volatile.total,ecc.errors.corrected.aggregate.total,ecc.errors.uncorrected.aggregate.total --format=csv" "${dir}/gpu_ecc_inventory.csv"
+        "nvidia-smi pmon -c 1"                                                        "${dir}/gpu_pmon.log"
+        "nvidia-smi --query-compute-apps=pid,process_name,used_memory,gpu_bus_id --format=csv" "${dir}/gpu_processes.csv"
+        "nvidia-smi --query-gpu=driver_version --format=csv"                          "${dir}/gpu_driver_version.log"
+        "nvidia-smi topo -m"                                                          "${dir}/gpu_topo.log"
+        "nvidia-smi --query-remapped-rows=remapped_rows.correctable,remapped_rows.uncorrectable,remapped_rows.pending,remapped_rows.failure --format=csv" "${dir}/gpu_remapped_rows.csv"
+    )
 
-    # 4. NVLink 状态
-    run_and_log "nvidia-smi nvlink --status" "${dir}/gpu_nvlink_status.log"
-    run_and_log "nvidia-smi nvlink --capabilities" "${dir}/gpu_nvlink_cap.log"
-
-    # 5. ECC 信息（HBM 显存 ECC 状态和错误计数）
-    run_and_log "nvidia-smi -q -d ECC" "${dir}/gpu_ecc_full.log"
-    run_and_log "nvidia-smi --query-gpu=index,name,ecc.mode.current,ecc.errors.corrected.volatile.total,ecc.errors.uncorrected.volatile.total,ecc.errors.corrected.aggregate.total,ecc.errors.uncorrected.aggregate.total --format=csv" \
-        "${dir}/gpu_ecc_inventory.csv"
-    for ((i=0; i<gpu_count; i++)); do
-        run_and_log "nvidia-smi -i $i -q -d ECC" "${dir}/gpu_${i}_ecc.log"
-    done
-
-    # 6. GPU 进程占用
-    run_and_log "nvidia-smi pmon -c 1" "${dir}/gpu_pmon.log"
-    run_and_log "nvidia-smi --query-compute-apps=pid,process_name,used_memory,gpu_bus_id --format=csv" \
-        "${dir}/gpu_processes.csv"
-
-    # 7. 驱动版本
-    run_and_log "nvidia-smi --query-gpu=driver_version --format=csv" "${dir}/gpu_driver_version.log"
-
-    # 8. GPU topology
-    run_and_log "nvidia-smi topo -m" "${dir}/gpu_topo.log"
-
-    # 9. 退役行数（HBM 坏块退役信号；独立查询防驱动版本兼容问题）
-    run_and_log "nvidia-smi --query-remapped-rows=remapped_rows.correctable,remapped_rows.uncorrectable,remapped_rows.pending,remapped_rows.failure --format=csv" \
-        "${dir}/gpu_remapped_rows.csv"
+    run_and_log_parallel 8 "${gpu_jobs[@]}" 
 
     module_end "$MODULE_NAME"
 }

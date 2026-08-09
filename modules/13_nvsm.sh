@@ -22,38 +22,30 @@ run_nvsm() {
         return 0
     fi
 
-    # 1. 系统配置 dump
-    run_and_log "nvsm dump system 2>&1" "${dir}/nvsm_dump_system.log"
-
-    # 2. 健康状态 dump
-    run_and_log "nvsm dump health 2>&1" "${dir}/nvsm_dump_health.log"
-
-    # 3. 组件清单
-    run_and_log "nvsm list components 2>&1" "${dir}/nvsm_components.log"
-
-    # 4. 传感器
-    run_and_log "nvsm list sensors 2>&1" "${dir}/nvsm_sensors.log"
-
-    # 5. 资产信息
-    run_and_log "nvsm show asset 2>&1" "${dir}/nvsm_asset.log"
-
-    # 6. 每个 GPU 组件（SXM 槽位）
-    for slot in 1 2 3 4 5 6 7 8; do
-        run_and_log "nvsm show component GPU_SXM_${slot} 2>&1" "${dir}/nvsm_gpu_sxm_${slot}.log"
-    done
-
-    # 7. 每个 NVSwitch
-    for sw in 1 2 3 4; do
-        run_and_log "nvsm show component NVSwitch_${sw} 2>&1" "${dir}/nvsm_nvswitch_${sw}.log"
-    done
-
-    # 8. NIC / 内存 / PSU / 风扇
-    for comp in NIC MEMORY PSU FAN; do
-        run_and_log "nvsm show component ${comp} 2>&1" "${dir}/nvsm_${comp,,}.log"
-    done
-
-    # 9. 版本信息
-    run_and_log "nvsm --version 2>&1" "${dir}/nvsm_version.log"
+    # 1~5 + 6~9. 全部独立 NVSM 查询命令（并行采集；串行模式自动降级）
+    run_and_log_parallel 22 \
+        "nvsm dump system 2>&1" "${dir}/nvsm_dump_system.log" \
+        "nvsm dump health 2>&1" "${dir}/nvsm_dump_health.log" \
+        "nvsm list components 2>&1" "${dir}/nvsm_components.log" \
+        "nvsm list sensors 2>&1" "${dir}/nvsm_sensors.log" \
+        "nvsm show asset 2>&1" "${dir}/nvsm_asset.log" \
+        "nvsm show component GPU_SXM_1 2>&1" "${dir}/nvsm_gpu_sxm_1.log" \
+        "nvsm show component GPU_SXM_2 2>&1" "${dir}/nvsm_gpu_sxm_2.log" \
+        "nvsm show component GPU_SXM_3 2>&1" "${dir}/nvsm_gpu_sxm_3.log" \
+        "nvsm show component GPU_SXM_4 2>&1" "${dir}/nvsm_gpu_sxm_4.log" \
+        "nvsm show component GPU_SXM_5 2>&1" "${dir}/nvsm_gpu_sxm_5.log" \
+        "nvsm show component GPU_SXM_6 2>&1" "${dir}/nvsm_gpu_sxm_6.log" \
+        "nvsm show component GPU_SXM_7 2>&1" "${dir}/nvsm_gpu_sxm_7.log" \
+        "nvsm show component GPU_SXM_8 2>&1" "${dir}/nvsm_gpu_sxm_8.log" \
+        "nvsm show component NVSwitch_1 2>&1" "${dir}/nvsm_nvswitch_1.log" \
+        "nvsm show component NVSwitch_2 2>&1" "${dir}/nvsm_nvswitch_2.log" \
+        "nvsm show component NVSwitch_3 2>&1" "${dir}/nvsm_nvswitch_3.log" \
+        "nvsm show component NVSwitch_4 2>&1" "${dir}/nvsm_nvswitch_4.log" \
+        "nvsm show component NIC 2>&1" "${dir}/nvsm_nic.log" \
+        "nvsm show component MEMORY 2>&1" "${dir}/nvsm_memory.log" \
+        "nvsm show component PSU 2>&1" "${dir}/nvsm_psu.log" \
+        "nvsm show component FAN 2>&1" "${dir}/nvsm_fan.log" \
+        "nvsm --version 2>&1" "${dir}/nvsm_version.log"
 
     module_end "$MODULE_NAME"
 }

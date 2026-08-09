@@ -27,22 +27,15 @@ run_storage() {
     local IS_WSL=0
     grep -qi microsoft /proc/version 2>/dev/null && IS_WSL=1
 
-    # ─── 通用块设备总览（覆盖所有类型：SATA/SAS/NVMe/HDD/SSD） ───
-    run_and_log "lsblk -o NAME,MODEL,SERIAL,SIZE,TRAN,ROTA,MOUNTPOINT,FSTYPE,TYPE 2>/dev/null" \
-        "${dir}/block_devices_all.log"
-
-    # 按传输类型分类汇总
+    # ─── 通用块设备总览 + 分类汇总 + 类型标签（并行采集） ───
     if check_cmd lsblk; then
-        run_and_log "lsblk -o NAME,TRAN,SIZE,ROTA,MODEL 2>/dev/null | grep -v 'loop' | grep -v 'rom'" \
-            "${dir}/block_devices_summary.log"
-        run_and_log "echo '=== SATA ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'sata' && echo '=== SAS ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'sas' && echo '=== NVMe ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'nvme' && echo '=== USB ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'usb'" \
-            "${dir}/block_devices_by_type.log"
-    fi
-
-    # ─── 硬盘类型标签：区分 SSD 和 HDD（rotational=1 为机械盘） ───
-    if check_cmd lsblk; then
-        run_and_log "echo '=== ROTA=1 (HDD) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=$\$(cat /sys/block/$\$n/queue/rotational 2>/dev/null); [ \"$\$rota\" = \"1\" ] && echo \"$\$n $\$m $\$s $\$t (HDD)\"; done && echo '=== ROTA=0 (SSD/NVMe) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=$\$(cat /sys/block/$\$n/queue/rotational 2>/dev/null); [ \"$\$rota\" = \"0\" ] && echo \"$\$n $\$m $\$s $\$t (SSD)\"; done" \
-            "${dir}/drive_type_ssd_hdd.log"
+        run_and_log_parallel 4 \
+            "lsblk -o NAME,MODEL,SERIAL,SIZE,TRAN,ROTA,MOUNTPOINT,FSTYPE,TYPE 2>/dev/null" "${dir}/block_devices_all.log" \
+            "lsblk -o NAME,TRAN,SIZE,ROTA,MODEL 2>/dev/null | grep -v 'loop' | grep -v 'rom'" "${dir}/block_devices_summary.log" \
+            "echo '=== SATA ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'sata' && echo '=== SAS ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'sas' && echo '=== NVMe ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'nvme' && echo '=== USB ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'usb'" "${dir}/block_devices_by_type.log" \
+            "echo '=== ROTA=1 (HDD) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=\$(cat /sys/block/\$n/queue/rotational 2>/dev/null); [ \"\$rota\" = \"1\" ] && echo \"\$n \$m \$s \$t (HDD)\"; done && echo '=== ROTA=0 (SSD/NVMe) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=\$(cat /sys/block/\$n/queue/rotational 2>/dev/null); [ \"\$rota\" = \"0\" ] && echo \"\$n \$m \$s \$t (SSD)\"; done" "${dir}/drive_type_ssd_hdd.log"
+    else
+        run_and_log "lsblk -o NAME,MODEL,SERIAL,SIZE,TRAN,ROTA,MOUNTPOINT,FSTYPE,TYPE 2>/dev/null" "${dir}/block_devices_all.log"
     fi
 
     # ─── SMART 信息（smartctl 覆盖所有支持 SMART 的盘） ───
@@ -61,6 +54,7 @@ run_storage() {
         fi
 
         if [ -n "$smart_devs" ]; then
+            local smart_jobs=()
             while IFS= read -r dev; do
                 [ -z "$dev" ] && continue
                 [ ! -b "$dev" ] && continue
@@ -68,41 +62,36 @@ run_storage() {
 
                 case "$dev_short" in
                     nvme*)
-                        run_and_log "smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log"
-                        # NVMe 特有：温度、寿命、写入量
-                        run_and_log "smartctl -a '$dev' 2>/dev/null | grep -E 'Temperature|Percentage Used|Power On Hours|Data Units|Media Errors|Warning'" \
-                            "${dir}/smart_${dev_short}_health.log"
+                        smart_jobs+=("smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log")
+                        smart_jobs+=("smartctl -a '$dev' 2>/dev/null | grep -E 'Temperature|Percentage Used|Power On Hours|Data Units|Media Errors|Warning'" "${dir}/smart_${dev_short}_health.log")
                         ;;
                     sd*)
-                        # SATA 模式 SMART
-                        run_and_log "smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log"
-                        # SAS 兜底 SCSI 模式
-                        run_and_log "smartctl -a -d scsi '$dev' 2>&1" "${dir}/smart_${dev_short}_scsi.log"
-                        # 关键健康字段摘要
-                        run_and_log "smartctl -a '$dev' 2>/dev/null | grep -iE 'Temperature|Reallocated|Pending|Offline|Current|Read Error|Write Error|Spin_Up|Hours|Power_Cycle|SAS'" \
-                            "${dir}/smart_${dev_short}_health.log" 2>/dev/null || true
+                        smart_jobs+=("smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log")
+                        smart_jobs+=("smartctl -a -d scsi '$dev' 2>&1" "${dir}/smart_${dev_short}_scsi.log")
+                        smart_jobs+=("smartctl -a '$dev' 2>/dev/null | grep -iE 'Temperature|Reallocated|Pending|Offline|Current|Read Error|Write Error|Spin_Up|Hours|Power_Cycle|SAS'" "${dir}/smart_${dev_short}_health.log")
                         ;;
                     hd*|vd*)
-                        run_and_log "smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log"
+                        smart_jobs+=("smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log")
                         ;;
                 esac
             done <<< "$smart_devs"
+            [ "${#smart_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${smart_jobs[@]}"
         fi
         fi  # IS_WSL
     else
         echo -e "${YELLOW}[SKIP] smartctl not found (install smartmontools)${NC}"
     fi
 
-    # ─── SCSI/SAS 设备链路 ───
+    # ─── SCSI/SAS 设备链路 + 磁盘分区和挂载（并行） ───
+    local storage_tail_jobs=()
     if check_cmd lsscsi; then
-        run_and_log "lsscsi -v 2>&1" "${dir}/lsscsi_all.log"
-        run_and_log "lsscsi --long 2>&1" "${dir}/lsscsi_detail.log"
+        storage_tail_jobs+=("lsscsi -v 2>&1" "${dir}/lsscsi_all.log")
+        storage_tail_jobs+=("lsscsi --long 2>&1" "${dir}/lsscsi_detail.log")
     fi
-
-    # ─── 磁盘分区和挂载 ───
-    run_and_log "df -h" "${dir}/df_h.log"
-    run_and_log "mount" "${dir}/mount.log"
-    run_and_log "cat /proc/partitions" "${dir}/proc_partitions.log"
+    storage_tail_jobs+=("df -h" "${dir}/df_h.log")
+    storage_tail_jobs+=("mount" "${dir}/mount.log")
+    storage_tail_jobs+=("cat /proc/partitions" "${dir}/proc_partitions.log")
+    run_and_log_parallel 5 "${storage_tail_jobs[@]}" 
 
     # ─── 盘一览清单（name|type|size|model|sn|fw|bdf|power_on|power_cyc|spare）───
     {

@@ -22,20 +22,13 @@ run_dcgm() {
         return 0
     fi
 
-    # 1. 发现所有 GPU
-    run_and_log "dcgmi discovery -l 2>&1" "${dir}/dcgmi_discovery.log"
-
-    # 2. GPU 统计信息
-    run_and_log "dcgmi stats -v 2>&1" "${dir}/dcgmi_stats.log"
-
-    # 3. GPU 配置
-    run_and_log "dcgmi config --list 2>&1" "${dir}/dcgmi_config.log"
-
-    # 4. 快速健康检查（Level 1，纯获取，不产生负载；已覆盖所有 GPU）
-    run_and_log "dcgmi diag -r 1 2>&1" "${dir}/dcgmi_diag_level1.log"
-
-    # 5. dcgm 版本
-    run_and_log "dcgmi --version 2>&1" "${dir}/dcgmi_version.log"
+    # 1~5. DCGM 诊断信息（并行采集；串行模式自动降级）
+    run_and_log_parallel 5 \
+        "dcgmi discovery -l 2>&1" "${dir}/dcgmi_discovery.log" \
+        "dcgmi stats -v 2>&1" "${dir}/dcgmi_stats.log" \
+        "dcgmi config --list 2>&1" "${dir}/dcgmi_config.log" \
+        "dcgmi diag -r 1 2>&1" "${dir}/dcgmi_diag_level1.log" \
+        "dcgmi --version 2>&1" "${dir}/dcgmi_version.log"
 
     module_end "$MODULE_NAME"
 }

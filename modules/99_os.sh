@@ -15,40 +15,40 @@ run_os() {
 
     module_start "$MODULE_NAME"
 
-    # 1. 内核版本
-    run_and_log "uname -a" "${dir}/uname.log"
+    # 1. 独立的 OS 基础信息命令（并行采集；串行模式自动降级）
+    run_and_log_parallel 4 \
+        "uname -a" "${dir}/uname.log" \
+        "lsmod | grep -E 'nvidia|mlx5|mlx4|ipmi|i2c'" "${dir}/kernel_modules_gpu_net.log" \
+        "lsmod" "${dir}/lsmod_all.log" \
+        "uptime" "${dir}/uptime.log"
 
-    # 2. OS 发行版
+    # 2. OS 发行版（需逐文件检查，条件执行）
     for f in /etc/os-release /etc/redhat-release /etc/debian_version /etc/SuSE-release /etc/centos-release; do
         if [ -f "$f" ]; then
             run_and_log "cat '$f'" "${dir}/$(basename "$f").log"
         fi
     done
 
-    # 3. 内核模块（NVIDIA / MLX / IPMI）
-    run_and_log "lsmod | grep -E 'nvidia|mlx5|mlx4|ipmi|i2c'" "${dir}/kernel_modules_gpu_net.log"
-    run_and_log "lsmod" "${dir}/lsmod_all.log"
-
-    # 4. 系统运行时间 / 负载
-    run_and_log "uptime" "${dir}/uptime.log"
+    # 3~4. 系统负载（独立于上面的并行批次，串行执行）
     run_and_log "cat /proc/loadavg" "${dir}/loadavg.log"
 
-    # 5. 系统日志中的硬件相关
+    # 5. 系统日志中的硬件相关（条件执行：需 dmesg）
     if check_cmd dmesg; then
-        run_and_log "dmesg | grep -iE 'nvidia|nvswitch|mlx5|pcie|error|fail|temp|throttle' | tail -200" \
-            "${dir}/dmesg_hardware.log"
-        run_and_log "dmesg | grep -i nvidia | tail -100" "${dir}/dmesg_nvidia.log"
-        run_and_log "dmesg | grep -iE 'nvswitch|fabric' | tail -100" "${dir}/dmesg_nvswitch.log"
+        run_and_log_parallel 3 \
+            "dmesg | grep -iE 'nvidia|nvswitch|mlx5|pcie|error|fail|temp|throttle' | tail -200" \
+                "${dir}/dmesg_hardware.log" \
+            "dmesg | grep -i nvidia | tail -100" "${dir}/dmesg_nvidia.log" \
+            "dmesg | grep -iE 'nvswitch|fabric' | tail -100" "${dir}/dmesg_nvswitch.log"
     fi
 
-    # 6. 服务状态
-    for svc in nvidia-fabricmanager nvsmd nvidia-persistenced; do
-        if check_cmd systemctl; then
+    # 6. 服务状态（条件执行：需 systemctl）
+    if check_cmd systemctl; then
+        for svc in nvidia-fabricmanager nvsmd nvidia-persistenced; do
             run_and_log "systemctl status $svc 2>&1 | head -30" "${dir}/service_${svc}.log"
-        fi
-    done
+        done
+    fi
 
-    # 7. NUMA 拓扑
+    # 7. NUMA 拓扑（部分条件执行）
     if check_cmd numactl; then
         run_and_log "numactl --hardware" "${dir}/numa_hardware.log"
     fi
@@ -60,12 +60,12 @@ run_os() {
         fi
     done
 
-    # 8. PCIe AER 错误统计
+    # 8. PCIe AER 错误统计（条件执行）
     if [ -d /sys/kernel/debug/pci ]; then
         run_and_log "cat /sys/kernel/debug/pci/*/aer_stats 2>/dev/null" "${dir}/pcie_aer.log"
     fi
 
-    # 9. NVIDIA 相关 sysfs
+    # 9. NVIDIA 相关 sysfs（条件执行：需逐目录检查）
     for sysfs_path in /sys/bus/pci/drivers/nvidia /sys/module/nvidia /sys/module/nvidia_uvm /sys/module/nvidia_drm; do
         if [ -d "$sysfs_path" ]; then
             local safe_name=$(echo "$sysfs_path" | tr '/' '_')
