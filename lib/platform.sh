@@ -55,14 +55,5 @@ ipmi_preheat() {
     if [ "${IPMI_PREHEAT:-1}" -ne 1 ] 2>/dev/null || ! check_cmd ipmitool; then
         return 0
     fi
-    local _start _end _elapsed
-    _start=$(date +%s%N 2>/dev/null || date +%s)
     ipmitool mc info >/dev/null 2>&1
-    _end=$(date +%s%N 2>/dev/null || date +%s)
-    if [ "${#_start}" -gt 10 ]; then
-        _elapsed=$(awk "BEGIN{printf \"%.2f\", ($_end-$_start)/1000000000}")
-    else
-        _elapsed=$((_end - _start))
-    fi
-    echo -e "${CYAN}[PREHEAT]${NC} IPMI 预热完成 [ ${_elapsed}s ]"
 }
