@@ -15,28 +15,25 @@ run_nvswitch() {
 
     module_start "$MODULE_NAME"
 
-    # 1. NVSwitch 全局信息（小写 -q，大写 -Q 不存在）
+    # 1~3. NVSwitch 全局信息 + 每颗单独 + 版本（条件执行）
     if check_cmd nvswitch; then
         run_and_log "nvswitch -q" "${dir}/nvswitch_all.log"
 
-        # 2. 每个 NVSwitch 单独（通常 4 颗）
+        # 每个 NVSwitch 单独（通常 4 颗）
         for i in 0 1 2 3; do
             run_and_log "nvswitch -q -i $i" "${dir}/nvswitch_${i}.log"
         done
 
-        # 3. NVSwitch 版本
+        # NVSwitch 版本
         run_and_log "nvswitch --version 2>&1" "${dir}/nvswitch_version.log"
     else
         echo -e "${YELLOW}[SKIP] nvswitch command not found${NC}"
     fi
 
-    # 4. Fabric Manager 状态（nv-fabricmanager 是守护进程，不是 CLI 查询工具）
-    if check_cmd nv-fabricmanager || check_cmd nvidia-fabricmanager; then
-        run_and_log "nv-fabricmanager --version 2>&1 || nvidia-fabricmanager --version 2>&1" "${dir}/fabricmanager_version.log"
-    fi
-    if check_cmd systemctl; then
-        run_and_log "systemctl status nvidia-fabricmanager 2>&1 | head -40" "${dir}/fabricmanager_service.log"
-    fi
+    # 4~5. Fabric Manager 相关（独立于 nvswitch 命令，并行采集）
+    run_and_log_parallel 2 \
+        "nv-fabricmanager --version 2>&1 || nvidia-fabricmanager --version 2>&1" "${dir}/fabricmanager_version.log" \
+        "systemctl status nvidia-fabricmanager 2>&1 | head -40" "${dir}/fabricmanager_service.log"
 
     module_end "$MODULE_NAME"
 }

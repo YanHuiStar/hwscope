@@ -51,31 +51,32 @@ run_network() {
         done
     fi
 
-    # ─── mlxlink：遍历所有 mlx5 设备 ───
+    # ─── mlxlink：遍历所有 mlx5 设备（并行） ───
     if check_cmd mlxlink; then
+        local mlx_jobs=()
         local mlx_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
         if [ -z "$mlx_devs" ]; then
             # 回退：动态探测设备号（B300 平台最多 12+ 个 mlx5 设备，避免硬编码漏采）
             local dev_num=0
             while [ "$dev_num" -lt 24 ]; do
                 if [ -e "/sys/class/net/mlx5_${dev_num}" ] || ls /sys/class/infiniband/ 2>/dev/null | grep -q "mlx5_${dev_num}"; then
-                    run_and_log "mlxlink -d mlx5_${dev_num}" "${dir}/mlxlink_${dev_num}.log"
-                    [ "${NO_MODULE:-0}" -eq 0 ] && run_and_log "mlxlink -d mlx5_${dev_num} -m" "${dir}/mlxlink_${dev_num}_module.log"
+                    mlx_jobs+=("mlxlink -d mlx5_${dev_num}" "${dir}/mlxlink_${dev_num}.log")
+                    [ "${NO_MODULE:-0}" -eq 0 ] && mlx_jobs+=("mlxlink -d mlx5_${dev_num} -m" "${dir}/mlxlink_${dev_num}_module.log")
                 fi
                 ((dev_num++))
             done
         else
-            local count=0
             while IFS= read -r dev; do
-                run_and_log "mlxlink -d $dev" "${dir}/mlxlink_${dev}.log"
-                [ "${NO_MODULE:-0}" -eq 0 ] && run_and_log "mlxlink -d $dev -m" "${dir}/mlxlink_${dev}_module.log"
-                ((count++))
+                mlx_jobs+=("mlxlink -d $dev" "${dir}/mlxlink_${dev}.log")
+                [ "${NO_MODULE:-0}" -eq 0 ] && mlx_jobs+=("mlxlink -d $dev -m" "${dir}/mlxlink_${dev}_module.log")
             done <<< "$mlx_devs"
         fi
+        [ "${#mlx_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${mlx_jobs[@]}"
     fi
 
-    # ─── 以太网口 ───
+    # ─── 以太网口（并行） ───
     if check_cmd ethtool; then
+        local eth_jobs=()
         local eth_devs=$(ip -o link show | grep -v 'lo' | awk -F': ' '{print $2}' | sed 's/@.*//')
         while IFS= read -r dev; do
             [ -z "$dev" ] && continue
@@ -85,16 +86,18 @@ run_network() {
             [[ "$dev" == *docker* ]] && continue
             [[ "$dev" == *veth* ]] && continue
             local safe_name=$(echo "$dev" | tr '/' '_')
-            run_and_log "ethtool '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}.log"
-            run_and_log "ethtool -i '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_driver.log"
-            run_and_log "ethtool -m '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_module.log"
+            eth_jobs+=("ethtool '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}.log")
+            eth_jobs+=("ethtool -i '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_driver.log")
+            eth_jobs+=("ethtool -m '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_module.log")
         done <<< "$eth_devs"
+        [ "${#eth_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${eth_jobs[@]}"
     fi
 
-    # ─── IP / MAC 地址 ───
-    run_and_log "ip addr" "${dir}/ip_addr.log"
-    run_and_log "ip link show" "${dir}/ip_link.log"
-    run_and_log "ip route show" "${dir}/ip_route.log"
+    # ─── IP / MAC 地址（并行） ───
+    run_and_log_parallel 3 \
+        "ip addr" "${dir}/ip_addr.log" \
+        "ip link show" "${dir}/ip_link.log" \
+        "ip route show" "${dir}/ip_route.log" 
 
     # ─── 网卡一览清单（dev|bdf|mac|sn|pn|fw|speed|width）───
     {

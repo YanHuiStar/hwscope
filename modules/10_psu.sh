@@ -22,15 +22,11 @@ run_psu() {
 
     # ─── 1. IPMI PSU 传感器 ───
     if check_cmd ipmitool; then
-        run_and_log "ipmitool sensor list 2>/dev/null | grep -iE 'PSU|Pwr|PSC|PSU.*Status'" \
-            "${dir}/ipmi_psu_sensors.log"
-        run_and_log "ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Temp'" \
-            "${dir}/ipmi_psu_temp.log"
-        run_and_log "ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons'" \
-            "${dir}/ipmi_psu_power.log"
-        # 每只 PSU 资产清单（FRU：型号/SN/功率）
-        run_and_log "ipmitool fru print 2>/dev/null | grep -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply' | head -80" \
-            "${dir}/ipmi_psu_fru.log"
+        run_and_log_parallel 4 \
+            "ipmitool sensor list 2>/dev/null | grep -iE 'PSU|Pwr|PSC|PSU.*Status'" "${dir}/ipmi_psu_sensors.log" \
+            "ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Temp'" "${dir}/ipmi_psu_temp.log" \
+            "ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons'" "${dir}/ipmi_psu_power.log" \
+            "ipmitool fru print 2>/dev/null | grep -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply' | head -80" "${dir}/ipmi_psu_fru.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi

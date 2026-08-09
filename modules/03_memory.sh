@@ -21,19 +21,21 @@ run_memory() {
         return 0
     fi
 
-    # 1. 内存完整 DMI 信息
-    run_and_log "dmidecode -t memory" "${dir}/dmidecode_memory_full.log"
+    # 1~3+5. 独立的内存信息采集命令（并行采集；串行模式自动降级）
+    run_and_log_parallel 4 \
+        "dmidecode -t memory" "${dir}/dmidecode_memory_full.log" \
+        "dmidecode -t memory 2>/dev/null | grep -E 'Locator|Size|Type:|Speed|Manufacturer|Serial Number|Part Number|Rank|Configured Clock'" \
+            "${dir}/memory_slot_fields.log" \
+        "free -h" "${dir}/free_h.log" \
+        "cat /proc/meminfo" "${dir}/proc_meminfo.log"
 
-    # 2. 内存插槽摘要（每槽一行：位置/容量/速率/制造商/SN/部件号）
-    run_and_log "dmidecode -t memory 2>/dev/null | grep -E 'Locator|Size|Type:|Speed|Manufacturer|Serial Number|Part Number|Rank|Configured Clock'" \
-        "${dir}/memory_slot_fields.log"
-    # 每槽完整的段落输出
-    run_and_log "dmidecode -t memory 2>/dev/null | awk '/^[[:space:]]*Locator:/{if(seg) print seg; seg=$\$0; next} /^[[:space:]]/{seg=seg ORS $\$0} END{print seg}'" \
+    # 2b. 每槽完整的段落输出（awk 复杂转义，串行执行）
+    run_and_log "dmidecode -t memory 2>/dev/null | awk '/^[[:space:]]*Locator:/{if(seg) print seg; seg=\$0; next} /^[[:space:]]/{seg=seg ORS \$0} END{print seg}'" \
         "${dir}/memory_slot_blocks.log"
 
     # 3. 内存容量统计
     run_and_log "echo 'Total Memory Modules:' && dmidecode -t memory 2>/dev/null | grep -c 'Size:' && \
-        echo 'Total Capacity (GB):' && dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module' | awk '{sum+=$\$2} END{print sum}'" \
+        echo 'Total Capacity (GB):' && dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module' | awk '{sum+=\$2} END{print sum}'" \
         "${dir}/memory_capacity.log"
 
     # 4. 每个插槽单独记录（用简单 while 循环分段，避免复杂 eval）
@@ -48,10 +50,6 @@ run_memory() {
         print > f
     }' "$mem_dump_file" 2>/dev/null
     rm -f "$mem_dump_file"
-
-    # 5. 系统内存总览
-    run_and_log "free -h" "${dir}/free_h.log"
-    run_and_log "cat /proc/meminfo" "${dir}/proc_meminfo.log"
 
     module_end "$MODULE_NAME"
 }

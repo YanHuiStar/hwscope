@@ -18,7 +18,7 @@ run_cpu() {
     # 检测 CPU 架构（x86_64 vs aarch64 解析逻辑不同）
     local cpu_arch=$(uname -m 2>/dev/null || echo "unknown")
 
-    # 1. CPU FRU 信息（dmidecode）
+    # 1. CPU FRU 信息（dmidecode，条件执行）
     if check_cmd dmidecode; then
         run_and_log "dmidecode -t processor" "${dir}/dmidecode_processor.log"
         run_and_log "dmidecode -t processor 2>/dev/null | grep -E 'Manufacturer|Family|Version|Max Speed|Core Count|Thread Count'" \
@@ -27,12 +27,8 @@ run_cpu() {
         echo -e "${YELLOW}[SKIP] dmidecode not found, skipping FRU view${NC}"
     fi
 
-    # 2. CPU OS 视角（lscpu / /proc/cpuinfo）
-    run_and_log "lscpu" "${dir}/lscpu.log"
-    run_and_log "nproc" "${dir}/cpu_core_count.log"
-    # CPU Stepping / ID（lscpu 优先，dmidecode 兜底；ID 低 4 位即 stepping）
-    run_and_log "lscpu | grep -E 'Stepping|CPU(s)|Model name' | head -5" "${dir}/cpu_stepping.log"
-
+    # 2. CPU OS 视角 + 拓扑 + 频率（独立命令，并行采集）
+    # 架构相关命令串行执行（条件分支）
     if [ "$cpu_arch" = "aarch64" ]; then
         run_and_log "cat /proc/cpuinfo | grep -E 'CPU implementer|CPU part|CPU variant|CPU revision|CPU architecture|Features' | sort -u" \
             "${dir}/cpu_summary.log"
@@ -40,16 +36,17 @@ run_cpu() {
         run_and_log "cat /proc/cpuinfo | grep -E 'model name|physical id|siblings|core id|cpu cores' | sort -u" \
             "${dir}/cpu_summary.log"
     fi
-    run_and_log "cat /proc/cpuinfo" "${dir}/proc_cpuinfo_full.log"
 
-    # 3. CPU 拓扑
-    run_and_log "lscpu -e" "${dir}/lscpu_extended.log"
-    run_and_log "cat /sys/devices/system/cpu/smt/active 2>/dev/null" "${dir}/smt_status.log"
-
-    # 4. CPU 频率（避免 awk field 引用，改用 awk 内置变量；ARM 无 cpu MHz 行时除零保护）
-    run_and_log "awk -F':[ \\t]*' '/cpu MHz/{s+=\$2; c++} END{if(c>0) printf \\\"Average: %.0f MHz, Total CPUs: %d\\n\\\", s/c, c; else print \\\"N/A (no cpu MHz in cpuinfo)\\\"}' /proc/cpuinfo 2>/dev/null" \
-        "${dir}/cpu_freq.log"
-    run_and_log "LANG=C lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
+    # 其余独立命令并行
+    run_and_log_parallel 8 \
+        "lscpu" "${dir}/lscpu.log" \
+        "nproc" "${dir}/cpu_core_count.log" \
+        "lscpu | grep -E 'Stepping|CPU(s)|Model name' | head -5" "${dir}/cpu_stepping.log" \
+        "cat /proc/cpuinfo" "${dir}/proc_cpuinfo_full.log" \
+        "lscpu -e" "${dir}/lscpu_extended.log" \
+        "cat /sys/devices/system/cpu/smt/active 2>/dev/null" "${dir}/smt_status.log" \
+        "awk -F':[ \\\\t]*' '/cpu MHz/{s+=\$2; c++} END{if(c>0) printf \"Average: %.0f MHz, Total CPUs: %d\\n\", s/c, c; else print \"N/A (no cpu MHz in cpuinfo)\"}' /proc/cpuinfo 2>/dev/null" "${dir}/cpu_freq.log" \
+        "LANG=C lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
 
     module_end "$MODULE_NAME"
 }

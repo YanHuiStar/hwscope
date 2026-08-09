@@ -22,18 +22,18 @@ run_fan() {
 
     # ─── 1. IPMI 风扇传感器 ───
     if check_cmd ipmitool; then
-        run_and_log "ipmitool sensor list 2>/dev/null | grep -iE 'FAN|RPM|PWM|Duty'" \
-            "${dir}/ipmi_fan_sensors.log"
-        run_and_log "ipmitool sensor list 2>/dev/null | grep -iE 'FAN.*Status|FAN.*Mode'" \
-            "${dir}/ipmi_fan_status.log"
+        run_and_log_parallel 4 \
+            "ipmitool sensor list 2>/dev/null | grep -iE 'FAN|RPM|PWM|Duty'" "${dir}/ipmi_fan_sensors.log" \
+            "ipmitool sensor list 2>/dev/null | grep -iE 'FAN.*Status|FAN.*Mode'" "${dir}/ipmi_fan_status.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi
 
     # ─── 2. lm-sensors ───
     if check_cmd sensors; then
-        run_and_log "sensors 2>/dev/null" "${dir}/sensors_all.log"
-        run_and_log "sensors 2>/dev/null | grep -iE 'fan|FAN'" "${dir}/sensors_fan.log"
+        run_and_log_parallel 4 \
+            "sensors 2>/dev/null" "${dir}/sensors_all.log" \
+            "sensors 2>/dev/null | grep -iE 'fan|FAN'" "${dir}/sensors_fan.log"
     else
         echo -e "${YELLOW}[SKIP] sensors (lm-sensors) not found${NC}"
     fi

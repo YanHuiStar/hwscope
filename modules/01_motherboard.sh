@@ -21,25 +21,14 @@ run_motherboard() {
         return 0
     fi
 
-    # 1. 整机信息
-    run_and_log "dmidecode -t system" "${dir}/dmidecode_system.log"
-
-    # 2. 主板信息
-    run_and_log "dmidecode -t baseboard" "${dir}/dmidecode_baseboard.log"
-
-    # 3. BIOS 信息
-    run_and_log "dmidecode -t bios" "${dir}/dmidecode_bios.log"
-
-    # 4. 机箱信息
-    run_and_log "dmidecode -t chassis" "${dir}/dmidecode_chassis.log"
-
-    # 5. 整机关键字段摘要
-    run_and_log "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|UUID|Family'" \
-        "${dir}/system_summary.log"
-
-    # 6. 主板关键字段摘要
-    run_and_log "dmidecode -t baseboard 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|Version|Asset Tag'" \
-        "${dir}/baseboard_summary.log"
+    # 1~6. 主板/BIOS/机箱信息（全部独立，并行采集；串行模式自动降级）
+    run_and_log_parallel 6 \
+        "dmidecode -t system" "${dir}/dmidecode_system.log" \
+        "dmidecode -t baseboard" "${dir}/dmidecode_baseboard.log" \
+        "dmidecode -t bios" "${dir}/dmidecode_bios.log" \
+        "dmidecode -t chassis" "${dir}/dmidecode_chassis.log" \
+        "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|UUID|Family'" "${dir}/system_summary.log" \
+        "dmidecode -t baseboard 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|Version|Asset Tag'" "${dir}/baseboard_summary.log"
 
     module_end "$MODULE_NAME"
 }

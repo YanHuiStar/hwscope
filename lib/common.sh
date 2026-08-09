@@ -110,6 +110,58 @@ check_cmd() {
 reset_warn_count() { _MODULE_WARN_COUNT=0; }
 get_warn_count()   { echo "$_MODULE_WARN_COUNT"; }
 
+run_and_log_parallel() {
+    local max_jobs=$1; shift
+
+    # 串行模式：降级为逐条执行（模块或全局禁用并行时）
+    if [ "${MODULE_PARALLEL:-1}" -ne 1 ]; then
+        while [ $# -ge 2 ]; do
+            run_and_log "$1" "$2"; shift 2
+        done
+        return
+    fi
+
+    local _rlp_pids=()
+    local _rlp_tmpdir=$(mktemp -d "${OUTPUT_BASE:-/tmp}/.rlp_XXXXXX" 2>/dev/null || mktemp -d /tmp/.rlp_XXXXXX)
+    local _rlp_idx=0
+
+    while [ $# -ge 2 ]; do
+        local cmd="$1" logfile="$2"; shift 2
+        mkdir -p "$(dirname "$logfile")"
+        local this_idx=$_rlp_idx
+
+        (
+            run_and_log "$cmd" "$logfile"
+            echo $? > "${_rlp_tmpdir}/w_${this_idx}"
+        ) &
+        _rlp_pids+=($!)
+        _rlp_idx=$((_rlp_idx + 1))
+
+        # 限流：等待槽位释放
+        local _rlp_running=0
+        for p in "${_rlp_pids[@]}"; do kill -0 "$p" 2>/dev/null && _rlp_running=$((_rlp_running + 1)); done
+        while [ "$_rlp_running" -ge "$max_jobs" ]; do
+            wait -n 2>/dev/null || sleep 0.1
+            _rlp_running=0
+            for p in "${_rlp_pids[@]}"; do kill -0 "$p" 2>/dev/null && _rlp_running=$((_rlp_running + 1)); done
+        done
+    done
+
+    for p in "${_rlp_pids[@]}"; do wait "$p" 2>/dev/null; done
+
+    # 汇总 WARN 计数（从临时文件收集，避免并发写 _MODULE_WARN_COUNT）
+    local _rlp_i=0
+    while [ "$_rlp_i" -lt "$_rlp_idx" ]; do
+        local _rlp_ret=$(cat "${_rlp_tmpdir}/w_${_rlp_i}" 2>/dev/null || echo 0)
+        if [ "$_rlp_ret" -ne 0 ] && [ "$_rlp_ret" -ne 1 ] && [ "$_rlp_ret" -ne 127 ]; then
+            _MODULE_WARN_COUNT=$((_MODULE_WARN_COUNT + 1))
+        fi
+        _rlp_i=$((_rlp_i + 1))
+    done
+
+    rm -rf "$_rlp_tmpdir"
+}
+
 # ─── 模块开始/结束提示 ───
 module_start() {
     local name="$1"
