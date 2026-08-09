@@ -68,7 +68,7 @@ bash modules/04_gpu.sh /tmp/out
 
 启动时自动检测。CPU 模块自动适配 x86 (`model name`) 和 ARM (`CPU implementer`) 格式。
 
-SXM 三重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanager` 进程（HGX 平台专属守护进程，兜底 lspci 不显示 NVSwitch 设备的场景）。
+SXM 四重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanager` 进程 → NVLink 交叉验证（兜底 lspci 不显示 NVSwitch 设备的场景）。
 
 ---
 
