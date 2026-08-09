@@ -41,7 +41,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 | 中版本 | 新模块、新数据维度、新执行模式 | `1.1.1 → 1.2.0` |
 | 补丁 | Bug 修复、小优化、文档 | `1.1.0 → 1.1.1` |
 
-**规则：每次任务完成若有修改或新增文件，必须按上表升级版本号（补丁/中/主），并单独 commit `release: vX.Y.Z — <摘要>`。** 升级时需要同步修改的位置：`hwscope.sh`（头部注释 + `HWSCOPE_VERSION` + `--version` 输出）、`README.md`（头部 Version 徽章）。
+**规则：每次任务完成若有修改或新增文件，必须按上表升级版本号（补丁/中/主）。** 当前惯例：功能改动与版本升级合并一条 commit，格式 `<type>: <摘要>; release vX.Y.Z`。升级时需要同步修改的位置：`hwscope.sh`（头部注释 + `HWSCOPE_VERSION` + `--version` 输出）、`README.md`（头部 Version 徽章）。
 
 ## README 更新规则
 
@@ -125,10 +125,10 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 - WSL 或真机运行 `sudo bash hwscope.sh`，检查 exit=0、日志生成
 - 模块单独跑: `bash modules/04_gpu.sh /tmp/out`，对比日志完整性
-- 平台检测验证: `bash hwscope.sh | grep Platform`，应为 xx_SXM/xx_PCIe/xx_none；SXM 三重检测（nvswitch CLI → lspci NVSwitch 字样 → nv-fabricmanager 进程）
+- 平台检测验证: `bash hwscope.sh | grep Platform`，应为 xx_SXM/xx_PCIe/xx_none；SXM 四重检测（nvswitch CLI → lspci NVSwitch → nv-fabricmanager 进程 + NVLink 交叉验证）
 - 变更后跑 `bash -n` 全量语法校验
 - **WSL 真机测试**：`wsl -d Ubuntu` 同步项目到 `/opt/hwscope` 后 `bash hwscope.sh`（本机 StarMachine，RTX 5070，lspci/BMC 缺失属 WSL 预期）
-- **HGX mock 模拟**：桌面数据 mock 命令（nvidia-smi/lspci/dmidecode 等）放 `/tmp/hwscope_mock/bin` 前置 PATH，可复现 HGX 场景（8×B200、SXM 识别、24 槽内存）
+- **HGX mock 模拟**：桌面数据 mock 命令（nvidia-smi/lspci/dmidecode 等）放 `/tmp/hwscope_mock/bin` 前置 PATH，可复现 HGX 场景（8×B200/B300、SXM 识别、24/32 槽内存）
 
 ## 常见陷阱
 
@@ -138,4 +138,4 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - 并行模式模块输出走临时文件，完成后按注册表顺序拼接，勿直接写共享日志
 - **模块头部注释编号必须与文件名一致**（07/08 曾漏修导致注释错位）
 - **WSL 环境**：无 lspci → pcie 模块 SKIP 落盘 `00_skip_lspci.log`；虚拟盘不支持 SMART → storage 自动跳过，避免误报 WARN
-- **报告解析**：grep/awk 提取易被工具输出格式变化破坏（如新版 nvidia-smi 的 `[Deprecated]` 提示、dmidecode 字段顺序），改解析逻辑必回归
+- **报告解析**：report.sh 通过 manifest 解耦文件名（模块声明输出，report 读 manifest），但 grep/awk 提取仍依赖工具输出格式（如新版 nvidia-smi 的 `[Deprecated]` 提示、dmidecode 字段顺序），改解析逻辑必回归
