@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.23.2  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.23.3  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -125,6 +125,11 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT），apt/dnf 自动识别 | - |
 | `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
 | `report.sh` | 从采集结果提取关键信息，生成 json/md/txt 汇总报告（含明细表：内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇） | 采集完成后自动调用 |
+| `cable_map.sh` | 线缆拓扑图（BDF↔mlx5 映射 + EEPROM serial 线缆配对） | mlxlink |
+| `firmware_check.sh` | 固件版本核对（GPU VBIOS/BMC/CX8/NVSwitch），支持基线保存+对比 | nvidia-smi, ipmitool |
+| `nvlink_verify.sh` | NVLink 完整性校验（全互联验证 + CRC 错误 + 降级链路检测） | nvidia-smi |
+| `sel_monitor.sh` | SEL 事件对比巡检（记录基线，后续只报告新增事件） | ipmitool |
+| `sync_version.sh` | 版本号同步（从 hwscope.sh 读取，自动更新 README 徽章） | - |
 
 ### `tools/win/` — Windows 配套工具
 
@@ -209,7 +214,8 @@ output/
 # ============================================================
 # --- output start ---
 0, NVIDIA B300, 13245230xxxxxx, 196608 MiB
-# --- output end (exit code: 0) ---
+# --- output end ---
+# --- exit code: 0, [ 0.23s ] ---
 ```
 
 单次采集典型结构：
@@ -264,7 +270,7 @@ MODULE_GPU=1; MODULE_STORAGE=1; MODULE_OS=1 ...
 - **只读无害** — 全部只读查询，不写不改
 - **自动跳过** — 工具未安装静默跳过，不中断
 - **无压测** — DCGM 仅 Level 1 纯获取
-- **平台自适配** — x86/ARM、SXM/PCIe 自动识别（SXM 三重检测含 fabric manager）
+- **平台自适配** — x86/ARM、SXM/PCIe 自动识别（SXM 四重检测：nvswitch CLI → lspci NVSwitch → nv-fabricmanager 进程 + NVLink 交叉验证）
 - **环境自适配** — WSL 虚拟磁盘自动跳过 SMART，避免误报
 - **双层并行** — 模块间 + 模块内命令并发；`--no-parallel` 可降级
 - **manifest 解耦** — 模块声明输出文件，报告生成器读 manifest，改文件名不连累报告
