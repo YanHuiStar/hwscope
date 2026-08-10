@@ -78,11 +78,11 @@ SXM 四重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanag
 |---|------|------|------|
 | 01 | motherboard | `dmidecode` | 主板/BIOS/机箱 型号/SN |
 | 02 | cpu | `dmidecode` + `lscpu` | FRU + OS 双视角 |
-| 03 | memory | `dmidecode` + `free` | 每 DIMM 独立日志 |
+| 03 | memory | `dmidecode` + `free` | 每 DIMM 独立日志 + EDAC 错误计数 |
 | 04 | gpu | `nvidia-smi` | 每 GPU + NVLink + ECC |
 | 05 | nvswitch | `nvswitch` | 每颗 NVSwitch + Fabric Manager |
 | 06 | pcie | `lspci` | 拓扑/速率/NUMA/IOMMU（缺 lspci 时 SKIP 落盘） |
-| 07 | network | `ibstat` + `mlxlink` + `ethtool` | 每 IB 端口 + 每网口 + 光模块 |
+| 07 | network | `ibstat` + `mlxlink` + `ethtool` + `mstflint` | 每 IB 端口 + 每网口 + 光模块 + 真 SN（sysfs serial 是占位值） |
 | 08 | storage | `lsblk` + `smartctl` | 全类型盘 + SMART 健康（WSL 虚拟盘自动跳过） |
 | 09 | raid | `storcli64` + `sas3ircu` | 控管器/VD/BBU/事件 |
 | 10 | psu | `ipmitool` + `sysfs` | 每 PSU 功率/温度 |
@@ -230,7 +230,7 @@ output/SN123456789/
 ├── hwscope_report.txt       # 汇总报告（纯文本）
 ├── motherboard/             # dmidecode 日志 ×6
 ├── cpu/                     # dmidecode + lscpu ×8
-├── memory/                  # dmidecode + 每槽 ×N
+├── memory/                  # dmidecode + 每槽 + edac_errors ×N
 ├── gpu/                     # nvidia-smi 每卡 + ECC ×30+
 ├── nvswitch/                # nvswitch 每颗 ×7
 ├── pcie/                    # lspci 拓扑 ×10+（缺 lspci 时 00_skip_lspci.log）
