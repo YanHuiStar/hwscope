@@ -114,6 +114,8 @@ if [ -f "${dmidecode_processor}" ]; then
             if(line ~ /Max Speed:/) {sub(/.*: /,"",line); maxspd=line}
             if(line ~ /Current Speed:/) {sub(/.*: /,"",line); curspd=line}
             if(line ~ /Stepping:/) {sub(/.*: /,"",line); step=line}
+            # 有的平台 Stepping 在 Signature 行内（如 "Signature: Type 0, Family 6, Model 173, Stepping 1"）
+            if(line ~ /Signature:.*Stepping/) {match(line, /Stepping [0-9]+/); step=substr(line, RSTART+9, RLENGTH-9)}
         }
         if(socket!="") print socket"|"model"|"cores"|"threads"|"maxspd"|"curspd"|"step
     }' "${dmidecode_processor}" 2>/dev/null)
@@ -124,7 +126,15 @@ MEM_DIR="${OUT}/memory"
 load_manifest "${MEM_DIR}" proc_meminfo "proc_meminfo.log"
 load_manifest "${MEM_DIR}" dmidecode_memory_full "dmidecode_memory_full.log"
 MEM_TOTAL=$(grep -m1 "MemTotal" "${proc_meminfo}" 2>/dev/null | awk '{printf "%.1f GB", $2/1024/1024}')
-MEM_SPEED=$(extract "Configured Clock Speed|Speed:" "${dmidecode_memory_full}")
+# 速率：优先取实际运行速率（Configured Memory Speed），fallback 标称 Speed
+MEM_SPEED=$(extract "Configured Memory Speed" "${dmidecode_memory_full}")
+[ -z "$MEM_SPEED" ] && MEM_SPEED=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
+MEM_SPEED_NOTE=""
+# 降速检测：标称 Speed 与运行速率不一致时告警（如 6400 标称 / 5200 实际）
+MEM_NOM=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
+if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null; then
+    MEM_SPEED_NOTE="⚠️ 降速运行（标称 ${MEM_NOM}）"
+fi
 MEM_SLOTS=$(grep -c "Memory Device" "${dmidecode_memory_full}" 2>/dev/null)
 MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${dmidecode_memory_full}" 2>/dev/null)
 # 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率），空槽跳过
@@ -160,16 +170,22 @@ if [ -f "$GPU_CSV" ]; then
     GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{t=(NF>=17)?$10:$9; sum+=t; if(t+0>tmax+0) tmax=t} END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
     # 每卡明细行（兼容新旧 CSV：新 18 列含 PCIe/利用率，旧 12 列降级为 N/A）
     while IFS=',' read -r gidx gname gsn gbdf guuid gmem gused glimit gdraw gtemp gutil gclk gcclk gecc ggen gwidth ggenmax gwidthmax; do
-        gname=$(echo "$gname" | sed 's/^ *//;s/ *$//')
-        gsn=$(echo "$gsn" | sed 's/^ *//;s/ *$//')
-        gmem_f=$(echo "$gmem" | tr -d ' ')
-        gdraw_f=$(echo "$gdraw" | tr -d ' ')
-        gtemp_f=$(echo "$gtemp" | tr -d ' ')
-        gutil_f=$(echo "$gutil" | tr -d ' ')
-        gwidth=$(echo "$gwidth" | tr -d ' ')
-        gwidthmax=$(echo "$gwidthmax" | tr -d ' ')
-        ggen=$(echo "$ggen" | tr -d ' ')
-        ggenmax=$(echo "$ggenmax" | tr -d ' ')
+        # 注意：此处禁止 echo|sed/tr 管道——循环 stdin 是 here-string，子进程会抢占 fd 导致 read 错位
+        shopt -s extglob
+        gname=${gname##*( )}; gname=${gname%%*( )}
+        gsn=${gsn##*( )}; gsn=${gsn%%*( )}
+        gmem_f=${gmem// /}
+        # 显存单位统一：MiB → GiB（275040MiB → 268.6 GiB）；纯参数运算无子进程
+        if [[ "$gmem_f" == *MiB ]] && [[ "${gmem_f%MiB}" =~ ^[0-9]+$ ]]; then
+            gmem_f=$(awk "BEGIN{printf \"%.1f GiB\", ${gmem_f%MiB}/1024}" < /dev/null)
+        fi
+        gdraw_f=${gdraw// /}
+        gtemp_f=${gtemp// /}
+        gutil_f=${gutil// /}
+        gwidth=${gwidth// /}
+        gwidthmax=${gwidthmax// /}
+        ggen=${ggen// /}
+        ggenmax=${ggenmax// /}
         # 旧 12 列 CSV 无 PCIe/利用率字段 → 识别并置 N/A（旧列: $9=temp $10=clk $11=clk $12=ecc）
         if [ -z "$ggen" ] && [ -z "$gwidth" ]; then
             gtemp_f="$gdraw"    # 旧布局 $9 是温度（被 gdraw 变量接住）
@@ -222,7 +238,12 @@ if [ -f "${block_devices_all}" ]; then
         if(v!=""){n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
         if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024}} \
         END{printf "%.0f GB", s}' 2>/dev/null)
-    STORAGE_MODELS=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {for(j=2;j<i;j++) m=m" "$j; break}} END{print m}' | sed 's/^ //' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+    # 盘型号：从 disk_inventory.csv 取（MODEL/SERIAL 已分离）；回退 block_devices 提取（只取 size 前一列=model）
+    if [ -f "${disk_inventory}" ]; then
+        STORAGE_MODELS=$(grep -v "^#" "${disk_inventory}" 2>/dev/null | awk -F'|' '$1!="" && $4!="N/A" && $4!="" {print $4}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+    else
+        STORAGE_MODELS=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {print $(i-1); break}}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+    fi
 fi
 
 # 盘明细（disk_inventory.csv: name|type|size|model|serial|fw|bdf|power_on）
@@ -390,6 +411,10 @@ if [ -f "${nic_inventory}" ]; then
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
+        # 非 PCIe BDF（如 USB 路径 3-1.5:2.0）标记为 USB，避免误当 PCIe 槽位
+        if [ -n "$nnbdf" ] && ! echo "$nnbdf" | grep -qE "^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$"; then
+            nnbdf="${nnbdf} (USB)"
+        fi
         # IB 设备（ibp*/ibs*）附加控制器型号
         if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
             mt="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
@@ -402,6 +427,12 @@ if [ -f "${nic_inventory}" ]; then
                 [ -n "$ng_guid" ] && nsn="GUID:${ng_guid}"
                 [ -z "$nsn" ] && nsn="N/A"
             fi
+        else
+            # 非 IB 卡（Intel/Broadcom 等）：sysfs serial 常是 MAC 变形（如 f5-96-29-ff-ff-9f-ad-a0）
+            # 特征：含 ff-ff 或与 MAC 高度相似（- 分隔 16 进制），识别后标记为 MAC 派生
+            if [ -n "$nsn" ] && echo "$nsn" | grep -qE "^([0-9a-f]{2}-){5,}[0-9a-f]{2}$"; then
+                nsn="${nsn} (MAC)"
+            fi
         fi
         NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}|${npsid}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
@@ -411,8 +442,8 @@ fi
 FAN_DIR="${OUT}/fan"
 load_manifest "${FAN_DIR}" ipmi_fan_sensors "ipmi_fan_sensors.log"
 FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{c++} END{print c+0}')
-FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | head -1)
-FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); print $2}' | sort -n | tail -1)
+FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); print $2}' | sort -n | head -1)
+FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); print $2}' | sort -n | tail -1)
 FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 
@@ -422,6 +453,8 @@ if [ -f "${ipmi_fan_sensors}" ]; then
     FAN_DETAILS=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{
         name=$1; gsub(/^ +| +$/,"",name)
         val=$2; gsub(/^ +| +$/,"",val)
+        # 转速去尾零（9300.000 → 9300）
+        if(val ~ /^[0-9]+\.[0-9]+$/) {sub(/\.?0+$/,"",val)}
         status=$4; gsub(/^ +| +$/,"",status)
         print name"|"val"|"status
     }')
@@ -448,6 +481,31 @@ if [ -f "${ipmi_psu_fru}" ]; then
     [ -n "$pending" ] && PSU_DETAILS="${PSU_DETAILS}${pending}${ppn:-N/A}|${psn:-N/A}"$'\n'
     # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）
     PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|Power Supply")
+    # 每只 PSU 当前输入功率（ipmi_psu_sensors.log: Pwr_PSU<N>_In | W |），按编号匹配追加
+    psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
+    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ]; then
+        # 一次性构建 编号→功率 映射，再一次性追加（避免逐行 echo|awk 嵌套性能灾难）
+        PSU_DETAILS=$(awk -v psu_detail="$PSU_DETAILS" '
+            BEGIN { FS="|"; OFS="|" }
+            /Pwr_PSU[0-9]+_In/ {
+                num=$1; sub(/.*Pwr_PSU/, "", num); sub(/_In.*/, "", num)
+                val=$2; gsub(/ /, "", val)
+                power[num]=val "W"
+            }
+            END {
+                n=split(psu_detail, lines, "\n")
+                for(i=1; i<=n; i++) {
+                    line=lines[i]
+                    if(line=="") continue
+                    split(line, f, "|")
+                    desc=f[1]
+                    pnum=""
+                    if(desc ~ /PSU[0-9]+/) { pnum=desc; sub(/.*PSU/, "", pnum); sub(/[^0-9].*/, "", pnum) }
+                    if(pnum!="" && (pnum in power)) print line "|" power[pnum]
+                    else print line "|N/A"
+                }
+            }' "$psu_power_csv")
+    fi
 fi
 
 # ─── 生成 JSON ───
@@ -570,6 +628,7 @@ fi)
   "memory": {
     "total": "${MEM_TOTAL:-N/A}",
     "speed": "${MEM_SPEED:-N/A}",
+    "speed_note": "${MEM_SPEED_NOTE:-}",
     "slots": "${MEM_SLOTS:-N/A}",
     "populated": "${MEM_POPULATED:-0}",
     "dimms": [
@@ -641,10 +700,10 @@ fi)
     "details": [
 $(if [ -n "$PSU_DETAILS" ]; then
     local pseq=0
-    while IFS='|' read -r pdesc pmodel ppn psn; do
+    while IFS='|' read -r pdesc pmodel ppn psn ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s"},' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn"
+        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s", "power_in": "%s"},' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${ppower:-N/A}"
         printf '\n'
     done <<< "$PSU_DETAILS" | sed '$ s/,$//'
 fi)
@@ -687,17 +746,21 @@ gen_md() {
     # 盘明细 Markdown 表
     local disk_details_md=""
     if [ -n "$DISK_DETAILS" ]; then
+        local dn=0
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
             [ -z "$dname" ] && continue
-            disk_details_md="${disk_details_md}| ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc} | ${dspare} |"$'\n'
+            dn=$((dn + 1))
+            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc} | ${dspare} |"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细 Markdown 表
     local nic_details_md=""
     if [ -n "$NIC_DETAILS" ]; then
+        local nn=0
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
             [ -z "$nnic" ] && continue
-            nic_details_md="${nic_details_md}| ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} | ${npsid} |"$'\n'
+            nn=$((nn + 1))
+            nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} | ${npsid} |"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch Markdown 表
@@ -727,9 +790,11 @@ gen_md() {
     # 风扇明细 Markdown 表
     local fan_details_md=""
     if [ -n "$FAN_DETAILS" ]; then
+        local fn=0
         while IFS='|' read -r fname frpm fstatus; do
             [ -z "$fname" ] && continue
-            fan_details_md="${fan_details_md}| ${fname} | ${frpm} | ${fstatus} |"$'\n'
+            fn=$((fn + 1))
+            fan_details_md="${fan_details_md}| ${fn} | ${fname} | ${frpm} | ${fstatus} |"$'\n'
         done <<< "$FAN_DETAILS"
     fi
     cat > "$f" << EOF
@@ -762,7 +827,7 @@ gen_md() {
 | 核心数 | ${CPU_CORES:-N/A} |
 | 插槽数 | ${CPU_SOCKETS:-N/A} |
 | Stepping | ${CPU_STEPPING:-N/A} |
-| 频率 | ${CPU_MAX_SPEED:-N/A}（当前 ${CPU_CUR_SPEED:-N/A}） |
+| 频率 | ${CPU_MAX_SPEED:-N/A} MHz（当前 ${CPU_CUR_SPEED:-N/A} MHz） |
 $(if [ -n "$CPU_DETAILS" ]; then
     echo "### CPU 明细"
     echo "| Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping |"
@@ -776,7 +841,7 @@ fi)
 | 项 | 值 |
 |----|----|
 | 总量 | ${MEM_TOTAL:-N/A} |
-| 速率 | ${MEM_SPEED:-N/A} |
+| 速率 | ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-} |
 | 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
 
 ### 插槽明细
@@ -810,8 +875,8 @@ $(printf '%s' "$gpu_details_md")
 | 系统盘(已排除) | ${SYS_DISK:-N/A} |
 
 ### 盘明细
-| 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% |
-|------|------|------|------|----|------|-----|---------|----------|-------|
+| # | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% |
+|---|------|------|------|------|----|------|-----|---------|----------|-------|
 $(printf '%s' "$disk_details_md")
 
 ## 网络
@@ -825,8 +890,8 @@ $(printf '%s' "$disk_details_md")
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 
 ### 网卡明细
-| 接口 | BDF | MAC | SN | 型号 | 固件 | 速率 | 宽度 | PSID |
-|------|-----|-----|----|------|------|------|------|------|
+| # | 接口 | BDF | MAC | SN | 型号 | 固件 | 速率 | 宽度 | PSID |
+|---|------|-----|-----|----|------|------|------|------|------|
 $(printf '%s' "$nic_details_md")
 
 ## BMC
@@ -855,29 +920,31 @@ fi)
 | 转速 | ${FAN_SPEED:-N/A} |
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "### 风扇明细"
-    echo "| 风扇 | 转速(RPM) | 状态 |"
-    echo "|------|----------|------|"
+    echo "| # | 风扇 | 转速(RPM) | 状态 |"
+    echo "|---|------|----------|------|"
+    local fan_seq=0
     echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do
-        echo "| ${fname} | ${fval} | ${fstatus} |"
+        fan_seq=$((fan_seq+1))
+        echo "| ${fan_seq} | ${fname} | ${fval} | ${fstatus} |"
     done
 fi)
 
 ## 电源 PSU
-| # | 描述 | 型号 | 部件号 | 序列号 |
-|----|------|------|--------|--------|
+| # | 描述 | 型号 | 部件号 | 序列号 | 输入功率 |
+|----|------|------|--------|--------|---------|
 $(if [ -n "$PSU_DETAILS" ]; then
     local pseq=0
-    while IFS='|' read -r pdesc pmodel ppn psn; do
+    while IFS='|' read -r pdesc pmodel ppn psn ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '| %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn"
+        printf '| %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 fi)
 
 ## NVSwitch
 | 编号 | 状态 | 温度 | 活动/总端口 |
 |------|------|------|-------------|
-$(printf '%s' "$nvs_md")
+$(if [ -n "$nvs_md" ]; then printf '%s' "$nvs_md"; else echo "| 无数据 | — | — | — |"; fi)
 
 ## 健康检查
 | 项 | 状态 |
@@ -987,7 +1054,7 @@ HwScope 硬件巡检报告
   核心数 : ${CPU_CORES:-N/A}
   插槽数 : ${CPU_SOCKETS:-N/A}
   Stepping: ${CPU_STEPPING:-N/A}
-  频率   : ${CPU_MAX_SPEED:-N/A} (当前 ${CPU_CUR_SPEED:-N/A})
+  频率   : ${CPU_MAX_SPEED:-N/A} MHz (当前 ${CPU_CUR_SPEED:-N/A} MHz)
 $(if [ -n "$CPU_DETAILS" ]; then
     echo "  CPU明细:"
     echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep; do
@@ -997,7 +1064,7 @@ fi)
 
 [内存]
   总量   : ${MEM_TOTAL:-N/A}
-  速率   : ${MEM_SPEED:-N/A}
+  速率   : ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-}
   插槽   : ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A}
 $(printf '%s' "$dimms_txt")
 
@@ -1054,15 +1121,15 @@ fi)
 [电源PSU]
 $(if [ -n "$PSU_DETAILS" ]; then
     local pseq=0
-    while IFS='|' read -r pdesc pmodel ppn psn; do
+    while IFS='|' read -r pdesc pmodel ppn psn ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '  %s. %s  %s  PN:%s  SN:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn"
+        printf '  %s. %s  %s  PN:%s  SN:%s  功率:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 else echo "  N/A"; fi)
 
 [NVSwitch]
-$(printf '%s' "$nvs_txt")
+$(if [ -n "$nvs_txt" ]; then printf '%s' "$nvs_txt"; else echo "  无数据"; fi)
 
 [健康检查]
   PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}
