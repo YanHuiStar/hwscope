@@ -394,6 +394,14 @@ if [ -f "${nic_inventory}" ]; then
         if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
             mt="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
             [ -n "$mt" ] && npn="${npn} [$(mt_model "$mt")]"
+            # SN 为占位值/空时，用 ibstat Node GUID 兜底（每卡唯一，可区分多卡）
+            if [ -z "$nsn" ] || [ "$nsn" = "N/A" ] || [ "$nsn" = "1951526575073" ]; then
+                ng_ca="${NETDEV_CA[$nnic]:-}"
+                ng_guid=""
+                [ -n "$ng_ca" ] && ng_guid=$(awk "/CA '$ng_ca'/{found=1; next} found && /Node GUID/{print \$3; exit}" "${ibstat}" 2>/dev/null)
+                [ -n "$ng_guid" ] && nsn="GUID:${ng_guid}"
+                [ -z "$nsn" ] && nsn="N/A"
+            fi
         fi
         NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}|${npsid}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
