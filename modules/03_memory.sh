@@ -38,7 +38,19 @@ run_memory() {
         echo 'Total Capacity (GB):' && dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module' | awk '{sum+=\$2} END{print sum}'" \
         "${dir}/memory_capacity.log"
 
-    # 4. 每个插槽单独记录（用简单 while 循环分段，避免复杂 eval）
+    # 4. EDAC 内存错误计数（Linux 内核 EDAC 子系统；只读，无权限时跳过）
+    run_and_log "if [ -d /sys/devices/system/edac ]; then ls /sys/devices/system/edac/mc/ 2>/dev/null; \
+        for mc in /sys/devices/system/edac/mc/mc*; do [ -d \"\$mc\" ] || continue; \
+        echo \"== \$(basename \$mc) ==\"; \
+        echo \"CE_count: \$(cat \$mc/ce_count 2>/dev/null || echo N/A)\"; \
+        echo \"UE_count: \$(cat \$mc/ue_count 2>/dev/null || echo N/A)\"; \
+        echo \"CE_noinfo: \$(cat \$mc/ce_noinfo_count 2>/dev/null || echo N/A)\"; \
+        echo \"UE_noinfo: \$(cat \$mc/ue_noinfo_count 2>/dev/null || echo N/A)\"; \
+        echo \"MC size: \$(cat \$mc/size_mb 2>/dev/null || echo N/A) MB\"; done; \
+        else echo 'EDAC not available (no /sys/devices/system/edac)'; fi" \
+        "${dir}/edac_errors.log"
+
+    # 5. 每个插槽单独记录（用简单 while 循环分段，避免复杂 eval）
     # 先把完整的内存信息存到临时变量，用 shell 逐段拆分
     local mem_dump_file="${dir}/.dmidecode_memory_raw.tmp"
     dmidecode -t memory > "$mem_dump_file" 2>/dev/null || true
@@ -58,7 +70,8 @@ run_memory() {
         "free_h" "free_h.log" \
         "proc_meminfo" "proc_meminfo.log" \
         "memory_slot_blocks" "memory_slot_blocks.log" \
-        "memory_capacity" "memory_capacity.log"
+        "memory_capacity" "memory_capacity.log" \
+        "edac_errors" "edac_errors.log"
 
     module_end "$MODULE_NAME"
 }

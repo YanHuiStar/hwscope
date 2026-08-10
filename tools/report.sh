@@ -137,13 +137,13 @@ if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>
 fi
 MEM_SLOTS=$(grep -c "Memory Device" "${dmidecode_memory_full}" 2>/dev/null)
 MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${dmidecode_memory_full}" 2>/dev/null)
-# 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率），空槽跳过
+# 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率|Rank），空槽跳过
 # 行模式状态机：从 "Memory Device" 段头开始，空行结束（Size 行在 Locator 之前）
 # 速率语义：Speed=模块标称（原速率），Configured Memory Speed=当前实际运行（现速率）
 MEM_DIMMS=""
 if [ -f "${dmidecode_memory_full}" ]; then
     MEM_DIMMS=$(awk '
-        /^Memory Device/ { in_dimm=1; slot=""; size=""; mfr=""; sn=""; pn=""; nom=""; cur=""; next }
+        /^Memory Device/ { in_dimm=1; slot=""; size=""; mfr=""; sn=""; pn=""; nom=""; cur=""; rank=""; next }
         in_dimm && /^[[:space:]]*Locator:/ && !/Bank Locator/ {slot=$0;  sub(/^[[:space:]]*Locator:[[:space:]]*/,"",slot); next}
         in_dimm && /^[[:space:]]*Size:/              {size=$0; sub(/^[[:space:]]*Size:[[:space:]]*/,"",size); sub(/ No Module.*/,"",size); next}
         in_dimm && /^[[:space:]]*Manufacturer:/      {mfr=$0;  sub(/^[[:space:]]*Manufacturer:[[:space:]]*/,"",mfr); next}
@@ -151,8 +151,18 @@ if [ -f "${dmidecode_memory_full}" ]; then
         in_dimm && /^[[:space:]]*Part Number:/       {pn=$0;   sub(/^[[:space:]]*Part Number:[[:space:]]*/,"",pn); sub(/[[:space:]]+$/,"",pn); next}
         in_dimm && /^[[:space:]]*Speed:/             {nom=$0;  sub(/^[[:space:]]*Speed:[[:space:]]*/,"",nom); next}
         in_dimm && /^[[:space:]]*Configured Memory Speed:/ {cur=$0; sub(/^[[:space:]]*Configured Memory Speed:[[:space:]]*/,"",cur); next}
-        in_dimm && /^[[:space:]]*$/ { if(size!="") printf "%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur; in_dimm=0 }
+        in_dimm && /^[[:space:]]*Rank:/              {rank=$0; sub(/^[[:space:]]*Rank:[[:space:]]*/,"",rank); next}
+        in_dimm && /^[[:space:]]*$/ { if(size!="") printf "%s|%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur, rank; in_dimm=0 }
     ' "${dmidecode_memory_full}" 2>/dev/null)
+fi
+# 内存类型（DDR4/DDR5）与 ECC 类型（Single-bit ECC 等；供日志展示，报告不输出 ECC）
+MEM_TYPE=$(grep -m1 "^[[:space:]]*Type: DDR" "${dmidecode_memory_full}" 2>/dev/null | awk '{print $2}')
+MEM_ECC_TYPE=$(grep -m1 "Error Correction Type" "${dmidecode_memory_full}" 2>/dev/null | cut -d: -f2- | xargs)
+# EDAC 错误计数（日志展示用；报告不输出）
+MEM_EDAC="N/A"
+load_manifest "${MEM_DIR}" edac_errors "edac_errors.log"
+if [ -f "${edac_errors}" ]; then
+    MEM_EDAC=$(grep -E "CE_count|UE_count" "${edac_errors}" 2>/dev/null | grep -vE "N/A|^#" | awk -F': ' '{sum[$1]+=$2} END{if(NR>0) printf "CE:%d UE:%d", sum["CE_count"], sum["UE_count"]; else print "0/0"}')
 fi
 
 # ─── GPU（解析 inventory.csv；列: 1=idx 2=name 3=serial 4=bdf 5=uuid 6=mem.total 7=mem.used 8=power.limit 9=power.draw 10=temp 11=util 12-13=clocks 14=ecc.mode 15=gen.cur 16=width.cur 17=gen.max 18=width.max） ───
@@ -511,14 +521,14 @@ fi
 # ─── 生成 JSON ───
 gen_json() {
     local f="${OUT}/hwscope_report.json"
-    # 内存插槽明细 JSON 数组（slot|size|mfr|sn|pn|nom|cur）
+    # 内存插槽明细 JSON 数组（slot|size|mfr|sn|pn|nom|cur|rank）
     local dimms_json=""
     if [ -n "$MEM_DIMMS" ]; then
         local dseq=0
-        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur; do
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank; do
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
-            dimms_json="${dimms_json}      {\"index\": \"${dseq}\", \"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"nominal_speed\": \"${dnom}\", \"current_speed\": \"${dcur}\"},"$'\n'
+            dimms_json="${dimms_json}      {\"index\": \"${dseq}\", \"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"nominal_speed\": \"${dnom}\", \"current_speed\": \"${dcur}\", \"rank\": \"${drank:-N/A}\"},"$'\n'
         done <<< "$MEM_DIMMS"
         dimms_json=$(printf '%s' "$dimms_json" | sed '$ s/,$//')
     fi
@@ -627,6 +637,7 @@ fi)
   },
   "memory": {
     "total": "${MEM_TOTAL:-N/A}",
+    "type": "${MEM_TYPE:-N/A}",
     "speed": "${MEM_SPEED:-N/A}",
     "speed_note": "${MEM_SPEED_NOTE:-}",
     "slots": "${MEM_SLOTS:-N/A}",
@@ -729,10 +740,10 @@ gen_md() {
     local dimms_md=""
     if [ -n "$MEM_DIMMS" ]; then
         local dseq=0
-        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur; do
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank; do
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
-            dimms_md="${dimms_md}| ${dseq} | ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dnom} | ${dcur} |"$'\n'
+            dimms_md="${dimms_md}| ${dseq} | ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dnom} | ${dcur} | ${drank:-N/A} |"$'\n'
         done <<< "$MEM_DIMMS"
     fi
     # GPU 每卡明细 Markdown 表
@@ -841,12 +852,13 @@ fi)
 | 项 | 值 |
 |----|----|
 | 总量 | ${MEM_TOTAL:-N/A} |
+| 类型 | ${MEM_TYPE:-N/A} |
 | 速率 | ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-} |
 | 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
 
 ### 插槽明细
-| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 原速率 | 现速率 |
-|----|------|------|------|----|--------|--------|--------|
+| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 原速率 | 现速率 | Rank |
+|----|------|------|------|----|--------|--------|--------|------|
 $(printf '%s' "$dimms_md")
 
 ## GPU
@@ -966,10 +978,10 @@ gen_txt() {
     local dimms_txt=""
     if [ -n "$MEM_DIMMS" ]; then
         local dseq=0
-        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur; do
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank; do
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
-            dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  标称${dnom}/现${dcur}"$'\n'
+            dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  标称${dnom}/现${dcur}  Rank:${drank:-N/A}"$'\n'
         done <<< "$MEM_DIMMS"
     fi
     # GPU 每卡明细纯文本
@@ -1064,6 +1076,7 @@ fi)
 
 [内存]
   总量   : ${MEM_TOTAL:-N/A}
+  类型   : ${MEM_TYPE:-N/A}
   速率   : ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-}
   插槽   : ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A}
 $(printf '%s' "$dimms_txt")
