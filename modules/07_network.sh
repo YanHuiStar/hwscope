@@ -107,17 +107,25 @@ run_network() {
             [ -z "$nsn" ] && nsn="N/A"
             local npn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Part Number" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
             [ -z "$npn" ] && npn=$(lspci -s "$nbdf" 2>/dev/null | cut -d' ' -f4-)
+            # Mellanox 卡：sysfs serial 常为占位值（多卡相同），用 mstflint q 读 VPD 真 SN + PSID
+            local mstdev=""
+            local nis_mlx=0
+            [[ "$npn" == *"Mellanox"* || "$npn" == *"ConnectX"* || "$npn" == *"MLX"* ]] && nis_mlx=1
+            local npsid="N/A"
+            if [ "$nis_mlx" -eq 1 ] && check_cmd mstflint; then
+                mstdev=$(mst status 2>/dev/null | grep -i "$nbdf" | awk '{print $1}' | head -1)
+                [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep -i "${nbdf//:}" | head -1)
+                if [ -n "$mstdev" ]; then
+                    local mq_out=$(mstflint -d "$mstdev" q 2>/dev/null)
+                    local mq_sn=$(echo "$mq_out" | grep -iE "^Serial Number|^Board Serial" | head -1 | awk '{print $NF}')
+                    [ -n "$mq_sn" ] && nsn="$mq_sn"
+                    local mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
+                    [ -n "$mq_psid" ] && npsid="$mq_psid"
+                fi
+            fi
             local nfw="N/A"
             if check_cmd ethtool; then
                 nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | awk '{print $2}')
-            fi
-            # PSID（Mellanox 卡用 mstflint/flint 查询；非 Mellanox 卡置 N/A）
-            local npsid="N/A"
-            if check_cmd mstflint && [[ "$npn" == *"Mellanox"* || "$npn" == *"ConnectX"* || "$npn" == *"MLX"* ]]; then
-                local mstdev=$(mst status 2>/dev/null | grep -i "$nbdf" | awk '{print $1}' | head -1)
-                [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep -i "${nbdf//:}" | head -1)
-                [ -n "$mstdev" ] && npsid=$(mstflint -d "$mstdev" q 2>/dev/null | grep "PSID" | awk '{print $NF}')
-                [ -z "$npsid" ] && npsid="N/A"
             fi
             local nspd="N/A" nwd="N/A"
             if check_cmd lspci; then
