@@ -15,6 +15,8 @@ HwScope 对服务器每个物理组件进行**逐件、逐槽、逐端口**的�
 
 ## 快速开始
 
+> 📍 开发方向与待办见 [ROADMAP.md](ROADMAP.md)（活文档：条目完成即删除）
+
 ```bash
 git clone https://github.com/YanHuiStar/hwscope.git && cd hwscope
 
