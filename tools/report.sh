@@ -8,6 +8,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+source "${SCRIPT_DIR}/lib/nvlink.sh" 2>/dev/null || true
 
 # ─── 定位输出目录 ───
 if [ -n "$1" ] && [ -d "$1" ]; then
@@ -373,6 +374,11 @@ for f in "${NET_DIR}"/mlxlink_mlx5_*_module.log; do
 done
 CABLE_PAIRS=$(echo "$CABLE_PAIRS" | sed 's/,$//')
 
+# ─── NVLink 状态（读采集日志，lib/nvlink.sh） ───
+nvlink_load_from_logs "$GPU_DIR"
+NVLINK_HEALTH="OK"
+nvlink_is_healthy || NVLINK_HEALTH="异常"
+
 # 端口模式汇总（mlxconfig_*_linktype.log：每口 IB/ETH 模式）
 LINKTYPE_SUMMARY=""
 for f in "${NET_DIR}"/mlxconfig_*_linktype.log; do
@@ -725,6 +731,8 @@ $(printf '%s' "$nvs_json")
   ],
   "health": {
     "gpu_pcie_degraded": "${GPU_DEGRADED:-OK}",
+    "nvlink_status": "${NVLINK_HEALTH:-OK}",
+    "nvlink_crc_errors": "${NVLINK_CRC:+存在非零CRC错误}",
     "sel_pcie_errors": "${SEL_PCIE_ERR:-0}",
     "cable_pairs": "${CABLE_PAIRS:-N/A}"
   }
@@ -962,6 +970,7 @@ $(if [ -n "$nvs_md" ]; then printf '%s' "$nvs_md"; else echo "| 无数据 | — 
 | 项 | 状态 |
 |----|------|
 | GPU PCIe 链路 | ${GPU_DEGRADED:-✓ 全部正常} |
+| NVLink | ${NVLINK_HEALTH:-✓ 正常}${NVLINK_CRC:+ (存在CRC错误)} |
 | SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
 
@@ -1146,6 +1155,7 @@ $(if [ -n "$nvs_txt" ]; then printf '%s' "$nvs_txt"; else echo "  无数据"; fi
 
 [健康检查]
   PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}
+  NVLink   : ${NVLINK_HEALTH:-✓ 正常}${NVLINK_CRC:+ (存在CRC错误)}
   SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
   线缆配对 : ${CABLE_PAIRS:-N/A}
 
