@@ -574,9 +574,13 @@ if [ -f "${nic_inventory}" ]; then
                 nsn="${nsn} (MAC)"
             fi
         fi
-        # GPU 直连标记（topo PIX 判定）
+        # GPU 直连标记（topo PIX 判定）；无 topo_nic 日志（旧版采集）时显示待采集
         local gd_mark=""
-        [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ] && gd_mark="GPU直连"
+        if [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ]; then
+            gd_mark="GPU直连"
+        elif [ ! -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
+            gd_mark="—"
+        fi
         # PCIe 能力（LnkCap）与当前（LnkSta）合并显示：当前一致时只显当前，不一致标注能力
         local npcie_cap=""
         if [ -n "$ncapspd" ] && [ "$ncapspd" != "N/A" ]; then
@@ -1121,7 +1125,7 @@ $(printf '%s' "$disk_details_md")
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 
 ### 网卡明细
-| # | 接口 | BDF | MAC | SN | 型号 | 固件 | PCIe | PSID | 用途 |
+| # | 接口 | BDF | MAC | SN | 型号 | 固件 | PCIe | PSID | GPU直连 |
 |---|------|-----|-----|----|------|------|------|------|------|
 $(printf '%s' "$nic_details_md")
 
