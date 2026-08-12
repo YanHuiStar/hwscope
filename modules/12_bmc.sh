@@ -23,7 +23,7 @@ run_bmc() {
     if check_cmd ipmitool; then
         # 本地 IPMI（BMC 通道限制 max_jobs=4）
         run_and_log_parallel 4 \
-            "ipmitool fru print 2>&1 | head -500" "${dir}/ipmi_fru.log" \
+            "ipmitool fru print 2>&1" "${dir}/ipmi_fru.log" \
             "ipmitool mc info 2>&1" "${dir}/ipmi_mc.log" \
             "ipmitool sensor list 2>&1" "${dir}/ipmi_sensors.log" \
             "ipmitool sdr list 2>&1" "${dir}/ipmi_sdr.log" \
