@@ -28,7 +28,7 @@ run_pcie() {
         "lspci -t -vv" "${dir}/lspci_tree.log" \
         "lspci -v | grep -A 30 'NVIDIA'" "${dir}/lspci_nvidia.log" \
         "lspci | grep -E 'PCI bridge|Host Bridge|PCIe'" "${dir}/pcie_bridge.log" \
-        "lspci -vvv 2>/dev/null | grep -E 'LnkSta:|LnkCap:' | head -2000" \
+        "lspci -vvv 2>/dev/null | grep -E 'LnkSta:|LnkCap:'" \
             "${dir}/pcie_speed_width.log"
 
     # 6. 按 GPU 提取 PCIe 速率（需先获取 GPU 总线列表，串行执行）
