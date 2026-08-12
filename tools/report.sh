@@ -180,7 +180,18 @@ if [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
     GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ',' | sed 's/,$//')
     # 显存总量 / 功耗上限 / 温度
-    GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ MiB/,"",$6); sum+=$6} END{printf "%.0f GB", sum/1024}')
+    # 显存总量（nvidia-smi memory.total，MiB→GiB 二进制换算，为可见值含 ECC 预留）
+    GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ MiB/,"",$6); sum+=$6} END{printf "%.0f GiB", sum/1024}')
+    # 每卡标称规格（型号→标称映射，标注检测值 vs 规格的差异；未知型号显示检测值）
+    GPU_MODEL_LINE=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f2)
+    GPU_MEM_SPEC=""
+    case "$GPU_MODEL_LINE" in
+        *B300*)   GPU_MEM_SPEC="标称 288GB/卡" ;;
+        *B200*)   GPU_MEM_SPEC="标称 192GB/卡" ;;
+        *H200*)   GPU_MEM_SPEC="标称 141GB/卡" ;;
+        *H100*)   GPU_MEM_SPEC="标称 80GB/卡" ;;
+        *)        GPU_MEM_SPEC="" ;;
+    esac
     GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ W/,"",$8); if($8+0>max+0) max=$8} END{printf "%.0f W", max}')
     GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{t=(NF>=17)?$10:$9; sum+=t; if(t+0>tmax+0) tmax=t} END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
     # 每卡明细行（兼容新旧 CSV：新 18 列含 PCIe/利用率，旧 12 列降级为 N/A）
@@ -764,6 +775,7 @@ ${dimms_json}
     "count": "${GPU_COUNT:-0}",
     "models": "${GPU_NAMES:-N/A}",
     "memory_total": "${GPU_MEM:-N/A}",
+    "memory_spec": "${GPU_MEM_SPEC:-N/A}",
     "power_limit": "${GPU_POWER:-N/A}",
     "temp": "${GPU_TEMP:-N/A}",
     "ecc": "${GPU_ECC:-N/A}",
@@ -1026,7 +1038,7 @@ $(printf '%s' "$dimms_md")
 |----|----|
 | 数量 | ${GPU_COUNT:-0} |
 | 型号 | ${GPU_NAMES:-N/A} |
-| 显存总量 | ${GPU_MEM:-N/A} |
+| 显存总量 | ${GPU_MEM:-N/A}${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})} |
 | 功耗上限 | ${GPU_POWER:-N/A} |
 | 温度 | ${GPU_TEMP:-N/A} |
 | ECC | ${GPU_ECC:-N/A} |
@@ -1136,6 +1148,10 @@ $(if [ -n "$nvs_md" ]; then printf '%s' "$nvs_md"; else echo "| 无数据 | — 
 $(glossary_md)
 ---
 *由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）*
+
+> 数据来源说明：本报告所有数值均从采集日志提取（只读解析，不重新采集）。检测值为采集时刻的实际状态；
+> 标注"标称"的为硬件规格（如 GPU 显存 288GB 标称 vs 268.6 GiB 检测可见值，差异为 ECC/显存预留）。
+> 各段明细见 `output/<SN>/<模块>/` 下的原始日志。
 EOF
     echo -e "${GREEN}[REPORT] MD: ${f}${NC}"
 }
@@ -1253,7 +1269,7 @@ $(printf '%s' "$dimms_txt")
 [GPU]
   数量   : ${GPU_COUNT:-0}
   型号   : ${GPU_NAMES:-N/A}
-  显存   : ${GPU_MEM:-N/A}
+  显存   : ${GPU_MEM:-N/A}${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})}
   功耗   : ${GPU_POWER:-N/A}
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
@@ -1323,6 +1339,10 @@ $(if [ -n "$nvs_txt" ]; then printf '%s' "$nvs_txt"; else echo "  无数据"; fi
 
 [术语说明]
 $(glossary_txt)
+--------------------------------------------
+数据来源说明: 本报告数值均从采集日志提取（只读解析，不重新采集）。
+检测值为采集时刻实际状态；标注"标称"的为硬件规格（如 GPU 显存 288GB 标称 vs 268.6 GiB 检测可见值，差异为 ECC/显存预留）。
+各段明细见 output/<SN>/<模块>/ 下原始日志。
 --------------------------------------------
 由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）
 EOF
