@@ -54,6 +54,10 @@ SUMMARY="${OUT}/summary.txt"
 HOSTNAME=$(extract "Hostname" "$SUMMARY")
 VERSION=$(extract "Version" "$SUMMARY")
 [ -z "$VERSION" ] && VERSION="N/A"   # 老版本采集数据无 Version 行
+# 报告生成器版本（读 hwscope.sh 权威源；与采集版本 VERSION 区分：
+# 采集版本=数据何时采集，生成器版本=报告用哪个工具版本生成）
+REPORT_VERSION=$(grep '^HWSCOPE_VERSION=' "${SCRIPT_DIR}/hwscope.sh" 2>/dev/null | head -1 | sed 's/.*"\(.*\)"/\1/')
+[ -z "$REPORT_VERSION" ] && REPORT_VERSION="unknown"
 PLATFORM=$(grep -m1 "^Platform" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 's/^ //')
 
@@ -625,6 +629,7 @@ gen_json() {
 {
   "hwscope": {
     "version": "${VERSION:-unknown}",
+    "report_generator": "${REPORT_VERSION:-unknown}",
     "hostname": "${HOSTNAME:-unknown}",
     "platform": "${PLATFORM:-unknown}",
     "timestamp": "${TIMESTAMP:-unknown}"
@@ -840,7 +845,7 @@ gen_md() {
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
 
-**版本:** ${VERSION:-unknown} · **主机:** ${HOSTNAME:-unknown} · **平台:** ${PLATFORM:-unknown} · **时间:** ${TIMESTAMP:-unknown}
+**采集版本:** ${VERSION:-unknown} · **报告生成器:** ${REPORT_VERSION:-unknown} · **主机:** ${HOSTNAME:-unknown} · **平台:** ${PLATFORM:-unknown} · **时间:** ${TIMESTAMP:-unknown}
 
 ## 环境
 | 项 | 值 |
@@ -997,7 +1002,7 @@ $(if [ -n "$nvs_md" ]; then printf '%s' "$nvs_md"; else echo "| 无数据 | — 
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
 
 ---
-*由 HwScope ${VERSION:-unknown} 自动生成*
+*由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）*
 EOF
     echo -e "${GREEN}[REPORT] MD: ${f}${NC}"
 }
@@ -1075,7 +1080,7 @@ gen_txt() {
 ============================================
 HwScope 硬件巡检报告
 ============================================
-版本: ${VERSION:-unknown}    主机: ${HOSTNAME:-unknown}
+采集版本: ${VERSION:-unknown}    报告生成器: ${REPORT_VERSION:-unknown}    主机: ${HOSTNAME:-unknown}
 平台: ${PLATFORM:-unknown}   时间: ${TIMESTAMP:-unknown}
 
 [环境]
@@ -1183,7 +1188,7 @@ $(if [ -n "$nvs_txt" ]; then printf '%s' "$nvs_txt"; else echo "  无数据"; fi
   线缆配对 : ${CABLE_PAIRS:-N/A}
 
 --------------------------------------------
-由 HwScope ${VERSION:-unknown} 自动生成
+由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）
 EOF
     echo -e "${GREEN}[REPORT] TXT: ${f}${NC}"
 }
