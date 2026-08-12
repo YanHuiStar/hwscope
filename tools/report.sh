@@ -1399,10 +1399,144 @@ EOF
     echo -e "${GREEN}[REPORT] TXT: ${f}${NC}"
 }
 
+# ─── 验收清单生成（--acceptance）───
+# 逐项评估硬件状态，输出 hwscope_acceptance.md（交付交接单）
+# 项状态: PASS=通过 / FAIL=不通过 / WARN=有条件通过 / N/A=无数据
+gen_acceptance() {
+    local f="${OUT}/hwscope_acceptance.md"
+    local n=0 pass=0 fail=0 warn=0 na=0
+    local rows="" st=""
+    local verdict="合格"
+
+    # 逐项评估函数：add_item "名称" "状态" "说明"
+    add_item() {
+        n=$((n + 1))
+        case "$2" in
+            PASS) pass=$((pass + 1)); st="✅ PASS" ;;
+            FAIL) fail=$((fail + 1)); st="❌ FAIL" ;;
+            WARN) warn=$((warn + 1)); st="⚠️ WARN" ;;
+            *)    na=$((na + 1));     st="— N/A" ;;
+        esac
+        rows="${rows}| ${n} | $1 | ${st} | $3 |"$'\n'
+    }
+
+    # 1. GPU PCIe 链路完整
+    if [ -n "$GPU_DEGRADED" ]; then
+        add_item "GPU PCIe 链路完整" "FAIL" "${GPU_DEGRADED%%,}（期望最高速率）"
+    else
+        add_item "GPU PCIe 链路完整" "PASS" "全部 GPU 处于最高 PCIe 速率"
+    fi
+
+    # 2. NVLink 互联
+    case "${NVLINK_HEALTH:-N/A}" in
+        OK)   add_item "NVLink 互联" "PASS" "全互联无降级链路" ;;
+        异常) add_item "NVLink 互联" "FAIL" "存在降级链路${NVLINK_CRC:+，且有非零 CRC 错误}" ;;
+        *)    add_item "NVLink 互联" "N/A" "无 topo 数据（旧采集或无 GPU）" ;;
+    esac
+
+    # 3. DCGM 诊断
+    case "${DCGM_SUMMARY:-N/A}" in
+        通过*) add_item "DCGM 诊断" "PASS" "${DCGM_SUMMARY}" ;;
+        Fail*硬件*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
+        Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
+        *)     add_item "DCGM 诊断" "N/A" "未运行（DCGM 未安装或已禁用）" ;;
+    esac
+
+    # 4. SEL 无 Critical 事件
+    if [ "${SEL_CRIT:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 无 Critical 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT} 条 Critical"
+    elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 无 Critical 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical（有历史事件）"
+    else
+        add_item "SEL 无 Critical 事件" "PASS" "无 SEL 事件"
+    fi
+
+    # 5. SEL 无 PCIe 错误
+    if [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 无 PCIe 错误" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
+    else
+        add_item "SEL 无 PCIe 错误" "PASS" "无 PCIe 相关 SEL"
+    fi
+
+    # 6. 内存无降速
+    if [ -n "$MEM_SPEED_NOTE" ]; then
+        add_item "内存运行速率" "WARN" "${MEM_SPEED_NOTE}"
+    else
+        add_item "内存运行速率" "PASS" "标称速率运行（${MEM_SPEED:-N/A}）"
+    fi
+
+    # 7. 线缆配对完整
+    if [ -n "$CABLE_PAIRS" ]; then
+        add_item "IB 线缆配对" "PASS" "${CABLE_PAIRS}"
+    else
+        add_item "IB 线缆配对" "N/A" "无线缆数据（非 IB 平台或旧采集）"
+    fi
+
+    # 8. 磁盘寿命充足（spare 第10列；<90% 提示，<50% FAIL）
+    local disk_warn="" disk_fail=""
+    while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
+        [ -z "$dname" ] && continue
+        local spare_num=$(echo "$dspare" | tr -dc '0-9')
+        if [ -n "$spare_num" ]; then
+            if [ "$spare_num" -lt 50 ] 2>/dev/null; then
+                disk_fail="${disk_fail}${dname}(${dspare}),"
+            elif [ "$spare_num" -lt 90 ] 2>/dev/null; then
+                disk_warn="${disk_warn}${dname}(${dspare}),"
+            fi
+        fi
+    done <<< "$DISK_DETAILS"
+    if [ -n "$disk_fail" ]; then
+        add_item "磁盘寿命" "FAIL" "${disk_fail%,}（寿命不足 50%）"
+    elif [ -n "$disk_warn" ]; then
+        add_item "磁盘寿命" "WARN" "${disk_warn%,}（寿命 <90%，建议关注）"
+    else
+        add_item "磁盘寿命" "PASS" "全部磁盘寿命充足"
+    fi
+
+    # 汇总判定
+    if [ "$fail" -gt 0 ]; then
+        verdict="不合格（${fail} 项 FAIL，需处理后再交付）"
+    elif [ "$warn" -gt 0 ]; then
+        verdict="有条件通过（${warn} 项 WARN，建议记录后交付）"
+    else
+        verdict="合格（全部通过）"
+    fi
+
+    {
+        echo "# HwScope 验收清单（Acceptance Checklist）"
+        echo ""
+        echo "- 机器: ${OUT##*/}"
+        echo "- 生成时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "- 采集版本: ${VERSION:-unknown} / 报告版本: ${REPORT_VERSION:-unknown}"
+        echo ""
+        echo "## 验收项"
+        echo ""
+        echo "| # | 检查项 | 结果 | 说明 |"
+        echo "|---|--------|------|------|"
+        printf '%s' "$rows"
+        echo ""
+        echo "## 结论"
+        echo ""
+        echo "| 项 | 数值 |"
+        echo "|----|------|"
+        echo "| 通过 | ${pass} |"
+        echo "| 警告 | ${warn} |"
+        echo "| 失败 | ${fail} |"
+        echo "| 无数据 | ${na} |"
+        echo "| **判定** | **${verdict}** |"
+        echo ""
+        echo "---"
+        echo "*由 HwScope ${REPORT_VERSION:-unknown} 生成（--acceptance 模式）*"
+    } > "$f"
+    echo -e "${GREEN}[REPORT] 验收清单: ${f}${NC}"
+    echo -e "${GREEN}[REPORT] 判定: ${verdict}${NC}"
+}
+
 case "$FORMAT" in
     --json) gen_json ;;
     --md)   gen_md ;;
     --txt)  gen_txt ;;
+    --acceptance) gen_acceptance ;;
     *)      gen_json; gen_md; gen_txt ;;
 esac
 
