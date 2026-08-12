@@ -84,7 +84,7 @@ run_raid() {
     if [ -n "$raid_buses" ]; then
         local lspci_count=0
         while IFS= read -r bus; do
-            raid_jobs+=("lspci -vvv -s '$bus' 2>/dev/null | head -60" "${dir}/lspci_raid_${lspci_count}.log")
+            raid_jobs+=("lspci -vvv -s '$bus' 2>/dev/null | head -120" "${dir}/lspci_raid_${lspci_count}.log")
             ((lspci_count++))
         done <<< "$raid_buses"
     fi
