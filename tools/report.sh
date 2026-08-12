@@ -481,6 +481,44 @@ mt_model() {
     esac
 }
 NIC_DETAILS=""
+# GPU 直连标注：解析 gpu_topo_nic.log（nvidia-smi topo -m -n）的 GPU↔NIC 矩阵，
+# PIX = 同一 PCIe switch（GPU 直连），NODE = 同 NUMA，SYS = 跨节点
+# NIC0..NICn 按 BDF 升序对应 nic_inventory 中的 PCIe 网卡
+declare -A GPU_DIRECT_NIC
+if [ -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
+    _nic_cols=()
+    _hdr=$(grep -v "^#" "${GPU_DIR}/gpu_topo_nic.log" | grep -E "NIC[0-9]" | head -1)
+    [ -n "$_hdr" ] && _nic_cols=($(echo "$_hdr" | awk '{for(i=1;i<=NF;i++) if($i~/^NIC[0-9]+$/) print $i}'))
+    if [ "${#_nic_cols[@]}" -gt 0 ]; then
+        # 每列 NIC：统计 GPU 行中 PIX 出现次数（任一 GPU 直连即标记）
+        declare -A _nic_pix
+        while IFS= read -r _row; do
+            [ -z "$_row" ] && continue
+            echo "$_row" | grep -qE "^GPU[0-9]+" || continue
+            _idx=0
+            for _col in "${_nic_cols[@]}"; do
+                # 表头以 \t 开头，awk 字段偏移：$1=空 $2=GPU0 ... $10=NIC0
+                _val=$(echo "$_row" | awk -v c=$((10+_idx)) '{print $c}')
+                [ "$_val" = "PIX" ] && _nic_pix[$_col]=1
+                _idx=$((_idx+1))
+            done
+        done < <(grep -v "^#" "${GPU_DIR}/gpu_topo_nic.log")
+        # 映射：topo NIC 列按 BDF 升序 = nic_inventory 中 PCIe 网卡按 BDF 升序
+        _pci_nics=()
+        while IFS='|' read -r _d _bdf _rest; do
+            [ -z "$_d" ] || [ "$_d" = "#" ] && continue
+            echo "$_bdf" | grep -qE "^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$" && _pci_nics+=("$_d|$_bdf")
+        done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
+        # 按 BDF 排序（topo NIC 列序 = BDF 升序）
+        _pci_nics=($(printf '%s\n' "${_pci_nics[@]}" | sort -t'|' -k2))
+        _nn=0
+        for _col in "${_nic_cols[@]}"; do
+            _entry="${_pci_nics[$_nn]:-}"
+            [ -n "$_entry" ] && [ "${_nic_pix[$_col]:-0}" -eq 1 ] && GPU_DIRECT_NIC[${_entry%%|*}]="1"
+            _nn=$((_nn+1))
+        done
+    fi
+fi
 if [ -f "${nic_inventory}" ]; then
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
@@ -508,7 +546,10 @@ if [ -f "${nic_inventory}" ]; then
                 nsn="${nsn} (MAC)"
             fi
         fi
-        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}|${npsid}"$'\n'
+        # GPU 直连标记（topo PIX 判定）
+        local gd_mark=""
+        [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ] && gd_mark="GPU直连"
+        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}|${npsid}|${gd_mark}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
 
@@ -617,9 +658,9 @@ gen_json() {
     # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
     local nic_details_json=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ngd; do
             [ -z "$nnic" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"firmware\": \"${nfw}\", \"speed\": \"${nspd}\", \"width\": \"${nwd}\", \"psid\": \"${npsid}\"},"$'\n'
+            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"firmware\": \"${nfw}\", \"speed\": \"${nspd}\", \"width\": \"${nwd}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},"$'\n'
         done <<< "$NIC_DETAILS"
         nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
     fi
@@ -837,10 +878,10 @@ gen_md() {
     local nic_details_md=""
     if [ -n "$NIC_DETAILS" ]; then
         local nn=0
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ngd; do
             [ -z "$nnic" ] && continue
             nn=$((nn + 1))
-            nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} | ${npsid} |"$'\n'
+            nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} | ${npsid} | ${ngd:-} |"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch Markdown 表
@@ -972,8 +1013,8 @@ $(printf '%s' "$disk_details_md")
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 
 ### 网卡明细
-| # | 接口 | BDF | MAC | SN | 型号 | 固件 | 速率 | 宽度 | PSID |
-|---|------|-----|-----|----|------|------|------|------|------|
+| # | 接口 | BDF | MAC | SN | 型号 | 固件 | 速率 | 宽度 | PSID | 用途 |
+|---|------|-----|-----|----|------|------|------|------|------|------|
 $(printf '%s' "$nic_details_md")
 
 ## BMC
@@ -1075,9 +1116,9 @@ gen_txt() {
     # 网卡明细纯文本
     local nic_details_txt=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ngd; do
             [ -z "$nnic" ] && continue
-            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  ${nspd}/${nwd}  PSID:${npsid}"$'\n'
+            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  ${nspd}/${nwd}  PSID:${npsid}  ${ngd:-}"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch 纯文本
