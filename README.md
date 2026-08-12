@@ -124,7 +124,7 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `net_dhcp.sh` | 一键配置网口 DHCP 自动获取 IP（识别物理网口/自动选择/写 netplan） | netplan（Ubuntu 24.04） |
 | `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT），apt/dnf 自动识别 | - |
 | `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
-| `report.sh` | 从采集结果提取关键信息，生成 json/md/txt 汇总报告（含明细表：内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇） | 采集完成后自动调用 |
+| `report.sh` | 从采集结果提取关键信息，生成 json/md/txt 汇总报告（含明细表：内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇 + 术语表；网卡含 GPU直连 标记，PSU 含实时功率） | 采集完成后自动调用 |
 | `cable_map.sh` | 线缆拓扑图（BDF↔mlx5 映射 + EEPROM serial 线缆配对） | mlxlink |
 | `firmware_check.sh` | 固件版本核对（GPU VBIOS/BMC/CX8/NVSwitch），支持基线保存+对比 | nvidia-smi, ipmitool |
 | `nvlink_verify.sh` | NVLink 完整性校验（全互联验证 + CRC 错误 + 降级链路检测） | nvidia-smi |
@@ -276,6 +276,7 @@ MODULE_GPU=1; MODULE_STORAGE=1; MODULE_OS=1 ...
 - **双层并行** — 模块间 + 模块内命令并发；`--no-parallel` 可降级
 - **manifest 解耦** — 模块声明输出文件，报告生成器读 manifest，改文件名不连累报告
 - **9 张明细表** — 内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇，JSON+MD+TXT 三格式
+- **报告术语表** — 末尾附 IB 速率/GPU直连/DCGM/SXM 等术语解释，非运维人员也能读懂报告
 
 ## License
 
