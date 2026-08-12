@@ -843,6 +843,48 @@ EOF
     echo -e "${GREEN}[REPORT] JSON: ${f}${NC}"
 }
 
+# ─── 术语说明（交付报告末尾，解释报告内出现的专业词） ───
+GLOSSARY_ENTRIES=(
+    "IB|InfiniBand，高速互联网络（GPU/存储集群专用），速率代际 SDR→DDR→QDR→FDR→EDR→HDR→NDR→XDR 每代翻倍"
+    "SDR/DDR/QDR/FDR/EDR/HDR/NDR/XDR|IB 速率代际：分别对应 10G/20G/40G/56G/100G/200G/400G/800G（单口 4X 计）"
+    "标称速率|网卡硬件支持的最大速率（固件声明，无需接线即可读取）"
+    "实际速率|当前链路协商速率（取决于对端交换机/线缆，未接为 Down）"
+    "GPU直连|网卡与 GPU 处于同一 PCIe Switch（PIX），可做 GPU Direct RDMA 高速通信"
+    "PIX/NODE/SYS|PCIe 拓扑连接类型：PIX=同一 Switch 直连，NODE=同 CPU/NUMA 节点，SYS=跨节点（延迟递增）"
+    "NVLink|NVIDIA GPU 间高速互联总线（B300 每卡 18 条，53.125 GB/s/条）"
+    "NVSwitch|NVLink 交换芯片，连接多卡实现全互联（B300 集成于 GPU 模块内）"
+    "DCGM|NVIDIA Data Center GPU Manager，GPU 诊断工具（dcgmi diag）"
+    "Persistence Mode|GPU 常驻模式；未开启时 DCGM 报配置类 Fail（非硬件故障）"
+    "SEL|System Event Log，BMC 记录的系统事件日志（含硬件告警）"
+    "BMC|基板管理控制器，服务器带外管理（IPMI/Redfish 远程管理接口）"
+    "SXM|NVIDIA 数据中心 GPU 模块化形态（非 PCIe 插卡），如 B300 SXM6"
+    "PSID|网卡产品 ID（Mellanox 卡标识，用于固件匹配）"
+    "Rank|内存 Bank 分组，Rank 2 = 双列（每 DIMM 2 组存储阵列）"
+    "DAC|Direct Attach Cable，铜缆直连线（短距高速连接）"
+    "MT/s|Mega Transfers per second，内存每通道每秒传输次数（DDR5 常见 6400 MT/s）"
+    "退役行(Remapped Rows)|GPU 显存中检测到故障后自动重映射隐藏的行，计数>0 提示显存健康问题"
+)
+
+glossary_md() {
+    local out=""
+    local i=0
+    for entry in "${GLOSSARY_ENTRIES[@]}"; do
+        IFS='|' read -r term def <<< "$entry"
+        out="${out}| **${term}** | ${def} |"$'\n'
+        ((i++))
+    done
+    printf '%s' "$out"
+}
+
+glossary_txt() {
+    local out=""
+    for entry in "${GLOSSARY_ENTRIES[@]}"; do
+        IFS='|' read -r term def <<< "$entry"
+        out="${out}  ${term}: ${def}"$'\n'
+    done
+    printf '%s' "$out"
+}
+
 # ─── 生成 Markdown ───
 gen_md() {
     local f="${OUT}/hwscope_report.md"
@@ -1079,6 +1121,12 @@ $(if [ -n "$nvs_md" ]; then printf '%s' "$nvs_md"; else echo "| 无数据 | — 
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
 
 ---
+## 术语说明
+
+| 术语 | 说明 |
+|------|------|
+$(glossary_md)
+---
 *由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）*
 EOF
     echo -e "${GREEN}[REPORT] MD: ${f}${NC}"
@@ -1265,6 +1313,8 @@ $(if [ -n "$nvs_txt" ]; then printf '%s' "$nvs_txt"; else echo "  无数据"; fi
   SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
   线缆配对 : ${CABLE_PAIRS:-N/A}
 
+[术语说明]
+$(glossary_txt)
 --------------------------------------------
 由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）
 EOF
