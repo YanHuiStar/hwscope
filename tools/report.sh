@@ -580,8 +580,16 @@ fi
 # 只保留 PSU 行（PSU1_FRU/PSU4_FRU/Power Supply），过滤风扇/背板/PDB 等其他 FRU
 PSU_DIR="${OUT}/psu"
 load_manifest "${PSU_DIR}" ipmi_psu_fru "ipmi_psu_fru.log"
+# 采集端 head -80 可能截断 FRU 列表（B300 23+ FRU，PSU9 排末尾被切）：
+# psu 目录日志 PSU 数 < BMC 完整日志时，fallback 用 bmc/ipmi_fru_all.log（无截断）
+_fru_src="${ipmi_psu_fru}"
+if [ -f "$_fru_src" ] && [ -f "${OUT}/bmc/ipmi_fru_all.log" ]; then
+    _n_psu=$(grep -c "FRU Device Description : PSU" "$_fru_src" 2>/dev/null)
+    _n_full=$(grep -c "FRU Device Description : PSU" "${OUT}/bmc/ipmi_fru_all.log" 2>/dev/null)
+    [ "${_n_full:-0}" -gt "${_n_psu:-0}" ] && _fru_src="${OUT}/bmc/ipmi_fru_all.log"
+fi
 PSU_DETAILS=""
-if [ -f "${ipmi_psu_fru}" ]; then
+if [ -f "$_fru_src" ]; then
     pdesc=""; pmodel=""; ppn=""; psn=""; pending=""
     while IFS= read -r pline; do
         case "$pline" in
@@ -592,7 +600,7 @@ if [ -f "${ipmi_psu_fru}" ]; then
             *"Product Part Number"*)   ppn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
             *"Product Serial"*)        psn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
         esac
-    done < <(grep -v "^#" "${ipmi_psu_fru}" 2>/dev/null)
+    done < <(grep -v "^#" "$_fru_src" 2>/dev/null)
     [ -n "$pending" ] && PSU_DETAILS="${PSU_DETAILS}${pending}${ppn:-N/A}|${psn:-N/A}"$'\n'
     # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）
     PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|Power Supply")
