@@ -42,11 +42,11 @@ load_manifest() {
         local val
         val=$(grep "^${key}=" "$manifest" 2>/dev/null | tail -1 | cut -d'=' -f2-)
         if [ -n "$val" ]; then
-            eval "${key}=\"${dir}/${val}\""
+            declare -g "${key}=${dir}/${val}"
             return
         fi
     fi
-    eval "${key}=\"${dir}/${default}\""
+    declare -g "${key}=${dir}/${default}"
 }
 
 # ─── 收集基础信息 ───

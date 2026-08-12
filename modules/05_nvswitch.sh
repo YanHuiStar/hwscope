@@ -19,10 +19,20 @@ run_nvswitch() {
     if check_cmd nvswitch; then
         run_and_log "nvswitch -q" "${dir}/nvswitch_all.log"
 
-        # 每个 NVSwitch 单独（通常 4 颗）
-        for i in 0 1 2 3; do
-            run_and_log "nvswitch -q -i $i" "${dir}/nvswitch_${i}.log"
+        # 每个 NVSwitch 单独采集：动态枚举（逐个 index 探测直至失败，
+        # 适配不同型号数量差异：HGX 4颗/B300 6颗/GB300 更多，禁止硬编码）
+        # 双保险：exit code 非零 或 输出含 Invalid/not found → 结束枚举
+        local ns_idx=0
+        while [ "$ns_idx" -lt 32 ]; do
+            local ns_out
+            ns_out=$(nvswitch -q -i "$ns_idx" 2>&1)
+            if [ $? -ne 0 ] || echo "$ns_out" | grep -qiE "invalid|not found|failed"; then
+                break
+            fi
+            run_and_log "nvswitch -q -i ${ns_idx}" "${dir}/nvswitch_${ns_idx}.log"
+            ((ns_idx++))
         done
+        [ "$ns_idx" -eq 0 ] && echo -e "${YELLOW}[WARN] nvswitch -q -i 0 失败，无法枚举 NVSwitch${NC}"
 
         # NVSwitch 版本
         run_and_log "nvswitch --version 2>&1" "${dir}/nvswitch_version.log"

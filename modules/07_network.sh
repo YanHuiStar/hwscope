@@ -16,13 +16,6 @@ run_network() {
     module_start "$MODULE_NAME"
 
     # ─── InfiniBand + Mellanox / NVIDIA NIC 工具（并行） ───
-    if ! check_cmd ibstat; then
-        echo -e "${YELLOW}[SKIP] ibstat not found${NC}"
-    fi
-    if ! check_cmd mlxfwmanager; then
-        echo -e "${YELLOW}[SKIP] mlxfwmanager not found${NC}"
-    fi
-
     local ib_jobs=()
     check_cmd ibstat       && ib_jobs+=("ibstat" "${dir}/ibstat.log")
     check_cmd ibstatus     && ib_jobs+=("ibstatus" "${dir}/ibstatus.log")
@@ -32,7 +25,8 @@ run_network() {
     if check_cmd mlxconfig; then
         ib_jobs+=("mlxconfig query" "${dir}/mlxconfig.log")
         # 每口 LINK_TYPE 模式（IB/ETH/VPI，现场判断网络模式的关键）
-        local mlx_cfg_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5 | head -12)
+        # 动态枚举全部 mlx5 设备（禁止 head 截断：B300 高密度节点 12+ 个）
+        local mlx_cfg_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
         for cfg_dev in $mlx_cfg_devs; do
             ib_jobs+=("mlxconfig query -d ${cfg_dev} 2>/dev/null | grep -E 'LINK_TYPE_P[12]'" "${dir}/mlxconfig_${cfg_dev}_linktype.log")
         done
@@ -99,7 +93,7 @@ run_network() {
             [ -z "$nbdf" ] && nbdf=$(basename "$ndev_path" | sed 's/^0000://')
             local nmac=$(cat "/sys/class/net/${ndev}/address" 2>/dev/null)
             # IB 长地址取后 6 字节
-            if [ ${#nmac} -gt 17 ]; then
+            if [ "${#nmac}" -gt 17 ]; then
                 nmac=$(echo "$nmac" | awk -F: '{for(i=13;i<=NF;i++) printf "%s%s", $i, (i<NF?":":"")}')
             fi
             local nsn=$(cat "/sys/class/net/${ndev}/device/serial" 2>/dev/null)
