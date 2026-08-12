@@ -38,6 +38,23 @@ run_nvswitch() {
         run_and_log "nvswitch --version 2>&1" "${dir}/nvswitch_version.log"
     else
         echo -e "${YELLOW}[SKIP] nvswitch command not found${NC}"
+        # ─── B300/GB300 fallback：NVSwitch 集成在 GPU 模块内，无独立 nvswitch CLI，
+        # 用 nvidia-smi nvlink 错误计数 + DCGM NVSwitch 查询补充 ───
+        if check_cmd nvidia-smi; then
+            run_and_log "nvidia-smi nvlink --error_count" "${dir}/nvlink_error_count.log"
+        fi
+        if check_cmd dcgmi && dcgmi nvswitch -l >/dev/null 2>&1; then
+            run_and_log "dcgmi nvswitch -l" "${dir}/dcgmi_nvswitch_list.log"
+            local dcgm_ns=0
+            while [ "$dcgm_ns" -lt 16 ]; do
+                if dcgmi nvswitch -i "$dcgm_ns" -g >/dev/null 2>&1; then
+                    run_and_log "dcgmi nvswitch -i ${dcgm_ns} -g" "${dir}/dcgmi_nvswitch_${dcgm_ns}.log"
+                else
+                    break
+                fi
+                ((dcgm_ns++))
+            done
+        fi
     fi
 
     # 4~5. Fabric Manager 相关（独立于 nvswitch 命令，条件执行）
@@ -48,12 +65,15 @@ run_nvswitch() {
         run_and_log "systemctl status nvidia-fabricmanager 2>&1 | head -40" "${dir}/fabricmanager_service.log"
     fi
 
-# NOTE: nvswitch_N.log are generated per NVSwitch (N=0,1,2,3)
+# NOTE: nvswitch_N.log are generated per NVSwitch (N=0,1,...)
+#       nvlink_error_count.log / dcgmi_nvswitch_*.log are B300/GB300 fallback (no nvswitch CLI)
     write_manifest "${dir}/manifest.txt" \
         "nvswitch_all" "nvswitch_all.log" \
         "nvswitch_version" "nvswitch_version.log" \
         "fabricmanager_version" "fabricmanager_version.log" \
-        "fabricmanager_service" "fabricmanager_service.log"
+        "fabricmanager_service" "fabricmanager_service.log" \
+        "nvlink_error_count" "nvlink_error_count.log" \
+        "dcgmi_nvswitch_list" "dcgmi_nvswitch_list.log"
 
     module_end "$MODULE_NAME"
 }
