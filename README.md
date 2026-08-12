@@ -268,6 +268,7 @@ MODULE_GPU=1; MODULE_STORAGE=1; MODULE_OS=1 ...
 
 - **逐件独立** — 每组件独立模块，互不耦合，可单独执行
 - **只读无害** — 全部只读查询，不写不改
+- **全量采集** — 需要全量的数据全量落盘，采集命令只过滤不截断（grep 过滤、不 head/tail 行数截断），保证数据真实可回溯；报告端按需截取展示
 - **自动跳过** — 工具未安装静默跳过，不中断
 - **无压测** — DCGM 仅 Level 1 纯获取
 - **平台自适配** — x86/ARM、SXM/PCIe 自动识别（SXM 四重检测：nvswitch CLI → lspci NVSwitch → nv-fabricmanager 进程 + NVLink 交叉验证）
