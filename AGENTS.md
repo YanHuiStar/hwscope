@@ -14,6 +14,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - `hwscope.sh` — 主入口：参数解析、平台检测、串行/并行执行、汇总、归档
 - `lib/common.sh` — 公共函数：run_and_log / run_and_log_parallel / write_manifest / check_cmd / module_start / WARN 计数
 - `lib/platform.sh` — 平台检测：detect_machine_id / detect_platform / ipmi_preheat
+- `lib/nvlink.sh` — NVLink 拓扑解析库（纯解析，不执行命令；供 nvlink_verify.sh / report.sh 调用）
 - `modules/*.sh` — 15 个采集模块（01_motherboard … 99_os），每个一物理组件
 - `conf/hwscope.conf` — 模块开关、BMC 凭据、输出目录配置
 - `test/` — 硬件压测脚本（cpu/memory/disk/network），只测不改
@@ -72,7 +73,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 ## 报告与归档
 
-- 采集完成自动调用 `tools/report.sh`：从各模块日志提取关键字段，生成 `hwscope_report.{json,md,txt}` 三件套（含 9 张明细表：内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇；内存明细含 Rank，PSU 明细含实时输入功率）
+- 采集完成自动调用 `tools/report.sh`：从各模块日志提取关键字段，生成 `hwscope_report.{json,md,txt}` 三件套（含 9 张明细表：内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇；内存明细含 Rank，PSU 明细含实时输入功率，网卡明细含 GPU直连 标记 + 报告末尾术语表）
 - 报告**只读日志、不重新采集**，可对同一份数据反复生成；日志缺失字段显示 N/A
 - 双压缩包：`logs/<SN>-<ARCHIVE_TS>.tar.gz`（详细分级日志）+ `logs/report/<SN>-<ARCHIVE_TS>-report.tar.gz`（报告三件套），共用同一 `ARCHIVE_TS` 变量（勿各自调 date，时间戳必须一致）
 - 修改 report.sh 后必须用真实采集数据回归验证（桌面有 HGX B200 / B300 两份样例数据）
