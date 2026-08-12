@@ -318,6 +318,40 @@ load_manifest "${NET_DIR}" nic_inventory "nic_inventory.csv"
 IB_COUNT=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
 IB_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | tail -1)
 [ -n "$IB_SPEED" ] && IB_SPEED="${IB_SPEED} Gb/s"
+
+# 标称速率（卡能力，无需接线）：解析 mlxlink Enabled Link Speed 位图，取最大速率族
+# Mellanox 位图: bit0=SDR(10G) bit1=DDR(20G) bit2=QDR(40G) bit3=FDR10(40G) bit4=FDR(56G)
+#                bit5=EDR(100G) bit6=HDR(200G) bit7=NDR(400G) bit8=XDR(800G) bit9=GDR(1600G)
+IB_NOMINAL="N/A"
+_NOMINAL_SPEEDS=()
+for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do
+    [ -f "$f" ] || continue
+    _hex=$(grep -m1 "Enabled Link Speed" "$f" 2>/dev/null | grep -oE "0x[0-9a-fA-F]+" | head -1)
+    [ -z "$_hex" ] && continue
+    # 纯 bash 十六进制解码（兼容 mawk/gawk）
+    _v=$((_hex & 0x3ff)) 2>/dev/null || continue
+    # 解码最大速率族（从高位往下找第一个置位 bit）
+    _nom="N/A"
+    if [ $((_v & 0x200)) -ne 0 ]; then _nom="1600G (GDR)"
+    elif [ $((_v & 0x100)) -ne 0 ]; then _nom="800G (XDR)"
+    elif [ $((_v & 0x80)) -ne 0 ]; then _nom="400G (NDR)"
+    elif [ $((_v & 0x40)) -ne 0 ]; then _nom="200G (HDR)"
+    elif [ $((_v & 0x20)) -ne 0 ]; then _nom="100G (EDR)"
+    elif [ $((_v & 0x10)) -ne 0 ]; then _nom="56G (FDR)"
+    elif [ $((_v & 0x04)) -ne 0 ]; then _nom="40G (QDR)"
+    elif [ $((_v & 0x02)) -ne 0 ]; then _nom="20G (DDR)"
+    elif [ $((_v & 0x01)) -ne 0 ]; then _nom="10G (SDR)"
+    fi
+    _NOMINAL_SPEEDS+=("$_nom")
+done
+# 取所有口中最大标称速率
+if [ "${#_NOMINAL_SPEEDS[@]}" -gt 0 ]; then
+    for _s in "${_NOMINAL_SPEEDS[@]}"; do
+        _g=$(echo "$_s" | grep -oE "^[0-9]+" || echo 0)
+        _cur=$(echo "$IB_NOMINAL" | grep -oE "^[0-9]+" || echo 0)
+        [ "${_g:-0}" -gt "${_cur:-0}" ] 2>/dev/null && IB_NOMINAL="$_s"
+    done
+fi
 ETH_LINK_UP=$(grep -h "Link detected: yes" "${NET_DIR}"/ethtool_*.log 2>/dev/null | wc -l)
 
 # 线缆类型检测（DAC 铜缆 / 光模块 / 空口）
@@ -703,6 +737,7 @@ ${disk_details_json}
   "network": {
     "ib_devices": "${IB_COUNT:-0}",
     "ib_speed": "${IB_SPEED:-N/A}",
+    "ib_nominal_speed": "${IB_NOMINAL:-N/A}",
     "eth_link_up": "${ETH_LINK_UP:-0}",
     "cables": "${CABLE_SUMMARY:-N/A}",
     "cable_pairs": "${CABLE_PAIRS:-N/A}",
@@ -929,7 +964,8 @@ $(printf '%s' "$disk_details_md")
 | 项 | 值 |
 |----|----|
 | IB 设备数 | ${IB_COUNT:-0} |
-| IB 速率 | ${IB_SPEED:-N/A} |
+| IB 标称速率 | ${IB_NOMINAL:-N/A} |
+| IB 实际速率 | ${IB_SPEED:-N/A} |
 | 线缆类型 | ${CABLE_SUMMARY:-N/A} |
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
 | 端口模式 | ${LINKTYPE_SUMMARY:-N/A} |
@@ -1137,7 +1173,8 @@ $(printf '%s' "$disk_details_txt")
 
 [网络]
   IB设备 : ${IB_COUNT:-0}
-  IB速率 : ${IB_SPEED:-N/A}
+  标称速率: ${IB_NOMINAL:-N/A}
+  实际速率: ${IB_SPEED:-N/A}
   线缆   : ${CABLE_SUMMARY:-N/A}
   配对   : ${CABLE_PAIRS:-N/A}
   端口模式: ${LINKTYPE_SUMMARY:-N/A}
