@@ -121,14 +121,19 @@ run_network() {
             if check_cmd ethtool; then
                 nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | awk '{print $2}')
             fi
-            local nspd="N/A" nwd="N/A"
+            local nspd="N/A" nwd="N/A" ncap_spd="N/A" ncap_wd="N/A"
             if check_cmd lspci; then
                 local lnksta=$(lspci -vv -s "$nbdf" 2>/dev/null | grep "LnkSta:" | head -1)
                 nspd=$(echo "$lnksta" | grep -oE "[0-9]+GT/s" | head -1)
                 nwd=$(echo "$lnksta" | grep -oE "x[0-9]+" | head -1)
+                # LnkCap（能力上限）— 标注检测值 vs 规格，客户可见当前协商与卡能力差异
+                local lnkcap=$(lspci -vv -s "$nbdf" 2>/dev/null | grep "LnkCap:" | head -1)
+                ncap_spd=$(echo "$lnkcap" | grep -oE "[0-9]+GT/s" | head -1)
+                ncap_wd=$(echo "$lnkcap" | grep -oE "x[0-9]+" | head -1)
             fi
             [ -z "$nspd" ] && nspd="N/A"; [ -z "$nwd" ] && nwd="N/A"
-            echo "${ndev}|${nbdf}|${nmac:-N/A}|${nsn}|${npn:-N/A}|${nfw}|${nspd}|${nwd}|${npsid}"
+            [ -z "$ncap_spd" ] && ncap_spd="N/A"; [ -z "$ncap_wd" ] && ncap_wd="N/A"
+            echo "${ndev}|${nbdf}|${nmac:-N/A}|${nsn}|${npn:-N/A}|${nfw}|${nspd}|${nwd}|${npsid}|${ncap_spd}|${ncap_wd}"
         done
     } > "${dir}/nic_inventory.csv" 2>/dev/null || true
 

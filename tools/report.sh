@@ -279,7 +279,24 @@ if [ -f "${disk_inventory}" ]; then
         [ -z "$dname" ] || [ "$dname" = "N/A" ] && continue
         [ "$dname" = "#" ] && continue
         [ "$dname" = "$SYS_DISK" ] && continue   # 默认排除系统盘
-        DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}"$'\n'
+        # 标称容量（型号→规格映射，标注检测值 vs 标称差异；未知型号留空）
+        local dspec=""
+        case "$dmodel" in
+            *MZWL61T9HFLT*|*MZWL61T9HBLN*) dspec="标称1.92TB" ;;
+            *MZWL63T8HFLT*|*MZWL63T8HBLN*) dspec="标称3.84TB" ;;
+            *MZWL67T6HFLT*) dspec="标称7.68TB" ;;
+            *MZ7L31T9*|*MZ7LH1T9*) dspec="标称1.92TB" ;;
+            *MZ7L33T8*|*MZ7LH3T8*) dspec="标称3.84TB" ;;
+            *MZ7L37T6*) dspec="标称7.68TB" ;;
+            *MZQL21T9*) dspec="标称1.92TB" ;;
+            *MZQL23T8*) dspec="标称3.84TB" ;;
+            *MZQL27T6*) dspec="标称7.68TB" ;;
+            *MZIL21T6*) dspec="标称1.6TB" ;;
+            *MZIL23T8*) dspec="标称3.2TB" ;;
+            *MZIL27T6*) dspec="标称6.4TB" ;;
+            *) dspec="" ;;
+        esac
+        DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}|${dspec}"$'\n'
     done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
 fi
 
@@ -531,7 +548,7 @@ if [ -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
     fi
 fi
 if [ -f "${nic_inventory}" ]; then
-    while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid; do
+    while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ncapspd ncapwd; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
         # 非 PCIe BDF（如 USB 路径 3-1.5:2.0）标记为 USB，避免误当 PCIe 槽位
@@ -560,7 +577,18 @@ if [ -f "${nic_inventory}" ]; then
         # GPU 直连标记（topo PIX 判定）
         local gd_mark=""
         [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ] && gd_mark="GPU直连"
-        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${nspd}|${nwd}|${npsid}|${gd_mark}"$'\n'
+        # PCIe 能力（LnkCap）与当前（LnkSta）合并显示：当前一致时只显当前，不一致标注能力
+        local npcie_cap=""
+        if [ -n "$ncapspd" ] && [ "$ncapspd" != "N/A" ]; then
+            if [ "$nspd" = "$ncapspd" ] && [ "$nwd" = "$ncapwd" ]; then
+                npcie_cap="${nspd}/${nwd}"
+            else
+                npcie_cap="${nspd}/${nwd} (能力 ${ncapspd}/${ncapwd})"
+            fi
+        else
+            npcie_cap="${nspd}/${nwd}"
+        fi
+        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
 
@@ -635,8 +663,26 @@ if [ -f "$_fru_src" ]; then
                     desc=f[1]
                     pnum=""
                     if(desc ~ /PSU[0-9]+/) { pnum=desc; sub(/.*PSU/, "", pnum); sub(/[^0-9].*/, "", pnum) }
-                    if(pnum!="" && (pnum in power)) print line "|" power[pnum]
-                    else print line "|N/A"
+                    # 标称容量：从型号解析（DLG3200=3200W, DLG2600=2600W, DLG2000=2000W, DLG1600=1600W...）
+                    model=f[2]
+                    cap=""
+                    if(model ~ /3200/) cap="3200W"
+                    else if(model ~ /2600/) cap="2600W"
+                    else if(model ~ /2200/) cap="2200W"
+                    else if(model ~ /2000/) cap="2000W"
+                    else if(model ~ /1600/) cap="1600W"
+                    else if(model ~ /1400/) cap="1400W"
+                    else if(model ~ /1300/) cap="1300W"
+                    else if(model ~ /1200/) cap="1200W"
+                    else if(model ~ /1000/) cap="1000W"
+                    else if(model ~ /800/) cap="800W"
+                    else if(model ~ /550/) cap="550W"
+                    else if(model ~ /500/) cap="500W"
+                    else cap="N/A"
+                    cur_power="N/A"
+                    if(pnum!="" && (pnum in power)) cur_power=power[pnum]
+                    if(cap!="N/A") print line "|" cap "|" cur_power
+                    else print line "|N/A|" cur_power
                 }
             }' "$psu_power_csv")
     fi
@@ -668,18 +714,18 @@ gen_json() {
     # 盘明细 JSON 数组（name|type|size|model|sn|fw|bdf|power_on）
     local disk_details_json=""
     if [ -n "$DISK_DETAILS" ]; then
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
             [ -z "$dname" ] && continue
-            disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\", \"power_cyc\": \"${dpc}\", \"spare\": \"${dspare}\"},"$'\n'
+            disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\", \"power_cyc\": \"${dpc}\", \"spare\": \"${dspare}\", \"size_spec\": \"${dspec}\"},"$'\n'
         done <<< "$DISK_DETAILS"
         disk_details_json=$(printf '%s' "$disk_details_json" | sed '$ s/,$//')
     fi
     # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
     local nic_details_json=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ngd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd; do
             [ -z "$nnic" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"firmware\": \"${nfw}\", \"speed\": \"${nspd}\", \"width\": \"${nwd}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},"$'\n'
+            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"firmware\": \"${nfw}\", \"pcie\": \"${npcie}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},"$'\n'
         done <<< "$NIC_DETAILS"
         nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
     fi
@@ -838,11 +884,11 @@ fi)
     "details": [
 $(if [ -n "$PSU_DETAILS" ]; then
     local pseq=0
-    while IFS='|' read -r pdesc pmodel ppn psn ppower; do
+    while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s", "power_in": "%s"},' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${ppower:-N/A}"
-        printf '\n'
+        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s", "capacity": "%s", "power_in": "%s"},' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
+        echo ""
     done <<< "$PSU_DETAILS" | sed '$ s/,$//'
 fi)
     ]
@@ -930,20 +976,20 @@ gen_md() {
     local disk_details_md=""
     if [ -n "$DISK_DETAILS" ]; then
         local dn=0
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
             [ -z "$dname" ] && continue
             dn=$((dn + 1))
-            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc} | ${dspare} |"$'\n'
+            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc} | ${dspare} | ${dspec:-} |"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细 Markdown 表
     local nic_details_md=""
     if [ -n "$NIC_DETAILS" ]; then
         local nn=0
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ngd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd; do
             [ -z "$nnic" ] && continue
             nn=$((nn + 1))
-            nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${nspd} | ${nwd} | ${npsid} | ${ngd:-} |"$'\n'
+            nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${npcie} | ${npsid} | ${ngd:-} |"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch Markdown 表
@@ -1059,8 +1105,8 @@ $(printf '%s' "$gpu_details_md")
 | 系统盘(已排除) | ${SYS_DISK:-N/A} |
 
 ### 盘明细
-| # | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% |
-|---|------|------|------|------|----|------|-----|---------|----------|-------|
+| # | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% | 标称 |
+|---|------|------|------|------|----|------|-----|---------|----------|-------|------|
 $(printf '%s' "$disk_details_md")
 
 ## 网络
@@ -1075,7 +1121,7 @@ $(printf '%s' "$disk_details_md")
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 
 ### 网卡明细
-| # | 接口 | BDF | MAC | SN | 型号 | 固件 | 速率 | 宽度 | PSID | 用途 |
+| # | 接口 | BDF | MAC | SN | 型号 | 固件 | PCIe | PSID | 用途 |
 |---|------|-----|-----|----|------|------|------|------|------|------|
 $(printf '%s' "$nic_details_md")
 
@@ -1115,14 +1161,14 @@ $(if [ -n "$FAN_DETAILS" ]; then
 fi)
 
 ## 电源 PSU
-| # | 描述 | 型号 | 部件号 | 序列号 | 输入功率 |
-|----|------|------|--------|--------|---------|
+| # | 描述 | 型号 | 部件号 | 序列号 | 标称容量 | 当前功耗 |
+|----|------|------|--------|--------|---------|---------|
 $(if [ -n "$PSU_DETAILS" ]; then
     local pseq=0
-    while IFS='|' read -r pdesc pmodel ppn psn ppower; do
+    while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '| %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${ppower:-N/A}"
+        printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 fi)
 
@@ -1180,17 +1226,17 @@ gen_txt() {
     # 盘明细纯文本
     local disk_details_txt=""
     if [ -n "$DISK_DETAILS" ]; then
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
             [ -z "$dname" ] && continue
-            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}  spare:${dspare}"$'\n'
+            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}  spare:${dspare}  ${dspec:-}"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细纯文本
     local nic_details_txt=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ngd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd; do
             [ -z "$nnic" ] && continue
-            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  ${nspd}/${nwd}  PSID:${npsid}  ${ngd:-}"$'\n'
+            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe:${npcie}  PSID:${npsid}  ${ngd:-}"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch 纯文本
@@ -1320,10 +1366,10 @@ fi)
 [电源PSU]
 $(if [ -n "$PSU_DETAILS" ]; then
     local pseq=0
-    while IFS='|' read -r pdesc pmodel ppn psn ppower; do
+    while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '  %s. %s  %s  PN:%s  SN:%s  功率:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${ppower:-N/A}"
+        printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 else echo "  N/A"; fi)
 
