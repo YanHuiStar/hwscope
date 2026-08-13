@@ -737,6 +737,24 @@ if [ -f "$_fru_src" ]; then
     fi
 fi
 
+# ─── RAID 控制器（storcli_controllers.log：有卡才显示，无卡段隐藏） ───
+RAID_DIR="${OUT}/raid"
+RAID_DETAILS=""
+load_manifest "${RAID_DIR}" storcli_controllers "storcli_controllers.log"
+if [ -f "${storcli_controllers}" ] && grep -q "Controller = " "${storcli_controllers}" 2>/dev/null; then
+    # 每个控制器：从 ctrl<N>_summary.log 提取 Model/SN/Firmware；虚拟盘数从 ctrl<N>_info.log 统计
+    raidx=0
+    while [ -f "${RAID_DIR}/ctrl${raidx}_summary.log" ]; do
+        rmodel=$(grep -m1 -iE "^Model|Product Name" "${RAID_DIR}/ctrl${raidx}_summary.log" 2>/dev/null | awk -F'= ' '{print $2}' | xargs)
+        rsn=$(grep -m1 -iE "Serial Number" "${RAID_DIR}/ctrl${raidx}_summary.log" 2>/dev/null | awk -F'= ' '{print $2}' | xargs)
+        rfw=$(grep -m1 -iE "Firmware" "${RAID_DIR}/ctrl${raidx}_summary.log" 2>/dev/null | awk -F'= ' '{print $2}' | xargs)
+        rvd=$(grep -cE "VD [0-9]+|/v[0-9]+" "${RAID_DIR}/ctrl${raidx}_vd_all.log" 2>/dev/null)
+        [ -z "$rvd" ] && rvd=0
+        RAID_DETAILS="${RAID_DETAILS}c${raidx}|${rmodel:-N/A}|${rsn:-N/A}|${rfw:-N/A}|${rvd}"$'\n'
+        raidx=$((raidx + 1))
+    done
+fi
+
 # ─── 生成 JSON ───
 gen_json() {
     local f="${OUT}/hwscope_report.json"
@@ -946,6 +964,14 @@ $(if [ -n "$PSU_DETAILS" ]; then
 fi)
     ]
   },
+  "raid": [
+$(if [ -n "$RAID_DETAILS" ]; then
+    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd; do
+        [ -z "$ridx" ] && continue
+        printf '    {"controller": "%s", "model": "%s", "serial": "%s", "firmware": "%s", "virtual_disks": "%s"},\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd"
+    done | sed '$ s/,$//'
+fi)
+  ],
   "nvswitch": [
 $(printf '%s' "$nvs_json")
   ],
@@ -1237,6 +1263,18 @@ $(if [ -n "$PSU_DETAILS" ]; then
     done <<< "$PSU_DETAILS"
 fi)
 
+$(if [ -n "$RAID_DETAILS" ]; then
+    local rseq=0
+    echo "## RAID 控制器"
+    echo "| # | 控制器 | 型号 | SN | 固件 | 虚拟盘数 |"
+    echo "|---|--------|------|----|------|---------|"
+    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd; do
+        [ -z "$ridx" ] && continue
+        rseq=$((rseq + 1))
+        echo "| ${rseq} | ${ridx} | ${rmodel} | ${rsn} | ${rfw} | ${rvd} |"
+    done
+fi)
+
 $(if [ -n "$nvs_md" ]; then
     echo "## NVSwitch"
     echo "| 编号 | 状态 | 温度 | 活动/总端口 |"
@@ -1448,6 +1486,14 @@ $(if [ -n "$PSU_DETAILS" ]; then
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 else echo "  N/A"; fi)
+
+$(if [ -n "$RAID_DETAILS" ]; then
+    echo "[RAID控制器]"
+    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd; do
+        [ -z "$ridx" ] && continue
+        printf '  %s  %s  SN:%s  固件:%s  虚拟盘:%s\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd"
+    done
+fi)
 
 $(if [ -n "$nvs_txt" ]; then
     echo "[NVSwitch]"
