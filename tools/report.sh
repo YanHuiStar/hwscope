@@ -130,7 +130,7 @@ fi
 MEM_DIR="${OUT}/memory"
 load_manifest "${MEM_DIR}" proc_meminfo "proc_meminfo.log"
 load_manifest "${MEM_DIR}" dmidecode_memory_full "dmidecode_memory_full.log"
-MEM_TOTAL=$(grep -m1 "MemTotal" "${proc_meminfo}" 2>/dev/null | awk '{printf "%.1f GB", $2/1024/1024}')
+MEM_TOTAL=$(grep -m1 "MemTotal" "${proc_meminfo}" 2>/dev/null | awk '{printf "%.1f GiB", $2/1024/1024}')
 # 速率：优先取实际运行速率（Configured Memory Speed），fallback 标称 Speed
 MEM_SPEED=$(extract "Configured Memory Speed" "${dmidecode_memory_full}")
 [ -z "$MEM_SPEED" ] && MEM_SPEED=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
@@ -164,6 +164,11 @@ if [ -f "${dmidecode_memory_full}" ]; then
         in_dimm && /^[[:space:]]*Rank:/              {rank=$0; sub(/^[[:space:]]*Rank:[[:space:]]*/,"",rank); next}
         in_dimm && /^[[:space:]]*$/ { if(size!="") printf "%s|%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur, rank; in_dimm=0 }
     ' "${dmidecode_memory_full}" 2>/dev/null)
+fi
+# 物理标称总量（每槽 Size 求和，64GB×32=2048GB）——与系统可见(MEM_TOTAL)区分，需在 MEM_DIMMS 之后计算
+MEM_TOTAL_PHYS=""
+if [ -n "$MEM_DIMMS" ]; then
+    MEM_TOTAL_PHYS=$(echo "$MEM_DIMMS" | awk -F'|' '{gsub(/[^0-9.]/,"",$2); if($2+0>0) sum+=$2} END{if(sum>0) printf "%.0fGB", sum; else print ""}')
 fi
 # 内存类型（DDR4/DDR5）与 ECC 类型（Single-bit ECC 等；供日志展示，报告不输出 ECC）
 MEM_TYPE=$(grep -m1 "^[[:space:]]*Type: DDR" "${dmidecode_memory_full}" 2>/dev/null | awk '{print $2}')
@@ -279,7 +284,7 @@ if [ -f "${block_devices_all}" ]; then
     STORAGE_TOTAL=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {v=""; for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {v=$i; break}; \
         if(v!=""){n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
         if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024}} \
-        END{printf "%.0f GB", s}' 2>/dev/null)
+        END{printf "%.0f GiB", s}' 2>/dev/null)
     # 盘型号：从 disk_inventory.csv 取（MODEL/SERIAL 已分离）；回退 block_devices 提取（只取 size 前一列=model）
     if [ -f "${disk_inventory}" ]; then
         STORAGE_MODELS=$(grep -v "^#" "${disk_inventory}" 2>/dev/null | awk -F'|' '$1!="" && $4!="N/A" && $4!="" {print $4}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
@@ -519,7 +524,7 @@ fi
 mt_model() {
     case "$1" in
         MT4131|MT4129) echo "ConnectX-8" ;;
-        MT4125) echo "ConnectX-7" ;;
+        MT2910|MT4125) echo "ConnectX-7" ;;
         MT4124) echo "ConnectX-6 Lx" ;;
         MT4123) echo "ConnectX-6 Dx" ;;
         MT4121|MT4122) echo "ConnectX-6" ;;
@@ -834,7 +839,7 @@ fi)
     ]
   },
   "memory": {
-    "total": "${MEM_TOTAL:-N/A}",
+    "total": "${MEM_TOTAL_PHYS:-${MEM_TOTAL:-N/A}}/${MEM_TOTAL:-N/A} 可见",
     "type": "${MEM_TYPE:-N/A}",
     "speed": "${MEM_SPEED:-N/A}",
     "speed_note": "${MEM_SPEED_NOTE:-}",
@@ -1105,7 +1110,7 @@ fi)
 ## 内存
 | 项 | 值 |
 |----|----|
-| 总量 | ${MEM_TOTAL:-N/A} |
+| 总量 | ${MEM_TOTAL_PHYS:-${MEM_TOTAL:-N/A}}/${MEM_TOTAL:-N/A} 可见 |
 | 类型 | ${MEM_TYPE:-N/A} |
 | 速率 | ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-} |
 | 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
@@ -1349,7 +1354,7 @@ $(if [ -n "$CPU_DETAILS" ]; then
 fi)
 
 [内存]
-  总量   : ${MEM_TOTAL:-N/A}
+  总量   : ${MEM_TOTAL_PHYS:-${MEM_TOTAL:-N/A}}/${MEM_TOTAL:-N/A} 可见
   类型   : ${MEM_TYPE:-N/A}
   速率   : ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-}
   插槽   : ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A}
