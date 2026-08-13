@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.26.24 (2026-08)
+# Version : 1.26.25 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.26.24"
+HWSCOPE_VERSION="v1.26.25"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -244,12 +244,19 @@ if [ "$PARALLEL" -eq 1 ]; then
 
         if declare -F "$fn" >/dev/null 2>&1; then
             mkdir -p "${OUTPUT_BASE}/${id}"
+            # 导出 OUTPUT_DIR 供 module_end 落盘 WARN 计数（跨进程读取）
+            export OUTPUT_DIR="${OUTPUT_BASE}/${id}"
             (
                 start_ts=$(date +%s)
                 reset_warn_count
-                "$fn" "$OUTPUT_BASE" 2>&1
+                # 模块级超时保护：默认 300s/模块，防止命令卡死导致主脚本永久等待。
+                # 原实现同进程调用（WARN 计数正确）；此处模块脚本独立执行（自 source common.sh），
+                # 计数经 module_end 写入 ${id}/.warn_count 文件，主脚本读文件。
+                timeout "${MODULE_TIMEOUT:-300}" bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
                 echo "$(( $(date +%s) - start_ts ))" > "${OUTPUT_BASE}/.${id}_time"
-                echo "$(get_warn_count)" > "${OUTPUT_BASE}/.${id}_warn"
+                warn=$(cat "${OUTPUT_BASE}/${id}/.warn_count" 2>/dev/null || echo 0)
+                echo "$warn" > "${OUTPUT_BASE}/.${id}_warn"
+                rm -f "${OUTPUT_BASE}/${id}/.warn_count"   # 不计入模块文件数
                 find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l > "${OUTPUT_BASE}/.${id}_files"
                 touch "${OUTPUT_BASE}/.${id}_done"
             ) > "${OUTPUT_BASE}/.${id}_log" 2>&1 &
@@ -315,8 +322,10 @@ else
         if declare -F "$fn" >/dev/null 2>&1; then
             start_ts=$(date +%s); mkdir -p "${OUTPUT_BASE}/${id}"
             reset_warn_count
-            "$fn" "$OUTPUT_BASE"
-            warn_count=$(get_warn_count)
+            export OUTPUT_DIR="${OUTPUT_BASE}/${id}"
+            timeout "${MODULE_TIMEOUT:-300}" bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
+            warn_count=$(cat "${OUTPUT_BASE}/${id}/.warn_count" 2>/dev/null || echo 0)
+            rm -f "${OUTPUT_BASE}/${id}/.warn_count"
             end_ts=$(date +%s); elapsed=$((end_ts - start_ts))
             mod_file_count=$(find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l)
             FILE_COUNT=$((FILE_COUNT + mod_file_count))
