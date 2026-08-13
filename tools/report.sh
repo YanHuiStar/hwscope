@@ -393,7 +393,14 @@ NET_DIR="${OUT}/network"
 load_manifest "${NET_DIR}" ibstat "ibstat.log"
 load_manifest "${NET_DIR}" ibdev2netdev "ibdev2netdev.log"
 load_manifest "${NET_DIR}" nic_inventory "nic_inventory.csv"
-IB_COUNT=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
+# IB 设备总数（CA 数量）与活动口数（State: Active）分开统计——"设备数"≠"活动口数"
+IB_COUNT=$(grep -c "^CA '" "${ibstat}" 2>/dev/null)
+IB_ACTIVE=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
+# 活动口的速率分布（如 "100 Gb/s ×4"；无活动口显示 Down）
+IB_ACTIVE_SPEED=""
+if [ "${IB_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then
+    IB_ACTIVE_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | uniq -c | awk '{printf "%s Gb/s ×%d ", $2, $1}' | sed 's/ $//')
+fi
 IB_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | tail -1)
 [ -n "$IB_SPEED" ] && IB_SPEED="${IB_SPEED} Gb/s"
 
@@ -937,7 +944,8 @@ ${disk_details_json}
   },
   "network": {
     "ib_devices": "${IB_COUNT:-0}",
-    "ib_speed": "${IB_SPEED:-N/A}",
+    "ib_active": "${IB_ACTIVE:-0}",
+    "ib_active_speed": "${IB_ACTIVE_SPEED:-N/A}",
     "ib_nominal_speed": "${IB_NOMINAL:-N/A}",
     "eth_link_up": "${ETH_LINK_UP:-0}",
     "cables": "${CABLE_SUMMARY:-N/A}",
@@ -1250,12 +1258,12 @@ $(printf '%s' "$disk_details_md")
 | 项 | 值 |
 |----|----|
 | IB 设备数 | ${IB_COUNT:-0} |
+| IB 活动口 | ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})} |
 | IB 标称速率 | ${IB_NOMINAL:-N/A} |
-| IB 实际速率 | ${IB_SPEED:-N/A} |
-| 线缆类型 | ${CABLE_SUMMARY:-N/A} |
-| 线缆配对 | ${CABLE_PAIRS:-N/A} |
-| 端口模式 | ${LINKTYPE_SUMMARY:-N/A} |
 | 以太网口 up | ${ETH_LINK_UP:-0} |
+$(if [ -n "$CABLE_SUMMARY" ] && [ "$CABLE_SUMMARY" != "N/A" ]; then echo "| 线缆类型 | ${CABLE_SUMMARY} |"; fi)
+$(if [ -n "$CABLE_PAIRS" ] && [ "$CABLE_PAIRS" != "N/A" ]; then echo "| 线缆配对 | ${CABLE_PAIRS} |"; fi)
+$(if [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ]; then echo "| 端口模式 | ${LINKTYPE_SUMMARY} |"; fi)
 
 ### 网卡明细
 | # | 接口 | BDF | MAC | SN | 型号 | 固件 | PCIe | PSID | GPU直连 |
@@ -1508,12 +1516,12 @@ $(printf '%s' "$disk_details_txt")
 
 [网络]
   IB设备 : ${IB_COUNT:-0}
+  活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
   标称速率: ${IB_NOMINAL:-N/A}
-  实际速率: ${IB_SPEED:-N/A}
-  线缆   : ${CABLE_SUMMARY:-N/A}
-  配对   : ${CABLE_PAIRS:-N/A}
-  端口模式: ${LINKTYPE_SUMMARY:-N/A}
   网口up : ${ETH_LINK_UP:-0}
+$(if [ -n "$CABLE_SUMMARY" ] && [ "$CABLE_SUMMARY" != "N/A" ]; then echo "  线缆   : ${CABLE_SUMMARY}"; fi)
+$(if [ -n "$CABLE_PAIRS" ] && [ "$CABLE_PAIRS" != "N/A" ]; then echo "  配对   : ${CABLE_PAIRS}"; fi)
+$(if [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ]; then echo "  端口模式: ${LINKTYPE_SUMMARY}"; fi)
 $(printf '%s' "$nic_details_txt")
 
 [BMC]
