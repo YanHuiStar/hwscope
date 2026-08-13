@@ -93,7 +93,9 @@ run_storage() {
     storage_tail_jobs+=("df -h" "${dir}/df_h.log")
     storage_tail_jobs+=("mount" "${dir}/mount.log")
     storage_tail_jobs+=("cat /proc/partitions" "${dir}/proc_partitions.log")
-    run_and_log_parallel 5 "${storage_tail_jobs[@]}" 
+    run_and_log_parallel 5 "${storage_tail_jobs[@]}"
+    local storage_ret=$?
+    [ "$storage_ret" -ne 0 ] && echo -e "${YELLOW}[WARN] 存储采集部分失败，请检查日志${NC}" >&2 
 
     # ─── 盘一览清单（name|type|size|model|sn|fw|bdf|power_on|power_cyc|spare）───
     {

@@ -83,7 +83,9 @@ run_network() {
     run_and_log_parallel 3 \
         "ip addr" "${dir}/ip_addr.log" \
         "ip link show" "${dir}/ip_link.log" \
-        "ip route show" "${dir}/ip_route.log" 
+        "ip route show" "${dir}/ip_route.log"
+    local ip_ret=$?
+    [ "$ip_ret" -ne 0 ] && echo -e "${YELLOW}[WARN] 网络 IP/MAC 采集部分失败${NC}" >&2 
 
     # ─── 网卡一览清单（dev|bdf|mac|sn|pn|fw|speed|width）───
     {

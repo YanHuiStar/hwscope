@@ -49,6 +49,27 @@ load_manifest() {
     declare -g "${key}=${dir}/${default}"
 }
 
+# ─── CSV 列名动态匹配 ───
+# 用法: get_csv_col_index <csv_file> <column_name>
+# 返回: 列索引（从 1 开始），未找到返回 0
+get_csv_col_index() {
+    local csv_file="$1" col_name="$2"
+    [ ! -f "$csv_file" ] && echo 0 && return
+    local header=$(grep -v "^#" "$csv_file" 2>/dev/null | head -1)
+    [ -z "$header" ] && echo 0 && return
+    local idx=1
+    echo "$header" | awk -F',' -v target="$col_name" '{
+        for(i=1; i<=NF; i++) {
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i)
+            if($i == target) {
+                print i
+                exit
+            }
+        }
+        print 0
+    }'
+}
+
 # ─── 收集基础信息 ───
 SUMMARY="${OUT}/summary.txt"
 HOSTNAME=$(extract "Hostname" "$SUMMARY")
@@ -203,7 +224,15 @@ if [ -f "$GPU_CSV" ]; then
     GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ',' | sed 's/,$//')
     # 显存总量 / 功耗上限 / 温度
     # 显存总量（nvidia-smi memory.total，MiB→GiB 二进制换算，为可见值含 ECC 预留）
-    GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ MiB/,"",$6); sum+=$6} END{printf "%.0f GiB", sum/1024}')
+    # 动态匹配列名，避免硬编码位置
+    local mem_col=$(get_csv_col_index "$GPU_CSV" "memory.total [MiB]")
+    local power_col=$(get_csv_col_index "$GPU_CSV" "power.limit [W]")
+    local temp_col=$(get_csv_col_index "$GPU_CSV" "temperature.gpu")
+
+    GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${mem_col:-6}" -F',' '{
+        gsub(/ MiB/, "", $col)
+        sum += $col
+    } END{printf "%.0f GiB", sum/1024}')
     # 每卡标称规格（型号→标称映射，标注检测值 vs 规格的差异；未知型号显示检测值）
     GPU_MODEL_LINE=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f2)
     GPU_MEM_SPEC=""
@@ -214,8 +243,15 @@ if [ -f "$GPU_CSV" ]; then
         *H100*)   GPU_MEM_SPEC="标称 80GB/卡" ;;
         *)        GPU_MEM_SPEC="" ;;
     esac
-    GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ W/,"",$8); if($8+0>max+0) max=$8} END{printf "%.0f W", max}')
-    GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{t=(NF>=17)?$10:$9; sum+=t; if(t+0>tmax+0) tmax=t} END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
+    GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${power_col:-8}" -F',' '{
+        gsub(/ W/, "", $col)
+        if($col+0 > max+0) max = $col
+    } END{printf "%.0f W", max}')
+    GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${temp_col:-9}" -F',' '{
+        t = $col
+        sum += t
+        if(t+0 > tmax+0) tmax = t
+    } END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
     # 标称总量（单卡标称 × 卡数，如 288GB×8=2304GB）；与可用总量(GPU_MEM)并列显示
     GPU_MEM_SPEC_TOTAL=""
     if [ -n "$GPU_MEM_SPEC" ]; then
