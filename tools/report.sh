@@ -338,7 +338,16 @@ if [ -f "${gpu_nvlink_status}" ]; then
     # 异常链路：速率明确为 0 / N/A / Down / Off（避免匹配 "200.0" 里的 0）
     NV_LINK_DOWN=$(grep -E "Link [0-9]+: *(0|N/A|Down|Off)( |$)" "${gpu_nvlink_status}" 2>/dev/null | wc -l)
     if [ "$NV_GPU_COUNT" -gt 0 ] 2>/dev/null; then
-        NV_LINK_SUMMARY="${NV_GPU_COUNT}卡 × ${NV_LINK_RATE}"
+        # 每卡链路数 = 总链路/卡数（B300 每卡 18 条）；显示"卡数 × 每卡链路数 × 单链路速率"避免误读为整卡带宽
+        NV_LINKS_PER_GPU=0
+        if [ "$NV_GPU_COUNT" -gt 0 ] && [ "$NV_GPU_LINKS" -gt 0 ] 2>/dev/null; then
+            NV_LINKS_PER_GPU=$((NV_GPU_LINKS / NV_GPU_COUNT))
+        fi
+        if [ "$NV_LINKS_PER_GPU" -gt 0 ]; then
+            NV_LINK_SUMMARY="${NV_GPU_COUNT}卡 全互联 (${NV_LINKS_PER_GPU}条/卡 × ${NV_LINK_RATE})"
+        else
+            NV_LINK_SUMMARY="${NV_GPU_COUNT}卡 × ${NV_LINK_RATE}"
+        fi
         [ "$NV_LINK_DOWN" -gt 0 ] && NV_LINK_SUMMARY="${NV_LINK_SUMMARY} ⚠️${NV_LINK_DOWN}链路异常"
     fi
 fi
