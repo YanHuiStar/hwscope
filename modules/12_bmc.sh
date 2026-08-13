@@ -23,7 +23,6 @@ run_bmc() {
     if check_cmd ipmitool; then
         # 本地 IPMI（BMC 通道限制 max_jobs=4）
         run_and_log_parallel 4 \
-            "ipmitool fru print 2>&1" "${dir}/ipmi_fru.log" \
             "ipmitool mc info 2>&1" "${dir}/ipmi_mc.log" \
             "ipmitool sensor list 2>&1" "${dir}/ipmi_sensors.log" \
             "ipmitool sdr list 2>&1" "${dir}/ipmi_sdr.log" \
@@ -40,7 +39,9 @@ run_bmc() {
             "ipmitool sensor list 2>/dev/null | grep -i temp" "${dir}/ipmi_sensors_temp.log" \
             "ipmitool sensor list 2>/dev/null | grep -i fan" "${dir}/ipmi_sensors_fan.log" \
             "ipmitool sensor list 2>/dev/null | grep -i volt" "${dir}/ipmi_sensors_volt.log" \
-            "ipmitool sensor list 2>/dev/null | grep -iE 'power|watt'" "${dir}/ipmi_sensors_power.log" 
+            "ipmitool sensor list 2>/dev/null | grep -iE 'power|watt'" "${dir}/ipmi_sensors_power.log"
+        # ipmi_fru.log 与 ipmi_fru_all.log 内容相同（同一条命令），只跑一次后复制，省一次 2-5s 的 BMC 查询
+        cp "${dir}/ipmi_fru_all.log" "${dir}/ipmi_fru.log" 2>/dev/null || true
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi

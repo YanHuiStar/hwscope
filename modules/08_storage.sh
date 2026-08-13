@@ -122,12 +122,14 @@ run_storage() {
             [ -z "$npo" ] && npo="0"; [ -z "$npc" ] && npc="0"; [ -z "$nspare" ] && nspare="N/A"
             echo "${nname}|NVMe|${nsize:-N/A}|${nmodel:-N/A}|${nsn:-N/A}|${nfw:-N/A}|${nbdf:-N/A}|${npo}|${npc}|${nspare}%"
         done
-        # SATA/SAS
-        for sdev in /dev/sd[a-z]; do
+        # SATA/SAS（sd[a-z] + sd[a-z][a-z] 覆盖 >26 盘场景；分区号过滤：仅 /sys/block 下的物理盘）
+        for sdev in /dev/sd[a-z] /dev/sd[a-z][a-z]; do
             [ -b "$sdev" ] || continue
+            local sname=$(basename "$sdev")
+            # 排除分区（sda1 等）：物理盘在 /sys/block 有直接条目
+            [ -d "/sys/block/${sname}" ] || continue
             local sz=$(blockdev --getsize64 "$sdev" 2>/dev/null)
             [ -z "$sz" ] || [ "$sz" = "0" ] && continue
-            local sname=$(basename "$sdev")
             local ssize=$(lsblk -d -n -o SIZE "$sdev" 2>/dev/null | tr -d ' ')
             local smodel="" ssn="" sfw="" sinter="SATA"
             if check_cmd smartctl; then
@@ -140,11 +142,12 @@ run_storage() {
             fi
             [ -z "$smodel" ] && smodel=$(cat "/sys/block/${sname}/device/model" 2>/dev/null | xargs)
             [ -z "$ssn" ] && ssn=$(cat "/sys/block/${sname}/device/serial" 2>/dev/null | xargs)
-            local spo=$(smartctl -A "$sdev" 2>/dev/null | grep -i "Power_On_Hours" | awk '{print $10}')
-            [ -z "$spo" ] && spo=$(smartctl -A "$sdev" 2>/dev/null | grep -i "Power_On_Hours" | awk '{print $4}')
-            [ -z "$spo" ] && spo="0"
-            local spc=$(smartctl -A "$sdev" 2>/dev/null | grep -i "Power_Cycle" | awk '{print $10}')
-            [ -z "$spc" ] && spc="0"
+            # SMART 属性只查一次缓存到变量（原实现每盘 4 次 smartctl -A，24 盘阵列显著拖慢）
+            local sattrs=$(smartctl -A "$sdev" 2>/dev/null)
+            local spo=$(echo "$sattrs" | grep -i "Power_On_Hours" | awk '{print $NF; exit}')
+            if [ -z "$spo" ] || ! echo "$spo" | grep -qE "^[0-9]+$"; then spo="0"; fi
+            local spc=$(echo "$sattrs" | grep -i "Power_Cycle" | awk '{print $NF; exit}')
+            if [ -z "$spc" ] || ! echo "$spc" | grep -qE "^[0-9]+$"; then spc="0"; fi
             echo "${sname}|SATA|${ssize:-N/A}|${smodel:-N/A}|${ssn:-N/A}|${sfw:-N/A}|${sinter}|${spo}|${spc}|N/A"
         done
     } > "${dir}/disk_inventory.csv" 2>/dev/null || true

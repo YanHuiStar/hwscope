@@ -50,17 +50,28 @@ run_memory() {
         else echo 'EDAC not available (no /sys/devices/system/edac)'; fi" \
         "${dir}/edac_errors.log"
 
-    # 5. 每个插槽单独记录（用简单 while 循环分段，避免复杂 eval）
+    # 5. 每个插槽单独记录（逐行状态机；段落模式 RS="" 会把含 "Bank Locator" 的标准块整体排除，实测 0 文件）
     # 先把完整的内存信息存到临时变量，用 shell 逐段拆分
     local mem_dump_file="${dir}/.dmidecode_memory_raw.tmp"
     dmidecode -t memory > "$mem_dump_file" 2>/dev/null || true
-    # 按空行切分段落，查找每个 Locator 段落写入独立文件
-    awk 'BEGIN {RS=""; FS="\n"} /Locator:/ && !/Bank Locator/ {
-        f="'"${dir}"'/slot_" $1
-        gsub(/.*Locator: |[ \t\/]/, "_", f)
-        gsub(/__+/, "_", f)
-        print > f
-    }' "$mem_dump_file" 2>/dev/null
+    # 逐行扫描：Locator（非 Bank）行开启新槽文件；空行关闭；遇到下一个 Locator 切换文件
+    awk -v dir="${dir}" '
+        /^[[:space:]]*Locator:/ && $0 !~ /Bank Locator/ {
+            if (out != "") close(out)
+            f = $0
+            sub(/^[[:space:]]*Locator:[[:space:]]*/, "", f)
+            gsub(/[ \t\/]/, "_", f)
+            gsub(/__+/, "_", f)
+            out = dir "/slot_" f
+            print > out
+            next
+        }
+        out != "" && /^[[:space:]]/ {
+            print >> out
+            next
+        }
+        out != "" && /^$/ { close(out); out = "" }
+    ' "$mem_dump_file" 2>/dev/null
     rm -f "$mem_dump_file"
 
 # NOTE: slot_* files are generated dynamically per DIMM slot (e.g. slot_DIMM_A1.log)
