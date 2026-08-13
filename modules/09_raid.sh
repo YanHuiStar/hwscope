@@ -32,10 +32,10 @@ run_raid() {
         ctrl_count=$(storcli64 show all 2>/dev/null | grep -c "Controller = ")
     fi
     if check_cmd sas3ircu; then
-        hba_count=$(sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\\.|^Index")
+        hba_count=$(sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\\.|^Index" || true)
     fi
     if check_cmd sas2ircu; then
-        hba2_count=$(sas2ircu list 2>/dev/null | grep -c "^Index" || echo 0)
+        hba2_count=$(sas2ircu list 2>/dev/null | grep -c "^Index" || true)
     fi
     raid_buses=$(lspci -D 2>/dev/null | grep -iE 'RAID|SAS|MegaRAID|Broadcom.*SAS' | awk '{print $1}')
 
@@ -49,7 +49,7 @@ run_raid() {
             raid_jobs+=("storcli64 /c${c} show all 2>&1 | grep -iE 'Model|Serial|Firmware|BIOS|Boot|Board Type|Ctrl Rate|ROC temperature|Product Name'" "${dir}/ctrl${c}_summary.log")
             raid_jobs+=("storcli64 /c${c} /bbu show all 2>&1" "${dir}/ctrl${c}_bbu.log")
             raid_jobs+=("storcli64 /c${c} show event 2>&1 | tail -100" "${dir}/ctrl${c}_events.log")
-            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -c "^Virtual Drives" || echo 0)
+            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -c "^Virtual Drives" || true)
             if [ "${vd_count:-0}" -gt 0 ]; then
                 raid_jobs+=("storcli64 /c${c} /vx show all 2>&1" "${dir}/ctrl${c}_vd_all.log")
                 for ((v=0; v<vd_count; v++)); do

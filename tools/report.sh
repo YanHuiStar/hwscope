@@ -258,9 +258,9 @@ if [ -f "$GPU_CSV" ]; then
     # 显存总量 / 功耗上限 / 温度
     # 显存总量（nvidia-smi memory.total，MiB→GiB 二进制换算，为可见值含 ECC 预留）
     # 动态匹配列名，避免硬编码位置
-    local mem_col=$(get_csv_col_index "$GPU_CSV" "memory.total [MiB]")
-    local power_col=$(get_csv_col_index "$GPU_CSV" "power.limit [W]")
-    local temp_col=$(get_csv_col_index "$GPU_CSV" "temperature.gpu")
+    mem_col=$(get_csv_col_index "$GPU_CSV" "memory.total [MiB]")
+    power_col=$(get_csv_col_index "$GPU_CSV" "power.limit [W]")
+    temp_col=$(get_csv_col_index "$GPU_CSV" "temperature.gpu")
 
     GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${mem_col:-6}" -F',' '{
         gsub(/ MiB/, "", $col)
@@ -539,6 +539,12 @@ BMC_FRU=$(extract "Product Name|Product Part Number" "${ipmi_fru_summary}" | hea
 BMC_FW=$(extract "Firmware Revision" "${ipmi_mc}")
 BMC_IP=$(grep "IP Address" "${ipmi_lan1}" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | head -1)
 BMC_MAC=$(grep -m1 "MAC Address" "${ipmi_lan1}" 2>/dev/null | awk '{print $NF}')
+# SEL 数据有效性（采集失败时统计全为 0，验收不能判 PASS，须区分"无数据"）
+SEL_DATA_VALID=0
+if [ -f "${ipmi_sel_elist}" ]; then
+    _sel_err=$(grep -iE "Could not open|Unable|No such file|command failed|device at /dev" "${ipmi_sel_elist}" 2>/dev/null | head -1)
+    [ -z "$_sel_err" ] && SEL_DATA_VALID=1
+fi
 SEL_TOTAL=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | wc -l)
 SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
 SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -icE "pcie|aer|uncorrectable")
@@ -653,8 +659,15 @@ NIC_DETAILS=""
 declare -A GPU_DIRECT_NIC
 if [ -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
     _nic_cols=()
+    _nic_idx=()
     _hdr=$(grep -v "^#" "${GPU_DIR}/gpu_topo_nic.log" | grep -E "NIC[0-9]" | head -1)
-    [ -n "$_hdr" ] && _nic_cols=($(echo "$_hdr" | awk '{for(i=1;i<=NF;i++) if($i~/^NIC[0-9]+$/) print $i}'))
+    # 同时记录列名与列号（动态计算，兼容 4/8 GPU 等不同卡数导致的列偏移）
+    if [ -n "$_hdr" ]; then
+        while IFS= read -r _pair; do
+            _nic_cols+=("${_pair%%:*}")
+            _nic_idx+=("${_pair##*:}")
+        done < <(echo "$_hdr" | awk '{for(i=1;i<=NF;i++) if($i~/^NIC[0-9]+$/) printf "%s:%d\n", $i, i}')
+    fi
     if [ "${#_nic_cols[@]}" -gt 0 ]; then
         # 每列 NIC：统计 GPU 行中 PIX 出现次数（任一 GPU 直连即标记）
         declare -A _nic_pix
@@ -663,8 +676,7 @@ if [ -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
             echo "$_row" | grep -qE "^GPU[0-9]+" || continue
             _idx=0
             for _col in "${_nic_cols[@]}"; do
-                # 表头以 \t 开头，awk 字段偏移：$1=空 $2=GPU0 ... $10=NIC0
-                _val=$(echo "$_row" | awk -v c=$((10+_idx)) '{print $c}')
+                _val=$(echo "$_row" | awk -v c="${_nic_idx[$_idx]}" '{print $c}')
                 [ "$_val" = "PIX" ] && _nic_pix[$_col]=1
                 _idx=$((_idx+1))
             done
@@ -1734,8 +1746,10 @@ gen_acceptance() {
         *)     add_item "DCGM 诊断" "N/A" "未运行（DCGM 未安装或已禁用）" ;;
     esac
 
-    # 4. SEL 无 Critical 事件
-    if [ "${SEL_CRIT:-0}" -gt 0 ] 2>/dev/null; then
+    # 4. SEL 无 Critical 事件（SEL 采集失败/无数据 → N/A，禁止假阳性 PASS）
+    if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
+        add_item "SEL 无 Critical 事件" "N/A" "SEL 数据不可用（ipmitool 采集失败或无权限）"
+    elif [ "${SEL_CRIT:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 无 Critical 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT} 条 Critical"
     elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 无 Critical 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical（有历史事件）"
@@ -1744,14 +1758,18 @@ gen_acceptance() {
     fi
 
     # 5. SEL 无 PCIe 错误
-    if [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
+    if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
+        add_item "SEL 无 PCIe 错误" "N/A" "SEL 数据不可用"
+    elif [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 无 PCIe 错误" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
     else
         add_item "SEL 无 PCIe 错误" "PASS" "无 PCIe 相关 SEL"
     fi
 
-    # 6. 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示）
-    if [ -n "$MEM_SPEED_NOTE" ]; then
+    # 6. 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示；无数据 → N/A）
+    if [ -z "$MEM_SPEED" ] || [ "$MEM_SPEED" = "N/A" ]; then
+        add_item "内存运行速率" "N/A" "内存速率数据不可用"
+    elif [ -n "$MEM_SPEED_NOTE" ]; then
         if [ "$MEM_FULL" -eq 1 ]; then
             add_item "内存运行速率" "PASS" "${MEM_SPEED_NOTE}（插满 ${MEM_POPULATED}/${MEM_SLOTS} 槽 2DPC，降速属平台规范正常现象）"
         else
@@ -1768,20 +1786,24 @@ gen_acceptance() {
         add_item "IB 线缆配对" "N/A" "无线缆数据（非 IB 平台或旧采集）"
     fi
 
-    # 8. 磁盘寿命充足（spare 第10列；<90% 提示，<50% FAIL）
+    # 8. 磁盘寿命充足（spare 第10列；<90% 提示，<50% FAIL；无盘数据 → N/A 禁止假阳性 PASS）
     local disk_warn="" disk_fail=""
-    while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
-        [ -z "$dname" ] && continue
-        local spare_num=$(echo "$dspare" | tr -dc '0-9')
-        if [ -n "$spare_num" ]; then
-            if [ "$spare_num" -lt 50 ] 2>/dev/null; then
-                disk_fail="${disk_fail}${dname}(${dspare}),"
-            elif [ "$spare_num" -lt 90 ] 2>/dev/null; then
-                disk_warn="${disk_warn}${dname}(${dspare}),"
+    if [ -n "$DISK_DETAILS" ]; then
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
+            [ -z "$dname" ] && continue
+            local spare_num=$(echo "$dspare" | tr -dc '0-9')
+            if [ -n "$spare_num" ]; then
+                if [ "$spare_num" -lt 50 ] 2>/dev/null; then
+                    disk_fail="${disk_fail}${dname}(${dspare}),"
+                elif [ "$spare_num" -lt 90 ] 2>/dev/null; then
+                    disk_warn="${disk_warn}${dname}(${dspare}),"
+                fi
             fi
-        fi
-    done <<< "$DISK_DETAILS"
-    if [ -n "$disk_fail" ]; then
+        done <<< "$DISK_DETAILS"
+    fi
+    if [ -z "$DISK_DETAILS" ]; then
+        add_item "磁盘寿命" "N/A" "无数据盘或盘数据不可用"
+    elif [ -n "$disk_fail" ]; then
         add_item "磁盘寿命" "FAIL" "${disk_fail%,}（寿命不足 50%）"
     elif [ -n "$disk_warn" ]; then
         add_item "磁盘寿命" "WARN" "${disk_warn%,}（寿命 <90%，建议关注）"

@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.26.29 (2026-08)
+# Version : 1.26.30 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.26.29"
+HWSCOPE_VERSION="v1.26.30"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -253,8 +253,14 @@ if [ "$PARALLEL" -eq 1 ]; then
                 # 原实现同进程调用（WARN 计数正确）；此处模块脚本独立执行（自 source common.sh），
                 # 计数经 module_end 写入 ${id}/.warn_count 文件，主脚本读文件。
                 timeout "${MODULE_TIMEOUT:-300}" bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
+                mod_rc=$?
                 echo "$(( $(date +%s) - start_ts ))" > "${OUTPUT_BASE}/.${id}_time"
                 warn=$(cat "${OUTPUT_BASE}/${id}/.warn_count" 2>/dev/null || echo 0)
+                # 超时(124)/信号中断(128+)时 module_end 不执行、WARN 不落盘 → 补记，避免超时模块误显示 0 WARN/OK
+                if [ "$mod_rc" -eq 124 ] 2>/dev/null || [ "$mod_rc" -gt 128 ] 2>/dev/null; then
+                    warn=$((warn + 1))
+                    echo "[WARN] 模块超时/中断（exit=${mod_rc}，时限 ${MODULE_TIMEOUT:-300}s）——采集可能不完整，请检查对应模块日志" >> "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
+                fi
                 echo "$warn" > "${OUTPUT_BASE}/.${id}_warn"
                 rm -f "${OUTPUT_BASE}/${id}/.warn_count"   # 不计入模块文件数
                 find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l > "${OUTPUT_BASE}/.${id}_files"
@@ -324,7 +330,13 @@ else
             reset_warn_count
             export OUTPUT_DIR="${OUTPUT_BASE}/${id}"
             timeout "${MODULE_TIMEOUT:-300}" bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
+            mod_rc=$?
             warn_count=$(cat "${OUTPUT_BASE}/${id}/.warn_count" 2>/dev/null || echo 0)
+            # 超时/信号中断补记（并行分支同逻辑）
+            if [ "$mod_rc" -eq 124 ] 2>/dev/null || [ "$mod_rc" -gt 128 ] 2>/dev/null; then
+                warn_count=$((warn_count + 1))
+                echo -e "${YELLOW}[WARN] 模块超时/中断（exit=${mod_rc}，时限 ${MODULE_TIMEOUT:-300}s）——采集可能不完整${NC}"
+            fi
             rm -f "${OUTPUT_BASE}/${id}/.warn_count"
             end_ts=$(date +%s); elapsed=$((end_ts - start_ts))
             mod_file_count=$(find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l)

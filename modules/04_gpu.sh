@@ -44,9 +44,10 @@ run_gpu() {
         "nvidia-smi --query-compute-apps=pid,process_name,used_memory,gpu_bus_id --format=csv" "${dir}/gpu_processes.csv"
         "nvidia-smi --query-gpu=driver_version --format=csv"                          "${dir}/gpu_driver_version.log"
         "nvidia-smi topo -m"                                                          "${dir}/gpu_topo.log"
-        "nvidia-smi topo -m"                                                          "${dir}/gpu_topo_nic.log"
         "nvidia-smi --query-remapped-rows=remapped_rows.correctable,remapped_rows.uncorrectable,remapped_rows.pending,remapped_rows.failure --format=csv" "${dir}/gpu_remapped_rows.csv"
     )
+    # gpu_topo_nic.log 与 gpu_topo.log 同命令（v1.26.27 起新版 topo -m 已含 NIC 列），跑一次后复制，省一次查询
+    cp "${dir}/gpu_topo.log" "${dir}/gpu_topo_nic.log" 2>/dev/null || true
 
     run_and_log_parallel 8 "${gpu_jobs[@]}"
     local parallel_ret=$?

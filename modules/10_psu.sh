@@ -59,8 +59,9 @@ run_psu() {
     # ─── 3. pmbus / i2c 工具 ───
     if check_cmd i2cdetect; then
         for bus in /dev/i2c-*; do
+            [ -e "$bus" ] || continue
             local bus_num=$(echo "$bus" | grep -oE '[0-9]+$')
-            run_and_log "i2cdetect -y $bus_num 2>/dev/null" "${dir}/i2c_bus${bus_num}.log"
+            [ -n "$bus_num" ] && run_and_log "i2cdetect -y $bus_num 2>/dev/null" "${dir}/i2c_bus${bus_num}.log"
         done
     fi
 
