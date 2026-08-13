@@ -1130,7 +1130,7 @@ $(printf '%s' "$dimms_md")
 | 温度 | ${GPU_TEMP:-N/A} |
 | ECC | ${GPU_ECC:-N/A} |
 | 退役行 | ${GPU_REMAP:-N/A} |
-| NVLink | ${NV_LINK_SUMMARY:-N/A} |
+$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "| NVLink | ${NV_LINK_SUMMARY} |"; fi)
 
 ### 每卡明细
 | 卡 | 型号 | SN | 显存(默认/可用) | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
@@ -1213,17 +1213,19 @@ $(if [ -n "$PSU_DETAILS" ]; then
     done <<< "$PSU_DETAILS"
 fi)
 
-## NVSwitch
-| 编号 | 状态 | 温度 | 活动/总端口 |
-|------|------|------|-------------|
-$(if [ -n "$nvs_md" ]; then printf '%s' "$nvs_md"; else echo "| 无数据 | — | — | — |"; fi)
+$(if [ -n "$nvs_md" ]; then
+    echo "## NVSwitch"
+    echo "| 编号 | 状态 | 温度 | 活动/总端口 |"
+    echo "|------|------|------|-------------|"
+    printf '%s' "$nvs_md"
+fi)
 
 ## 健康检查
 | 项 | 状态 |
 |----|------|
 | GPU PCIe 链路 | ${GPU_DEGRADED:-✓ 全部正常} |
-| NVLink | ${NVLINK_HEALTH:-✓ 正常}${NVLINK_CRC:+ (存在CRC错误)} |
-| DCGM 诊断 | ${DCGM_SUMMARY:-N/A} |
+$(if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then echo "| NVLink | ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)} |"; fi)
+$(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then echo "| DCGM 诊断 | ${DCGM_SUMMARY} |"; fi)
 | SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
 
@@ -1368,7 +1370,7 @@ $(printf '%s' "$dimms_txt")
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
   退役行 : ${GPU_REMAP:-N/A}
-  NVLink : ${NV_LINK_SUMMARY:-N/A}
+$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)
 $(printf '%s' "$gpu_details_txt")
 
 [存储]
@@ -1421,13 +1423,15 @@ $(if [ -n "$PSU_DETAILS" ]; then
     done <<< "$PSU_DETAILS"
 else echo "  N/A"; fi)
 
-[NVSwitch]
-$(if [ -n "$nvs_txt" ]; then printf '%s' "$nvs_txt"; else echo "  无数据"; fi)
+$(if [ -n "$nvs_txt" ]; then
+    echo "[NVSwitch]"
+    printf '%s' "$nvs_txt"
+fi)
 
 [健康检查]
   PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}
-  NVLink   : ${NVLINK_HEALTH:-✓ 正常}${NVLINK_CRC:+ (存在CRC错误)}
-  DCGM诊断 : ${DCGM_SUMMARY:-N/A}
+$(if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then echo "  NVLink   : ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)}"; fi)
+$(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then echo "  DCGM诊断 : ${DCGM_SUMMARY}"; fi)
   SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
   线缆配对 : ${CABLE_PAIRS:-N/A}
 
