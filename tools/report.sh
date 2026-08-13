@@ -832,9 +832,7 @@ gen_json() {
     "current_speed": "${CPU_CUR_SPEED:-N/A}",
     "details": [
 $(if [ -n "$CPU_DETAILS" ]; then
-    echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep; do
-        printf '      {"socket": "%s", "model": "%s", "cores": "%s", "threads": "%s", "max_speed": "%s", "cur_speed": "%s", "stepping": "%s"},\n' "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep"
-    done | sed '$ s/,$//'
+    echo "$CPU_DETAILS" | awk -F'|' '{printf "      {\"index\": \"%d\", \"socket\": \"%s\", \"model\": \"%s\", \"cores\": \"%s\", \"threads\": \"%s\", \"max_speed\": \"%s\", \"cur_speed\": \"%s\", \"stepping\": \"%s\"},\n", NR, $1, $2, $3, $4, $5, $6, $7}' | sed '$ s/,$//'
 fi)
     ]
   },
@@ -1099,11 +1097,13 @@ gen_md() {
 | Stepping | ${CPU_STEPPING:-N/A} |
 | 频率 | ${CPU_MAX_SPEED:-N/A} MHz（当前 ${CPU_CUR_SPEED:-N/A} MHz） |
 $(if [ -n "$CPU_DETAILS" ]; then
+    local cseq=0
     echo "### CPU 明细"
-    echo "| Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping |"
-    echo "|--------|------|------|------|---------|---------|----------|"
+    echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping |"
+    echo "|---|--------|------|------|------|---------|---------|----------|"
     echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep; do
-        echo "| ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} |"
+        cseq=$((cseq + 1))
+        echo "| ${cseq} | ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} |"
     done
 fi)
 
