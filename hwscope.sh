@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.26.5 (2026-08)
+# Version : 1.26.6 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.26.5"
+HWSCOPE_VERSION="v1.26.6"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -381,6 +381,8 @@ echo -e "${CYAN}汇总文件: ${SUMMARY_FILE}${NC}"
 if [ -f "${SCRIPT_DIR}/tools/report.sh" ]; then
     echo ""
     bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE"
+    # 验收清单默认一并生成（交付交接单；仅 --modules 部分采集时仍生成，缺数据项显示 N/A）
+    bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE" --acceptance
 fi
 
 # ─── 打包归档（与 REPORT 阶段分隔，独立排版） ───
@@ -403,6 +405,9 @@ if check_cmd tar; then
     mkdir -p "$REPORT_DIR"
     if ls "${OUTPUT_BASE}"/hwscope_report.* >/dev/null 2>&1; then
         REPORT_ARCHIVE="${REPORT_DIR}/${MACHINE_ID}-${ARCHIVE_TS}-report.tar.gz"
+        tar czf "$REPORT_ARCHIVE" -C "$OUTPUT_BASE" \
+            hwscope_report.json hwscope_report.md hwscope_report.txt \
+            hwscope_acceptance.md 2>/dev/null || \
         tar czf "$REPORT_ARCHIVE" -C "$OUTPUT_BASE" \
             hwscope_report.json hwscope_report.md hwscope_report.txt
         echo -e "${GREEN}[ARCHIVE]${NC} 报告包: ${REPORT_ARCHIVE}"

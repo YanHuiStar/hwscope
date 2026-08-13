@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.26.5  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.26.6  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -60,7 +60,7 @@ bash modules/04_gpu.sh /tmp/out
 
 # 报告（采集完成后自动生成；可手动重跑）
 bash tools/report.sh <output_dir>              # 生成 json+md+txt 三件套
-bash tools/report.sh <output_dir> --acceptance # 生成验收清单交接单（hwscope_acceptance.md）
+bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单（采集完成时已默认生成 hwscope_acceptance.md）
 ```
 
 ## 平台兼容
