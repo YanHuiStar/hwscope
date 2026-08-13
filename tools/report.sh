@@ -81,9 +81,12 @@ MB_DIR="${OUT}/motherboard"
 load_manifest "${MB_DIR}" dmidecode_system "dmidecode_system.log"
 load_manifest "${MB_DIR}" dmidecode_bios "dmidecode_bios.log"
 load_manifest "${MB_DIR}" dmidecode_chassis "dmidecode_chassis.log"
+load_manifest "${MB_DIR}" baseboard_summary "baseboard_summary.log"
 MB_MANUFACTURER=$(extract "Manufacturer" "${dmidecode_system}")
 MB_PRODUCT=$(extract "Product Name" "${dmidecode_system}")
 MB_SN=$(extract "Serial Number" "${dmidecode_system}")
+# 主板独立 SN（Base Board 与整机 System SN 是不同物理组件序列号，华硕 B300 实测三者各异）
+MB_BOARD_SN=$(extract "Serial Number" "${baseboard_summary}")
 BIOS_VERSION=$(extract "Version" "${dmidecode_bios}" | head -c 80)
 CHASSIS_SN=$(extract "Serial Number" "${dmidecode_chassis}")
 
@@ -829,6 +832,7 @@ gen_json() {
     "manufacturer": "${MB_MANUFACTURER:-N/A}",
     "product": "${MB_PRODUCT:-N/A}",
     "serial": "${MB_SN:-N/A}",
+    "board_serial": "${MB_BOARD_SN:-N/A}",
     "bios": "${BIOS_VERSION:-N/A}",
     "chassis_sn": "${CHASSIS_SN:-N/A}"
   },
@@ -1094,6 +1098,7 @@ gen_md() {
 | 制造商 | ${MB_MANUFACTURER:-N/A} |
 | 型号 | ${MB_PRODUCT:-N/A} |
 | SN | ${MB_SN:-N/A} |
+| 主板 SN | ${MB_BOARD_SN:-N/A} |
 | BIOS | ${BIOS_VERSION:-N/A} |
 | 机箱 SN | ${CHASSIS_SN:-N/A} |
 
@@ -1348,6 +1353,7 @@ HwScope 硬件巡检报告
   制造商 : ${MB_MANUFACTURER:-N/A}
   型号   : ${MB_PRODUCT:-N/A}
   SN     : ${MB_SN:-N/A}
+  主板SN : ${MB_BOARD_SN:-N/A}
   BIOS   : ${BIOS_VERSION:-N/A}
   机箱SN : ${CHASSIS_SN:-N/A}
 
