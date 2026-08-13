@@ -31,6 +31,11 @@ extract() {
     grep -iE "$pattern" "$file" 2>/dev/null | grep -v "^#" | head -1 | cut -d':' -f2- | sed 's/^ *//;s/ *$//' | head -c 200
 }
 
+# ─── 过滤日志：去除注释行（行首 #）和空行 ───
+filter_log() {
+    grep -v "^#" "$1" 2>/dev/null | grep -v "^$"
+}
+
 # ─── 清单加载：从 manifest.txt 读取模块输出文件名，回退到默认值 ───
 # 用法: load_manifest <目录> <key> [默认文件名]
 # 若 <目录>/manifest.txt 存在且含 <key>=<value>，设置 shell 变量 $key 为完整路径；
