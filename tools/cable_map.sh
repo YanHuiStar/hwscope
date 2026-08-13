@@ -45,6 +45,7 @@ echo ""
 echo -e "${BLUE}── 线缆配对 (EEPROM serial 相同 = 同一根线) ──${NC}"
 declare -A CABLE_SERIALS
 UNREADABLE=()
+PAIRED_DEVS=""
 for dev in $DEVS; do
     serial=$(sudo mlxlink -d "$dev" -p 1 2>/dev/null | grep -iE "Serial Number" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
     if [ -z "$serial" ] || [ "$serial" = "N/A" ]; then
@@ -53,19 +54,18 @@ for dev in $DEVS; do
     fi
     if [ -n "${CABLE_SERIALS[$serial]}" ]; then
         echo -e "  ${GREEN}${CABLE_SERIALS[$serial]} ↔ ${dev}${NC}   (serial: ${serial})"
+        # 两端都标记为已配对（第二个设备在配对时加入）
+        PAIRED_DEVS="${PAIRED_DEVS} ${CABLE_SERIALS[$serial]} ${dev}"
     else
         CABLE_SERIALS[$serial]="$dev"
     fi
 done
 
-# 未配对的单端（serial 存在但无配对 = 另一端未连/未上电）
-PAIRED_DEVS=""
+# 未配对的单端：serial 可读但只出现一次（另一头未连/未上电），且未读不出 serial
 for serial in "${!CABLE_SERIALS[@]}"; do
-    PAIRED_DEVS="${PAIRED_DEVS} ${CABLE_SERIALS[$serial]}"
-done
-for dev in $DEVS; do
-    if ! echo "$PAIRED_DEVS" | grep -qw "$dev"; then
-        UNREADABLE+=("$dev(单端)")
+    first="${CABLE_SERIALS[$serial]}"
+    if ! echo "$PAIRED_DEVS" | grep -qw "$first"; then
+        UNREADABLE+=("$first(单端)")
     fi
 done
 

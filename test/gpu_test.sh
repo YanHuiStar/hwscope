@@ -100,10 +100,12 @@ for sel in "${SELECTED[@]}"; do
 
         case "$fname" in
             bandwidthTest)
-                # CUDA 带宽测试: 逐卡 + P2P；--mode=sharing 测两卡互传
+                # CUDA 带宽测试: 逐卡 + P2P；两条命令分别记录，避免 exit code 互相覆盖
                 run_and_log "${fpath} --device=0 --mode=quick 2>&1" "$LOGFILE"
+                test_record "${fname}_quick" "$LOGFILE" "$start_ts" "$?"
                 if [ "$GPU_COUNT" -ge 2 ]; then
                     run_and_log "${fpath} --device=0 --device=1 --mode=peertopeer 2>&1" "${REPORT_DIR}/bandwidthTest_p2p.log"
+                    test_record "${fname}_p2p" "${REPORT_DIR}/bandwidthTest_p2p.log" "$start_ts" "$?"
                 fi
                 ;;
             gpu_burn)
@@ -130,7 +132,8 @@ for sel in "${SELECTED[@]}"; do
                 run_and_log "${fpath} 2>&1" "$LOGFILE"
                 ;;
         esac
-        test_record "$fname" "$LOGFILE" "$start_ts" "$?"
+        # 已单独记录的（bandwidthTest 分支）跳过通用记录，避免重复
+        [ "$fname" = "bandwidthTest" ] || test_record "$fname" "$LOGFILE" "$start_ts" "$?"
     done
 done
 

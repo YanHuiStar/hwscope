@@ -42,8 +42,15 @@ if [ "$1" = "--reset" ] || [ ! -f "$BASELINE" ]; then
 fi
 
 # ─── 增量对比：基线 vs 当前 ───
-# 用事件时间戳+描述作为 key（SEL 每条: ID | 日期 | 时间 | 类型 | 状态）
-NEW_EVENTS=$(grep -vFxf "$LAST_SEEN" "$NOW" | head -50)
+# SEL 只追加不删除：ID 单调递增，新增 = ID 大于上次最大 ID 的所有行
+# （比整行匹配可靠：事件内容/时间戳不变，只有 ID 会滚动）
+LAST_MAX_ID=$(grep -oE "^[[:space:]]*[0-9]+" "$LAST_SEEN" 2>/dev/null | sort -n | tail -1)
+LAST_MAX_ID=${LAST_MAX_ID:-0}
+NEW_EVENTS=$(awk -v min="$LAST_MAX_ID" '
+    match($0, /^[[:space:]]*[0-9]+/) {
+        id = substr($0, RSTART, RLENGTH) + 0
+        if (id > min) print
+    }' "$NOW")
 NEW_COUNT=$(echo -n "$NEW_EVENTS" | grep -c . || true)
 
 if [ "$NEW_COUNT" -gt 0 ]; then
