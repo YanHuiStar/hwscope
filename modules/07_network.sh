@@ -18,6 +18,8 @@ run_network() {
     MST_AUTO_START=${MST_AUTO_START:-1}
     # MST 不可用标记（自动 start 失败/被禁用时置 1，报告标注 GUID 兜底）
     MST_NOT_STARTED=0
+    # mstflint 查询失败计数（多 Mellanox 卡时可能有部分失败）
+    MSTFLINT_FAILED_COUNT=0
 
     # ─── InfiniBand + Mellanox / NVIDIA NIC 工具（并行） ───
     local ib_jobs=()
@@ -116,6 +118,7 @@ run_network() {
             local nis_mlx=0
             [[ "$npn" == *"Mellanox"* || "$npn" == *"ConnectX"* || "$npn" == *"MLX"* ]] && nis_mlx=1
             local npsid="N/A"
+            local mstflint_failed=0
             if [ "$nis_mlx" -eq 1 ] && check_cmd mstflint; then
                 # MST 未启动且配置允许 → 自动 mst start（root 下直接执行；非 root 会失败但无害）
                 if [ "${MST_AUTO_START:-1}" -eq 1 ] && ! ls /dev/mst/* >/dev/null 2>&1 && check_cmd mst; then
@@ -126,13 +129,20 @@ run_network() {
                 [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep -i "${nbdf//:}" | head -1)
                 if [ -n "$mstdev" ]; then
                     local mq_out=$(mstflint -d "$mstdev" q 2>/dev/null)
-                    local mq_sn=$(echo "$mq_out" | grep -iE "^Serial Number|^Board Serial" | head -1 | awk '{print $NF}')
-                    [ -n "$mq_sn" ] && nsn="$mq_sn"
-                    local mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
-                    [ -n "$mq_psid" ] && npsid="$mq_psid"
+                    if [ $? -ne 0 ]; then
+                        mstflint_failed=1
+                        MSTFLINT_FAILED_COUNT=$((MSTFLINT_FAILED_COUNT + 1))
+                        echo -e "${YELLOW}[WARN] mstflint 查询失败: $nbdf${NC}" >&2
+                    else
+                        local mq_sn=$(echo "$mq_out" | grep -iE "^Serial Number|^Board Serial" | head -1 | awk '{print $NF}')
+                        [ -n "$mq_sn" ] && nsn="$mq_sn"
+                        local mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
+                        [ -n "$mq_psid" ] && npsid="$mq_psid"
+                    fi
                 else
                     # MST 仍不可用（非 root 或 mst start 失败）→ 记录提示供报告标注
                     MST_NOT_STARTED=1
+                    mstflint_failed=1
                 fi
                 # mstflint 读不到真 SN 时保持 sysfs/lspci 值（可能为 GUID 兜底），不覆盖
             fi
@@ -188,6 +198,11 @@ run_network() {
     if [ "$MST_NOT_STARTED" -eq 1 ]; then
         echo "⚠️ MST 服务未启动（sudo mst start 可启用）：Mellanox 卡 SN/PSID 未读到，报告以 GUID 兜底" > "${dir}/mst_notice.log"
         write_manifest "${dir}/manifest.txt" "mst_notice" "mst_notice.log"
+    fi
+    # mstflint 部分失败提示
+    if [ "$MSTFLINT_FAILED_COUNT" -gt 0 ]; then
+        echo "⚠️ $MSTFLINT_FAILED_COUNT 张 Mellanox 卡的 mstflint 查询失败（SN/PSID 可能不准确），请检查日志" > "${dir}/mstflint_failed.log"
+        write_manifest "${dir}/manifest.txt" "mstflint_failed" "mstflint_failed.log"
     fi
 
     module_end "$MODULE_NAME"
