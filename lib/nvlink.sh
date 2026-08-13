@@ -58,17 +58,20 @@ nvlink_parse_down() {
 nvlink_load_from_logs() {
     local gpu_dir="$1"
     NVLINK_DEGRADED=""; NVLINK_CRC=""; NVLINK_DOWN=""
+    NVLINK_DATA=0   # 是否有 NVLink 采集数据（0=无数据，判定用 N/A 而非 OK）
 
     local topo_file="${gpu_dir}/gpu_topo.log"
     local status_file="${gpu_dir}/gpu_nvlink_status.log"
 
     [ -f "$topo_file" ] && NVLINK_DEGRADED=$(nvlink_parse_topo "$(cat "$topo_file")")
+    [ -f "$topo_file" ] && NVLINK_DATA=1
 
     if [ -f "$status_file" ]; then
         local st
         st=$(cat "$status_file")
         NVLINK_CRC=$(nvlink_parse_crc "$st")
         NVLINK_DOWN=$(nvlink_parse_down "$st")
+        NVLINK_DATA=1
     fi
 }
 

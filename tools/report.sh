@@ -443,7 +443,11 @@ CABLE_PAIRS=$(echo "$CABLE_PAIRS" | sed 's/,$//')
 # ─── NVLink 状态（读采集日志，lib/nvlink.sh） ───
 nvlink_load_from_logs "$GPU_DIR"
 NVLINK_HEALTH="OK"
-nvlink_is_healthy || NVLINK_HEALTH="异常"
+if [ "${NVLINK_DATA:-0}" -eq 0 ]; then
+    NVLINK_HEALTH="N/A"   # 无 NVLink 采集数据（无 GPU/旧采集），判定用 N/A 而非 OK
+else
+    nvlink_is_healthy || NVLINK_HEALTH="异常"
+fi
 
 # ─── DCGM 诊断结果（dcgmi_diag_level1.log：区分硬件 Fail 与配置类 Fail） ───
 # Persistence Mode 未开启是环境配置问题（8 卡全 Fail 时常见），不属硬件故障，单独标注
@@ -902,7 +906,7 @@ $(printf '%s' "$nvs_json")
   ],
   "health": {
     "gpu_pcie_degraded": "${GPU_DEGRADED:-OK}",
-    "nvlink_status": "${NVLINK_HEALTH:-OK}",
+    "nvlink_status": "${NVLINK_HEALTH:-N/A}",
     "nvlink_crc_errors": "${NVLINK_CRC:+存在非零CRC错误}",
     "dcgm_diag": "${DCGM_SUMMARY:-N/A}",
     "sel_pcie_errors": "${SEL_PCIE_ERR:-0}",
@@ -1438,7 +1442,7 @@ gen_acceptance() {
     case "${DCGM_SUMMARY:-N/A}" in
         通过*) add_item "DCGM 诊断" "PASS" "${DCGM_SUMMARY}" ;;
         Fail*硬件*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
-        Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
+        配置项*Fail*|Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
         *)     add_item "DCGM 诊断" "N/A" "未运行（DCGM 未安装或已禁用）" ;;
     esac
 
