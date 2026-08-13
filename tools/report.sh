@@ -135,13 +135,18 @@ MEM_TOTAL=$(grep -m1 "MemTotal" "${proc_meminfo}" 2>/dev/null | awk '{printf "%.
 MEM_SPEED=$(extract "Configured Memory Speed" "${dmidecode_memory_full}")
 [ -z "$MEM_SPEED" ] && MEM_SPEED=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
 MEM_SPEED_NOTE=""
-# 降速检测：标称 Speed 与运行速率不一致时告警（如 6400 标称 / 5200 实际）
+# 降速检测：标称 Speed 与运行速率不一致时提示（如 6400 标称 / 5200 实际）
+# 插满降速是 DDR5 物理必然（信号负载/散热），不算故障；未插满仍降速才需关注
+# 正文保留提示（信息价值），验收清单判定时再结合插满状态区分
 MEM_NOM=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
 if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null; then
     MEM_SPEED_NOTE="⚠️ 降速运行（标称 ${MEM_NOM}）"
 fi
 MEM_SLOTS=$(grep -c "Memory Device" "${dmidecode_memory_full}" 2>/dev/null)
 MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${dmidecode_memory_full}" 2>/dev/null)
+# 插满状态标记（验收清单用：插满降速=正常，不算 WARN）
+MEM_FULL=0
+[ "${MEM_POPULATED:-0}" -ge "${MEM_SLOTS:-0}" ] 2>/dev/null && [ "${MEM_SLOTS:-0}" -gt 0 ] && MEM_FULL=1
 # 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率|Rank），空槽跳过
 # 行模式状态机：从 "Memory Device" 段头开始，空行结束（Size 行在 Locator 之前）
 # 速率语义：Speed=模块标称（原速率），Configured Memory Speed=当前实际运行（现速率）
@@ -1484,9 +1489,13 @@ gen_acceptance() {
         add_item "SEL 无 PCIe 错误" "PASS" "无 PCIe 相关 SEL"
     fi
 
-    # 6. 内存无降速
+    # 6. 内存运行速率（插满降速是 DDR5 物理必然，不算故障；未插满降速才提示）
     if [ -n "$MEM_SPEED_NOTE" ]; then
-        add_item "内存运行速率" "WARN" "${MEM_SPEED_NOTE}"
+        if [ "$MEM_FULL" -eq 1 ]; then
+            add_item "内存运行速率" "PASS" "${MEM_SPEED_NOTE}（插满 ${MEM_POPULATED}/${MEM_SLOTS} 槽，降速属正常）"
+        else
+            add_item "内存运行速率" "WARN" "${MEM_SPEED_NOTE}（仅插 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽仍降速，建议核查）"
+        fi
     else
         add_item "内存运行速率" "PASS" "标称速率运行（${MEM_SPEED:-N/A}）"
     fi
