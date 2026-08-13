@@ -107,28 +107,17 @@ if [ -n "$CPU_CORES" ] && [ "${CPU_SOCKETS:-0}" -gt 0 ] 2>/dev/null; then
 fi
 CPU_STEPPING=$(grep -m1 "^Stepping" "${cpu_stepping}" 2>/dev/null | awk '{print $2}')
 [ -z "$CPU_STEPPING" ] && CPU_STEPPING=$(grep -m1 "Stepping:" "${lscpu}" 2>/dev/null | awk '{print $2}')
-# CPUID（dmidecode Processor Information 的 ID 字段；Intel Xeon SN 多为 Not Specified，CPUID 才是可用身份标识）
-CPU_CPUID="N/A"
-if [ -f "${dmidecode_processor}" ]; then
-    CPU_CPUID=$(grep -m1 "^[[:space:]]*ID:" "${dmidecode_processor}" 2>/dev/null | awk '{print $2" "$3" "$4" "$5" "$6" "$7" "$8" "$9}')
-    [ -z "$CPU_CPUID" ] && CPU_CPUID="N/A"
-fi
-# CPU SN（dmidecode Serial Number，Intel 多数 Not Specified——如实显示）
-CPU_SN="N/A"
-if [ -f "${dmidecode_processor}" ]; then
-    CPU_SN=$(grep -m1 "Serial Number:" "${dmidecode_processor}" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
-    [ -z "$CPU_SN" ] && CPU_SN="N/A"
-fi
 CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${dmidecode_processor}" 2>/dev/null | awk '{print $(NF-1)}')
 [ -z "$CPU_MAX_SPEED" ] && CPU_MAX_SPEED=$(grep -m1 "CPU max MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
 CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${dmidecode_processor}" 2>/dev/null | awk '{print $(NF-1)}')
 [ -z "$CPU_CUR_SPEED" ] && CPU_CUR_SPEED=$(grep -m1 "CPU MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
 
 # CPU 每颗明细（从 dmidecode_processor.log 按 Processor Information 块解析）
+# SN 列：有真实 SN 才显示（Not Specified/空 → 空标记，报告端不展示该列）
 CPU_DETAILS=""
 if [ -f "${dmidecode_processor}" ]; then
     CPU_DETAILS=$(awk '/^Processor Information/{
-        socket=""; model=""; cores=""; threads=""; maxspd=""; curspd=""; step=""
+        socket=""; model=""; cores=""; threads=""; maxspd=""; curspd=""; step=""; sn=""
         while((getline line) > 0) {
             if(line ~ /^$/) break
             if(line ~ /Handle 0x/) break
@@ -139,10 +128,13 @@ if [ -f "${dmidecode_processor}" ]; then
             if(line ~ /Max Speed:/) {sub(/.*: /,"",line); maxspd=line}
             if(line ~ /Current Speed:/) {sub(/.*: /,"",line); curspd=line}
             if(line ~ /Stepping:/) {sub(/.*: /,"",line); step=line}
+            if(line ~ /Serial Number:/) {sub(/.*: /,"",line); sn=line}
             # 有的平台 Stepping 在 Signature 行内（如 "Signature: Type 0, Family 6, Model 173, Stepping 1"）
             if(line ~ /Signature:.*Stepping/) {match(line, /Stepping [0-9]+/); step=substr(line, RSTART+9, RLENGTH-9)}
         }
-        if(socket!="") print socket"|"model"|"cores"|"threads"|"maxspd"|"curspd"|"step
+        # SN 为 Not Specified/UNKNOWN/空 → 置空（报告端不显示）；仅保留真实 SN
+        if(sn ~ /Not Specified|UNKNOWN|Unknown/) sn=""
+        if(socket!="") print socket"|"model"|"cores"|"threads"|"maxspd"|"curspd"|"step"|"sn
     }' "${dmidecode_processor}" 2>/dev/null)
 fi
 
@@ -885,13 +877,11 @@ gen_json() {
     "cores_total": "${CPU_TOTAL_CORES:-N/A}",
     "sockets": "${CPU_SOCKETS:-N/A}",
     "stepping": "${CPU_STEPPING:-N/A}",
-    "cpuid": "${CPU_CPUID:-N/A}",
-    "serial": "${CPU_SN:-N/A}",
     "max_speed": "${CPU_MAX_SPEED:-N/A}",
     "current_speed": "${CPU_CUR_SPEED:-N/A}",
     "details": [
 $(if [ -n "$CPU_DETAILS" ]; then
-    echo "$CPU_DETAILS" | awk -F'|' '{printf "      {\"index\": \"%d\", \"socket\": \"%s\", \"model\": \"%s\", \"cores\": \"%s\", \"threads\": \"%s\", \"max_speed\": \"%s\", \"cur_speed\": \"%s\", \"stepping\": \"%s\"},\n", NR, $1, $2, $3, $4, $5, $6, $7}' | sed '$ s/,$//'
+    echo "$CPU_DETAILS" | awk -F'|' '{printf "      {\"index\": \"%d\", \"socket\": \"%s\", \"model\": \"%s\", \"cores\": \"%s\", \"threads\": \"%s\", \"max_speed\": \"%s\", \"cur_speed\": \"%s\", \"stepping\": \"%s\", \"serial\": \"%s\"},\n", NR, $1, $2, $3, $4, $5, $6, $7, $8}' | sed '$ s/,$//'
 fi)
     ]
   },
@@ -1164,18 +1154,31 @@ gen_md() {
 | 核心数 | ${CPU_CORES:-N/A}/颗 × ${CPU_SOCKETS:-N/A} 路 = ${CPU_TOTAL_CORES:-N/A} 总核 |
 | 插槽数 | ${CPU_SOCKETS:-N/A} |
 | Stepping | ${CPU_STEPPING:-N/A} |
-| CPUID | ${CPU_CPUID:-N/A} |
-| SN | ${CPU_SN:-N/A} |
 | 频率 | ${CPU_MAX_SPEED:-N/A} MHz（当前 ${CPU_CUR_SPEED:-N/A} MHz） |
 $(if [ -n "$CPU_DETAILS" ]; then
     local cseq=0
+    local c_has_sn=0
+    # 检测是否有任何 CPU 有真实 SN（Not Specified 已置空）
+    while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
+        [ -z "$cs" ] && continue
+        [ -n "$csn" ] && c_has_sn=1
+    done <<< "$CPU_DETAILS"
     echo "### CPU 明细"
-    echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping |"
-    echo "|---|--------|------|------|------|---------|---------|----------|"
-    echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep; do
-        cseq=$((cseq + 1))
-        echo "| ${cseq} | ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} |"
-    done
+    if [ "$c_has_sn" -eq 1 ]; then
+        echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping | SN |"
+        echo "|---|--------|------|------|------|---------|---------|----------|----|"
+        echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
+            cseq=$((cseq + 1))
+            echo "| ${cseq} | ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} | ${csn:-} |"
+        done
+    else
+        echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping |"
+        echo "|---|--------|------|------|------|---------|---------|----------|"
+        echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
+            cseq=$((cseq + 1))
+            echo "| ${cseq} | ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} |"
+        done
+    fi
 fi)
 
 ## 内存
@@ -1432,13 +1435,15 @@ HwScope 硬件巡检报告
   核心数 : ${CPU_CORES:-N/A}/颗 × ${CPU_SOCKETS:-N/A} 路 = ${CPU_TOTAL_CORES:-N/A} 总核
   插槽数 : ${CPU_SOCKETS:-N/A}
   Stepping: ${CPU_STEPPING:-N/A}
-  CPUID   : ${CPU_CPUID:-N/A}
-  SN      : ${CPU_SN:-N/A}
   频率   : ${CPU_MAX_SPEED:-N/A} MHz (当前 ${CPU_CUR_SPEED:-N/A} MHz)
 $(if [ -n "$CPU_DETAILS" ]; then
     echo "  CPU明细:"
-    echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep; do
-        printf "    %-6s %-30s %sC/%sT  %s/%s  %s\n" "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep"
+    echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
+        if [ -n "$csn" ]; then
+            printf "    %-6s %-30s %sC/%sT  %s/%s  %s  SN:%s\n" "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep" "$csn"
+        else
+            printf "    %-6s %-30s %sC/%sT  %s/%s  %s\n" "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep"
+        fi
     done
 fi)
 
