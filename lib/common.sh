@@ -185,6 +185,10 @@ module_end() {
             sleep $((SIM_DELAY - _sim_elapsed))
         fi
     fi
+    # WARN 计数落盘（供主脚本跨进程读取；模块独立跑/并行子进程均可靠）
+    if [ -n "${OUTPUT_DIR:-}" ]; then
+        echo "$_MODULE_WARN_COUNT" > "${OUTPUT_DIR}/.warn_count" 2>/dev/null
+    fi
     if [ "$QUIET" -eq 1 ]; then
         :  # 静默不输出完成提示
     else
