@@ -100,8 +100,25 @@ load_manifest "${CPU_DIR}" dmidecode_processor "dmidecode_processor.log"
 CPU_MODEL=$(grep -m1 -iE "^model name" "${cpu_summary}" 2>/dev/null | cut -d':' -f2- | tr -d '\t' | sed 's/^ *//' | head -c 100)
 CPU_CORES=$(grep -m1 -iE "^cpu cores|^Core Count" "${cpu_summary}" 2>/dev/null | cut -d':' -f2- | tr -d ' \t')
 CPU_SOCKETS=$(grep "physical id" "${proc_cpuinfo_full}" 2>/dev/null | cut -d':' -f2- | sort -u | wc -l)
+# 总核心数 = 每颗核心数 × 路数（如 48×2=96），与"每颗核心数"区分展示
+CPU_TOTAL_CORES=""
+if [ -n "$CPU_CORES" ] && [ "${CPU_SOCKETS:-0}" -gt 0 ] 2>/dev/null; then
+    CPU_TOTAL_CORES=$((CPU_CORES * CPU_SOCKETS))
+fi
 CPU_STEPPING=$(grep -m1 "^Stepping" "${cpu_stepping}" 2>/dev/null | awk '{print $2}')
 [ -z "$CPU_STEPPING" ] && CPU_STEPPING=$(grep -m1 "Stepping:" "${lscpu}" 2>/dev/null | awk '{print $2}')
+# CPUID（dmidecode Processor Information 的 ID 字段；Intel Xeon SN 多为 Not Specified，CPUID 才是可用身份标识）
+CPU_CPUID="N/A"
+if [ -f "${dmidecode_processor}" ]; then
+    CPU_CPUID=$(grep -m1 "^[[:space:]]*ID:" "${dmidecode_processor}" 2>/dev/null | awk '{print $2" "$3" "$4" "$5" "$6" "$7" "$8" "$9}')
+    [ -z "$CPU_CPUID" ] && CPU_CPUID="N/A"
+fi
+# CPU SN（dmidecode Serial Number，Intel 多数 Not Specified——如实显示）
+CPU_SN="N/A"
+if [ -f "${dmidecode_processor}" ]; then
+    CPU_SN=$(grep -m1 "Serial Number:" "${dmidecode_processor}" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
+    [ -z "$CPU_SN" ] && CPU_SN="N/A"
+fi
 CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${dmidecode_processor}" 2>/dev/null | awk '{print $(NF-1)}')
 [ -z "$CPU_MAX_SPEED" ] && CPU_MAX_SPEED=$(grep -m1 "CPU max MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
 CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${dmidecode_processor}" 2>/dev/null | awk '{print $(NF-1)}')
@@ -865,8 +882,11 @@ gen_json() {
   "cpu": {
     "model": "${CPU_MODEL:-N/A}",
     "cores": "${CPU_CORES:-N/A}",
+    "cores_total": "${CPU_TOTAL_CORES:-N/A}",
     "sockets": "${CPU_SOCKETS:-N/A}",
     "stepping": "${CPU_STEPPING:-N/A}",
+    "cpuid": "${CPU_CPUID:-N/A}",
+    "serial": "${CPU_SN:-N/A}",
     "max_speed": "${CPU_MAX_SPEED:-N/A}",
     "current_speed": "${CPU_CUR_SPEED:-N/A}",
     "details": [
@@ -1141,9 +1161,11 @@ gen_md() {
 | 项 | 值 |
 |----|----|
 | 型号 | ${CPU_MODEL:-N/A} |
-| 核心数 | ${CPU_CORES:-N/A} |
+| 核心数 | ${CPU_CORES:-N/A}/颗 × ${CPU_SOCKETS:-N/A} 路 = ${CPU_TOTAL_CORES:-N/A} 总核 |
 | 插槽数 | ${CPU_SOCKETS:-N/A} |
 | Stepping | ${CPU_STEPPING:-N/A} |
+| CPUID | ${CPU_CPUID:-N/A} |
+| SN | ${CPU_SN:-N/A} |
 | 频率 | ${CPU_MAX_SPEED:-N/A} MHz（当前 ${CPU_CUR_SPEED:-N/A} MHz） |
 $(if [ -n "$CPU_DETAILS" ]; then
     local cseq=0
@@ -1407,9 +1429,11 @@ HwScope 硬件巡检报告
 
 [CPU]
   型号   : ${CPU_MODEL:-N/A}
-  核心数 : ${CPU_CORES:-N/A}
+  核心数 : ${CPU_CORES:-N/A}/颗 × ${CPU_SOCKETS:-N/A} 路 = ${CPU_TOTAL_CORES:-N/A} 总核
   插槽数 : ${CPU_SOCKETS:-N/A}
   Stepping: ${CPU_STEPPING:-N/A}
+  CPUID   : ${CPU_CPUID:-N/A}
+  SN      : ${CPU_SN:-N/A}
   频率   : ${CPU_MAX_SPEED:-N/A} MHz (当前 ${CPU_CUR_SPEED:-N/A} MHz)
 $(if [ -n "$CPU_DETAILS" ]; then
     echo "  CPU明细:"
