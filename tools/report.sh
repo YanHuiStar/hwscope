@@ -713,9 +713,12 @@ gen_json() {
     # GPU 每卡明细 JSON 数组（idx|name|serial|mem|power|temp|util|pcie_cur|pcie_max）
     local gpu_details_json=""
     if [ -n "$GPU_DETAILS" ]; then
+        # 每卡显存标注标称（如 B300: 268.6 GiB (标称288GB)）
+        local gmem_spec=""
+        [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
             [ -z "$gidx" ] && continue
-            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"util\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\"},"$'\n'
+            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"util\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\"},"$'\n'
         done <<< "$GPU_DETAILS"
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
@@ -975,9 +978,16 @@ gen_md() {
     # GPU 每卡明细 Markdown 表
     local gpu_details_md=""
     if [ -n "$GPU_DETAILS" ]; then
+        # 每卡显存标注标称（如 B300: 268.6 GiB (标称288GB)），避免客户误读检测值
+        local gmem_spec=""
+        [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
             [ -z "$gidx" ] && continue
-            gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
+            if [ -n "$gmem_spec" ]; then
+                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} (标称${gmem_spec}) | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
+            else
+                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
+            fi
         done <<< "$GPU_DETAILS"
     fi
     # 盘明细 Markdown 表
@@ -1226,9 +1236,16 @@ gen_txt() {
     # GPU 每卡明细纯文本
     local gpu_details_txt=""
     if [ -n "$GPU_DETAILS" ]; then
+        # 每卡显存标注标称（如 B300: 268.6 GiB (标称288GB)），避免客户误读检测值
+        local gmem_spec=""
+        [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
             [ -z "$gidx" ] && continue
-            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
+            if [ -n "$gmem_spec" ]; then
+                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem} (标称${gmem_spec})  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
+            else
+                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
+            fi
         done <<< "$GPU_DETAILS"
     fi
     # 盘明细纯文本
