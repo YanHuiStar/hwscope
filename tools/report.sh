@@ -949,6 +949,7 @@ GLOSSARY_ENTRIES=(
     "Rank|内存 Bank 分组，Rank 2 = 双列（每 DIMM 2 组存储阵列）"
     "DAC|Direct Attach Cable，铜缆直连线（短距高速连接）"
     "MT/s|Mega Transfers per second，内存每通道每秒传输次数（DDR5 常见 6400 MT/s）"
+    "2DPC|DIMM Per Channel=每内存通道插 2 条；2DPC 满插时信号负载大，内存降速运行属平台规范正常现象（如 6400→5200 MT/s）"
     "退役行(Remapped Rows)|GPU 显存中检测到故障后自动重映射隐藏的行，计数>0 提示显存健康问题"
 )
 
@@ -1489,10 +1490,10 @@ gen_acceptance() {
         add_item "SEL 无 PCIe 错误" "PASS" "无 PCIe 相关 SEL"
     fi
 
-    # 6. 内存运行速率（插满降速是 DDR5 物理必然，不算故障；未插满降速才提示）
+    # 6. 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示）
     if [ -n "$MEM_SPEED_NOTE" ]; then
         if [ "$MEM_FULL" -eq 1 ]; then
-            add_item "内存运行速率" "PASS" "${MEM_SPEED_NOTE}（插满 ${MEM_POPULATED}/${MEM_SLOTS} 槽，降速属正常）"
+            add_item "内存运行速率" "PASS" "${MEM_SPEED_NOTE}（插满 ${MEM_POPULATED}/${MEM_SLOTS} 槽 2DPC，降速属平台规范正常现象）"
         else
             add_item "内存运行速率" "WARN" "${MEM_SPEED_NOTE}（仅插 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽仍降速，建议核查）"
         fi
