@@ -60,9 +60,8 @@ load_manifest() {
 get_csv_col_index() {
     local csv_file="$1" col_name="$2"
     [ ! -f "$csv_file" ] && echo 0 && return
-    local header=$(grep -v "^#" "$csv_file" 2>/dev/null | head -1)
+    local header=$(filter_log "$csv_file" | head -1)
     [ -z "$header" ] && echo 0 && return
-    local idx=1
     echo "$header" | awk -F',' -v target="$col_name" '{
         for(i=1; i<=NF; i++) {
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i)
@@ -73,6 +72,35 @@ get_csv_col_index() {
         }
         print 0
     }'
+}
+
+# ─── JSON 明细数组生成辅助 ───
+# 用法: gen_details_json <分隔的数据> <字段映射>
+# 输入: 管道分隔的多行数据（如 CPU_DETAILS）
+# 字段映射格式: "字段名:字段索引" （索引从 1 开始）
+# 示例: gen_details_json "$CPU_DETAILS" "socket:1 model:2 cores:3 threads:4"
+gen_details_json() {
+    local data="$1" fields="$2"
+    [ -z "$data" ] && return
+
+    local output=""
+    while IFS='|' read -r line; do
+        [ -z "$line" ] && continue
+        local json_line="{"
+        local first=1
+        while IFS=':' read -r name idx; do
+            [ -z "$name" ] && continue
+            local value=$(echo "$line" | cut -d'|' -f"$idx" 2>/dev/null)
+            [ -z "$first" ] && json_line="${json_line}, "
+            json_line="${json_line}\"${name}\": \"${value}\""
+            first=0
+        done <<< "$fields"
+        json_line="${json_line}},"
+        output="${output}      ${json_line}"$'\n'
+    done <<< "$data"
+
+    # 移除最后一个逗号
+    printf '%s' "$output" | sed '$ s/,$//'
 }
 
 # ─── 收集基础信息 ───
