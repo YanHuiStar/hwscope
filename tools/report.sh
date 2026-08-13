@@ -1468,8 +1468,10 @@ gen_acceptance() {
         rows="${rows}| ${n} | $1 | ${st} | $3 |"$'\n'
     }
 
-    # 1. GPU PCIe 链路完整
-    if [ -n "$GPU_DEGRADED" ]; then
+    # 1. GPU PCIe 链路完整（无 GPU 机器判 N/A，避免假阳性 PASS）
+    if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+        add_item "GPU PCIe 链路完整" "N/A" "无 GPU"
+    elif [ -n "$GPU_DEGRADED" ]; then
         add_item "GPU PCIe 链路完整" "FAIL" "${GPU_DEGRADED%%,}（期望最高速率）"
     else
         add_item "GPU PCIe 链路完整" "PASS" "全部 GPU 处于最高 PCIe 速率"
@@ -1545,11 +1547,15 @@ gen_acceptance() {
         add_item "磁盘寿命" "PASS" "全部磁盘寿命充足"
     fi
 
-    # 汇总判定
+    # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
     if [ "$fail" -gt 0 ]; then
         verdict="不合格（${fail} 项 FAIL，需处理后再交付）"
     elif [ "$warn" -gt 0 ]; then
         verdict="有条件通过（${warn} 项 WARN，建议记录后交付）"
+    elif [ "$na" -ge 4 ]; then
+        verdict="数据不足（${na} 项无数据，关键项缺失，无法完成验收判定）"
+    elif [ "$na" -gt 0 ]; then
+        verdict="基本通过（${na} 项无数据，其余项正常）"
     else
         verdict="合格（全部通过）"
     fi
