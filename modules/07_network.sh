@@ -97,6 +97,10 @@ run_network() {
                 nmac=$(echo "$nmac" | awk -F: '{for(i=13;i<=NF;i++) printf "%s%s", $i, (i<NF?":":"")}')
             fi
             local nsn=$(cat "/sys/class/net/${ndev}/device/serial" 2>/dev/null)
+            # Mellanox sysfs serial 常为占位值（如 1951526575073，多卡相同）——识别后置空，等 mstflint 读真 SN
+            if [ -n "$nsn" ] && echo "$nsn" | grep -qE "^1951526575073$|^[0]+$"; then
+                nsn=""
+            fi
             [ -z "$nsn" ] && nsn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Serial Number" | head -1 | awk '{print $NF}')
             [ -z "$nsn" ] && nsn="N/A"
             local npn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Part Number" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
@@ -116,6 +120,7 @@ run_network() {
                     local mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
                     [ -n "$mq_psid" ] && npsid="$mq_psid"
                 fi
+                # mstflint 读不到真 SN 时保持 sysfs/lspci 值（可能为 GUID 兜底），不覆盖
             fi
             local nfw="N/A"
             if check_cmd ethtool; then
