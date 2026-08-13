@@ -134,6 +134,14 @@ run_network() {
                 fi
                 # mstflint 读不到真 SN 时保持 sysfs/lspci 值（可能为 GUID 兜底），不覆盖
             fi
+            # PSID 回退：mstflint q 无 PSID 时，从 mlxfwmanager.log 按 BDF 匹配（如 Inventec 平台）
+            if [ "$npsid" = "N/A" ] && [ -f "${dir}/mlxfwmanager.log" ]; then
+                local fw_psid=$(awk -v bdf="$nbdf" '
+                    $1=="Device:" && $2==bdf { in_dev=1 }
+                    in_dev && /PSID:/ { sub(/.*PSID:[[:space:]]*/, ""); print; exit }
+                ' "${dir}/mlxfwmanager.log" 2>/dev/null)
+                [ -n "$fw_psid" ] && npsid="$fw_psid"
+            fi
             local nfw="N/A"
             if check_cmd ethtool; then
                 nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | awk '{print $2}')

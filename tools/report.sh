@@ -63,7 +63,7 @@ TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 
 
 # ─── 采集耗时（summary 耗时统计段） ───
 TIMING_TOTAL=$(grep -m1 "^总时长" "$SUMMARY" 2>/dev/null | awk '{print $3}')
-TIMING_TOP=$(grep -A6 "^模块耗时 Top5:" "$SUMMARY" 2>/dev/null | grep -E "^[[:space:]]*[0-9]" | sed 's/^ *//;s/ *$//' | tr '\n' '; ' | sed 's/; $//')
+TIMING_TOP=$(grep -A6 "^模块耗时 Top5:" "$SUMMARY" 2>/dev/null | grep -E "^[[:space:]]*[0-9]" | sed 's/^ *//;s/ *$//' | sed 's/  */ /g' | awk '{printf "%s<br>", $0}' | sed 's/<br>$//')
 
 # ─── 环境（OS/内核/驱动/CUDA） ───
 OS_DIR="${OUT}/os"
@@ -297,9 +297,9 @@ if [ -f "${block_devices_all}" ]; then
         if(v!=""){n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
         if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024}} \
         END{printf "%.0f GiB", s}' 2>/dev/null)
-    # 盘型号：从 disk_inventory.csv 取（MODEL/SERIAL 已分离）；回退 block_devices 提取（只取 size 前一列=model）
+    # 盘型号：从 disk_inventory.csv 取（MODEL/SERIAL 已分离）；排除系统盘（与盘数/容量口径一致）；回退 block_devices 提取
     if [ -f "${disk_inventory}" ]; then
-        STORAGE_MODELS=$(grep -v "^#" "${disk_inventory}" 2>/dev/null | awk -F'|' '$1!="" && $4!="N/A" && $4!="" {print $4}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+        STORAGE_MODELS=$(grep -v "^#" "${disk_inventory}" 2>/dev/null | awk -F'|' -v sys="$SYS_DISK" '$1!="" && $1!=sys && $4!="N/A" && $4!="" {print $4}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
     else
         STORAGE_MODELS=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {print $(i-1); break}}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
     fi
@@ -313,7 +313,7 @@ if [ -f "${disk_inventory}" ]; then
         [ "$dname" = "#" ] && continue
         [ "$dname" = "$SYS_DISK" ] && continue   # 默认排除系统盘
         # 标称容量（型号→规格映射，标注检测值 vs 标称差异；未知型号留空）
-        local dspec=""
+        dspec=""
         case "$dmodel" in
             *MZWL61T9HFLT*|*MZWL61T9HBLN*) dspec="标称1.92TB" ;;
             *MZWL63T8HFLT*|*MZWL63T8HBLN*) dspec="标称3.84TB" ;;
@@ -478,9 +478,9 @@ SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could no
 SEL_DETAILS=""
 if [ -f "${ipmi_sel_elist}" ]; then
     SEL_DETAILS=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev|^$" | tail -20 | awk -F'|' '{
-        gsub(/^ +| +$/,"",$1); gsub(/^ +| +$/,"",$2); gsub(/^ +| +$/,"",$3)
+        gsub(/^ +| +$/,"",$2); gsub(/^ +| +$/,"",$3)
         gsub(/^ +| +$/,"",$4); gsub(/^ +| +$/,"",$5); gsub(/^ +| +$/,"",$6)
-        if($1!="" && $2!="") print $1"|"$2"|"$3"|"$4"|"$5
+        if($2!="") printf "%d|%s|%s|%s|%s\n", NR, $2, $3, $4, $5
     }')
 fi
 
@@ -522,7 +522,7 @@ if [ -f "${dcgmi_diag_level1}" ]; then
     DCGM_SOFT_FAIL=$(grep -A1 "^| software" "${dcgmi_diag_level1}" 2>/dev/null | grep -c "Fail")
     DCGM_HW_FAIL=$(grep -E "^\| (memory|pcie|nvlink|diagnostic|compute|graphics|nvswitch)" "${dcgmi_diag_level1}" 2>/dev/null | grep -c "Fail")
     DCGM_PERSIST=$(grep -c "Persistence Mode" "${dcgmi_diag_level1}" 2>/dev/null)
-    DCGM_DIAG_VER=$(grep -m1 "DCGM Version" "${dcgmi_diag_level1}" 2>/dev/null | awk '{print $NF}')
+    DCGM_DIAG_VER=$(grep -m1 "DCGM Version" "${dcgmi_diag_level1}" 2>/dev/null | grep -oP 'DCGM Version\s+\|\s*\K[0-9.]+' | head -1)
     if [ "$DCGM_SOFT_FAIL" -gt 0 ] || [ "$DCGM_HW_FAIL" -gt 0 ]; then
         DCGM_SUMMARY="Fail (软件:${DCGM_SOFT_FAIL} 硬件:${DCGM_HW_FAIL})"
         # 纯配置类 Fail（仅 Persistence Mode）→ 标注非硬件
@@ -644,14 +644,14 @@ if [ -f "${nic_inventory}" ]; then
             fi
         fi
         # GPU 直连标记（topo PIX 判定）；无 topo_nic 日志（旧版采集）时显示待采集
-        local gd_mark=""
+        gd_mark=""
         if [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ]; then
             gd_mark="GPU直连"
         elif [ ! -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
             gd_mark="—"
         fi
         # PCIe 能力（LnkCap）与当前（LnkSta）合并显示：当前一致时只显当前，不一致标注能力
-        local npcie_cap=""
+        npcie_cap=""
         if [ -n "$ncapspd" ] && [ "$ncapspd" != "N/A" ]; then
             if [ "$nspd" = "$ncapspd" ] && [ "$nwd" = "$ncapwd" ]; then
                 npcie_cap="${nspd}/${nwd}"
@@ -668,16 +668,17 @@ fi
 # ─── 风扇（IPMI 传感器，| 分隔格式） ───
 FAN_DIR="${OUT}/fan"
 load_manifest "${FAN_DIR}" ipmi_fan_sensors "ipmi_fan_sensors.log"
-FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{c++} END{print c+0}')
-FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); print $2}' | sort -n | head -1)
-FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); print $2}' | sort -n | tail -1)
+# 风扇匹配：兼容 Fan10_Speed_F / FAN1_Speed / Fan2 等大小写变体；只统计转速传感器（_Speed/_RPM），跳过 Present 等离散值
+FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
+FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); print $2}' | sort -n | head -1)
+FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); print $2}' | sort -n | tail -1)
 FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 
 # 风扇每风扇明细
 FAN_DETAILS=""
 if [ -f "${ipmi_fan_sensors}" ]; then
-    FAN_DETAILS=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' '$1 ~ /FAN[0-9]/{
+    FAN_DETAILS=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{
         name=$1; gsub(/^ +| +$/,"",name)
         val=$2; gsub(/^ +| +$/,"",val)
         # 转速去尾零（9300.000 → 9300）
@@ -716,9 +717,21 @@ if [ -f "$_fru_src" ]; then
     [ -n "$pending" ] && PSU_DETAILS="${PSU_DETAILS}${pending}${ppn:-N/A}|${psn:-N/A}"$'\n'
     # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）
     PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|Power Supply")
+    psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
+    # 回退：部分平台（如 Inventec）FRU 不暴露 PSU 条目，但传感器有 PSU*_Temp —— 用传感器生成占位行
+    if [ -z "$PSU_DETAILS" ] && [ -f "$psu_power_csv" ]; then
+        PSU_DETAILS=$(grep -v "^#" "$psu_power_csv" 2>/dev/null | awk -F'|' '
+            tolower($1) ~ /psu[0-9]+_temp/ {
+                num=$1; gsub(/[^0-9]/, "", num)
+                if(num!="" && !seen[num]++) printf "PSU%s|N/A|N/A|N/A|N/A|N/A\n", num
+            }')
+    fi
+    # 整机功耗（Total_Power 在 ipmi_psu_power.log：'PSU.*Power|Total.*Power' 过滤命令），追加为一行
+    total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
+    [ -n "$total_pwr" ] && PSU_DETAILS="${PSU_DETAILS}"$'\n'"整机功耗|N/A|N/A|N/A|N/A|${total_pwr}"$'\n'
     # 每只 PSU 当前输入功率（ipmi_psu_sensors.log: Pwr_PSU<N>_In | W |），按编号匹配追加
     psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
-    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ]; then
+    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -q "Pwr_PSU[0-9]" "$psu_power_csv" 2>/dev/null; then
         # 一次性构建 编号→功率 映射，再一次性追加（避免逐行 echo|awk 嵌套性能灾难）
         PSU_DETAILS=$(awk -v psu_detail="$PSU_DETAILS" '
             BEGIN { FS="|"; OFS="|" }
@@ -1377,7 +1390,7 @@ $(glossary_md)
 
 > 数据来源说明：本报告所有数值均从采集日志提取（只读解析，不重新采集）。检测值为采集时刻的实际状态；
 > 标注"标称"的为硬件规格（如 GPU 显存 288GB 标称 vs 268.6 GiB 检测可见值，差异为 ECC/显存预留）。
-> 各段明细见 `output/<SN>/<模块>/` 下的原始日志。
+> 各段明细见 output/&lt;SN&gt;/&lt;模块&gt;/ 下的原始日志。
 EOF
     echo -e "${GREEN}[REPORT] MD: ${f}${NC}"
 }

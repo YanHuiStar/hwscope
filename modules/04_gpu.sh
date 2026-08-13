@@ -44,7 +44,9 @@ run_gpu() {
         "nvidia-smi --query-compute-apps=pid,process_name,used_memory,gpu_bus_id --format=csv" "${dir}/gpu_processes.csv"
         "nvidia-smi --query-gpu=driver_version --format=csv"                          "${dir}/gpu_driver_version.log"
         "nvidia-smi topo -m"                                                          "${dir}/gpu_topo.log"
-        "nvidia-smi topo -m -n"                                                        "${dir}/gpu_topo_nic.log"
+        # GPU↔NIC 矩阵：新版 nvidia-smi（580.x+）topo -m 已含 NIC 列；旧版需 -n。
+        # 注意 580.x 的 -n 变为有值参数（topo -n <path> -i <dev>），不能再裸用 -n
+        "nvidia-smi topo -m 2>/dev/null || nvidia-smi topo -m -n 2>/dev/null"          "${dir}/gpu_topo_nic.log"
         "nvidia-smi --query-remapped-rows=remapped_rows.correctable,remapped_rows.uncorrectable,remapped_rows.pending,remapped_rows.failure --format=csv" "${dir}/gpu_remapped_rows.csv"
     )
 

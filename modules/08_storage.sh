@@ -57,7 +57,9 @@ run_storage() {
             local smart_jobs=()
             while IFS= read -r dev; do
                 [ -z "$dev" ] && continue
-                [ ! -b "$dev" ] && continue
+                # smartctl --scan 对 NVMe 输出控制器设备（/dev/nvme0，字符设备），
+                # 对 SATA/SAS 输出块设备（/dev/sda）——两者都要接受，否则 NVMe 全被跳过
+                [ ! -b "$dev" ] && [ ! -c "$dev" ] && continue
                 local dev_short=$(basename "$dev")
 
                 case "$dev_short" in
@@ -101,7 +103,7 @@ run_storage() {
             [ -b "$ndev" ] || continue
             local nname=$(basename "$ndev")
             local ctrl="${nname%n1}"
-            local nsize=$(lsblk -d -n -o SIZE "$ndev" 2>/dev/null)
+            local nsize=$(lsblk -d -n -o SIZE "$ndev" 2>/dev/null | tr -d ' ')
             local nmodel=$(cat "/sys/block/${nname}/device/model" 2>/dev/null | xargs)
             local nsn=$(cat "/sys/block/${nname}/device/serial" 2>/dev/null | xargs)
             local nfw=$(cat "/sys/block/${nname}/device/firmware_rev" 2>/dev/null | xargs)
@@ -124,7 +126,7 @@ run_storage() {
             local sz=$(blockdev --getsize64 "$sdev" 2>/dev/null)
             [ -z "$sz" ] || [ "$sz" = "0" ] && continue
             local sname=$(basename "$sdev")
-            local ssize=$(lsblk -d -n -o SIZE "$sdev" 2>/dev/null)
+            local ssize=$(lsblk -d -n -o SIZE "$sdev" 2>/dev/null | tr -d ' ')
             local smodel="" ssn="" sfw="" sinter="SATA"
             if check_cmd smartctl; then
                 local sinfo=$(smartctl -i "$sdev" 2>/dev/null)
