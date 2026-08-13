@@ -764,6 +764,19 @@ if [ -f "${storcli_controllers}" ] && grep -q "Controller = " "${storcli_control
     done
 fi
 
+# ─── HBA 直通卡（sas3_hba*.log / sas2_hba*.log：有卡才显示，无卡段隐藏） ───
+# sas3ircu display / sas2ircu display 输出含 Controller Type / Firmware / Status
+HBA_DETAILS=""
+for hf in "${RAID_DIR}"/sas3_hba*.log "${RAID_DIR}"/sas2_hba*.log; do
+    [ -f "$hf" ] || continue
+    hname=$(basename "$hf" .log)
+    htype=$(grep -m1 -iE "Controller Type|SAS.*Adapter|Product Name" "$hf" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
+    hfw=$(grep -m1 -iE "Firmware Version|Firmware" "$hf" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
+    hsn=$(grep -m1 -iE "Serial Number|SAS Address" "$hf" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
+    hstat=$(grep -m1 -iE "^Status" "$hf" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
+    HBA_DETAILS="${HBA_DETAILS}${hname}|${htype:-N/A}|${hfw:-N/A}|${hsn:-N/A}|${hstat:-N/A}"$'\n'
+done
+
 # ─── 生成 JSON ───
 gen_json() {
     local f="${OUT}/hwscope_report.json"
@@ -979,6 +992,14 @@ $(if [ -n "$RAID_DETAILS" ]; then
     echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd; do
         [ -z "$ridx" ] && continue
         printf '    {"controller": "%s", "model": "%s", "serial": "%s", "firmware": "%s", "virtual_disks": "%s"},\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd"
+    done | sed '$ s/,$//'
+fi)
+  ],
+  "hba": [
+$(if [ -n "$HBA_DETAILS" ]; then
+    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat; do
+        [ -z "$hname" ] && continue
+        printf '    {"controller": "%s", "model": "%s", "firmware": "%s", "serial": "%s", "status": "%s"},\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat"
     done | sed '$ s/,$//'
 fi)
   ],
@@ -1300,6 +1321,18 @@ $(if [ -n "$RAID_DETAILS" ]; then
     done
 fi)
 
+$(if [ -n "$HBA_DETAILS" ]; then
+    local hseq=0
+    echo "## HBA 直通卡"
+    echo "| # | 控制器 | 型号 | 固件 | SN | 状态 |"
+    echo "|---|--------|------|------|----|------|"
+    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat; do
+        [ -z "$hname" ] && continue
+        hseq=$((hseq + 1))
+        echo "| ${hseq} | ${hname} | ${htype} | ${hfw} | ${hsn} | ${hstat} |"
+    done
+fi)
+
 $(if [ -n "$nvs_md" ]; then
     echo "## NVSwitch"
     echo "| 编号 | 状态 | 温度 | 活动/总端口 |"
@@ -1521,6 +1554,14 @@ $(if [ -n "$RAID_DETAILS" ]; then
     echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd; do
         [ -z "$ridx" ] && continue
         printf '  %s  %s  SN:%s  固件:%s  虚拟盘:%s\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd"
+    done
+fi)
+
+$(if [ -n "$HBA_DETAILS" ]; then
+    echo "[HBA直通卡]"
+    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat; do
+        [ -z "$hname" ] && continue
+        printf '  %s  %s  固件:%s  SN:%s  状态:%s\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat"
     done
 fi)
 
