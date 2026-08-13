@@ -112,13 +112,17 @@ get_warn_count()   { echo "$_MODULE_WARN_COUNT"; }
 
 run_and_log_parallel() {
     local max_jobs=$1; shift
+    local _rlp_has_error=0
 
     # 串行模式：降级为逐条执行（模块或全局禁用并行时）
     if [ "${MODULE_PARALLEL:-1}" -ne 1 ]; then
         while [ $# -ge 2 ]; do
-            run_and_log "$1" "$2"; shift 2
+            run_and_log "$1" "$2"
+            local ret=$?
+            [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ] && _rlp_has_error=1
+            shift 2
         done
-        return
+        return $_rlp_has_error
     fi
 
     local _rlp_pids=()
@@ -155,11 +159,13 @@ run_and_log_parallel() {
         local _rlp_ret=$(cat "${_rlp_tmpdir}/w_${_rlp_i}" 2>/dev/null || echo 0)
         if [ "$_rlp_ret" -ne 0 ] && [ "$_rlp_ret" -ne 1 ] && [ "$_rlp_ret" -ne 127 ]; then
             _MODULE_WARN_COUNT=$((_MODULE_WARN_COUNT + 1))
+            _rlp_has_error=1
         fi
         _rlp_i=$((_rlp_i + 1))
     done
 
     rm -rf "$_rlp_tmpdir"
+    return $_rlp_has_error
 }
 
 # ─── 模块开始/结束提示 ───
