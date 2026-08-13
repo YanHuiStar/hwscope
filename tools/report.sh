@@ -205,6 +205,11 @@ if [ -f "$GPU_CSV" ]; then
         if [[ "$gmem_f" == *MiB ]] && [[ "${gmem_f%MiB}" =~ ^[0-9]+$ ]]; then
             gmem_f=$(awk "BEGIN{printf \"%.1f GiB\", ${gmem_f%MiB}/1024}" < /dev/null)
         fi
+        gused_f=${gused// /}
+        # 已用显存单位统一：MiB → GiB
+        if [[ "$gused_f" == *MiB ]] && [[ "${gused_f%MiB}" =~ ^[0-9]+$ ]]; then
+            gused_f=$(awk "BEGIN{printf \"%.1f GiB\", ${gused_f%MiB}/1024}" < /dev/null)
+        fi
         gdraw_f=${gdraw// /}
         gtemp_f=${gtemp// /}
         gutil_f=${gutil// /}
@@ -224,7 +229,7 @@ if [ -f "$GPU_CSV" ]; then
         [ "$ggen" != "N/A" ] && [ -n "$ggen" ] && gpcie_cur="${ggen}x${gwidth}"
         [ "$ggenmax" != "N/A" ] && [ -n "$ggenmax" ] && gpcie_max="${ggenmax}x${gwidthmax}"
         [ "$gpcie_cur" = "N/A" ] && [ "$gpcie_max" != "N/A" ] && gpcie_cur="?"
-        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}"$'\n'
+        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gused_f:-0}/${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}"$'\n'
         # PCIe 宽度降级检测（宽度空闲不变，是最可靠信号；gen 低可能是省电不算）
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
@@ -978,7 +983,7 @@ gen_md() {
     # GPU 每卡明细 Markdown 表
     local gpu_details_md=""
     if [ -n "$GPU_DETAILS" ]; then
-        # 每卡显存标注标称（如 B300: 268.6 GiB (标称288GB)），避免客户误读检测值
+        # 每卡显存显示 已用/总量 + 标称（如 0/268.6 GiB (标称288GB)），避免客户误读
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
@@ -1110,7 +1115,7 @@ $(printf '%s' "$dimms_md")
 | NVLink | ${NV_LINK_SUMMARY:-N/A} |
 
 ### 每卡明细
-| 卡 | 型号 | SN | 显存 | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
+| 卡 | 型号 | SN | 显存(已用/总量) | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
 |----|------|----|----|------|------|--------|----------|-----------|
 $(printf '%s' "$gpu_details_md")
 
