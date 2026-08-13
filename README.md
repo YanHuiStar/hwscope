@@ -295,7 +295,7 @@ MODULE_TIMEOUT=300         # 模块级超时（秒），防止命令卡死导致
 - **N/A 隐藏** — NVIDIA 专属段（NVSwitch/NVLink/DCGM）与 RAID/HBA 无数据时整段隐藏，AMD/华为等新平台报告干净
 - **服务自拉起** — MST/DCGM hostengine 未启动时自动启动（验收场景默认开，可配置关闭），失败降级并标注
 - **manifest 解耦** — 模块声明输出文件，报告生成器读 manifest，改文件名不连累报告
-- **11 张明细表** — 内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID/HBA，JSON+MD+TXT 三格式
+- **11 张明细表** — 内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID/HBA，JSON+MD+TXT 三格式（RAID/HBA 有卡才显示）
 - **报告术语表** — 末尾附 IB 速率/GPU直连/DCGM/SXM 等术语解释，非运维人员也能读懂报告
 
 ## License
