@@ -14,7 +14,9 @@ run_network() {
     mkdir -p "$dir"
 
     module_start "$MODULE_NAME"
-    # MST 未启动标记（Mellanox 卡 SN 读不到时置 1；不自动 start，只读原则）
+    # MST 自动启动配置（默认 1=自动 start；验收/交付场景 root 跑，mst start 读真 SN）
+    MST_AUTO_START=${MST_AUTO_START:-1}
+    # MST 不可用标记（自动 start 失败/被禁用时置 1，报告标注 GUID 兜底）
     MST_NOT_STARTED=0
 
     # ─── InfiniBand + Mellanox / NVIDIA NIC 工具（并行） ───
@@ -113,6 +115,11 @@ run_network() {
             [[ "$npn" == *"Mellanox"* || "$npn" == *"ConnectX"* || "$npn" == *"MLX"* ]] && nis_mlx=1
             local npsid="N/A"
             if [ "$nis_mlx" -eq 1 ] && check_cmd mstflint; then
+                # MST 未启动且配置允许 → 自动 mst start（root 下直接执行；非 root 会失败但无害）
+                if [ "${MST_AUTO_START:-1}" -eq 1 ] && ! ls /dev/mst/* >/dev/null 2>&1 && check_cmd mst; then
+                    mst start >/dev/null 2>&1 || true
+                    sleep 1
+                fi
                 mstdev=$(mst status 2>/dev/null | grep -i "$nbdf" | awk '{print $1}' | head -1)
                 [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep -i "${nbdf//:}" | head -1)
                 if [ -n "$mstdev" ]; then
@@ -122,7 +129,7 @@ run_network() {
                     local mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
                     [ -n "$mq_psid" ] && npsid="$mq_psid"
                 else
-                    # MST 未启动（无 /dev/mst 节点）→ 不自动 start（只读原则），记录提示供报告标注
+                    # MST 仍不可用（非 root 或 mst start 失败）→ 记录提示供报告标注
                     MST_NOT_STARTED=1
                 fi
                 # mstflint 读不到真 SN 时保持 sysfs/lspci 值（可能为 GUID 兜底），不覆盖
