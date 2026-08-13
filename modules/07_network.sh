@@ -14,6 +14,8 @@ run_network() {
     mkdir -p "$dir"
 
     module_start "$MODULE_NAME"
+    # MST 未启动标记（Mellanox 卡 SN 读不到时置 1；不自动 start，只读原则）
+    MST_NOT_STARTED=0
 
     # ─── InfiniBand + Mellanox / NVIDIA NIC 工具（并行） ───
     local ib_jobs=()
@@ -119,6 +121,9 @@ run_network() {
                     [ -n "$mq_sn" ] && nsn="$mq_sn"
                     local mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
                     [ -n "$mq_psid" ] && npsid="$mq_psid"
+                else
+                    # MST 未启动（无 /dev/mst 节点）→ 不自动 start（只读原则），记录提示供报告标注
+                    MST_NOT_STARTED=1
                 fi
                 # mstflint 读不到真 SN 时保持 sysfs/lspci 值（可能为 GUID 兜底），不覆盖
             fi
@@ -161,6 +166,12 @@ run_network() {
         "ip_route" "ip_route.log" \
         "nic_inventory" "nic_inventory.csv" \
         "lstopo_network" "lstopo_network.txt"
+
+    # MST 未启动提示（只读原则不自动 start；SN 为 GUID 兜底时用户可手动补真 SN）
+    if [ "$MST_NOT_STARTED" -eq 1 ]; then
+        echo "⚠️ MST 服务未启动（sudo mst start 可启用）：Mellanox 卡 SN/PSID 未读到，报告以 GUID 兜底" > "${dir}/mst_notice.log"
+        write_manifest "${dir}/manifest.txt" "mst_notice" "mst_notice.log"
+    fi
 
     module_end "$MODULE_NAME"
 }

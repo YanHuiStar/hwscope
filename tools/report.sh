@@ -393,6 +393,10 @@ NET_DIR="${OUT}/network"
 load_manifest "${NET_DIR}" ibstat "ibstat.log"
 load_manifest "${NET_DIR}" ibdev2netdev "ibdev2netdev.log"
 load_manifest "${NET_DIR}" nic_inventory "nic_inventory.csv"
+load_manifest "${NET_DIR}" mst_notice "mst_notice.log"
+# MST 未启动提示（Mellanox SN 兜底说明）
+MST_NOTICE=""
+[ -f "${mst_notice}" ] && MST_NOTICE=$(grep -v "^#" "${mst_notice}" | head -1)
 # IB 设备总数（CA 数量）与活动口数（State: Active）分开统计——"设备数"≠"活动口数"
 IB_COUNT=$(grep -c "^CA '" "${ibstat}" 2>/dev/null)
 IB_ACTIVE=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
@@ -1264,6 +1268,7 @@ $(printf '%s' "$disk_details_md")
 $(if [ -n "$CABLE_SUMMARY" ] && [ "$CABLE_SUMMARY" != "N/A" ]; then echo "| 线缆类型 | ${CABLE_SUMMARY} |"; fi)
 $(if [ -n "$CABLE_PAIRS" ] && [ "$CABLE_PAIRS" != "N/A" ]; then echo "| 线缆配对 | ${CABLE_PAIRS} |"; fi)
 $(if [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ]; then echo "| 端口模式 | ${LINKTYPE_SUMMARY} |"; fi)
+$(if [ -n "$MST_NOTICE" ]; then echo "| ⚠️ 提示 | ${MST_NOTICE} |"; fi)
 
 ### 网卡明细
 | # | 接口 | BDF | MAC | SN | 型号 | 固件 | PCIe | PSID | GPU直连 |
@@ -1522,6 +1527,7 @@ $(printf '%s' "$disk_details_txt")
 $(if [ -n "$CABLE_SUMMARY" ] && [ "$CABLE_SUMMARY" != "N/A" ]; then echo "  线缆   : ${CABLE_SUMMARY}"; fi)
 $(if [ -n "$CABLE_PAIRS" ] && [ "$CABLE_PAIRS" != "N/A" ]; then echo "  配对   : ${CABLE_PAIRS}"; fi)
 $(if [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ]; then echo "  端口模式: ${LINKTYPE_SUMMARY}"; fi)
+$(if [ -n "$MST_NOTICE" ]; then echo "  ⚠️ ${MST_NOTICE}"; fi)
 $(printf '%s' "$nic_details_txt")
 
 [BMC]

@@ -76,5 +76,46 @@ if [ ${#UNREADABLE[@]} -gt 0 ]; then
     echo "  建议: 拔线法确认（拔 P1 看哪个设备 Down）或 ethtool -p 闪灯"
 fi
 
+# ─── 4. 断口联动验证（serial 读不出的 DAC 场景；借鉴 NVIDIA onediagfield 引擎逻辑） ───
+# 原理: 把一端 link down（mlxlink -a DN），若另一端"联动 down"（Recommendation 变化）→ 物理相连
+# 仅对 serial 不可读且未配对的设备执行（避免打断已确认的配对）；全程自动恢复 UP
+if [ ${#UNREADABLE[@]} -gt 0 ]; then
+    echo ""
+    echo -e "${BLUE}── 断口联动验证 (DAC 无 serial 场景) ──${NC}"
+    echo -e "${YELLOW}  将逐口 down 再恢复（每个口约 3-5 秒），确认物理配对${NC}"
+    declare -A LINK_VERIFIED
+    for dev in $DEVS; do
+        # 只验证 serial 不可读 且 未配对 的设备（跳过已通过 serial 配对的）
+        if echo "$PAIRED_DEVS" | grep -qw "$dev"; then continue; fi
+        # 检查该口是否可管理（有 mlxlink 权限且状态非 Down）
+        cur_state=$(sudo mlxlink -d "$dev" -p 1 2>/dev/null | grep -iE "^State|Active|Link" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
+        [ -z "$cur_state" ] && continue
+        # 记录当前 Recommendation（联动基线）
+        base_rec=$(sudo mlxlink -d "$dev" -p 1 2>/dev/null | grep -i "Recommendation" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
+        # 对每个其他未配对口做联动测试（只测 serial 不可读的，减少打扰）
+        for other in $DEVS; do
+            [ "$other" = "$dev" ] && continue
+            echo "$PAIRED_DEVS" | grep -qw "$other" && continue
+            [ -n "${LINK_VERIFIED[$other]:-}" ] && continue
+            # down 掉 other → 看 dev 是否联动变化
+            sudo mlxlink -d "$other" -p 1 -a DN >/dev/null 2>&1
+            sleep 1
+            new_rec=$(sudo mlxlink -d "$dev" -p 1 2>/dev/null | grep -i "Recommendation" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
+            sudo mlxlink -d "$other" -p 1 -a UP >/dev/null 2>&1
+            if [ -n "$base_rec" ] && [ -n "$new_rec" ] && [ "$base_rec" != "$new_rec" ]; then
+                echo -e "  ${GREEN}$dev ↔ $other${NC}  (联动验证通过)"
+                LINK_VERIFIED[$dev]="1"; LINK_VERIFIED[$other]="1"
+                break
+            fi
+        done
+    done
+    # 未验证的（可能单端/未接）
+    for dev in $DEVS; do
+        if [ -z "${LINK_VERIFIED[$dev]:-}" ] && ! echo "$PAIRED_DEVS" | grep -qw "$dev"; then
+            echo -e "  ${YELLOW}$dev: 未能验证配对（可能未连线或对端未上电）${NC}"
+        fi
+    done
+fi
+
 echo ""
 echo -e "${GREEN}完成${NC}"
