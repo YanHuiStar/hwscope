@@ -63,6 +63,12 @@ bash tools/report.sh <output_dir>              # 生成 json+md+txt 三件套
 bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单（采集完成时已默认生成 hwscope_acceptance.md）
 ```
 
+报告特性（交付导向）：
+- **标称 vs 检测双轨** — GPU 显存 `288GB/268.6 GiB 可用`、内存 `2048GB/2015.4 GiB 可见`、PSU 容量/实时功耗、IB 标称(800G XDR)/实际协商——全部标注来源，防客户误读
+- **SN 全覆盖** — 整机/主板/机箱/GPU+VBIOS/内存/盘/网卡/PSU/RAID/HBA/CPU(有值才显示)，报修精确到部件
+- **NVLink 全互联** — `8卡 全互联 (18条/卡 × 53.125 GB/s)`，每卡链路数自动计算
+- **验收清单** — 8 项判定（GPU PCIe/NVLink/SEL/磁盘/内存/DCGM），内存满插 2DPC 降速判 PASS、DCGM 配置类 Fail 判 WARN、无数据判 N/A，全部 N/A 判"数据不足"
+
 ## 平台兼容
 
 | 标识 | 条件 | 代表机型 |
@@ -88,14 +94,14 @@ SXM 四重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanag
 | 04 | gpu | `nvidia-smi` | 每 GPU + NVLink + ECC |
 | 05 | nvswitch | `nvswitch` | 每颗 NVSwitch + Fabric Manager |
 | 06 | pcie | `lspci` | 拓扑/速率/NUMA/IOMMU（缺 lspci 时 SKIP 落盘） |
-| 07 | network | `ibstat` + `mlxlink` + `ethtool` + `mstflint` | 每 IB 端口 + 每网口 + 光模块 + 真 SN（sysfs serial 是占位值） |
+| 07 | network | `ibstat` + `mlxlink` + `ethtool` + `mstflint` | 每 IB 端口 + 每网口 + 光模块 + 真 SN（sysfs serial 是占位值；MST 未启动时自动 `mst start`，可配置关闭） |
 | 08 | storage | `lsblk` + `smartctl` | 全类型盘 + SMART 健康（WSL 虚拟盘自动跳过） |
-| 09 | raid | `storcli64` + `sas3ircu` | 控管器/VD/BBU/事件 |
+| 09 | raid | `storcli64` + `sas3ircu` | RAID 阵列卡 + HBA 直通卡（型号/SN/固件/虚拟盘） |
 | 10 | psu | `ipmitool` + `sysfs` | 每 PSU 功率/温度 |
 | 11 | fan | `ipmitool` + `sensors` + `hwmon` | 每风扇转速/占空比 |
 | 12 | bmc | `ipmitool` + Redfish | FRU/SEL/传感器/BMC 网络 |
 | 13 | nvsm | `nvsm` | NVIDIA System Management |
-| 14 | dcgm | `dcgmi` | Level 1 纯获取诊断 |
+| 14 | dcgm | `dcgmi` | Level 1 诊断（hostengine 未启动时自动拉起，可配置关闭） |
 | 99 | os | `uname/dmesg/systemctl` | 内核/服务/NUMA/AER |
 
 ---
@@ -112,6 +118,7 @@ SXM 四重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanag
 | `memory_test.sh` | stress-ng --vm / memtester / sysbench memory 内存测试 | stress-ng, memtester, sysbench |
 | `disk_test.sh` | fio 随机 IOPS / hdparm / dd 硬盘吞吐 | fio, hdparm |
 | `network_test.sh` | iperf3 / ib_write_bw / mtr 网络测试 | iperf3, perftest, mtr |
+| `ib_test.sh` | IB 数据面打流（自动配对 mlx5 设备，ib_write_bw/ib_read_bw 逐对测试） | perftest, mlxlink |
 | `nccl_test.sh` | NCCL 集群通信带宽测试（all_reduce/all_gather/all_to_all） | nccl-tests 编译产物 |
 
 ```bash
@@ -130,8 +137,8 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `net_dhcp.sh` | 一键配置网口 DHCP 自动获取 IP（识别物理网口/自动选择/写 netplan） | netplan（Ubuntu 24.04） |
 | `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT），apt/dnf 自动识别 | - |
 | `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
-| `report.sh` | 从采集结果提取关键信息，生成 json/md/txt 汇总报告（含明细表：内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇 + 术语表；网卡含 GPU直连 标记，PSU 含实时功率）；`--acceptance` 生成验收清单交接单 | 采集完成后自动调用 |
-| `cable_map.sh` | 线缆拓扑图（BDF↔mlx5 映射 + EEPROM serial 线缆配对） | mlxlink |
+| `report.sh` | 从采集结果提取关键信息，生成 json/md/txt 汇总报告（含明细表：内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID/HBA + 术语表；网卡含 GPU直连 标记，PSU 含实时功率，IB 区分设备数/活动口）；`--acceptance` 生成验收清单交接单；NVIDIA 专属段（NVSwitch/NVLink/DCGM）无数据时自动隐藏 | 采集完成后自动调用 |
+| `cable_map.sh` | 线缆拓扑图（BDF↔mlx5 映射 + EEPROM serial 线缆配对 + 断口联动验证——serial 读不出的 DAC 场景自动 down/up 测配对，无需拔线） | mlxlink |
 | `firmware_check.sh` | 固件版本核对（GPU VBIOS/BMC/CX8/NVSwitch），支持基线保存+对比 | nvidia-smi, ipmitool |
 | `nvlink_verify.sh` | NVLink 完整性校验（全互联验证 + CRC 错误 + 降级链路检测） | nvidia-smi |
 | `sel_monitor.sh` | SEL 事件对比巡检（记录基线，后续只报告新增事件） | ipmitool |
@@ -266,6 +273,11 @@ HGX_BMC_IP=""              # HGX 基板 BMC（SXM 平台填写，默认留空不
 
 # 模块开关（1=启用）
 MODULE_GPU=1; MODULE_STORAGE=1; MODULE_OS=1 ...
+
+# 服务自动启动（验收/交付场景默认 1；只读巡检可关）
+MST_AUTO_START=1           # Mellanox MST 未启动时自动 mst start（读真 SN）
+DCGM_AUTO_START=1          # DCGM hostengine 未启动时自动拉起（discovery/stats 依赖）
+MODULE_TIMEOUT=300         # 模块级超时（秒），防止命令卡死导致主脚本永久等待
 ```
 
 ---
@@ -279,9 +291,11 @@ MODULE_GPU=1; MODULE_STORAGE=1; MODULE_OS=1 ...
 - **无压测** — DCGM 仅 Level 1 纯获取
 - **平台自适配** — x86/ARM、SXM/PCIe 自动识别（SXM 四重检测：nvswitch CLI → lspci NVSwitch → nv-fabricmanager 进程 + NVLink 交叉验证）
 - **环境自适配** — WSL 虚拟磁盘自动跳过 SMART，避免误报
-- **双层并行** — 模块间 + 模块内命令并发；`--no-parallel` 可降级
+- **双层并行** — 模块间 + 模块内命令并发；`--no-parallel` 可降级；模块级超时兜底防卡死
+- **N/A 隐藏** — NVIDIA 专属段（NVSwitch/NVLink/DCGM）与 RAID/HBA 无数据时整段隐藏，AMD/华为等新平台报告干净
+- **服务自拉起** — MST/DCGM hostengine 未启动时自动启动（验收场景默认开，可配置关闭），失败降级并标注
 - **manifest 解耦** — 模块声明输出文件，报告生成器读 manifest，改文件名不连累报告
-- **9 张明细表** — 内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇，JSON+MD+TXT 三格式
+- **11 张明细表** — 内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID/HBA，JSON+MD+TXT 三格式
 - **报告术语表** — 末尾附 IB 速率/GPU直连/DCGM/SXM 等术语解释，非运维人员也能读懂报告
 
 ## License
