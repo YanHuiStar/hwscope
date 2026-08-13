@@ -199,6 +199,12 @@ if [ -f "$GPU_CSV" ]; then
     esac
     GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{gsub(/ W/,"",$8); if($8+0>max+0) max=$8} END{printf "%.0f W", max}')
     GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{t=(NF>=17)?$10:$9; sum+=t; if(t+0>tmax+0) tmax=t} END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
+    # 标称总量（单卡标称 × 卡数，如 288GB×8=2304GB）；与可用总量(GPU_MEM)并列显示
+    GPU_MEM_SPEC_TOTAL=""
+    if [ -n "$GPU_MEM_SPEC" ]; then
+        GPU_MEM_SPEC_NUM=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+" | head -1)
+        [ -n "$GPU_MEM_SPEC_NUM" ] && GPU_MEM_SPEC_TOTAL=$(awk "BEGIN{printf \"%.0fGB\", ${GPU_MEM_SPEC_NUM}*${GPU_COUNT}}" < /dev/null)
+    fi
     # 每卡明细行（兼容新旧 CSV：新 18 列含 PCIe/利用率，旧 12 列降级为 N/A）
     while IFS=',' read -r gidx gname gsn gbdf guuid gmem gused glimit gdraw gtemp gutil gclk gcclk gecc ggen gwidth ggenmax gwidthmax; do
         # 注意：此处禁止 echo|sed/tr 管道——循环 stdin 是 here-string，子进程会抢占 fd 导致 read 错位
@@ -234,7 +240,7 @@ if [ -f "$GPU_CSV" ]; then
         [ "$ggen" != "N/A" ] && [ -n "$ggen" ] && gpcie_cur="${ggen}x${gwidth}"
         [ "$ggenmax" != "N/A" ] && [ -n "$ggenmax" ] && gpcie_max="${ggenmax}x${gwidthmax}"
         [ "$gpcie_cur" = "N/A" ] && [ "$gpcie_max" != "N/A" ] && gpcie_cur="?"
-        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gused_f:-0}/${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}"$'\n'
+        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}"$'\n'
         # PCIe 宽度降级检测（宽度空闲不变，是最可靠信号；gen 低可能是省电不算）
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
@@ -728,7 +734,7 @@ gen_json() {
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
             [ -z "$gidx" ] && continue
-            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"util\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\"},"$'\n'
+            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_spec\": \"${gmem_spec}\", \"memory_used\": \"${gused_f:-N/A}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"util\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\"},"$'\n'
         done <<< "$GPU_DETAILS"
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
@@ -843,6 +849,7 @@ ${dimms_json}
     "models": "${GPU_NAMES:-N/A}",
     "memory_total": "${GPU_MEM:-N/A}",
     "memory_spec": "${GPU_MEM_SPEC:-N/A}",
+    "memory_spec_total": "${GPU_MEM_SPEC_TOTAL:-N/A}",
     "power_limit": "${GPU_POWER:-N/A}",
     "temp": "${GPU_TEMP:-N/A}",
     "ecc": "${GPU_ECC:-N/A}",
@@ -989,13 +996,13 @@ gen_md() {
     # GPU 每卡明细 Markdown 表
     local gpu_details_md=""
     if [ -n "$GPU_DETAILS" ]; then
-        # 每卡显存显示 已用/总量 + 标称（如 0/268.6 GiB (标称288GB)），避免客户误读
+        # 每卡显存显示 默认(标称)/可用（如 288GB/268.6 GiB 可用），防止客户误读检测值为卡容量
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
             [ -z "$gidx" ] && continue
             if [ -n "$gmem_spec" ]; then
-                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} (标称${gmem_spec}) | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
+                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem_spec}/${gmem} 可用 | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
             else
                 gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
             fi
@@ -1113,7 +1120,7 @@ $(printf '%s' "$dimms_md")
 |----|----|
 | 数量 | ${GPU_COUNT:-0} |
 | 型号 | ${GPU_NAMES:-N/A} |
-| 显存总量 | ${GPU_MEM:-N/A}${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})} |
+| 显存总量 | ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}/${GPU_MEM:-N/A} 可用${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})} |
 | 功耗上限 | ${GPU_POWER:-N/A} |
 | 温度 | ${GPU_TEMP:-N/A} |
 | ECC | ${GPU_ECC:-N/A} |
@@ -1121,7 +1128,7 @@ $(printf '%s' "$dimms_md")
 | NVLink | ${NV_LINK_SUMMARY:-N/A} |
 
 ### 每卡明细
-| 卡 | 型号 | SN | 显存(已用/总量) | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
+| 卡 | 型号 | SN | 显存(默认/可用) | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
 |----|------|----|----|------|------|--------|----------|-----------|
 $(printf '%s' "$gpu_details_md")
 
@@ -1247,13 +1254,13 @@ gen_txt() {
     # GPU 每卡明细纯文本
     local gpu_details_txt=""
     if [ -n "$GPU_DETAILS" ]; then
-        # 每卡显存标注标称（如 B300: 268.6 GiB (标称288GB)），避免客户误读检测值
+        # 每卡显存显示 默认(标称)/可用（如 288GB/268.6 GiB 可用）
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
             [ -z "$gidx" ] && continue
             if [ -n "$gmem_spec" ]; then
-                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem} (标称${gmem_spec})  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
+                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem_spec}/${gmem} 可用  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
             else
                 gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
             fi
@@ -1351,7 +1358,7 @@ $(printf '%s' "$dimms_txt")
 [GPU]
   数量   : ${GPU_COUNT:-0}
   型号   : ${GPU_NAMES:-N/A}
-  显存   : ${GPU_MEM:-N/A}${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})}
+  显存   : ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}/${GPU_MEM:-N/A} 可用${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})}
   功耗   : ${GPU_POWER:-N/A}
   温度   : ${GPU_TEMP:-N/A}
   ECC    : ${GPU_ECC:-N/A}
