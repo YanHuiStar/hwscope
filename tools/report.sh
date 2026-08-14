@@ -779,11 +779,14 @@ if [ -f "${nic_inventory}" ]; then
                 nsn="${nsn} (MAC)"
             fi
         fi
-        # GPU 直连标记（topo PIX 判定）；无 topo_nic 日志（旧版采集）时显示待采集
+        # GPU 直连标记（topo PIX 判定）——三种状态明确区分，不留空值：
+        #   "GPU直连" = PIX 直连；"—" = 有 topo 数据但非直连；"未采集" = 旧数据无 topo 日志
         gd_mark=""
         if [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ]; then
             gd_mark="GPU直连"
         elif [ ! -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
+            gd_mark="未采集"
+        else
             gd_mark="—"
         fi
         # PCIe 能力（LnkCap）与当前（LnkSta）合并显示：当前一致时只显当前，不一致标注能力
@@ -797,6 +800,16 @@ if [ -f "${nic_inventory}" ]; then
         else
             npcie_cap="${nspd}/${nwd}"
         fi
+        # PCIe 无数据（N/A/N/A）→ 统一 "—"
+        case "${npcie_cap:-}" in ""|N/A|N/A/N/A|/|na|NA) npcie_cap="—" ;; esac
+        # 无数据统一占位 "—"（N/A/空 → —；仅 GPU直连 保留三态语义）
+        case "${nsn:-}" in ""|N/A|na|NA) nsn="—" ;; esac
+        case "${npn:-}" in ""|N/A|na|NA) npn="—" ;; esac
+        case "${nfw:-}" in ""|N/A|na|NA) nfw="—" ;; esac
+        case "${npsid:-}" in ""|N/A|na|NA) npsid="—" ;; esac
+        case "${nchip:-}" in ""|N/A|na|NA) nchip="—" ;; esac
+        [ -z "$nmac" ] && nmac="—"
+        [ -z "$npcie_cap" ] && npcie_cap="—"
         NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
