@@ -760,7 +760,11 @@ if [ -f "${nic_inventory}" ]; then
                 /Part Number:/ { pn=$0; sub(/.*Part Number:[[:space:]]*/, "", pn) }
                 /PSID:/        { psid=$0; sub(/.*PSID:[[:space:]]*/, "", psid) }
                 /PCI Device Name:/ { dev=$NF; sub(/^0000:/, "", dev) }
-                dev==bdf && /Base GUID:/ { if (psid != "" && psid != "N/A") print psid; else if (pn != "") print "PN:" pn; exit }
+                dev==bdf && /Base GUID:/ {
+                    if (psid != "" && psid != "N/A") { print psid; exit }
+                    if (pn != "" && pn != "--") { print "PN:" pn; exit }
+                    exit
+                }
             ' "${NET_DIR}/mlxfwmanager.log" 2>/dev/null | head -1)
             # 取第一行匹配，防多行污染
             rpsid=$(echo "$rpsid" | tr -d '\n\r')
@@ -839,6 +843,23 @@ if [ -f "${nic_inventory}" ]; then
         [ -z "$npcie_cap" ] && npcie_cap="—"
         NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
+fi
+
+# ─── PSID 缺失提示：有 Mellanox 卡但 PSID 全空时说明（采集时 MST 未启动/旧数据） ───
+PSID_NOTICE=""
+if [ "$NIC_MLX" -eq 1 ]; then
+    _mlx_no_psid=0
+    _mlx_total=0
+    while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
+        [ -z "$nnic" ] && continue
+        # 只统计 Mellanox 卡（型号含 ConnectX/BlueField/MLX）
+        echo "$npn" | grep -qiE "ConnectX|BlueField|MLX" || continue
+        _mlx_total=$((_mlx_total + 1))
+        case "$npsid" in ""|N/A|—) _mlx_no_psid=$((_mlx_no_psid + 1)) ;; esac
+    done <<< "$NIC_DETAILS"
+    if [ "$_mlx_total" -gt 0 ] && [ "$_mlx_no_psid" -eq "$_mlx_total" ]; then
+        PSID_NOTICE="⚠️ 有 ${_mlx_total} 张 Mellanox 卡未读到 PSID（采集时 MST 未启动或旧数据）；重新采集可获取"
+    fi
 fi
 
 # ─── 风扇（IPMI 传感器，| 分隔格式） ───
@@ -1273,13 +1294,12 @@ glossary_txt() {
     printf '%s' "$out"
 }
 
-# 网络段附加行（线缆/配对/端口模式/MST 提示；空值不产生空行）
+# 网络段附加行（线缆/配对/端口模式；PSID/MST 提示已并入 nic_details_txt 开头）
 net_extra_txt() {
     local out=""
     [ -n "$CABLE_SUMMARY" ]   && [ "$CABLE_SUMMARY" != "N/A" ]   && out="${out}  线缆   : ${CABLE_SUMMARY}"$'\n'
     [ -n "$CABLE_PAIRS" ]     && [ "$CABLE_PAIRS" != "N/A" ]     && out="${out}  配对   : ${CABLE_PAIRS}"$'\n'
     [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ] && out="${out}  端口模式: ${LINKTYPE_SUMMARY}"$'\n'
-    [ -n "$MST_NOTICE" ]      && out="${out}  ⚠️ ${MST_NOTICE}"$'\n'
     printf '%s' "$out"
 }
 
@@ -1290,6 +1310,7 @@ net_extra_md() {
     [ -n "$CABLE_PAIRS" ]     && [ "$CABLE_PAIRS" != "N/A" ]     && out="${out}| 线缆配对 | ${CABLE_PAIRS} |"$'\n'
     [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ] && out="${out}| 端口模式 | ${LINKTYPE_SUMMARY} |"$'\n'
     [ -n "$MST_NOTICE" ]      && out="${out}| ⚠️ 提示 | ${MST_NOTICE} |"$'\n'
+    [ -n "$PSID_NOTICE" ]     && out="${out}| ⚠️ PSID | ${PSID_NOTICE} |"$'\n'
     printf '%s' "$out"
 }
 
@@ -1654,8 +1675,13 @@ gen_txt() {
             disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}  spare:${dspare}  ${dspec:-}"$'\n'
         done <<< "$DISK_DETAILS"
     fi
-    # 网卡明细纯文本
+    # 网卡明细纯文本（TXT 专用；PSID/MST 提示并入开头，避免命令替换剥尾换行粘连）
     local nic_details_txt=""
+    if [ -n "$PSID_NOTICE" ]; then
+        nic_details_txt="  ${PSID_NOTICE}"$'\n'
+    elif [ -n "$MST_NOTICE" ]; then
+        nic_details_txt="  ⚠️ ${MST_NOTICE}"$'\n'
+    fi
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
