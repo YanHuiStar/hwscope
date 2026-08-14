@@ -677,14 +677,24 @@ mt_model() {
     esac
 }
 NIC_DETAILS=""
-# GPU 直连标注：解析 gpu_topo_nic.log（nvidia-smi topo -m -n）的 GPU↔NIC 矩阵，
+# GPU 直连标注：解析 topo 矩阵（gpu_topo_nic.log 优先；旧版 -n 语法错误时回退 gpu_topo.log，
+# v1.26.27+ 的 topo -m 已自带 NIC 列）
 # PIX = 同一 PCIe switch（GPU 直连），NODE = 同 NUMA，SYS = 跨节点
 # NIC0..NICn 按 BDF 升序对应 nic_inventory 中的 PCIe 网卡
 declare -A GPU_DIRECT_NIC
-if [ -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
+GPU_TOPO_FILE=""
+for _tf in "${GPU_DIR}/gpu_topo_nic.log" "${GPU_DIR}/gpu_topo.log"; do
+    [ -f "$_tf" ] || continue
+    # 内容有效性：含 NIC 列且无 "-n" 语法报错
+    if grep -v "^#" "$_tf" 2>/dev/null | grep -qE "NIC[0-9]+" && ! grep -q "Option \"-n\"" "$_tf" 2>/dev/null; then
+        GPU_TOPO_FILE="$_tf"
+        break
+    fi
+done
+if [ -n "$GPU_TOPO_FILE" ]; then
     _nic_cols=()
     _nic_idx=()
-    _hdr=$(grep -v "^#" "${GPU_DIR}/gpu_topo_nic.log" | grep -E "NIC[0-9]" | head -1)
+    _hdr=$(grep -v "^#" "$GPU_TOPO_FILE" | grep -E "NIC[0-9]" | head -1)
     # 同时记录列名与列号（动态计算，兼容 4/8 GPU 等不同卡数导致的列偏移）
     if [ -n "$_hdr" ]; then
         while IFS= read -r _pair; do
@@ -704,7 +714,7 @@ if [ -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
                 [ "$_val" = "PIX" ] && _nic_pix[$_col]=1
                 _idx=$((_idx+1))
             done
-        done < <(grep -v "^#" "${GPU_DIR}/gpu_topo_nic.log")
+        done < <(grep -v "^#" "$GPU_TOPO_FILE")
         # 映射：topo NIC 列按 BDF 升序 = nic_inventory 中 PCIe 网卡按 BDF 升序
         _pci_nics=()
         while IFS='|' read -r _d _bdf _rest; do
@@ -780,10 +790,10 @@ if [ -f "${nic_inventory}" ]; then
                 nsn="${nsn} (MAC)"
             fi
         fi
-        # GPU 直连标记（topo PIX 判定）——无 topo 数据（旧采集）时整列隐藏，避免"未采集"造成误会：
+        # GPU 直连标记（topo PIX 判定）——无有效 topo 数据（旧采集/采集失败）时整列隐藏，避免误会：
         #   "GPU直连" = PIX 直连；"—" = 有 topo 数据但非直连
         gd_mark=""
-        if [ -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
+        if [ -n "$GPU_TOPO_FILE" ]; then
             GPU_TOPO_AVAIL=1
             if [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ]; then
                 gd_mark="GPU直连"
