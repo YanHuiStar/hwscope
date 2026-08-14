@@ -415,6 +415,10 @@ if [ -f "${disk_inventory}" ]; then
                 fi
                 ;;
         esac
+        # 寿命归一化：N/A%（未采集到 SMART 数据）→ 显示 "—"（避免客户误读为盘异常）
+        case "$dspare" in
+            ""|N/A|N/A%|na|NA) dspare="—" ;;
+        esac
         DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}|${dspec}"$'\n'
     done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
 fi
