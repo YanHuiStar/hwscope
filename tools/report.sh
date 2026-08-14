@@ -1628,6 +1628,8 @@ $(printf '%s' "$dimms_md")
 
 ## GPU
 $(if [ "$GPU_COUNT" -eq 0 ]; then
+    echo "| 项 | 值 |"
+    echo "|----|----|"
     if [ "$HEAD_NODE" -eq 1 ]; then
         echo "| 状态 | HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集） |"
     else
@@ -1644,8 +1646,10 @@ else
     echo "| ECC | ${GPU_ECC:-N/A} |"
     echo "| 退役行 | ${GPU_REMAP:-N/A} |"
     echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
+    if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then
+        echo "| NVLink | ${NV_LINK_SUMMARY} |"
+    fi
 fi)
-$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "| NVLink | ${NV_LINK_SUMMARY} |"; fi)
 $(if [ -n "$gpu_details_md" ]; then
     echo ""
     echo "### 每卡明细"
