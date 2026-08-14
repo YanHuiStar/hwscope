@@ -131,8 +131,8 @@ SXM 四重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanag
 | 01 | motherboard | `dmidecode` | 主板/BIOS/机箱 型号/SN |
 | 02 | cpu | `dmidecode` + `lscpu` | FRU + OS 双视角 |
 | 03 | memory | `dmidecode` + `free` | 每 DIMM 独立日志 + EDAC 错误计数 |
-| 04 | gpu | `nvidia-smi` | 每 GPU + NVLink + ECC |
-| 05 | nvswitch | `nvswitch` | 每颗 NVSwitch + Fabric Manager |
+| 04 | gpu | `nvidia-smi` | 每 GPU + NVLink + ECC + VBIOS（每卡明细含 VBIOS 列） |
+| 05 | nvswitch | `nvswitch` + `nvidia-smi nvswitch` 子命令 | 每颗 NVSwitch + Fabric Manager（无独立 CLI 平台用驱动内置子命令兜底） |
 | 06 | pcie | `lspci` | 拓扑/速率/NUMA/IOMMU（缺 lspci 时 SKIP 落盘） |
 | 07 | network | `ibstat` + `mlxlink` + `ethtool` + `mstflint` | 每 IB 端口 + 每网口 + 光模块 + 真 SN（sysfs serial 是占位值；MST 未启动时自动 `mst start`，可配置关闭）；型号 lspci 直读（PCI ID 权威，免维护映射表）+ PSID 回查 + MT 对照表 |
 | 08 | storage | `lsblk` + `smartctl` | 全类型盘 + SMART 健康（WSL 虚拟盘自动跳过） |
