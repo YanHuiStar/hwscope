@@ -127,6 +127,9 @@ OS_NAME=$(grep -m1 "PRETTY_NAME" "${os_release}" 2>/dev/null | cut -d'"' -f2)
 KERNEL=$(grep -m1 -v "^#" "${os_uname}" 2>/dev/null | awk '{print $3}')
 GPU_DIR="${OUT}/gpu"
 load_manifest "${GPU_DIR}" gpu_full "gpu_full.log"
+# PCIe 拓扑（lspci 直读型号用，走 manifest 解耦）
+PCIE_DIR="${OUT}/pcie"
+load_manifest "${PCIE_DIR}" lspci_all "lspci_all.log"
 GPU_DRIVER=$(grep -m1 "Driver Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 GPU_CUDA=$(grep -m1 "CUDA Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 
@@ -768,8 +771,8 @@ if [ -f "${nic_inventory}" ]; then
             NIC_MLX=1
             # 型号附加：优先 lspci 直读（PCI ID 权威，认识所有 Mellanox 卡，无需维护映射表）
             mt=""
-            if [ -f "${OUT}/pcie/lspci_all.log" ]; then
-                mt=$(grep -E "^${nnbdf%% (USB)*} " "${OUT}/pcie/lspci_all.log" 2>/dev/null | grep -oE '\[ConnectX-[0-9]+( Lx| Dx)?\]|\[BlueField[^]]*\]' | head -1 | tr -d '[]')
+            if [ -f "${lspci_all}" ]; then
+                mt=$(grep -E "^${nnbdf%% (USB)*} " "${lspci_all}" 2>/dev/null | grep -oE '\[ConnectX-[0-9]+( Lx| Dx)?\]|\[BlueField[^]]*\]' | head -1 | tr -d '[]')
             fi
             # 兜底：lspci 无型号时用 CA type 映射（MT4129→ConnectX-7 等）
             if [ -z "$mt" ]; then
@@ -866,13 +869,14 @@ fi
 # 只保留 PSU 行（PSU1_FRU/PSU4_FRU/Power Supply），过滤风扇/背板/PDB 等其他 FRU
 PSU_DIR="${OUT}/psu"
 load_manifest "${PSU_DIR}" ipmi_psu_fru "ipmi_psu_fru.log"
+load_manifest "${BMC_DIR}" ipmi_fru_all "ipmi_fru_all.log"
 # 采集端 head -80 可能截断 FRU 列表（B300 23+ FRU，PSU9 排末尾被切）：
 # psu 目录日志 PSU 数 < BMC 完整日志时，fallback 用 bmc/ipmi_fru_all.log（无截断）
 _fru_src="${ipmi_psu_fru}"
-if [ -f "$_fru_src" ] && [ -f "${OUT}/bmc/ipmi_fru_all.log" ]; then
+if [ -f "$_fru_src" ] && [ -f "${ipmi_fru_all}" ]; then
     _n_psu=$(grep -c "FRU Device Description : PSU" "$_fru_src" 2>/dev/null)
-    _n_full=$(grep -c "FRU Device Description : PSU" "${OUT}/bmc/ipmi_fru_all.log" 2>/dev/null)
-    [ "${_n_full:-0}" -gt "${_n_psu:-0}" ] && _fru_src="${OUT}/bmc/ipmi_fru_all.log"
+    _n_full=$(grep -c "FRU Device Description : PSU" "${ipmi_fru_all}" 2>/dev/null)
+    [ "${_n_full:-0}" -gt "${_n_psu:-0}" ] && _fru_src="${ipmi_fru_all}"
 fi
 PSU_DETAILS=""
 PSU_PLATFORM_NOTE=""
@@ -908,7 +912,6 @@ if [ -f "$_fru_src" ]; then
     total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
     [ -n "$total_pwr" ] && PSU_DETAILS="${PSU_DETAILS}"$'\n'"整机功耗|N/A|N/A|N/A|N/A|${total_pwr}"$'\n'
     # 每只 PSU 当前输入功率（ipmi_psu_sensors.log: Pwr_PSU<N>_In | W |），按编号匹配追加
-    psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
     if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -q "Pwr_PSU[0-9]" "$psu_power_csv" 2>/dev/null; then
         # 一次性构建 编号→功率 映射，再一次性追加（避免逐行 echo|awk 嵌套性能灾难）
         PSU_DETAILS=$(awk -v psu_detail="$PSU_DETAILS" '
