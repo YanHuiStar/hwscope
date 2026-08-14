@@ -1266,7 +1266,7 @@ gen_md() {
 | 内核 | ${KERNEL:-N/A} |
 | 驱动 | ${GPU_DRIVER:-N/A} |
 | CUDA | ${GPU_CUDA:-N/A} |
-| 采集耗时 | ${TIMING_TOTAL:-N/A}（最耗时: ${TIMING_TOP:-N/A}） |
+| 采集耗时 | ${TIMING_TOTAL:-N/A} |
 
 ## 主板
 | 项 | 值 |
@@ -1564,7 +1564,7 @@ HwScope 硬件巡检报告
   内核   : ${KERNEL:-N/A}
   驱动   : ${GPU_DRIVER:-N/A}
   CUDA   : ${GPU_CUDA:-N/A}
-  采集耗时 : ${TIMING_TOTAL:-N/A}  (Top: ${TIMING_TOP:-N/A})
+  采集耗时 : ${TIMING_TOTAL:-N/A}
 
 [主板]
   制造商 : ${MB_MANUFACTURER:-N/A}
