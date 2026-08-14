@@ -31,7 +31,7 @@
 
 ## 已完成（归档）
 
-- v1.26.x — HBA 直通卡章节、N/A 隐藏、MST/DCGM hostengine 自拉起、模块并行超时保护、ib_test.sh IB 打流
+- v1.26.x — HBA 直通卡章节、N/A 隐藏、MST/DCGM hostengine 自拉起、模块并行超时保护、ib_test.sh IB 打流、RAID 虚拟盘/HBA SAS 明细、PSU DCMI/PMBus 采集、USB NIC 分类、BlueField DPU 标签、NIC chip 列、dmidecode 补全（cache/TPM/type39）、盘标称容量自动提取、验收清单假阳性防护（SEL/磁盘/内存 N/A）、模块超时 WARN 补记
 - v1.26.0 — **验收清单模式**：`report.sh --acceptance` 生成 8 项 PASS/FAIL/WARN 判定交接单
 - v1.25.x — 报告术语表、GPU直连标记、规格 vs 实测区分、全量采集原则
 - v1.24.0 — EDAC 内存错误采集、DIMM Rank/内存类型入报告
@@ -39,4 +39,4 @@
 
 ---
 
-*最近更新: 2026-08-13 · 版本: v1.26.26*
+*最近更新: 2026-08-14 · 版本: v1.26.57*
