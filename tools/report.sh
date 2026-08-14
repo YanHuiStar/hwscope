@@ -968,6 +968,15 @@ if [ -f "$_fru_src" ]; then
     # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
     total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
     [ -n "$total_pwr" ] && PSU_DETAILS="${PSU_DETAILS}"$'\n'"整机功耗|N/A|N/A|N/A|N/A|${total_pwr}"$'\n'
+    # DCMI 功耗统计（dcmi power reading：Current Power/Reading 等，标准 IPMI 功耗统计）
+    if [ -f "${PSU_DIR}/ipmi_dcmi_power.log" ]; then
+        dcmi_cur=$(grep -iE "Current Power|Current Reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
+        dcmi_min=$(grep -iE "Minimum" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
+        dcmi_max=$(grep -iE "Maximum" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
+        if [ -n "$dcmi_cur" ]; then
+            PSU_DETAILS="${PSU_DETAILS}DCMI功耗统计|N/A|N/A|N/A|N/A|当前${dcmi_cur}W${dcmi_min:+ 最小${dcmi_min}W}${dcmi_max:+ 最大${dcmi_max}W}"$'\n'
+        fi
+    fi
     # 每只 PSU 当前输入功率（Pwr_PSU<N>_In 或 PS<N>_Pin，| W |），按编号匹配追加
     if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -qE "Pwr_PSU[0-9]|PS[0-9]_Pin" "$psu_power_csv" 2>/dev/null; then
         # 一次性构建 编号→功率 映射，再一次性追加（避免逐行 echo|awk 嵌套性能灾难）

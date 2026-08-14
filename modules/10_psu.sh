@@ -26,7 +26,9 @@ run_psu() {
             "ipmitool sensor list 2>/dev/null | grep -iE 'PSU|Pwr|PSC|PS[0-9]|PSU.*Status'" "${dir}/ipmi_psu_sensors.log" \
             "ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Temp|PS[0-9].*Temp'" "${dir}/ipmi_psu_temp.log" \
             "ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons|PS[0-9]_Pin|PS[0-9]_Pout'" "${dir}/ipmi_psu_power.log" \
-            "ipmitool fru print 2>/dev/null | grep -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply'" "${dir}/ipmi_psu_fru.log"
+            "ipmitool fru print 2>/dev/null | grep -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply'" "${dir}/ipmi_psu_fru.log" \
+            "ipmitool dcmi power reading 2>&1" "${dir}/ipmi_dcmi_power.log" \
+            "ipmitool sdr list 2>/dev/null | grep -iE 'PSU|PS[0-9]|Power' " "${dir}/ipmi_sdr_psu.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi
@@ -64,6 +66,19 @@ run_psu() {
             [ -n "$bus_num" ] && run_and_log "i2cdetect -y $bus_num 2>/dev/null" "${dir}/i2c_bus${bus_num}.log"
         done
     fi
+    # PMBus 直读（i2cget）：扫描常见 PSU 地址读 PMBus 标识寄存器（部分平台 IPMI 无 FRU，型号在 PMBus 芯片里）
+    # 标准 PMBus: MFR_ID(0x99)/MFR_MODEL(0x9A)/MFR_SERIAL(0x9E)/MFR_REVISION(0x9B)
+    # 常见 PSU I2C 地址: 0x58-0x5F（AC/DC 电源通常 0x58），0x20-0x23
+    if check_cmd i2cget; then
+        for bus in /dev/i2c-*; do
+            [ -e "$bus" ] || continue
+            local bus_num=$(echo "$bus" | grep -oE '[0-9]+$')
+            [ -z "$bus_num" ] && continue
+            for addr in 0x58 0x59 0x5a 0x5b 0x5c 0x5d 0x5e 0x5f 0x20 0x21 0x22 0x23; do
+                run_and_log "i2cget -y -f $bus_num $addr 0x9a 2>/dev/null; i2cget -y -f $bus_num $addr 0x99 2>/dev/null; i2cget -y -f $bus_num $addr 0x9e 2>/dev/null" "${dir}/pmbus_${addr#0x}.log"
+            done
+        done
+    fi
 
     # ─── 4. 电源系统总览 ───
     run_and_log "cat /sys/class/power_supply/*/present 2>/dev/null" "${dir}/psu_present.log"
@@ -75,6 +90,8 @@ run_psu() {
         "ipmi_psu_temp" "ipmi_psu_temp.log" \
         "ipmi_psu_power" "ipmi_psu_power.log" \
         "ipmi_psu_fru" "ipmi_psu_fru.log" \
+        "ipmi_dcmi_power" "ipmi_dcmi_power.log" \
+        "ipmi_sdr_psu" "ipmi_sdr_psu.log" \
         "psu_present" "psu_present.log"
 
     module_end "$MODULE_NAME"
