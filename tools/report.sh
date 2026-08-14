@@ -659,8 +659,9 @@ if [ -f "${ibdev2netdev}" ]; then
 fi
 mt_model() {
     case "$1" in
-        MT4131|MT4129) echo "ConnectX-8" ;;
-        MT2910|MT4125) echo "ConnectX-7" ;;
+        MT4131) echo "ConnectX-8" ;;
+        # MT4129=ConnectX-7 (MCX75xxx, NDR 400G)；MT2910/MT4125 同代不同封装
+        MT4129|MT2910|MT4125) echo "ConnectX-7" ;;
         MT4124) echo "ConnectX-6 Lx" ;;
         MT4123) echo "ConnectX-6 Dx" ;;
         MT4121|MT4122) echo "ConnectX-6" ;;
@@ -719,8 +720,25 @@ if [ -f "${nic_inventory}" ]; then
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
         # 非 PCIe BDF（如 USB 路径 3-1.5:2.0）标记为 USB，避免误当 PCIe 槽位
-        if [ -n "$nnbdf" ] && ! echo "$nnbdf" | grep -qE "^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$"; then
+        if [ -n "$nnbdf" ] && ! echo "$nnbdf" | grep -qE "^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\\.[0-9a-fA-F]$"; then
             nnbdf="${nnbdf} (USB)"
+        fi
+        # PSID 回查：nic_inventory 中 PSID=N/A 时，从 mlxfwmanager.log 按 BDF 补 PSID/Part Number
+        # （采集端 mstflint 失败或 mlxfwmanager 无 PSID 字段时；报告端日志已就绪，无竞态）
+        # 顺序: Device # → Device Type → Part Number → Description → PSID → PCI Device Name → ...
+        # 字段散落在 Device Name 前后——遇下一设备头结算上一设备
+        if [ "$npsid" = "N/A" ] && [ -f "${NET_DIR}/mlxfwmanager.log" ]; then
+            rpsid=$(awk -v bdf="${nnbdf%% (USB)*}" '
+                /^[[:space:]]*[A-Za-z ]*Device #/ {
+                    if (dev==bdf) { if (psid != "" && psid != "N/A") print psid; else if (pn != "") print "PN:" pn; exit }
+                    dev=""; pn=""; psid=""
+                }
+                /PCI Device Name:/ { dev=$NF; sub(/^0000:/, "", dev) }
+                /Part Number:/     { pn=$0; sub(/.*Part Number:[[:space:]]*/, "", pn) }
+                /PSID:/            { psid=$0; sub(/.*PSID:[[:space:]]*/, "", psid) }
+                END { if (dev==bdf) { if (psid != "" && psid != "N/A") print psid; else if (pn != "") print "PN:" pn } }
+            ' "${NET_DIR}/mlxfwmanager.log" 2>/dev/null)
+            [ -n "$rpsid" ] && npsid="$rpsid"
         fi
         # IB 设备（ibp*/ibs*）附加控制器型号
         if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
