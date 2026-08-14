@@ -1832,11 +1832,8 @@ gen_txt() {
     fi
     # 网卡明细纯文本（TXT 专用；PSID/MST 提示并入开头，避免命令替换剥尾换行粘连）
     local nic_details_txt=""
-    if [ -n "$PSID_NOTICE" ]; then
-        nic_details_txt="  ${PSID_NOTICE}"$'\n'
-    elif [ -n "$MST_NOTICE" ]; then
-        nic_details_txt="  ⚠️ ${MST_NOTICE}"$'\n'
-    fi
+    [ -n "$PSID_NOTICE" ] && nic_details_txt="  ${PSID_NOTICE}"$'\n'
+    [ -n "$MST_NOTICE" ] && nic_details_txt="${nic_details_txt}  ⚠️ ${MST_NOTICE}"$'\n'
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
