@@ -852,8 +852,10 @@ if [ "$NIC_MLX" -eq 1 ]; then
     _mlx_total=0
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
         [ -z "$nnic" ] && continue
-        # 只统计 Mellanox 卡（型号含 ConnectX/BlueField/MLX）
-        echo "$npn" | grep -qiE "ConnectX|BlueField|MLX" || continue
+        # 只统计 Mellanox 卡（型号含 ConnectX/BlueField/MLX，或芯片列 MT 编号 MT3xxx/MT4xxx）
+        if ! echo "$npn" | grep -qiE "ConnectX|BlueField|MLX" && ! echo "$nchip" | grep -qE "^MT[0-9]{4}"; then
+            continue
+        fi
         _mlx_total=$((_mlx_total + 1))
         case "$npsid" in ""|N/A|—) _mlx_no_psid=$((_mlx_no_psid + 1)) ;; esac
     done <<< "$NIC_DETAILS"
