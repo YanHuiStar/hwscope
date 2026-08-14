@@ -30,13 +30,24 @@ run_motherboard() {
         "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|UUID|Family'" "${dir}/system_summary.log" \
         "dmidecode -t baseboard 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|Version|Asset Tag'" "${dir}/baseboard_summary.log"
 
+    # 7. 补充硬件表（缓存/槽位/板载设备/TPM，独立并行）
+    run_and_log_parallel 4 \
+        "dmidecode -t cache 2>/dev/null" "${dir}/dmidecode_cache.log" \
+        "dmidecode -t slot 2>/dev/null" "${dir}/dmidecode_slot.log" \
+        "dmidecode -t onboard 2>/dev/null" "${dir}/dmidecode_onboard.log" \
+        "dmidecode -t 43 2>/dev/null" "${dir}/dmidecode_tpm.log"
+
 write_manifest "${dir}/manifest.txt" \
         "dmidecode_system" "dmidecode_system.log" \
         "dmidecode_baseboard" "dmidecode_baseboard.log" \
         "dmidecode_bios" "dmidecode_bios.log" \
         "dmidecode_chassis" "dmidecode_chassis.log" \
         "system_summary" "system_summary.log" \
-        "baseboard_summary" "baseboard_summary.log"
+        "baseboard_summary" "baseboard_summary.log" \
+        "dmidecode_cache" "dmidecode_cache.log" \
+        "dmidecode_slot" "dmidecode_slot.log" \
+        "dmidecode_onboard" "dmidecode_onboard.log" \
+        "dmidecode_tpm" "dmidecode_tpm.log"
 
     module_end "$MODULE_NAME"
 }

@@ -29,6 +29,9 @@ run_memory() {
         "free -h" "${dir}/free_h.log" \
         "cat /proc/meminfo" "${dir}/proc_meminfo.log"
 
+    # 1b. 内存阵列信息（type 16：总数/最大容量/错误修正）
+    run_and_log "dmidecode -t memory-array 2>/dev/null" "${dir}/dmidecode_memory_array.log"
+
     # 2b. 每槽完整的段落输出（awk 复杂转义，串行执行）
     run_and_log "dmidecode -t memory 2>/dev/null | awk '/^[[:space:]]*Locator:/{if(seg) print seg; seg=\$0; next} /^[[:space:]]/{seg=seg ORS \$0} END{print seg}'" \
         "${dir}/memory_slot_blocks.log"
@@ -80,6 +83,7 @@ run_memory() {
         "memory_slot_fields" "memory_slot_fields.log" \
         "free_h" "free_h.log" \
         "proc_meminfo" "proc_meminfo.log" \
+        "dmidecode_memory_array" "dmidecode_memory_array.log" \
         "memory_slot_blocks" "memory_slot_blocks.log" \
         "memory_capacity" "memory_capacity.log" \
         "edac_errors" "edac_errors.log"
