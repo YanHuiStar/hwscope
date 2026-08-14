@@ -681,6 +681,7 @@ mt_model() {
     esac
 }
 NIC_DETAILS=""
+USB_NICS=""
 # GPU 直连标注：解析 topo 矩阵（gpu_topo_nic.log 优先；旧版 -n 语法错误时回退 gpu_topo.log，
 # v1.26.27+ 的 topo -m 已自带 NIC 列）
 # PIX = 同一 PCIe switch（GPU 直连），NODE = 同 NUMA，SYS = 跨节点
@@ -745,9 +746,12 @@ if [ -f "${nic_inventory}" ]; then
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ncapspd ncapwd; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
-        # 非 PCIe BDF（如 USB 路径 3-1.5:2.0）标记为 USB，避免误当 PCIe 槽位
-        if [ -n "$nnbdf" ] && ! echo "$nnbdf" | grep -qE "^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\\.[0-9a-fA-F]$"; then
-            nnbdf="${nnbdf} (USB)"
+        # 分类：非 PCIe BDF（如 USB 路径 2-9.4:1.0）→ USB 网卡，单独列表显示（不混入 PCIe 主表）
+        nusb=0
+        if [ -n "$nnbdf" ] && ! echo "$nnbdf" | grep -qE "^[0-9a-fA-F]{2,4}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$"; then
+            nusb=1
+            USB_NICS="${USB_NICS}${nnic}|${nmac}|${npn}|${nfw}"$'\n'
+            continue
         fi
         # PSID 回查：nic_inventory 中 PSID=N/A 时，从 mlxfwmanager.log 按 BDF 补 PSID/Part Number
         # （采集端 mstflint 失败或 mlxfwmanager 无 PSID 字段时；报告端日志已就绪，无竞态）
@@ -1178,6 +1182,16 @@ ${disk_details_json}
     "port_modes": "${LINKTYPE_SUMMARY:-N/A}",
     "nics": [
 ${nic_details_json}
+    ],
+    "usb_nics": [
+$(if [ -n "$USB_NICS" ]; then
+    local ujson=""
+    while IFS='|' read -r unnic unmac unpn unfw; do
+        [ -z "$unnic" ] && continue
+        ujson="${ujson}      {\"dev\": \"${unnic}\", \"mac\": \"${unmac}\", \"pn\": \"${unpn:-}\", \"firmware\": \"${unfw:-}\"},"$'\n'
+    done <<< "$USB_NICS"
+    printf '%s' "$ujson" | sed '$ s/,$//'
+fi)
     ]
   },
   "bmc": {
@@ -1523,6 +1537,17 @@ else
 fi)
 $(printf '%s' "$nic_details_md")
 
+$(if [ -n "$USB_NICS" ]; then
+    echo "另发现 USB 外接网卡（非 PCIe，不参与网卡统计）:"
+    echo ""
+    echo "| 接口 | MAC | 型号 | 固件 |"
+    echo "|------|-----|------|------|"
+    while IFS='|' read -r unnic unmac unpn unfw; do
+        [ -z "$unnic" ] && continue
+        echo "| ${unnic} | ${unmac} | ${unpn:-—} | ${unfw:-—} |"
+    done <<< "$USB_NICS"
+fi)
+
 ## BMC
 | 项 | 值 |
 |----|----|
@@ -1693,6 +1718,14 @@ gen_txt() {
                 nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}"$'\n'
             fi
         done <<< "$NIC_DETAILS"
+    fi
+    # USB 外接网卡（非 PCIe）追加到明细末尾，独立成段
+    if [ -n "$USB_NICS" ]; then
+        nic_details_txt="${nic_details_txt}  -- USB 外接网卡（非 PCIe，不参与统计） --"$'\n'
+        while IFS='|' read -r unnic unmac unpn unfw; do
+            [ -z "$unnic" ] && continue
+            nic_details_txt="${nic_details_txt}    ${unnic}  ${unmac}  ${unpn:-—}  FW:${unfw:-—}"$'\n'
+        done <<< "$USB_NICS"
     fi
     # NVSwitch 纯文本
     local nvs_txt=""

@@ -94,9 +94,10 @@ run_network() {
         echo "# nic inventory: dev|bdf|mac|serial|part_number|firmware|speed|width"
         for ndev in $(ls /sys/class/net/ 2>/dev/null); do
             [ "$ndev" = "lo" ] && continue
-            # 仅 PCIe 网卡
+            # PCIe 网卡 + USB 网卡都收录：USB 网卡 BDF 是 usb 路径形式（如 2-9.4:1.0），
+            # 报告端据此分类（PCIe 进主表，USB 单独标注）；虚拟网卡（无 /devices/pci 前缀）排除
             local ndev_path=$(readlink -f "/sys/class/net/${ndev}/device" 2>/dev/null)
-            [[ "$ndev_path" != *pci* ]] && continue
+            [[ "$ndev_path" != *"/devices/pci"* ]] && continue
             local nbdf=$(grep "PCI_SLOT_NAME" "/sys/class/net/${ndev}/device/uevent" 2>/dev/null | cut -d'=' -f2 | sed 's/^0000://')
             [ -z "$nbdf" ] && nbdf=$(basename "$ndev_path" | sed 's/^0000://')
             local nmac=$(cat "/sys/class/net/${ndev}/address" 2>/dev/null)
