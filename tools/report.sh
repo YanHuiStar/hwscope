@@ -1945,9 +1945,7 @@ else
     echo "  ECC    : ${GPU_ECC:-N/A}"
     echo "  退役行 : ${GPU_REMAP:-N/A}"
     echo "  VBIOS  : ${GPU_VBIOS:-N/A}"
-fi)
-$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)
-$(printf '%s' "$gpu_details_txt")
+fi)$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)$(if [ "$GPU_COUNT" -gt 0 ]; then printf '%s' "$gpu_details_txt"; fi)
 
 [存储]
   盘数   : ${STORAGE_COUNT:-0}
@@ -1995,36 +1993,37 @@ $(if [ -n "$PSU_DETAILS" ]; then
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 else echo "  N/A"; fi)
-$(if [ -n "$PSU_PLATFORM_NOTE" ]; then echo "  ⚠️ ${PSU_PLATFORM_NOTE}"; fi)
-
-$(if [ -n "$RAID_DETAILS" ]; then
-    echo "[RAID控制器]"
-    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
-        [ -z "$ridx" ] && continue
-        printf '  %s  %s  SN:%s  固件:%s  虚拟盘:%s\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd"
-        # 虚拟盘明细（缩进二级）
-        if [ -n "$rvd_list" ]; then
-            echo "$rvd_list" | tr ';' '\n' | while IFS= read -r vdline; do
-                [ -z "$vdline" ] && continue
-                vdname="${vdline%%:*}"
-                vdrest="${vdline#*:}"
-                printf '    %s  %s\n' "$vdname" "$vdrest"
-            done
-        fi
-    done
-fi)
-
-$(if [ -n "$HBA_DETAILS" ]; then
-    echo "[HBA直通卡]"
-    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
-        [ -z "$hname" ] && continue
-        printf '  %s  %s  固件:%s  SN:%s  状态:%s  SAS:%s  端口:%s\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat" "$hsas" "$hports"
-    done
-fi)
-
-$(if [ -n "$nvs_txt" ]; then
-    echo "[NVSwitch]"
-    printf '%s' "$nvs_txt"
+$(if [ -n "$PSU_PLATFORM_NOTE" ]; then echo "  ⚠️ ${PSU_PLATFORM_NOTE}"$'\n'; fi)$(if [ -n "$RAID_DETAILS" ] || [ -n "$HBA_DETAILS" ] || [ -n "$nvs_txt" ]; then
+    if [ -n "$RAID_DETAILS" ]; then
+        echo "[RAID控制器]"
+        echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
+            [ -z "$ridx" ] && continue
+            printf '  %s  %s  SN:%s  固件:%s  虚拟盘:%s\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd"
+            # 虚拟盘明细（缩进二级）
+            if [ -n "$rvd_list" ]; then
+                echo "$rvd_list" | tr ';' '\n' | while IFS= read -r vdline; do
+                    [ -z "$vdline" ] && continue
+                    vdname="${vdline%%:*}"
+                    vdrest="${vdline#*:}"
+                    printf '    %s  %s\n' "$vdname" "$vdrest"
+                done
+            fi
+        done
+        echo ""
+    fi
+    if [ -n "$HBA_DETAILS" ]; then
+        echo "[HBA直通卡]"
+        echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
+            [ -z "$hname" ] && continue
+            printf '  %s  %s  固件:%s  SN:%s  状态:%s  SAS:%s  端口:%s\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat" "$hsas" "$hports"
+        done
+        echo ""
+    fi
+    if [ -n "$nvs_txt" ]; then
+        echo "[NVSwitch]"
+        printf '%s' "$nvs_txt"
+        echo ""
+    fi
 fi)
 
 [健康检查]
