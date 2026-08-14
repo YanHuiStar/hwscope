@@ -113,6 +113,12 @@ VERSION=$(extract "Version" "$SUMMARY")
 REPORT_VERSION=$(grep '^HWSCOPE_VERSION=' "${SCRIPT_DIR}/hwscope.sh" 2>/dev/null | head -1 | sed 's/.*"\(.*\)"/\1/')
 [ -z "$REPORT_VERSION" ] && REPORT_VERSION="unknown"
 PLATFORM=$(grep -m1 "^Platform" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
+# HGX 机头标记（x86_64_head 等：PCIe Fabric 接模组，无本地 GPU；报告与验收清单使用专门文案）
+HEAD_NODE=0
+PLATFORM_LABEL="$PLATFORM"
+case "$PLATFORM" in
+    *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM}（HGX 机头：PCIe Fabric 接模组，模组单独采集）" ;;
+esac
 TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 's/^ //')
 
 # ─── 采集耗时（summary 耗时统计段） ───
@@ -644,7 +650,11 @@ fi
 # 健康检查文本（变量拼接，避免 $( ) 命令替换剥离尾换行导致排版错乱）
 HEALTH_TXT=""
 if [ "$GPU_COUNT" -eq 0 ]; then
-    HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (无 GPU)"$'\n'
+    if [ "$HEAD_NODE" -eq 1 ]; then
+        HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (HGX 机头无本地 GPU，模组单独采集)"$'\n'
+    else
+        HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (无 GPU)"$'\n'
+    fi
 else
     HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}"$'\n'
 fi
@@ -1215,6 +1225,7 @@ gen_json() {
     "report_generator": "${REPORT_VERSION:-unknown}",
     "hostname": "${HOSTNAME:-unknown}",
     "platform": "${PLATFORM:-unknown}",
+    "platform_label": "${PLATFORM_LABEL:-unknown}",
     "timestamp": "${TIMESTAMP:-unknown}"
   },
   "environment": {
@@ -1534,7 +1545,7 @@ gen_md() {
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
 
-**采集版本:** ${VERSION:-unknown} · **报告生成器:** ${REPORT_VERSION:-unknown} · **主机:** ${HOSTNAME:-unknown} · **平台:** ${PLATFORM:-unknown} · **时间:** ${TIMESTAMP:-unknown}
+**采集版本:** ${VERSION:-unknown} · **报告生成器:** ${REPORT_VERSION:-unknown} · **主机:** ${HOSTNAME:-unknown} · **平台:** ${PLATFORM_LABEL:-unknown} · **时间:** ${TIMESTAMP:-unknown}
 
 ## 环境
 | 项 | 值 |
@@ -1889,7 +1900,7 @@ gen_txt() {
 HwScope 硬件巡检报告
 ============================================
 采集版本: ${VERSION:-unknown}    报告生成器: ${REPORT_VERSION:-unknown}    主机: ${HOSTNAME:-unknown}
-平台: ${PLATFORM:-unknown}   时间: ${TIMESTAMP:-unknown}
+平台: ${PLATFORM_LABEL:-unknown}   时间: ${TIMESTAMP:-unknown}
 
 [环境]
   OS     : ${OS_NAME:-N/A}
@@ -2067,9 +2078,13 @@ gen_acceptance() {
         rows="${rows}| ${n} | $1 | ${st} | $3 |"$'\n'
     }
 
-    # 1. GPU PCIe 链路完整（无 GPU 机器判 N/A，避免假阳性 PASS）
+    # 1. GPU PCIe 链路完整（无 GPU 机器判 N/A，避免假阳性 PASS；机头用专门文案）
     if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        add_item "GPU PCIe 链路完整" "N/A" "无 GPU"
+        if [ "$HEAD_NODE" -eq 1 ]; then
+            add_item "GPU PCIe 链路完整" "N/A" "HGX 机头（无本地 GPU，模组单独采集验收）"
+        else
+            add_item "GPU PCIe 链路完整" "N/A" "无 GPU"
+        fi
     elif [ -n "$GPU_DEGRADED" ]; then
         add_item "GPU PCIe 链路完整" "FAIL" "${GPU_DEGRADED%%,}（期望最高速率）"
     else
@@ -2080,7 +2095,11 @@ gen_acceptance() {
     case "${NVLINK_HEALTH:-N/A}" in
         OK)   add_item "NVLink 互联" "PASS" "全互联无降级链路" ;;
         异常) add_item "NVLink 互联" "FAIL" "存在降级链路${NVLINK_CRC:+，且有非零 CRC 错误}" ;;
-        *)    add_item "NVLink 互联" "N/A" "无 topo 数据（旧采集或无 GPU）" ;;
+        *)    if [ "$HEAD_NODE" -eq 1 ]; then
+                  add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）"
+              else
+                  add_item "NVLink 互联" "N/A" "无 topo 数据（旧采集或无 GPU）"
+              fi ;;
     esac
 
     # 3. DCGM 诊断

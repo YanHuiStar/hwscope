@@ -4,7 +4,7 @@
 
 > ⚠️ **开发测试阶段** — 本项目目前处于开发测试阶段，接口与输出格式可能随时变化，请以最新代码为准。
 
-**Author:** YanHui / Hermes Agent  ·  **Version:** 1.26.59  ·  **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui / Hermes Agent  ·  **Version:** 1.27.0  ·  **License:** [Apache 2.0](LICENSE)
 
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
@@ -113,6 +113,7 @@ bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单（采�
 | 标识 | 条件 | 代表机型 |
 |------|------|---------|
 | `x86_64_SXM` | x86 + SXM GPU + NVSwitch | HGX B200/B300 |
+| `x86_64_head` | x86 + PCIe Gen5 Fabric Switch（PEX89xxx/PEX97xxx/Switchtec），非 SXM | HGX 机头（ESC N8-E11V 等，无本地 GPU，模组经 Switch 接入，单独采集） |
 | `x86_64_PCIe` | x86 + PCIe GPU | 8×A100/H100 |
 | `aarch64_SXM` | ARM + SXM GPU + NVSwitch | GB300 / Grace |
 | `x86_64_none` | x86，无 GPU | 传统服务器 |
