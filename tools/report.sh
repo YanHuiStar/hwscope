@@ -755,6 +755,11 @@ if [ -f "${nic_inventory}" ]; then
                 [ -n "$mt" ] && mt=$(mt_model "$mt")
             fi
             [ -n "$mt" ] && npn="${npn} [${mt}]"
+            # 芯片编号（MT 编号：MT4129 等，工程/固件视角核对用）
+            nchip=""
+            if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
+                nchip="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
+            fi
             # SN 为占位值/空时，用 ibstat Node GUID 兜底（每卡唯一，可区分多卡）
             if [ -z "$nsn" ] || [ "$nsn" = "N/A" ] || [ "$nsn" = "1951526575073" ]; then
                 ng_ca="${NETDEV_CA[$nnic]:-}"
@@ -788,7 +793,7 @@ if [ -f "${nic_inventory}" ]; then
         else
             npcie_cap="${nspd}/${nwd}"
         fi
-        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}"$'\n'
+        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
 
@@ -970,9 +975,9 @@ gen_json() {
     # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
     local nic_details_json=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"firmware\": \"${nfw}\", \"pcie\": \"${npcie}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},"$'\n'
+            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"chip\": \"${nchip}\", \"firmware\": \"${nfw}\", \"pcie\": \"${npcie}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},"$'\n'
         done <<< "$NIC_DETAILS"
         nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
     fi
@@ -1280,10 +1285,10 @@ gen_md() {
     local nic_details_md=""
     if [ -n "$NIC_DETAILS" ]; then
         local nn=0
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
             nn=$((nn + 1))
-            nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nfw} | ${npcie} | ${npsid} | ${ngd:-} |"$'\n'
+            nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${ngd:-} |"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch Markdown 表
@@ -1432,8 +1437,8 @@ $(printf '%s' "$disk_details_md")
 $(net_extra_md)
 
 ### 网卡明细
-| # | 接口 | BDF | MAC | SN | 型号 | 固件 | PCIe | PSID | GPU直连 |
-|---|------|-----|-----|----|------|------|------|------|------|
+| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe | PSID | GPU直连 |
+|---|------|-----|-----|----|------|------|------|------|------|------|
 $(printf '%s' "$nic_details_md")
 
 ## BMC
@@ -1592,9 +1597,9 @@ gen_txt() {
     # 网卡明细纯文本
     local nic_details_txt=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
-            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe:${npcie}  PSID:${npsid}  ${ngd:-}"$'\n'
+            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe:${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}"$'\n'
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch 纯文本
