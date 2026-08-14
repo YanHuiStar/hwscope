@@ -44,7 +44,7 @@ for op in "${OPS[@]}"; do
     echo -e "  ${GREEN}[${num}]${NC} ${name}  ${YELLOW}(${warn})${NC}"
 done
 echo ""
-read -p "选择操作 (1-6, 逗号分隔): " -r choices
+read -p "选择操作 (1-7, 逗号分隔): " -r choices
 [ -z "$choices" ] && echo "跳过" && exit 0
 
 # ─── 选择设备 ───

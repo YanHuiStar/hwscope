@@ -46,10 +46,11 @@ run_gpu() {
         "nvidia-smi topo -m"                                                          "${dir}/gpu_topo.log"
         "nvidia-smi --query-remapped-rows=remapped_rows.correctable,remapped_rows.uncorrectable,remapped_rows.pending,remapped_rows.failure --format=csv" "${dir}/gpu_remapped_rows.csv"
     )
-    # gpu_topo_nic.log 与 gpu_topo.log 同命令（v1.26.27 起新版 topo -m 已含 NIC 列），跑一次后复制，省一次查询
-    cp "${dir}/gpu_topo.log" "${dir}/gpu_topo_nic.log" 2>/dev/null || true
 
     run_and_log_parallel 8 "${gpu_jobs[@]}"
+    # gpu_topo_nic.log 与 gpu_topo.log 同命令（v1.26.27 起新版 topo -m 已含 NIC 列），
+    # 并行采集完成后复制（须在 run_and_log_parallel 之后：此时 gpu_topo.log 已生成）
+    cp "${dir}/gpu_topo.log" "${dir}/gpu_topo_nic.log" 2>/dev/null || true
     local parallel_ret=$?
     if [ "$parallel_ret" -ne 0 ]; then
         echo -e "${YELLOW}[WARN] GPU 采集部分失败，请检查 nvidia-smi 可用性及日志文件${NC}" >&2
