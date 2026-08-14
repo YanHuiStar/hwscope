@@ -136,6 +136,11 @@ load_manifest "${GPU_DIR}" gpu_full "gpu_full.log"
 # PCIe 拓扑（lspci 直读型号用，走 manifest 解耦）
 PCIE_DIR="${OUT}/pcie"
 load_manifest "${PCIE_DIR}" lspci_all "lspci_all.log"
+# PCIe Fabric Switch（PEX89xxx/PEX97xxx/Switchtec）：HGX 机头接模组的互联通道；检测到才显示
+FABRIC_SW=""
+if [ -f "${lspci_all}" ]; then
+    FABRIC_SW=$(grep -v "^#" "${lspci_all}" 2>/dev/null | grep -oiE "PEX89[0-9xX]*|PEX97[0-9xX]*|Switchtec [A-Za-z0-9]+" | sort -u | tr '\n' ',' | sed 's/,$//')
+fi
 GPU_DRIVER=$(grep -m1 "Driver Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 GPU_CUDA=$(grep -m1 "CUDA Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 
@@ -635,7 +640,11 @@ if [ -f "${dcgmi_diag_level1}" ]; then
     DCGM_PERSIST=$(grep -c "Persistence Mode" "${dcgmi_diag_level1}" 2>/dev/null)
     DCGM_DIAG_VER=$(grep -m1 "DCGM Version" "${dcgmi_diag_level1}" 2>/dev/null | grep -oP 'DCGM Version\s+\|\s*\K[0-9.]+' | head -1)
     if grep -qiE "No available testing entities|Unable to complete diagnostic|Return: \(-30\)|Couldn't find match" "${dcgmi_diag_level1}" 2>/dev/null; then
-        DCGM_SUMMARY="N/A（无 GPU/无测试实体，未运行诊断）"
+        if [ "$HEAD_NODE" -eq 1 ]; then
+            DCGM_SUMMARY="N/A（HGX 机头无 GPU，模组单独采集）"
+        else
+            DCGM_SUMMARY="N/A（无 GPU/无测试实体，未运行诊断）"
+        fi
     elif [ "$DCGM_SOFT_FAIL" -gt 0 ] || [ "$DCGM_HW_FAIL" -gt 0 ]; then
         DCGM_SUMMARY="Fail (软件:${DCGM_SOFT_FAIL} 硬件:${DCGM_HW_FAIL})"
         # 纯配置类 Fail（仅 Persistence Mode）→ 标注非硬件
@@ -663,6 +672,8 @@ if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then
 fi
 if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
     HEALTH_TXT="${HEALTH_TXT}  DCGM诊断 : ${DCGM_SUMMARY}"$'\n'
+elif [ "$HEAD_NODE" -eq 1 ]; then
+    HEALTH_TXT="${HEALTH_TXT}  DCGM诊断 : N/A（HGX 机头无 GPU，模组单独采集）"$'\n'
 fi
 if [ -n "$DCGM_NOTICE" ]; then
     HEALTH_TXT="${HEALTH_TXT}  ⚠️ ${DCGM_NOTICE}"$'\n'
@@ -1232,7 +1243,8 @@ gen_json() {
     "os": "${OS_NAME:-N/A}",
     "kernel": "${KERNEL:-N/A}",
     "driver": "${GPU_DRIVER:-N/A}",
-    "cuda": "${GPU_CUDA:-N/A}"
+    "cuda": "${GPU_CUDA:-N/A}",
+    "fabric_switch": "${FABRIC_SW:-}"
   },
   "timing": {
     "total": "${TIMING_TOTAL:-N/A}",
@@ -1555,6 +1567,7 @@ gen_md() {
 | 驱动 | ${GPU_DRIVER:-N/A} |
 | CUDA | ${GPU_CUDA:-N/A} |
 | 采集耗时 | ${TIMING_TOTAL:-N/A} |
+$(if [ -n "$FABRIC_SW" ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（HGX 模组互联通道） |"; fi)
 
 ## 主板
 | 项 | 值 |
@@ -1615,7 +1628,11 @@ $(printf '%s' "$dimms_md")
 
 ## GPU
 $(if [ "$GPU_COUNT" -eq 0 ]; then
-    echo "| 状态 | N/A（未检测到 GPU/无 NVIDIA 驱动） |"
+    if [ "$HEAD_NODE" -eq 1 ]; then
+        echo "| 状态 | HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集） |"
+    else
+        echo "| 状态 | N/A（未检测到 GPU/无 NVIDIA 驱动） |"
+    fi
 else
     echo "| 项 | 值 |"
     echo "|----|----|"
@@ -1629,11 +1646,13 @@ else
     echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
 fi)
 $(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "| NVLink | ${NV_LINK_SUMMARY} |"; fi)
-
-### 每卡明细
-| 卡 | 型号 | SN | 显存(默认/可用) | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |
-|----|------|----|----|------|------|--------|----------|-----------|
-$(printf '%s' "$gpu_details_md")
+$(if [ -n "$gpu_details_md" ]; then
+    echo ""
+    echo "### 每卡明细"
+    echo "| 卡 | 型号 | SN | 显存(默认/可用) | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |"
+    echo "|----|------|----|----|------|------|--------|----------|-----------|"
+    printf '%s' "$gpu_details_md"
+fi)
 
 ## 存储
 | 项 | 值 |
@@ -1769,9 +1788,21 @@ fi)
 ## 健康检查
 | 项 | 状态 |
 |----|------|
-| GPU PCIe 链路 | ${GPU_DEGRADED:-✓ 全部正常} |
+$(if [ "$GPU_COUNT" -eq 0 ]; then
+    if [ "$HEAD_NODE" -eq 1 ]; then
+        echo "| GPU PCIe 链路 | N/A（HGX 机头无本地 GPU，模组单独采集） |"
+    else
+        echo "| GPU PCIe 链路 | N/A（无 GPU） |"
+    fi
+else
+    echo "| GPU PCIe 链路 | ${GPU_DEGRADED:-✓ 全部正常} |"
+fi)
 $(if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then echo "| NVLink | ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)} |"; fi)
-$(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then echo "| DCGM 诊断 | ${DCGM_SUMMARY} |"; fi)$(if [ -n "$DCGM_NOTICE" ]; then echo "| ⚠️ DCGM | ${DCGM_NOTICE} |"; fi)
+$(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
+    echo "| DCGM 诊断 | ${DCGM_SUMMARY} |"
+elif [ "$HEAD_NODE" -eq 1 ]; then
+    echo "| DCGM 诊断 | N/A（HGX 机头无 GPU，模组单独采集） |"
+fi)$(if [ -n "$DCGM_NOTICE" ]; then echo "| ⚠️ DCGM | ${DCGM_NOTICE} |"; fi)
 | SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
 
@@ -1908,6 +1939,7 @@ HwScope 硬件巡检报告
   驱动   : ${GPU_DRIVER:-N/A}
   CUDA   : ${GPU_CUDA:-N/A}
   采集耗时 : ${TIMING_TOTAL:-N/A}
+$(if [ -n "$FABRIC_SW" ]; then echo "  PCIe Fabric Switch: ${FABRIC_SW}（HGX 模组互联通道）"; fi)
 
 [主板]
   制造商 : ${MB_MANUFACTURER:-N/A}
@@ -1943,7 +1975,11 @@ $(printf '%s' "$dimms_txt")
 
 [GPU]
 $(if [ "$GPU_COUNT" -eq 0 ]; then
-    echo "  N/A (未检测到 GPU/无 NVIDIA 驱动)"
+    if [ "$HEAD_NODE" -eq 1 ]; then
+        echo "  HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集）"
+    else
+        echo "  N/A (未检测到 GPU/无 NVIDIA 驱动)"
+    fi
 else
     echo "  数量   : ${GPU_COUNT:-0}"
     echo "  型号   : ${GPU_NAMES:-N/A}"
@@ -2107,7 +2143,11 @@ gen_acceptance() {
         通过*) add_item "DCGM 诊断" "PASS" "${DCGM_SUMMARY}" ;;
         Fail*硬件*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
         配置项*Fail*|Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
-        *)     add_item "DCGM 诊断" "N/A" "未运行（DCGM 未安装或已禁用）" ;;
+        *)    if [ "$HEAD_NODE" -eq 1 ]; then
+                  add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）"
+              else
+                  add_item "DCGM 诊断" "N/A" "未运行（DCGM 未安装或已禁用）"
+              fi ;;
     esac
 
     # 4. SEL 无 Critical 事件（SEL 采集失败/无数据 → N/A，禁止假阳性 PASS）
