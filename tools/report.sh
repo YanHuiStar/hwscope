@@ -1477,10 +1477,10 @@ $(net_extra_md)
 
 ### 网卡明细
 $(if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
-    echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe | PSID | GPU直连 |"
+    echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | GPU直连 |"
     echo "|---|------|-----|-----|----|------|------|------|------|------|------|"
 else
-    echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe | PSID |"
+    echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID |"
     echo "|---|------|-----|-----|----|------|------|------|------|------|"
 fi)
 $(printf '%s' "$nic_details_md")
@@ -1644,9 +1644,9 @@ gen_txt() {
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
             if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
-                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe:${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}"$'\n'
+                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}"$'\n'
             else
-                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe:${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}"$'\n'
+                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}"$'\n'
             fi
         done <<< "$NIC_DETAILS"
     fi
