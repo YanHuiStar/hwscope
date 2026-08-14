@@ -647,6 +647,7 @@ LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')
 # IB 控制器型号识别：ibstat CA type + ibdev2netdev 映射（mlx5_N ↔ ibp*），附加到 PN 列
 declare -A CA_MODEL NETDEV_CA
 NIC_MLX=0
+GPU_TOPO_AVAIL=0
 if [ -f "${ibstat}" ]; then
     cur_ca=""
     while IFS= read -r il; do
@@ -779,15 +780,16 @@ if [ -f "${nic_inventory}" ]; then
                 nsn="${nsn} (MAC)"
             fi
         fi
-        # GPU 直连标记（topo PIX 判定）——三种状态明确区分，不留空值：
-        #   "GPU直连" = PIX 直连；"—" = 有 topo 数据但非直连；"未采集" = 旧数据无 topo 日志
+        # GPU 直连标记（topo PIX 判定）——无 topo 数据（旧采集）时整列隐藏，避免"未采集"造成误会：
+        #   "GPU直连" = PIX 直连；"—" = 有 topo 数据但非直连
         gd_mark=""
-        if [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ]; then
-            gd_mark="GPU直连"
-        elif [ ! -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
-            gd_mark="未采集"
-        else
-            gd_mark="—"
+        if [ -f "${GPU_DIR}/gpu_topo_nic.log" ]; then
+            GPU_TOPO_AVAIL=1
+            if [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ]; then
+                gd_mark="GPU直连"
+            else
+                gd_mark="—"
+            fi
         fi
         # PCIe 能力（LnkCap）与当前（LnkSta）合并显示：当前一致时只显当前，不一致标注能力
         npcie_cap=""
@@ -1305,7 +1307,11 @@ gen_md() {
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
             nn=$((nn + 1))
-            nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${ngd:-} |"$'\n'
+            if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${ngd:-} |"$'\n'
+            else
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} |"$'\n'
+            fi
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch Markdown 表
@@ -1454,8 +1460,13 @@ $(printf '%s' "$disk_details_md")
 $(net_extra_md)
 
 ### 网卡明细
-| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe | PSID | GPU直连 |
-|---|------|-----|-----|----|------|------|------|------|------|------|
+$(if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
+    echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe | PSID | GPU直连 |"
+    echo "|---|------|-----|-----|----|------|------|------|------|------|------|"
+else
+    echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe | PSID |"
+    echo "|---|------|-----|-----|----|------|------|------|------|------|"
+fi)
 $(printf '%s' "$nic_details_md")
 
 ## BMC
@@ -1616,7 +1627,11 @@ gen_txt() {
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
-            nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe:${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}"$'\n'
+            if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
+                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe:${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}"$'\n'
+            else
+                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe:${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}"$'\n'
+            fi
         done <<< "$NIC_DETAILS"
     fi
     # NVSwitch 纯文本
