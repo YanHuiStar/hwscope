@@ -1788,21 +1788,28 @@ fi)
 ## 健康检查
 | 项 | 状态 |
 |----|------|
-$(if [ "$GPU_COUNT" -eq 0 ]; then
-    if [ "$HEAD_NODE" -eq 1 ]; then
-        echo "| GPU PCIe 链路 | N/A（HGX 机头无本地 GPU，模组单独采集） |"
+$(
+    if [ "$GPU_COUNT" -eq 0 ]; then
+        if [ "$HEAD_NODE" -eq 1 ]; then
+            echo "| GPU PCIe 链路 | N/A（HGX 机头无本地 GPU，模组单独采集） |"
+        else
+            echo "| GPU PCIe 链路 | N/A（无 GPU） |"
+        fi
     else
-        echo "| GPU PCIe 链路 | N/A（无 GPU） |"
+        echo "| GPU PCIe 链路 | ${GPU_DEGRADED:-✓ 全部正常} |"
     fi
-else
-    echo "| GPU PCIe 链路 | ${GPU_DEGRADED:-✓ 全部正常} |"
-fi)
-$(if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then echo "| NVLink | ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)} |"; fi)
-$(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
-    echo "| DCGM 诊断 | ${DCGM_SUMMARY} |"
-elif [ "$HEAD_NODE" -eq 1 ]; then
-    echo "| DCGM 诊断 | N/A（HGX 机头无 GPU，模组单独采集） |"
-fi)$(if [ -n "$DCGM_NOTICE" ]; then echo "| ⚠️ DCGM | ${DCGM_NOTICE} |"; fi)
+    if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then
+        echo "| NVLink | ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)} |"
+    fi
+    if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
+        echo "| DCGM 诊断 | ${DCGM_SUMMARY} |"
+    elif [ "$HEAD_NODE" -eq 1 ]; then
+        echo "| DCGM 诊断 | N/A（HGX 机头无 GPU，模组单独采集） |"
+    fi
+    if [ -n "$DCGM_NOTICE" ]; then
+        echo "| ⚠️ DCGM | ${DCGM_NOTICE} |"
+    fi
+)
 | SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
 
