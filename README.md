@@ -55,6 +55,23 @@ sudo bash hwscope.sh --quiet          # 静默模式（仅输出异常）
 
 > 未安装的工具对应模块自动跳过（`[SKIP]`），不影响整体采集；`tools/install_tool.sh` 可一键安装（apt/dnf 自动识别）。
 
+### RAID/HBA 专业运维工具
+
+采集只读，以下**操作类工具**不集成执行（会修改硬件配置），现场运维按需使用：
+
+| 工具 | 平台 | 查询 | 操作 |
+|------|------|------|------|
+| `storcli64` | Broadcom MegaRAID | `storcli64 /c0 show all`（型号/SN/固件/VD/BBU） | 建/删 VD、改 RAID 级别、热备配置 |
+| `sas3ircu` / `sas2ircu` | Broadcom SAS3/SAS2 HBA | `sas3ircu 0 display`（型号/固件/状态/PHY） | 查询为主（display/status） |
+| `sas3flash` / `sas2flash` | Broadcom HBA | `sas3flash -list` | **固件刷写、SN 修改、PHY 配置** |
+| `MegaCli64` | 老版 MegaRAID | 同 storcli（旧驱动环境） | 同 storcli |
+| `perccli` | Dell PERC | `perccli /c0 show all` | 同 storcli（Dell 版） |
+| `ssacli` / `hpssacli` | HPE Smart Array | `ssacli ctrl all show detail` | RAID 配置 |
+| `arcconf` | Adaptec | `arcconf getconfig 1` | RAID 配置 |
+| `sg3_utils`（sg_inq/sg_ses） | 通用 SCSI/SAS/SATA | `sg_inq`（VPD 厂商/型号/SN）、`sg_ses`（背板槽位） | 查询为主（只读） |
+
+> 采集模块已自动识别 storcli64/sas3ircu/sas2ircu；其余工具检测到硬件时按需安装，报告只读采集不执行任何配置变更。
+
 ---
 
 ## 用法
