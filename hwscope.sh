@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.26.58 (2026-08)
+# Version : 1.26.59 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.26.58"
+HWSCOPE_VERSION="v1.26.59"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -226,6 +226,7 @@ echo ""
 TOTAL_COUNT=0; FILE_COUNT=0
 START_TS=$(date +%s); MOD_TIMES=""
 export SIM_DELAY   # 模拟模式秒数（conf 读取，--sim 覆盖），子 shell 继承
+export HWSCOPE_VERSION   # 版本号（模块独立进程 source common.sh 时写日志 header，缺失则显示 unknown）
 
 if [ "$PARALLEL" -eq 1 ]; then
     # ═══════════════ 并行模式 ═══════════════
