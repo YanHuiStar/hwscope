@@ -354,6 +354,21 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     done <<< "$(grep -v '^#' "$GPU_CSV" | tail -n +2)"
     GPU_DETAILS=$(printf '%b' "$GPU_DETAILS")
 fi
+# 每卡 VBIOS 固件版本（gpu_N_detail.log 的 VBIOS Version；交付核对固件用，明细表展示）
+declare -A GPU_VBIOS_MAP
+if [ -n "$GPU_DETAILS" ]; then
+    for gf in "${GPU_DIR}"/gpu_*_detail.log; do
+        [ -f "$gf" ] || continue
+        gvb_idx=$(basename "$gf" | sed 's/^gpu_//; s/_detail\.log$//')
+        gvb_ver=$(grep -m1 "VBIOS Version" "$gf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
+        [ -n "$gvb_ver" ] && GPU_VBIOS_MAP["$gvb_idx"]="$gvb_ver"
+    done
+    # 明细行追加第 10 列 VBIOS（映射不到置 N/A）
+    GPU_DETAILS=$(while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+        [ -z "$gidx" ] && continue
+        echo "${gidx}|${gname}|${gsn}|${gmem}|${gdraw}|${gtemp}|${gutil}|${gpcie}|${gmax}|${GPU_VBIOS_MAP[$gidx]:-N/A}"
+    done <<< "$GPU_DETAILS")
+fi
 # ECC 模式与累计错误（列: 3=mode, 4-7=错误计数）
 if [ -f "$GPU_ECC_CSV" ]; then
     GPU_ECC=$(grep -v "^#" "$GPU_ECC_CSV" | tail -n +2 | awk -F',' '{e+=$4+$5+$6+$7; mode=$3; gsub(/^ /,"",mode)} END{printf "%s, errors: %d", mode, e}')
@@ -482,11 +497,11 @@ if [ -f "${gpu_nvlink_status}" ]; then
     fi
 fi
 
-# NVSwitch（nvswitch_*.log：状态/温度/端口）
+# NVSwitch（nvswitch_N.log：状态/温度/端口；只匹配数字索引，避免把 nvswitch_smi_status.log 混入）
 NVS_DIR="${OUT}/nvswitch"
 NVS_DETAILS=""
-if ls ${NVS_DIR}/nvswitch_*.log >/dev/null 2>&1; then
-    for nf in ${NVS_DIR}/nvswitch_*.log; do
+if ls ${NVS_DIR}/nvswitch_[0-9]*.log >/dev/null 2>&1; then
+    for nf in ${NVS_DIR}/nvswitch_[0-9]*.log; do
         nidx=$(basename "$nf" | sed 's/nvswitch_//; s/\.log//')
         nstate=$(grep -m1 "Switch State" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
         ntemp=$(grep -m1 "Temperature" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ' | sed 's/C$//')
@@ -496,6 +511,21 @@ if ls ${NVS_DIR}/nvswitch_*.log >/dev/null 2>&1; then
         [ "$nstat" != "Active" ] && [ "$nstat" != "N/A" ] && nstat="${nstat} ⚠️"
         NVS_DETAILS="${NVS_DETAILS}${nidx}|${nstat}|${ntemp:-N/A}°C|${nports:-N/A}/${ntotal:-N/A}"$'\n'
     done
+fi
+# B300/GB300 fallback：nvidia-smi nvswitch --status 输出（"Switch N:" 段 + NVSwitch State/Temperature/Link 行）
+if [ -z "$NVS_DETAILS" ] && [ -f "${NVS_DIR}/nvswitch_smi_status.log" ]; then
+    NVS_DETAILS=$(awk '
+        /^Switch [0-9]+:/ { if(idx!="") flush(); idx=$2; gsub(/:/,"",idx); state=""; temp=""; pc=0 }
+        idx!="" && /NVSwitch State/ { v=$0; sub(/.*:/,"",v); gsub(/ /,"",v); state=v }
+        idx!="" && /NVSwitch Temperature/ { v=$0; sub(/.*:/,"",v); gsub(/ /,"",v); sub(/C.*/,"",v); temp=v }
+        idx!="" && /Link [0-9]+ State/ { pc++ }
+        function flush() {
+            nstat=(state==""?"N/A":state)
+            if(nstat!="Active" && nstat!="N/A") nstat=nstat" ⚠️"
+            printf "%s|%s|%s°C|%s/%s\n", idx, nstat, (temp==""?"N/A":temp), pc+0, pc+0
+        }
+        END { if(idx!="") flush() }
+    ' "${NVS_DIR}/nvswitch_smi_status.log" 2>/dev/null)
 fi
 
 # ─── 网络 ───
@@ -1172,9 +1202,9 @@ gen_json() {
         # 每卡显存标注标称（如 B300: 268.6 GiB (标称288GB)）
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gvb; do
             [ -z "$gidx" ] && continue
-            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_spec\": \"${gmem_spec}\", \"memory_used\": \"${gused_f:-N/A}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"util\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\"},"$'\n'
+            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\", \"vbios\": \"${gvb:-N/A}\"},"$'\n'
         done <<< "$GPU_DETAILS"
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
@@ -1494,12 +1524,12 @@ gen_md() {
         # 每卡显存显示 默认(标称)/可用（如 288GB/268.6 GiB 可用），防止客户误读检测值为卡容量
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gvb; do
             [ -z "$gidx" ] && continue
             if [ -n "$gmem_spec" ]; then
-                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem_spec}/${gmem} 可用 | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
+                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem_spec}/${gmem} 可用 | ${gdraw} | ${gtemp} | ${gpcie} | ${gmax} | ${gvb:-N/A} |"$'\n'
             else
-                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gutil} | ${gpcie} | ${gmax} |"$'\n'
+                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gpcie} | ${gmax} | ${gvb:-N/A} |"$'\n'
             fi
         done <<< "$GPU_DETAILS"
     fi
@@ -1660,8 +1690,8 @@ fi)
 $(if [ -n "$gpu_details_md" ]; then
     echo ""
     echo "### 每卡明细"
-    echo "| 卡 | 型号 | SN | 显存(默认/可用) | 功耗 | 温度 | 利用率 | PCIe 当前 | PCIe 最大 |"
-    echo "|----|------|----|----|------|------|--------|----------|-----------|"
+    echo "| 卡 | 型号 | SN | 显存(默认/可用) | 功耗 | 温度 | PCIe 当前 | PCIe 最大 | VBIOS |"
+    echo "|----|------|----|----|------|------|----------|----------|-------|"
     printf '%s' "$gpu_details_md"
 fi)
 
@@ -1881,12 +1911,12 @@ gen_txt() {
         # 每卡显存显示 默认(标称)/可用（如 288GB/268.6 GiB 可用）
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gvb; do
             [ -z "$gidx" ] && continue
             if [ -n "$gmem_spec" ]; then
-                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem_spec}/${gmem} 可用  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
+                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem_spec}/${gmem} 可用  ${gdraw}  ${gtemp}  PCIe:${gpcie}/${gmax}  VBIOS:${gvb:-N/A}"$'\n'
             else
-                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  util:${gutil}  PCIe:${gpcie}/${gmax}"$'\n'
+                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  PCIe:${gpcie}/${gmax}  VBIOS:${gvb:-N/A}"$'\n'
             fi
         done <<< "$GPU_DETAILS"
     fi
