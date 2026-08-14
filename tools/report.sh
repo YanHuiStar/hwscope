@@ -923,28 +923,58 @@ if [ -f "$_fru_src" ]; then
     # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）
     PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|Power Supply")
     psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
-    # 回退：部分平台（如 Inventec）FRU 不暴露 PSU 条目，但传感器有 PSU*_Temp —— 用传感器生成占位行
-    if [ -z "$PSU_DETAILS" ] && [ -f "$psu_power_csv" ]; then
-        PSU_DETAILS=$(grep -v "^#" "$psu_power_csv" 2>/dev/null | awk -F'|' '
-            tolower($1) ~ /psu[0-9]+_temp/ {
-                num=$1; gsub(/[^0-9]/, "", num)
-                if(num!="" && !seen[num]++) printf "PSU%s|N/A|N/A|N/A|N/A|N/A\n", num
-            }')
+    psu_power_csv2="${BMC_DIR}/ipmi_sensors_power.log"   # 含 PS*_Pin（Inventec 等平台，psu 日志可能只有 Temp）
+    # 回退：部分平台（如 Inventec）FRU 不暴露 PSU 条目，但传感器有 PSU*_Temp / PS*_Pin —— 用传感器生成占位行
+    if [ -z "$PSU_DETAILS" ]; then
+        # 编号识别源：psu sensors 的 PSU*_Temp（优先）→ bmc power 的 PS*_Pin
+        _temp_src=""
+        [ -f "$psu_power_csv" ] && grep -qiE "psu[0-9]+_temp" "$psu_power_csv" 2>/dev/null && _temp_src="$psu_power_csv"
+        [ -z "$_temp_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin" "$psu_power_csv2" 2>/dev/null && _temp_src="$psu_power_csv2"
+        # 功耗补全源：psu sensors 的 PS*_Pin → bmc power 的 PS*_Pin
+        _pin_src=""
+        [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
+        [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
+        if [ -n "$_temp_src" ]; then
+            PSU_DETAILS=$(grep -v "^#" "$_temp_src" 2>/dev/null | awk -F'|' '
+                tolower($1) ~ /psu[0-9]+_temp|ps[0-9]+_pin/ {
+                    num=$1; gsub(/[^0-9]/, "", num)
+                    if(num!="" && !seen[num]++) printf "PSU%s|N/A|N/A|N/A|N/A|N/A\n", num
+                }')
+            # 功耗补全（PS*_Pin → PSU 行当前功耗）：先收集 pin 映射，再逐行追加
+            if [ -n "$_pin_src" ] && [ -n "$PSU_DETAILS" ]; then
+                # 构建 "编号:功耗" 列表（如 "6:427W 7:448W"）
+                _pin_map=$(grep -v "^#" "$_pin_src" 2>/dev/null | awk -F'|' '
+                    $1 ~ /^PS[0-9]+_Pin/ { n=$1; sub(/^PS/,"",n); sub(/[^0-9].*/,"",n); v=$2; gsub(/ /,"",v); printf "%s:%sW ", n, v }')
+                # 占位行逐行替换功耗（PSU6 → 6 → 查 _pin_map）
+                if [ -n "$_pin_map" ]; then
+                    PSU_DETAILS=$(while IFS= read -r _pline; do
+                        [ -z "$_pline" ] && continue
+                        _pnum=$(echo "$_pline" | cut -d'|' -f1 | sed 's/^PSU//')
+                        _pval=$(echo "$_pin_map" | tr ' ' '\n' | grep -E "^${_pnum}:" | cut -d: -f2)
+                        if [ -n "$_pval" ]; then
+                            echo "$_pline" | awk -v val="$_pval" -F'|' 'BEGIN{OFS="|"} {$6=val; print}'
+                        else
+                            echo "$_pline"
+                        fi
+                    done <<< "$PSU_DETAILS")
+                fi
+            fi
+        fi
         # 平台限制标注：FRU 无 PSU 条目时说明（避免客户误以为漏采）
         if [ -n "$PSU_DETAILS" ]; then
-            PSU_PLATFORM_NOTE="平台未暴露单电源 FRU/功耗（仅温度传感器确认存在）"
+            PSU_PLATFORM_NOTE="平台未暴露单电源 FRU（仅传感器确认存在与功耗）"
         fi
     fi
     # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
     total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
     [ -n "$total_pwr" ] && PSU_DETAILS="${PSU_DETAILS}"$'\n'"整机功耗|N/A|N/A|N/A|N/A|${total_pwr}"$'\n'
-    # 每只 PSU 当前输入功率（ipmi_psu_sensors.log: Pwr_PSU<N>_In | W |），按编号匹配追加
-    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -q "Pwr_PSU[0-9]" "$psu_power_csv" 2>/dev/null; then
+    # 每只 PSU 当前输入功率（Pwr_PSU<N>_In 或 PS<N>_Pin，| W |），按编号匹配追加
+    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -qE "Pwr_PSU[0-9]|PS[0-9]_Pin" "$psu_power_csv" 2>/dev/null; then
         # 一次性构建 编号→功率 映射，再一次性追加（避免逐行 echo|awk 嵌套性能灾难）
         PSU_DETAILS=$(awk -v psu_detail="$PSU_DETAILS" '
             BEGIN { FS="|"; OFS="|" }
-            /Pwr_PSU[0-9]+_In/ {
-                num=$1; sub(/.*Pwr_PSU/, "", num); sub(/_In.*/, "", num)
+            /Pwr_PSU[0-9]+_In|PS[0-9]+_Pin/ {
+                num=$1; sub(/.*Pwr_PSU/, "", num); sub(/.*PS/, "", num); sub(/[^0-9].*/, "", num)
                 val=$2; gsub(/ /, "", val)
                 power[num]=val "W"
             }
