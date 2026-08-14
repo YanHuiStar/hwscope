@@ -256,6 +256,12 @@ GPU_CSV="${gpu_inventory}"
 GPU_ECC_CSV="${gpu_ecc_inventory}"
 GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""
 if [ -f "$GPU_CSV" ]; then
+    # 有效性守卫：nvidia-smi 失败时 csv 只有报错行（如 "NVIDIA-SMI has failed..."），不算 GPU 数据
+    if grep -v "^#" "$GPU_CSV" | grep -qiE "NVIDIA-SMI has failed|couldn't communicate|No devices were found"; then
+        GPU_CSV=""
+    fi
+fi
+if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
     GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ',' | sed 's/,$//')
     # 显存总量 / 功耗上限 / 温度
@@ -622,7 +628,9 @@ if [ -f "${dcgmi_diag_level1}" ]; then
     DCGM_HW_FAIL=$(grep -E "^\| (memory|pcie|nvlink|diagnostic|compute|graphics|nvswitch)" "${dcgmi_diag_level1}" 2>/dev/null | grep -c "Fail")
     DCGM_PERSIST=$(grep -c "Persistence Mode" "${dcgmi_diag_level1}" 2>/dev/null)
     DCGM_DIAG_VER=$(grep -m1 "DCGM Version" "${dcgmi_diag_level1}" 2>/dev/null | grep -oP 'DCGM Version\s+\|\s*\K[0-9.]+' | head -1)
-    if [ "$DCGM_SOFT_FAIL" -gt 0 ] || [ "$DCGM_HW_FAIL" -gt 0 ]; then
+    if grep -qiE "No available testing entities|Unable to complete diagnostic|Return: \(-30\)|Couldn't find match" "${dcgmi_diag_level1}" 2>/dev/null; then
+        DCGM_SUMMARY="N/A（无 GPU/无测试实体，未运行诊断）"
+    elif [ "$DCGM_SOFT_FAIL" -gt 0 ] || [ "$DCGM_HW_FAIL" -gt 0 ]; then
         DCGM_SUMMARY="Fail (软件:${DCGM_SOFT_FAIL} 硬件:${DCGM_HW_FAIL})"
         # 纯配置类 Fail（仅 Persistence Mode）→ 标注非硬件
         if [ "$DCGM_HW_FAIL" -eq 0 ] && [ "$DCGM_SOFT_FAIL" -gt 0 ] && [ "$DCGM_PERSIST" -ge "$DCGM_SOFT_FAIL" ]; then
@@ -1548,16 +1556,20 @@ fi)
 $(printf '%s' "$dimms_md")
 
 ## GPU
-| 项 | 值 |
-|----|----|
-| 数量 | ${GPU_COUNT:-0} |
-| 型号 | ${GPU_NAMES:-N/A} |
-| 显存总量 | ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}/${GPU_MEM:-N/A} 可用${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})} |
-| 功耗上限 | ${GPU_POWER:-N/A} |
-| 温度 | ${GPU_TEMP:-N/A} |
-| ECC | ${GPU_ECC:-N/A} |
-| 退役行 | ${GPU_REMAP:-N/A} |
-| VBIOS | ${GPU_VBIOS:-N/A} |
+$(if [ "$GPU_COUNT" -eq 0 ]; then
+    echo "| 状态 | N/A（未检测到 GPU/无 NVIDIA 驱动） |"
+else
+    echo "| 项 | 值 |"
+    echo "|----|----|"
+    echo "| 数量 | ${GPU_COUNT:-0} |"
+    echo "| 型号 | ${GPU_NAMES:-N/A} |"
+    echo "| 显存总量 | ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}/${GPU_MEM:-N/A} 可用${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})} |"
+    echo "| 功耗上限 | ${GPU_POWER:-N/A} |"
+    echo "| 温度 | ${GPU_TEMP:-N/A} |"
+    echo "| ECC | ${GPU_ECC:-N/A} |"
+    echo "| 退役行 | ${GPU_REMAP:-N/A} |"
+    echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
+fi)
 $(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "| NVLink | ${NV_LINK_SUMMARY} |"; fi)
 
 ### 每卡明细
@@ -1875,14 +1887,18 @@ fi)
 $(printf '%s' "$dimms_txt")
 
 [GPU]
-  数量   : ${GPU_COUNT:-0}
-  型号   : ${GPU_NAMES:-N/A}
-  显存   : ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}/${GPU_MEM:-N/A} 可用${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})}
-  功耗   : ${GPU_POWER:-N/A}
-  温度   : ${GPU_TEMP:-N/A}
-  ECC    : ${GPU_ECC:-N/A}
-  退役行 : ${GPU_REMAP:-N/A}
-  VBIOS  : ${GPU_VBIOS:-N/A}
+$(if [ "$GPU_COUNT" -eq 0 ]; then
+    echo "  N/A (未检测到 GPU/无 NVIDIA 驱动)"
+else
+    echo "  数量   : ${GPU_COUNT:-0}"
+    echo "  型号   : ${GPU_NAMES:-N/A}"
+    echo "  显存   : ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}/${GPU_MEM:-N/A} 可用${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})}"
+    echo "  功耗   : ${GPU_POWER:-N/A}"
+    echo "  温度   : ${GPU_TEMP:-N/A}"
+    echo "  ECC    : ${GPU_ECC:-N/A}"
+    echo "  退役行 : ${GPU_REMAP:-N/A}"
+    echo "  VBIOS  : ${GPU_VBIOS:-N/A}"
+fi)
 $(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)
 $(printf '%s' "$gpu_details_txt")
 
@@ -1965,7 +1981,11 @@ $(if [ -n "$nvs_txt" ]; then
 fi)
 
 [健康检查]
-  PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}
+$(if [ "$GPU_COUNT" -eq 0 ]; then
+    echo "  PCIe链路 : N/A (无 GPU)"
+else
+    echo "  PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}"
+fi)
 $(if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then echo "  NVLink   : ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)}"; fi)
 $(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then echo "  DCGM诊断 : ${DCGM_SUMMARY}"; fi)$(if [ -n "$DCGM_NOTICE" ]; then echo "  ⚠️ ${DCGM_NOTICE}"; fi)
   SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
