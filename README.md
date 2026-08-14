@@ -64,10 +64,11 @@ bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单（采�
 ```
 
 报告特性（交付导向）：
-- **标称 vs 检测双轨** — GPU 显存 `288GB/268.6 GiB 可用`、内存 `2048GB/2015.4 GiB 可见`、PSU 容量/实时功耗、IB 标称(800G XDR)/实际协商——全部标注来源，防客户误读
-- **SN 全覆盖** — 整机/主板/机箱/GPU+VBIOS/内存/盘/网卡/PSU/RAID/HBA/CPU(有值才显示)，报修精确到部件
+- **标称 vs 检测双轨** — GPU 显存 `288GB/268.6 GiB 可用`、内存 `2048GB/2015.4 GiB 可见`、PSU 容量/实时功耗、IB 标称(800G XDR)/实际协商——全部标注来源，防客户误读；盘标称容量从型号自动提取（Dell/Micron 等通用识别，Samsung 映射表兜底）
+- **SN 全覆盖** — 整机/主板/机箱/GPU+VBIOS/内存/盘/网卡/PSU/RAID/HBA/CPU(有值才显示)，报修精确到部件；网卡真 SN 经 MST 读取，PSID 从 mlxfwmanager 回查
 - **NVLink 全互联** — `8卡 全互联 (18条/卡 × 53.125 GB/s)`，每卡链路数自动计算
 - **验收清单** — 8 项判定（GPU PCIe/NVLink/SEL/磁盘/内存/DCGM），内存满插 2DPC 降速判 PASS、DCGM 配置类 Fail 判 WARN、无数据判 N/A，全部 N/A 判"数据不足"
+- **采集耗时** — 只显示总耗时（模块耗时 Top 明细保留在 JSON `timing.top_modules`）
 
 ## 平台兼容
 
@@ -94,7 +95,7 @@ SXM 四重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanag
 | 04 | gpu | `nvidia-smi` | 每 GPU + NVLink + ECC |
 | 05 | nvswitch | `nvswitch` | 每颗 NVSwitch + Fabric Manager |
 | 06 | pcie | `lspci` | 拓扑/速率/NUMA/IOMMU（缺 lspci 时 SKIP 落盘） |
-| 07 | network | `ibstat` + `mlxlink` + `ethtool` + `mstflint` | 每 IB 端口 + 每网口 + 光模块 + 真 SN（sysfs serial 是占位值；MST 未启动时自动 `mst start`，可配置关闭） |
+| 07 | network | `ibstat` + `mlxlink` + `ethtool` + `mstflint` | 每 IB 端口 + 每网口 + 光模块 + 真 SN（sysfs serial 是占位值；MST 未启动时自动 `mst start`，可配置关闭）；型号 lspci 直读（PCI ID 权威，免维护映射表）+ PSID 回查 + MT 对照表 |
 | 08 | storage | `lsblk` + `smartctl` | 全类型盘 + SMART 健康（WSL 虚拟盘自动跳过） |
 | 09 | raid | `storcli64` + `sas3ircu` | RAID 阵列卡 + HBA 直通卡（型号/SN/固件/虚拟盘） |
 | 10 | psu | `ipmitool` + `sysfs` | 每 PSU 功率/温度 |
@@ -294,6 +295,7 @@ MODULE_TIMEOUT=300         # 模块级超时（秒），防止命令卡死导致
 - **双层并行** — 模块间 + 模块内命令并发；`--no-parallel` 可降级；模块级超时兜底防卡死
 - **N/A 隐藏** — NVIDIA 专属段（NVSwitch/NVLink/DCGM）与 RAID/HBA 无数据时整段隐藏，AMD/华为等新平台报告干净
 - **服务自拉起** — MST/DCGM hostengine 未启动时自动启动（验收场景默认开，可配置关闭），失败降级并标注
+- **真实数据只读** — 采集模块仅在 /tmp 副本上测试（真实目录重跑会覆盖数据），report.sh 只读生成器可直接跑真实目录
 - **manifest 解耦** — 模块声明输出文件，报告生成器读 manifest，改文件名不连累报告
 - **11 张明细表** — 内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID/HBA，JSON+MD+TXT 三格式（RAID/HBA 有卡才显示）
 - **报告术语表** — 末尾附 IB 速率/GPU直连/DCGM/SXM 等术语解释，非运维人员也能读懂报告
