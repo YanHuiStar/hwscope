@@ -1032,9 +1032,27 @@ if [ -f "${storcli_controllers}" ] && grep -q "Controller = " "${storcli_control
         rmodel=$(grep -m1 -iE "^Model|Product Name" "${RAID_DIR}/ctrl${raidx}_summary.log" 2>/dev/null | awk -F'= ' '{print $2}' | xargs)
         rsn=$(grep -m1 -iE "Serial Number" "${RAID_DIR}/ctrl${raidx}_summary.log" 2>/dev/null | awk -F'= ' '{print $2}' | xargs)
         rfw=$(grep -m1 -iE "Firmware" "${RAID_DIR}/ctrl${raidx}_summary.log" 2>/dev/null | awk -F'= ' '{print $2}' | xargs)
-        rvd=$(grep -cE "VD [0-9]+|/v[0-9]+" "${RAID_DIR}/ctrl${raidx}_vd_all.log" 2>/dev/null)
+        rvd=$(grep -cE "Virtual Drive: [0-9]+" "${RAID_DIR}/ctrl${raidx}_vd_all.log" 2>/dev/null)
         [ -z "$rvd" ] && rvd=0
-        RAID_DETAILS="${RAID_DETAILS}c${raidx}|${rmodel:-N/A}|${rsn:-N/A}|${rfw:-N/A}|${rvd}"$'\n'
+        # 虚拟盘明细（编号/RAID级别/容量/状态）——数据安全核心，客户必看
+        rvd_list=""
+        if [ -f "${RAID_DIR}/ctrl${raidx}_vd_all.log" ]; then
+            rvd_list=$(awk '
+                /Virtual Drive: [0-9]+/ {
+                    vd=$3; sub(/\(.*/, "", vd)
+                    level=""; size=""; state=""
+                    getline
+                    while ($0 !~ /Virtual Drive:/ && $0 != "") {
+                        if ($1=="RAID" && $2=="Level") { level=$4; sub(/,.*/, "", level); sub(/^Primary-/, "RAID", level) }
+                        if ($1=="Size") size=$3" "$4
+                        if ($1=="State") state=$3
+                        if (!getline) break
+                    }
+                    printf "VD%s:%s/%s/%s;", vd, level, size, state
+                }
+            ' "${RAID_DIR}/ctrl${raidx}_vd_all.log" 2>/dev/null)
+        fi
+        RAID_DETAILS="${RAID_DETAILS}c${raidx}|${rmodel:-N/A}|${rsn:-N/A}|${rfw:-N/A}|${rvd}|${rvd_list}"$'\n'
         raidx=$((raidx + 1))
     done
 fi
@@ -1049,7 +1067,10 @@ for hf in "${RAID_DIR}"/sas3_hba*.log "${RAID_DIR}"/sas2_hba*.log; do
     hfw=$(grep -m1 -iE "Firmware Version|Firmware" "$hf" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
     hsn=$(grep -m1 -iE "Serial Number|SAS Address" "$hf" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
     hstat=$(grep -m1 -iE "^Status" "$hf" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
-    HBA_DETAILS="${HBA_DETAILS}${hname}|${htype:-N/A}|${hfw:-N/A}|${hsn:-N/A}|${hstat:-N/A}"$'\n'
+    # SAS 地址（sas3ircu display 的 SAS Address，独立于 SN）+ 端口数（SAS Address 行数）
+    hsas=$(grep -m1 -iE "SAS Address" "$hf" 2>/dev/null | awk -F': ' '{print $2}' | xargs)
+    hports=$(grep -ciE "SAS Address" "$hf" 2>/dev/null)
+    HBA_DETAILS="${HBA_DETAILS}${hname}|${htype:-N/A}|${hfw:-N/A}|${hsn:-N/A}|${hstat:-N/A}|${hsas:-N/A}|${hports:-0}"$'\n'
 done
 
 # ─── 生成 JSON ───
@@ -1275,17 +1296,17 @@ fi)
   },
   "raid": [
 $(if [ -n "$RAID_DETAILS" ]; then
-    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd; do
+    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
         [ -z "$ridx" ] && continue
-        printf '    {"controller": "%s", "model": "%s", "serial": "%s", "firmware": "%s", "virtual_disks": "%s"},\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd"
+        printf '    {"controller": "%s", "model": "%s", "serial": "%s", "firmware": "%s", "virtual_disks": "%s", "vd_list": "%s"},\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd" "$rvd_list"
     done | sed '$ s/,$//'
 fi)
   ],
   "hba": [
 $(if [ -n "$HBA_DETAILS" ]; then
-    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat; do
+    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
         [ -z "$hname" ] && continue
-        printf '    {"controller": "%s", "model": "%s", "firmware": "%s", "serial": "%s", "status": "%s"},\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat"
+        printf '    {"controller": "%s", "model": "%s", "firmware": "%s", "serial": "%s", "status": "%s", "sas_address": "%s", "ports": "%s"},\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat" "$hsas" "$hports"
     done | sed '$ s/,$//'
 fi)
   ],
@@ -1638,24 +1659,33 @@ $(if [ -n "$PSU_PLATFORM_NOTE" ]; then echo "> ⚠️ ${PSU_PLATFORM_NOTE}"; fi)
 $(if [ -n "$RAID_DETAILS" ]; then
     local rseq=0
     echo "## RAID 控制器"
-    echo "| # | 控制器 | 型号 | SN | 固件 | 虚拟盘数 |"
-    echo "|---|--------|------|----|------|---------|"
-    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd; do
+    echo "| # | 控制器 | 型号 | SN | 固件 | 虚拟盘 |"
+    echo "|---|--------|------|----|------|--------|"
+    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
         [ -z "$ridx" ] && continue
         rseq=$((rseq + 1))
         echo "| ${rseq} | ${ridx} | ${rmodel} | ${rsn} | ${rfw} | ${rvd} |"
+        # 虚拟盘明细行（VD0:RAID1/1.817 TB/Optimal; 分隔）
+        if [ -n "$rvd_list" ]; then
+            echo "$rvd_list" | tr ';' '\n' | while IFS= read -r vdline; do
+                [ -z "$vdline" ] && continue
+                vdname="${vdline%%:*}"
+                vdrest="${vdline#*:}"
+                echo "|   | ${vdname} | ${vdrest} | | | |"
+            done
+        fi
     done
 fi)
 
 $(if [ -n "$HBA_DETAILS" ]; then
     local hseq=0
     echo "## HBA 直通卡"
-    echo "| # | 控制器 | 型号 | 固件 | SN | 状态 |"
-    echo "|---|--------|------|------|----|------|"
-    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat; do
+    echo "| # | 控制器 | 型号 | 固件 | SN | 状态 | SAS地址 | 端口 |"
+    echo "|---|--------|------|------|----|------|---------|------|"
+    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
         [ -z "$hname" ] && continue
         hseq=$((hseq + 1))
-        echo "| ${hseq} | ${hname} | ${htype} | ${hfw} | ${hsn} | ${hstat} |"
+        echo "| ${hseq} | ${hname} | ${htype} | ${hfw} | ${hsn} | ${hstat} | ${hsas} | ${hports} |"
     done
 fi)
 
@@ -1906,17 +1936,26 @@ $(if [ -n "$PSU_PLATFORM_NOTE" ]; then echo "  ⚠️ ${PSU_PLATFORM_NOTE}"; fi)
 
 $(if [ -n "$RAID_DETAILS" ]; then
     echo "[RAID控制器]"
-    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd; do
+    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
         [ -z "$ridx" ] && continue
         printf '  %s  %s  SN:%s  固件:%s  虚拟盘:%s\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd"
+        # 虚拟盘明细（缩进二级）
+        if [ -n "$rvd_list" ]; then
+            echo "$rvd_list" | tr ';' '\n' | while IFS= read -r vdline; do
+                [ -z "$vdline" ] && continue
+                vdname="${vdline%%:*}"
+                vdrest="${vdline#*:}"
+                printf '    %s  %s\n' "$vdname" "$vdrest"
+            done
+        fi
     done
 fi)
 
 $(if [ -n "$HBA_DETAILS" ]; then
     echo "[HBA直通卡]"
-    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat; do
+    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
         [ -z "$hname" ] && continue
-        printf '  %s  %s  固件:%s  SN:%s  状态:%s\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat"
+        printf '  %s  %s  固件:%s  SN:%s  状态:%s  SAS:%s  端口:%s\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat" "$hsas" "$hports"
     done
 fi)
 
