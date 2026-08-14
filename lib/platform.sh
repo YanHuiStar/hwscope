@@ -17,8 +17,11 @@ detect_machine_id() {
     echo "$mid"
 }
 
-# ─── 平台架构检测（x86_64_SXM / x86_64_PCIe / x86_64_none / aarch64_SXM ...）───
+# ─── 平台架构检测（x86_64_SXM / x86_64_PCIe / x86_64_head / x86_64_none / aarch64_SXM ...）───
 # 设置全局变量：GPU_COUNT, PLATFORM
+# head（HGX 机头）：PCIe Gen5 Fabric Switch（PEX89xxx/PEX97xxx/Switchtec）+ 非 SXM + 无 GPU。
+#   机头无本地 GPU，经 Switch 接 HGX 模组；裸机采集稳定判 head。模组接入后 GPU 透传可见 → 按事实判 PCIe
+#   （报告含模组 GPU 数据）；SXM 一体化主机（B300 等主板也带 PEX89）因有 GPU 不受 head 判定影响。
 detect_platform() {
     local hw_arch=$(uname -m 2>/dev/null || echo "unknown")
     PLATFORM="${hw_arch}"
@@ -43,15 +46,29 @@ detect_platform() {
                 _sxm=1
             fi
         fi
+        # HGX 机头检测：PCIe Gen5 Fabric Switch（Broadcom PEX89xxx / PLX PEX97xxx / Microchip Switchtec）+ 无 GPU
+        # 注意必须叠加"无 GPU"条件：SXM 一体化主机（如华硕 HGX B300）主板也带 PEX89xxx Switch，
+        # 若 SXM 检测失效且有 GPU，仍按 PCIe 事实判定，避免整机漂移为 head
+        local _head=0
+        if [ "$GPU_COUNT" -eq 0 ] && check_cmd lspci && lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec"; then
+            _head=1
+        fi
         if [ "$_sxm" -eq 1 ]; then
             PLATFORM="${hw_arch}_SXM"
+        elif [ "$_head" -eq 1 ]; then
+            PLATFORM="${hw_arch}_head"
         elif [ "$GPU_COUNT" -gt 0 ]; then
             PLATFORM="${hw_arch}_PCIe"
         else
             PLATFORM="${hw_arch}_none"
         fi
     else
-        PLATFORM="${hw_arch}_none"
+        # 无 nvidia-smi 也可能有机头（仅 Fabric Switch 可见）
+        if check_cmd lspci && lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec"; then
+            PLATFORM="${hw_arch}_head"
+        else
+            PLATFORM="${hw_arch}_none"
+        fi
     fi
 }
 
