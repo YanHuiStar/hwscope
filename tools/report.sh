@@ -729,16 +729,16 @@ if [ -f "${nic_inventory}" ]; then
         # 顺序: Device # → Device Type → Part Number → Description → PSID → PCI Device Name → ...
         # 字段散落在 Device Name 前后——遇下一设备头结算上一设备
         if [ "$npsid" = "N/A" ] && [ -f "${NET_DIR}/mlxfwmanager.log" ]; then
+            # PSID 回查：按行扫描，PSID/PN 归属到其后的 PCI Device Name 匹配设备
+            # 顺序: Device # → Device Type → Part Number → Description → PSID → PCI Device Name → Base GUID
             rpsid=$(awk -v bdf="${nnbdf%% (USB)*}" '
-                /^[[:space:]]*[A-Za-z ]*Device #/ {
-                    if (dev==bdf) { if (psid != "" && psid != "N/A") print psid; else if (pn != "") print "PN:" pn; exit }
-                    dev=""; pn=""; psid=""
-                }
+                /Part Number:/ { pn=$0; sub(/.*Part Number:[[:space:]]*/, "", pn) }
+                /PSID:/        { psid=$0; sub(/.*PSID:[[:space:]]*/, "", psid) }
                 /PCI Device Name:/ { dev=$NF; sub(/^0000:/, "", dev) }
-                /Part Number:/     { pn=$0; sub(/.*Part Number:[[:space:]]*/, "", pn) }
-                /PSID:/            { psid=$0; sub(/.*PSID:[[:space:]]*/, "", psid) }
-                END { if (dev==bdf) { if (psid != "" && psid != "N/A") print psid; else if (pn != "") print "PN:" pn } }
-            ' "${NET_DIR}/mlxfwmanager.log" 2>/dev/null)
+                dev==bdf && /Base GUID:/ { if (psid != "" && psid != "N/A") print psid; else if (pn != "") print "PN:" pn; exit }
+            ' "${NET_DIR}/mlxfwmanager.log" 2>/dev/null | head -1)
+            # 取第一行匹配，防多行污染
+            rpsid=$(echo "$rpsid" | tr -d '\n\r')
             [ -n "$rpsid" ] && npsid="$rpsid"
         fi
         # IB 设备（ibp*/ibs*）附加控制器型号
@@ -1218,6 +1218,26 @@ glossary_txt() {
     printf '%s' "$out"
 }
 
+# 网络段附加行（线缆/配对/端口模式/MST 提示；空值不产生空行）
+net_extra_txt() {
+    local out=""
+    [ -n "$CABLE_SUMMARY" ]   && [ "$CABLE_SUMMARY" != "N/A" ]   && out="${out}  线缆   : ${CABLE_SUMMARY}"$'\n'
+    [ -n "$CABLE_PAIRS" ]     && [ "$CABLE_PAIRS" != "N/A" ]     && out="${out}  配对   : ${CABLE_PAIRS}"$'\n'
+    [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ] && out="${out}  端口模式: ${LINKTYPE_SUMMARY}"$'\n'
+    [ -n "$MST_NOTICE" ]      && out="${out}  ⚠️ ${MST_NOTICE}"$'\n'
+    printf '%s' "$out"
+}
+
+# 网络段附加行（Markdown 表格版；空值不产生空行）
+net_extra_md() {
+    local out=""
+    [ -n "$CABLE_SUMMARY" ]   && [ "$CABLE_SUMMARY" != "N/A" ]   && out="${out}| 线缆类型 | ${CABLE_SUMMARY} |"$'\n'
+    [ -n "$CABLE_PAIRS" ]     && [ "$CABLE_PAIRS" != "N/A" ]     && out="${out}| 线缆配对 | ${CABLE_PAIRS} |"$'\n'
+    [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ] && out="${out}| 端口模式 | ${LINKTYPE_SUMMARY} |"$'\n'
+    [ -n "$MST_NOTICE" ]      && out="${out}| ⚠️ 提示 | ${MST_NOTICE} |"$'\n'
+    printf '%s' "$out"
+}
+
 # ─── 生成 Markdown ───
 gen_md() {
     local f="${OUT}/hwscope_report.md"
@@ -1409,10 +1429,7 @@ $(printf '%s' "$disk_details_md")
 | IB 活动口 | ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})} |
 | IB 标称速率 | ${IB_NOMINAL:-N/A} |
 | 以太网口 up | ${ETH_LINK_UP:-0} |
-$(if [ -n "$CABLE_SUMMARY" ] && [ "$CABLE_SUMMARY" != "N/A" ]; then echo "| 线缆类型 | ${CABLE_SUMMARY} |"; fi)
-$(if [ -n "$CABLE_PAIRS" ] && [ "$CABLE_PAIRS" != "N/A" ]; then echo "| 线缆配对 | ${CABLE_PAIRS} |"; fi)
-$(if [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ]; then echo "| 端口模式 | ${LINKTYPE_SUMMARY} |"; fi)
-$(if [ -n "$MST_NOTICE" ]; then echo "| ⚠️ 提示 | ${MST_NOTICE} |"; fi)
+$(net_extra_md)
 
 ### 网卡明细
 | # | 接口 | BDF | MAC | SN | 型号 | 固件 | PCIe | PSID | GPU直连 |
@@ -1682,11 +1699,7 @@ $(printf '%s' "$disk_details_txt")
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
   标称速率: ${IB_NOMINAL:-N/A}
   网口up : ${ETH_LINK_UP:-0}
-$(if [ -n "$CABLE_SUMMARY" ] && [ "$CABLE_SUMMARY" != "N/A" ]; then echo "  线缆   : ${CABLE_SUMMARY}"; fi)
-$(if [ -n "$CABLE_PAIRS" ] && [ "$CABLE_PAIRS" != "N/A" ]; then echo "  配对   : ${CABLE_PAIRS}"; fi)
-$(if [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ]; then echo "  端口模式: ${LINKTYPE_SUMMARY}"; fi)
-$(if [ -n "$MST_NOTICE" ]; then echo "  ⚠️ ${MST_NOTICE}"; fi)
-$(printf '%s' "$nic_details_txt")
+$(net_extra_txt)$(printf '%s' "$nic_details_txt")
 
 [BMC]
   型号   : ${BMC_FRU:-N/A}
