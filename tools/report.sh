@@ -1041,16 +1041,19 @@ if [ -f "$_fru_src" ]; then
         fi
     fi
     # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
+    # 独立展示（不放 PSU 表内：语义是整机级而非单电源，且避免 N/A 占位列突兀）
+    PSU_EXTRA=""
     total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
-    [ -n "$total_pwr" ] && PSU_DETAILS="${PSU_DETAILS}"$'\n'"整机功耗|N/A|N/A|N/A|N/A|${total_pwr}"$'\n'
+    [ -n "$total_pwr" ] && PSU_EXTRA="整机功耗: ${total_pwr}"
     # DCMI 功耗统计（dcmi power reading：Instantaneous/Minimum/Maximum/Average，标准 IPMI 功耗统计）
+    PSU_DCMI=""
     if [ -f "${PSU_DIR}/ipmi_dcmi_power.log" ]; then
         dcmi_cur=$(grep -iE "Instantaneous power reading|Current Power|Current Reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         dcmi_min=$(grep -iE "Minimum" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         dcmi_max=$(grep -iE "Maximum" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         dcmi_avg=$(grep -iE "Average power reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         if [ -n "$dcmi_cur" ]; then
-            PSU_DETAILS="${PSU_DETAILS}"$'\n'"DCMI功耗统计|N/A|N/A|N/A|N/A|当前${dcmi_cur}W${dcmi_min:+ 最小${dcmi_min}W}${dcmi_max:+ 最大${dcmi_max}W}${dcmi_avg:+ 平均${dcmi_avg}W}"$'\n'
+            PSU_DCMI="DCMI 整机功耗: 当前 ${dcmi_cur}W${dcmi_min:+ · 最小 ${dcmi_min}W}${dcmi_max:+ · 最大 ${dcmi_max}W}${dcmi_avg:+ · 平均 ${dcmi_avg}W}"
         fi
     fi
     # 每只 PSU 当前输入功率（Pwr_PSU<N>_In 或 PS<N>_Pin，| W |），按编号匹配追加
@@ -1243,8 +1246,7 @@ gen_json() {
     "os": "${OS_NAME:-N/A}",
     "kernel": "${KERNEL:-N/A}",
     "driver": "${GPU_DRIVER:-N/A}",
-    "cuda": "${GPU_CUDA:-N/A}",
-    "fabric_switch": "${FABRIC_SW:-}"
+    "cuda": "${GPU_CUDA:-N/A}"
   },
   "timing": {
     "total": "${TIMING_TOTAL:-N/A}",
@@ -1256,7 +1258,8 @@ gen_json() {
     "serial": "${MB_SN:-N/A}",
     "board_serial": "${MB_BOARD_SN:-N/A}",
     "bios": "${BIOS_VERSION:-N/A}",
-    "chassis_sn": "${CHASSIS_SN:-N/A}"
+    "chassis_sn": "${CHASSIS_SN:-N/A}",
+    "fabric_switch": "${FABRIC_SW:-}"
   },
   "cpu": {
     "model": "${CPU_MODEL:-N/A}",
@@ -1371,6 +1374,10 @@ $(if [ -n "$PSU_DETAILS" ]; then
     done <<< "$PSU_DETAILS" | sed '$ s/,$//'
 fi)
     ]
+  },
+  "psu_system": {
+    "total_power": "${PSU_EXTRA:-}",
+    "dcmi": "${PSU_DCMI:-}"
   },
   "raid": [
 $(if [ -n "$RAID_DETAILS" ]; then
@@ -1567,7 +1574,6 @@ gen_md() {
 | 驱动 | ${GPU_DRIVER:-N/A} |
 | CUDA | ${GPU_CUDA:-N/A} |
 | 采集耗时 | ${TIMING_TOTAL:-N/A} |
-$(if [ -n "$FABRIC_SW" ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（HGX 模组互联通道） |"; fi)
 
 ## 主板
 | 项 | 值 |
@@ -1578,6 +1584,7 @@ $(if [ -n "$FABRIC_SW" ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（HGX �
 | 主板 SN | ${MB_BOARD_SN:-N/A} |
 | BIOS | ${BIOS_VERSION:-N/A} |
 | 机箱 SN | ${CHASSIS_SN:-N/A} |
+$(if [ -n "$FABRIC_SW" ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（HGX 模组互联通道） |"; fi)
 
 ## CPU
 | 项 | 值 |
@@ -1747,47 +1754,55 @@ $(if [ -n "$PSU_DETAILS" ]; then
         printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 fi)
-$(if [ -n "$PSU_PLATFORM_NOTE" ]; then echo "> ⚠️ ${PSU_PLATFORM_NOTE}"; fi)
-
-$(if [ -n "$RAID_DETAILS" ]; then
-    local rseq=0
-    echo "## RAID 控制器"
-    echo "| # | 控制器 | 型号 | SN | 固件 | 虚拟盘 |"
-    echo "|---|--------|------|----|------|--------|"
-    echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
-        [ -z "$ridx" ] && continue
-        rseq=$((rseq + 1))
-        echo "| ${rseq} | ${ridx} | ${rmodel} | ${rsn} | ${rfw} | ${rvd} |"
-        # 虚拟盘明细行（VD0:RAID1/1.817 TB/Optimal; 分隔）
-        if [ -n "$rvd_list" ]; then
-            echo "$rvd_list" | tr ';' '\n' | while IFS= read -r vdline; do
-                [ -z "$vdline" ] && continue
-                vdname="${vdline%%:*}"
-                vdrest="${vdline#*:}"
-                echo "|   | ${vdname} | ${vdrest} | | | |"
-            done
-        fi
-    done
-fi)
-
-$(if [ -n "$HBA_DETAILS" ]; then
-    local hseq=0
-    echo "## HBA 直通卡"
-    echo "| # | 控制器 | 型号 | 固件 | SN | 状态 | SAS地址 | 端口 |"
-    echo "|---|--------|------|------|----|------|---------|------|"
-    echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
-        [ -z "$hname" ] && continue
-        hseq=$((hseq + 1))
-        echo "| ${hseq} | ${hname} | ${htype} | ${hfw} | ${hsn} | ${hstat} | ${hsas} | ${hports} |"
-    done
-fi)
-
-$(if [ -n "$nvs_md" ]; then
-    echo "## NVSwitch"
-    echo "| 编号 | 状态 | 温度 | 活动/总端口 |"
-    echo "|------|------|------|-------------|"
-    printf '%s' "$nvs_md"
-fi)
+$(
+    # PSU 尾注（整机功耗/DCMI/平台说明）+ RAID/HBA/NVSwitch 条件段，合并块避免空输出堆积空行
+    if [ -n "$PSU_EXTRA" ] || [ -n "$PSU_DCMI" ]; then
+        echo ""
+    fi
+    [ -n "$PSU_EXTRA" ] && echo "**${PSU_EXTRA}**"
+    [ -n "$PSU_DCMI" ] && echo "**${PSU_DCMI}**"
+    [ -n "$PSU_PLATFORM_NOTE" ] && echo "> ⚠️ ${PSU_PLATFORM_NOTE}"
+    if [ -n "$RAID_DETAILS" ]; then
+        echo ""
+        rseq=0
+        echo "## RAID 控制器"
+        echo "| # | 控制器 | 型号 | SN | 固件 | 虚拟盘 |"
+        echo "|---|--------|------|----|------|--------|"
+        echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
+            [ -z "$ridx" ] && continue
+            rseq=$((rseq + 1))
+            echo "| ${rseq} | ${ridx} | ${rmodel} | ${rsn} | ${rfw} | ${rvd} |"
+            # 虚拟盘明细行（VD0:RAID1/1.817 TB/Optimal; 分隔）
+            if [ -n "$rvd_list" ]; then
+                echo "$rvd_list" | tr ';' '\n' | while IFS= read -r vdline; do
+                    [ -z "$vdline" ] && continue
+                    vdname="${vdline%%:*}"
+                    vdrest="${vdline#*:}"
+                    echo "|   | ${vdname} | ${vdrest} | | | |"
+                done
+            fi
+        done
+    fi
+    if [ -n "$HBA_DETAILS" ]; then
+        echo ""
+        hseq=0
+        echo "## HBA 直通卡"
+        echo "| # | 控制器 | 型号 | 固件 | SN | 状态 | SAS地址 | 端口 |"
+        echo "|---|--------|------|------|----|------|---------|------|"
+        echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
+            [ -z "$hname" ] && continue
+            hseq=$((hseq + 1))
+            echo "| ${hseq} | ${hname} | ${htype} | ${hfw} | ${hsn} | ${hstat} | ${hsas} | ${hports} |"
+        done
+    fi
+    if [ -n "$nvs_md" ]; then
+        echo ""
+        echo "## NVSwitch"
+        echo "| 编号 | 状态 | 温度 | 活动/总端口 |"
+        echo "|------|------|------|-------------|"
+        printf '%s' "$nvs_md"
+    fi
+)
 
 ## 健康检查
 | 项 | 状态 |
@@ -1950,7 +1965,6 @@ HwScope 硬件巡检报告
   驱动   : ${GPU_DRIVER:-N/A}
   CUDA   : ${GPU_CUDA:-N/A}
   采集耗时 : ${TIMING_TOTAL:-N/A}
-$(if [ -n "$FABRIC_SW" ]; then echo "  PCIe Fabric Switch: ${FABRIC_SW}（HGX 模组互联通道）"; fi)
 
 [主板]
   制造商 : ${MB_MANUFACTURER:-N/A}
@@ -1959,6 +1973,7 @@ $(if [ -n "$FABRIC_SW" ]; then echo "  PCIe Fabric Switch: ${FABRIC_SW}（HGX �
   主板SN : ${MB_BOARD_SN:-N/A}
   BIOS   : ${BIOS_VERSION:-N/A}
   机箱SN : ${CHASSIS_SN:-N/A}
+$(if [ -n "$FABRIC_SW" ]; then echo "  PCIe Fabric Switch: ${FABRIC_SW}（HGX 模组互联通道）"; fi)
 
 [CPU]
   型号   : ${CPU_MODEL:-N/A}
@@ -2048,6 +2063,8 @@ $(if [ -n "$PSU_DETAILS" ]; then
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 else echo "  N/A"; fi)
+$(if [ -n "$PSU_EXTRA" ]; then echo "  ${PSU_EXTRA}"; fi)
+$(if [ -n "$PSU_DCMI" ]; then echo "  ${PSU_DCMI}"; fi)
 $(if [ -n "$PSU_PLATFORM_NOTE" ]; then echo "  ⚠️ ${PSU_PLATFORM_NOTE}"$'\n'; fi)$(if [ -n "$RAID_DETAILS" ] || [ -n "$HBA_DETAILS" ] || [ -n "$nvs_txt" ]; then
     if [ -n "$RAID_DETAILS" ]; then
         echo "[RAID控制器]"
