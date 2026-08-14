@@ -25,7 +25,12 @@ detect_platform() {
     GPU_COUNT=0
 
     if check_cmd nvidia-smi; then
-        GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l || echo 0)
+        # 注意：pipefail 下 nvidia-smi 非零退出时 `| wc -l || echo 0` 会双输出（wc 的计数 + echo 的 0），
+        # 产生 "2\n0" 多行值 → 后续 -gt 比较报 integer expression expected、PLATFORM 误判 none（v1.26.53 真机踩坑）
+        # wc 空输入必输出 0（exit 0），无需 || 兜底；再清洗为纯数字防御多行
+        GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+        GPU_COUNT=$(echo "$GPU_COUNT" | head -1 | tr -dc '0-9')
+        [ -z "$GPU_COUNT" ] && GPU_COUNT=0
         # SXM 四重检测：nvswitch CLI → lspci NVSwitch → nv-fabricmanager 进程(需 NVLink 交叉验证) → nvidia-smi topo
         local _sxm=0
         if check_cmd nvswitch && nvswitch -q 2>/dev/null | grep -qi "Switch Name"; then
