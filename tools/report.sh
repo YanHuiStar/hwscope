@@ -932,27 +932,28 @@ if [ -f "$_fru_src" ]; then
     PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|Power Supply")
     psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
     psu_power_csv2="${BMC_DIR}/ipmi_sensors_power.log"   # 含 PS*_Pin（Inventec 等平台，psu 日志可能只有 Temp）
-    # 回退：部分平台（如 Inventec）FRU 不暴露 PSU 条目，但传感器有 PSU*_Temp / PS*_Pin —— 用传感器生成占位行
+    # 回退：部分平台（如 Inventec）FRU 不暴露 PSU 条目，但传感器有 PSU*_Temp / PS*_Pin / PSU* Power In —— 用传感器生成占位行
     if [ -z "$PSU_DETAILS" ]; then
-        # 编号识别源：psu sensors 的 PSU*_Temp（优先）→ bmc power 的 PS*_Pin
+        # 编号识别源：psu sensors 的 PSU*_Temp（优先）→ PSU* Power In → bmc power 的 PS*_Pin
         _temp_src=""
         [ -f "$psu_power_csv" ] && grep -qiE "psu[0-9]+_temp" "$psu_power_csv" 2>/dev/null && _temp_src="$psu_power_csv"
+        [ -z "$_temp_src" ] && [ -f "$psu_power_csv" ] && grep -qiE "psu[0-9]+ power in" "$psu_power_csv" 2>/dev/null && _temp_src="$psu_power_csv"
         [ -z "$_temp_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin" "$psu_power_csv2" 2>/dev/null && _temp_src="$psu_power_csv2"
-        # 功耗补全源：psu sensors 的 PS*_Pin → bmc power 的 PS*_Pin
+        # 功耗补全源：psu sensors 的 PS*_Pin / PSU* Power In → bmc power 的 PS*_Pin
         _pin_src=""
-        [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
+        [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+ power in" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
         [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
         if [ -n "$_temp_src" ]; then
             PSU_DETAILS=$(grep -v "^#" "$_temp_src" 2>/dev/null | awk -F'|' '
-                tolower($1) ~ /psu[0-9]+_temp|ps[0-9]+_pin/ {
+                tolower($1) ~ /psu[0-9]+_temp|ps[0-9]+_pin|psu[0-9]+ power in/ {
                     num=$1; gsub(/[^0-9]/, "", num)
                     if(num!="" && !seen[num]++) printf "PSU%s|N/A|N/A|N/A|N/A|N/A\n", num
                 }')
-            # 功耗补全（PS*_Pin → PSU 行当前功耗）：先收集 pin 映射，再逐行追加
+            # 功耗补全（PS*_Pin / PSU* Power In → PSU 行当前功耗）：先收集 pin 映射，再逐行追加
             if [ -n "$_pin_src" ] && [ -n "$PSU_DETAILS" ]; then
                 # 构建 "编号:功耗" 列表（如 "6:427W 7:448W"）
                 _pin_map=$(grep -v "^#" "$_pin_src" 2>/dev/null | awk -F'|' '
-                    $1 ~ /^PS[0-9]+_Pin/ { n=$1; sub(/^PS/,"",n); sub(/[^0-9].*/,"",n); v=$2; gsub(/ /,"",v); printf "%s:%sW ", n, v }')
+                    $1 ~ /^PS[0-9]+_Pin|^PSU[0-9]+ Power In/ { n=$1; sub(/^PSU?/, "", n); sub(/[^0-9].*/, "", n); v=$2; gsub(/ /, "", v); printf "%s:%sW ", n, v }')
                 # 占位行逐行替换功耗（PSU6 → 6 → 查 _pin_map）
                 if [ -n "$_pin_map" ]; then
                     PSU_DETAILS=$(while IFS= read -r _pline; do
@@ -968,21 +969,50 @@ if [ -f "$_fru_src" ]; then
                 fi
             fi
         fi
+        # dmidecode type39 补型号/SN（如 DELTA DPS-3000AB-25 C / KWAD...，按 Location 匹配槽位）
+        if [ -n "$PSU_DETAILS" ] && [ -f "${PSU_DIR}/dmidecode_psu.log" ]; then
+            # 构建 "Location→型号|厂商|SN" 映射（dmidecode type39 每个 PSU 一段，Location 行标识槽位）
+            while IFS= read -r _dl; do
+                case "$_dl" in
+                    *Location:*) _dloc=$(echo "$_dl" | awk '{print $NF}') ;;
+                    *Name:*)     _dname=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                    *Manufacturer:*) _dmfr=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                    *"Serial Number:"*) _dsn=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                    *)
+                        # 段落结束（空行/下一 Handle）——把积累的映射应用到 PSU 行
+                        if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
+                            _dnum=$(echo "$_dloc" | sed 's/^PSU//')
+                            # 型号列合并厂商（如 "DELTA DPS-3000AB-25 C"），PN 列留 N/A
+                            _dfull="${_dmfr:+${_dmfr} }${_dname}"
+                            PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v sn="${_dsn:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $4=sn} {print}')
+                        fi
+                        _dloc=""; _dname=""; _dmfr=""; _dsn=""
+                        ;;
+                esac
+            done < <(grep -v "^#" "${PSU_DIR}/dmidecode_psu.log" 2>/dev/null)
+            # 最后一段（文件尾无空行）
+            if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
+                _dnum=$(echo "$_dloc" | sed 's/^PSU//')
+                _dfull="${_dmfr:+${_dmfr} }${_dname}"
+                PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v sn="${_dsn:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $4=sn} {print}')
+            fi
+        fi
         # 平台限制标注：FRU 无 PSU 条目时说明（避免客户误以为漏采）
         if [ -n "$PSU_DETAILS" ]; then
-            PSU_PLATFORM_NOTE="平台未暴露单电源 FRU（仅传感器确认存在与功耗）"
+            PSU_PLATFORM_NOTE="平台未暴露单电源 FRU（传感器+SMBIOS 确认存在与功耗）"
         fi
     fi
     # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
     total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
     [ -n "$total_pwr" ] && PSU_DETAILS="${PSU_DETAILS}"$'\n'"整机功耗|N/A|N/A|N/A|N/A|${total_pwr}"$'\n'
-    # DCMI 功耗统计（dcmi power reading：Current Power/Reading 等，标准 IPMI 功耗统计）
+    # DCMI 功耗统计（dcmi power reading：Instantaneous/Minimum/Maximum/Average，标准 IPMI 功耗统计）
     if [ -f "${PSU_DIR}/ipmi_dcmi_power.log" ]; then
-        dcmi_cur=$(grep -iE "Current Power|Current Reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
+        dcmi_cur=$(grep -iE "Instantaneous power reading|Current Power|Current Reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         dcmi_min=$(grep -iE "Minimum" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         dcmi_max=$(grep -iE "Maximum" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
+        dcmi_avg=$(grep -iE "Average power reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         if [ -n "$dcmi_cur" ]; then
-            PSU_DETAILS="${PSU_DETAILS}DCMI功耗统计|N/A|N/A|N/A|N/A|当前${dcmi_cur}W${dcmi_min:+ 最小${dcmi_min}W}${dcmi_max:+ 最大${dcmi_max}W}"$'\n'
+            PSU_DETAILS="${PSU_DETAILS}"$'\n'"DCMI功耗统计|N/A|N/A|N/A|N/A|当前${dcmi_cur}W${dcmi_min:+ 最小${dcmi_min}W}${dcmi_max:+ 最大${dcmi_max}W}${dcmi_avg:+ 平均${dcmi_avg}W}"$'\n'
         fi
     fi
     # 每只 PSU 当前输入功率（Pwr_PSU<N>_In 或 PS<N>_Pin，| W |），按编号匹配追加
