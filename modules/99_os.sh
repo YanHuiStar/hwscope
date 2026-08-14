@@ -22,6 +22,11 @@ run_os() {
         "lsmod" "${dir}/lsmod_all.log" \
         "uptime" "${dir}/uptime.log"
 
+    # 1b. USB 设备列表（佐证 USB 网卡/外设/板载 USB 设备）
+    if check_cmd lsusb; then
+        run_and_log "lsusb" "${dir}/lsusb.log"
+    fi
+
     # 2. OS 发行版（需逐文件检查，条件执行）
     for f in /etc/os-release /etc/redhat-release /etc/debian_version /etc/SuSE-release /etc/centos-release; do
         if [ -f "$f" ]; then
@@ -82,6 +87,7 @@ run_os() {
         "kernel_modules_gpu_net" "kernel_modules_gpu_net.log" \
         "lsmod_all" "lsmod_all.log" \
         "uptime" "uptime.log" \
+        "lsusb" "lsusb.log" \
         "loadavg" "loadavg.log" \
         "dmesg_hardware" "dmesg_hardware.log" \
         "dmesg_nvidia" "dmesg_nvidia.log" \

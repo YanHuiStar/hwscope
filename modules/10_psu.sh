@@ -33,7 +33,12 @@ run_psu() {
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi
 
-    # ─── 2. sysfs power_supply ───
+    # ─── 2. dmidecode type 39 Power Supply（独立信源：Name/Manufacturer/SN/Max Capacity/Status） ───
+    if check_cmd dmidecode; then
+        run_and_log "dmidecode -t 39 2>/dev/null" "${dir}/dmidecode_psu.log"
+    fi
+
+    # ─── 3. sysfs power_supply ───
     if [ -d /sys/class/power_supply ]; then
         for psu in /sys/class/power_supply/*; do
             local psu_name=$(basename "$psu")
@@ -58,7 +63,7 @@ run_psu() {
         echo -e "${YELLOW}[SKIP] /sys/class/power_supply not found${NC}"
     fi
 
-    # ─── 3. pmbus / i2c 工具 ───
+    # ─── 4. pmbus / i2c 工具 ───
     if check_cmd i2cdetect; then
         for bus in /dev/i2c-*; do
             [ -e "$bus" ] || continue
@@ -80,7 +85,7 @@ run_psu() {
         done
     fi
 
-    # ─── 4. 电源系统总览 ───
+    # ─── 5. 电源系统总览 ───
     run_and_log "cat /sys/class/power_supply/*/present 2>/dev/null" "${dir}/psu_present.log"
 
 # NOTE: sysfs_PSU_NAME/info.log, sysfs_PSU_NAME/all_fields.log per PSU
@@ -92,6 +97,7 @@ run_psu() {
         "ipmi_psu_fru" "ipmi_psu_fru.log" \
         "ipmi_dcmi_power" "ipmi_dcmi_power.log" \
         "ipmi_sdr_psu" "ipmi_sdr_psu.log" \
+        "dmidecode_psu" "dmidecode_psu.log" \
         "psu_present" "psu_present.log"
 
     module_end "$MODULE_NAME"
