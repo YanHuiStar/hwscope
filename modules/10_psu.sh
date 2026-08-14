@@ -80,7 +80,8 @@ run_psu() {
             local bus_num=$(echo "$bus" | grep -oE '[0-9]+$')
             [ -z "$bus_num" ] && continue
             for addr in 0x58 0x59 0x5a 0x5b 0x5c 0x5d 0x5e 0x5f 0x20 0x21 0x22 0x23; do
-                run_and_log "i2cget -y -f $bus_num $addr 0x9a 2>/dev/null; i2cget -y -f $bus_num $addr 0x99 2>/dev/null; i2cget -y -f $bus_num $addr 0x9e 2>/dev/null" "${dir}/pmbus_${addr#0x}.log"
+                # 文件名含 bus 号：多 i2c bus 时同地址不同 bus 的数据互不覆盖
+                run_and_log "i2cget -y -f $bus_num $addr 0x9a 2>/dev/null; i2cget -y -f $bus_num $addr 0x99 2>/dev/null; i2cget -y -f $bus_num $addr 0x9e 2>/dev/null" "${dir}/pmbus_bus${bus_num}_${addr#0x}.log"
             done
         done
     fi
