@@ -24,8 +24,8 @@ git clone https://github.com/YanHuiStar/hwscope.git && cd hwscope
 bash fixcrlf.sh
 
 # 安装依赖工具（未安装的工具对应模块自动跳过，不影响整体采集；Ubuntu 使用 apt，Rocky/RHEL 8+ 使用 dnf）
-apt install -y dmidecode pciutils ipmitool smartmontools lm-sensors      # Ubuntu
-dnf install -y dmidecode pciutils ipmitool smartmontools lm_sensors      # Rocky/RHEL 8+
+apt install -y dmidecode pciutils ipmitool smartmontools lm-sensors i2c-tools usbutils      # Ubuntu
+dnf install -y dmidecode pciutils ipmitool smartmontools lm_sensors i2c-tools usbutils      # Rocky/RHEL 8+
 
 # 执行采集
 sudo bash hwscope.sh                  # 全量采集（默认双层并行，约 10s）
@@ -33,6 +33,27 @@ sudo bash hwscope.sh --serial         # 串行采集（实时逐命令输出）
 sudo bash hwscope.sh --no-parallel    # 禁用模块内命令并行（仅模块间并行）
 sudo bash hwscope.sh --quiet          # 静默模式（仅输出异常）
 ```
+
+### 依赖工具清单
+
+| 工具（包名） | 用途 | 必需/可选 |
+|--------------|------|-----------|
+| `dmidecode` | 主板/BIOS/CPU/内存/PSU/TPM 硬件表（type 0~43） | 必需 |
+| `pciutils`（lspci） | PCIe 设备/链路速率（GPU/网卡/BDF） | 必需 |
+| `ipmitool` | BMC 传感器/FRU/SEL/电源功耗（sensor/dcmi/sdr/fru） | 必需（有 BMC 的服务器） |
+| `smartmontools`（smartctl） | 磁盘 SMART 健康/寿命 | 必需（有盘必装） |
+| `lm-sensors` | 温度/风扇传感器（hwmon 备选） | 可选 |
+| `i2c-tools`（i2cget/i2cdetect） | PMBus 直读 PSU 芯片（IPMI 无 FRU 平台补型号） | 可选（Inventec 等平台建议装） |
+| `usbutils`（lsusb） | USB 设备列表（佐证 USB 网卡/外设） | 可选 |
+| `storcli64` / `sas3ircu` / `sas2ircu` | RAID/HBA 控制器（LSI/Broadcom） | 可选（有 RAID/HBA 时） |
+| `nvidia-smi` + 驱动 | GPU 信息/拓扑/ECC | 必需（NVIDIA 平台） |
+| `dcgmi`（DCGM） | GPU 健康诊断（Level 1） | 可选（诊断项） |
+| `mft`（mst/mstflint/mlxlink/mlxconfig） | Mellanox 网卡固件/SN/PSID | 可选（有 IB 网卡时） |
+| `ethtool` | 网口链路/驱动信息 | 可选（有网卡时） |
+| `numactl` | NUMA 拓扑（numactl --hardware） | 可选 |
+| `fabricmanager`（nvidia-fabricmanager） | NVSwitch 管理服务检测 | 可选（SXM 平台） |
+
+> 未安装的工具对应模块自动跳过（`[SKIP]`），不影响整体采集；`tools/install_tool.sh` 可一键安装（apt/dnf 自动识别）。
 
 ---
 
