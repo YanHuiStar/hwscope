@@ -381,7 +381,8 @@ if [ -f "${disk_inventory}" ]; then
         [ -z "$dname" ] || [ "$dname" = "N/A" ] && continue
         [ "$dname" = "#" ] && continue
         [ "$dname" = "$SYS_DISK" ] && continue   # 默认排除系统盘
-        # 标称容量（型号→规格映射，标注检测值 vs 标称差异；未知型号留空）
+        # 标称容量：优先从型号字符串自动提取（如 "PM1733a RI 3.84TB"、"MTFDKBA480TFR"→480GB），
+        # Samsung 硬编码表兜底（型号无容量字样时）
         dspec=""
         case "$dmodel" in
             *MZWL61T9HFLT*|*MZWL61T9HBLN*) dspec="标称1.92TB" ;;
@@ -396,7 +397,23 @@ if [ -f "${disk_inventory}" ]; then
             *MZIL21T6*) dspec="标称1.6TB" ;;
             *MZIL23T8*) dspec="标称3.2TB" ;;
             *MZIL27T6*) dspec="标称6.4TB" ;;
-            *) dspec="" ;;
+            *)
+                # Micron 型号规则: MTFDKBA480TFR / MTFDHBE960TFR → 数字=容量GB（T 是家族代号非 TB）
+                if echo "$dmodel" | grep -qE 'MTFD[KHC][A-Z]{2}[0-9]{3,4}TFR'; then
+                    micap=$(echo "$dmodel" | grep -oE '[0-9]{3,4}TFR' | head -1 | grep -oE '[0-9]+')
+                    [ -n "$micap" ] && dspec="标称${micap}GB"
+                fi
+                # 通用提取：型号中显式容量（3.84TB / 1.92T / 480G 等）
+                if [ -z "$dspec" ]; then
+                    cap=$(echo "$dmodel" | grep -oE '[0-9]+(\.[0-9]+)?[TtGg][Bb]?' | head -1)
+                    if [ -n "$cap" ]; then
+                        # 统一单位：T→TB，G→GB（保留一位小数）
+                        num=$(echo "$cap" | grep -oE '[0-9]+(\.[0-9]+)?')
+                        unit=$(echo "$cap" | grep -oE '[TtGg]' | tr '[:lower:]' '[:upper:]')
+                        dspec="标称${num}${unit}B"
+                    fi
+                fi
+                ;;
         esac
         DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}|${dspec}"$'\n'
     done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
