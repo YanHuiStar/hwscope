@@ -869,6 +869,7 @@ if [ -f "$_fru_src" ] && [ -f "${OUT}/bmc/ipmi_fru_all.log" ]; then
     [ "${_n_full:-0}" -gt "${_n_psu:-0}" ] && _fru_src="${OUT}/bmc/ipmi_fru_all.log"
 fi
 PSU_DETAILS=""
+PSU_PLATFORM_NOTE=""
 if [ -f "$_fru_src" ]; then
     pdesc=""; pmodel=""; ppn=""; psn=""; pending=""
     while IFS= read -r pline; do
@@ -892,6 +893,10 @@ if [ -f "$_fru_src" ]; then
                 num=$1; gsub(/[^0-9]/, "", num)
                 if(num!="" && !seen[num]++) printf "PSU%s|N/A|N/A|N/A|N/A|N/A\n", num
             }')
+        # 平台限制标注：FRU 无 PSU 条目时说明（避免客户误以为漏采）
+        if [ -n "$PSU_DETAILS" ]; then
+            PSU_PLATFORM_NOTE="平台未暴露单电源 FRU/功耗（仅温度传感器确认存在）"
+        fi
     fi
     # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
     total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
@@ -1531,6 +1536,7 @@ $(if [ -n "$PSU_DETAILS" ]; then
         printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 fi)
+$(if [ -n "$PSU_PLATFORM_NOTE" ]; then echo "> ⚠️ ${PSU_PLATFORM_NOTE}"; fi)
 
 $(if [ -n "$RAID_DETAILS" ]; then
     local rseq=0
@@ -1786,6 +1792,7 @@ $(if [ -n "$PSU_DETAILS" ]; then
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
 else echo "  N/A"; fi)
+$(if [ -n "$PSU_PLATFORM_NOTE" ]; then echo "  ⚠️ ${PSU_PLATFORM_NOTE}"; fi)
 
 $(if [ -n "$RAID_DETAILS" ]; then
     echo "[RAID控制器]"
