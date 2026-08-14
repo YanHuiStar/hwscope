@@ -642,6 +642,7 @@ LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')
 # 网卡明细（nic_inventory.csv: dev|bdf|mac|sn|pn|fw|speed|width|psid）
 # IB 控制器型号识别：ibstat CA type + ibdev2netdev 映射（mlx5_N ↔ ibp*），附加到 PN 列
 declare -A CA_MODEL NETDEV_CA
+NIC_MLX=0
 if [ -f "${ibstat}" ]; then
     cur_ca=""
     while IFS= read -r il; do
@@ -742,8 +743,18 @@ if [ -f "${nic_inventory}" ]; then
         fi
         # IB 设备（ibp*/ibs*）附加控制器型号
         if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
-            mt="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
-            [ -n "$mt" ] && npn="${npn} [$(mt_model "$mt")]"
+            NIC_MLX=1
+            # 型号附加：优先 lspci 直读（PCI ID 权威，认识所有 Mellanox 卡，无需维护映射表）
+            mt=""
+            if [ -f "${OUT}/pcie/lspci_all.log" ]; then
+                mt=$(grep -E "^${nnbdf%% (USB)*} " "${OUT}/pcie/lspci_all.log" 2>/dev/null | grep -oE '\[ConnectX-[0-9]+( Lx| Dx)?\]|\[BlueField[^]]*\]' | head -1 | tr -d '[]')
+            fi
+            # 兜底：lspci 无型号时用 CA type 映射（MT4129→ConnectX-7 等）
+            if [ -z "$mt" ]; then
+                mt="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
+                [ -n "$mt" ] && mt=$(mt_model "$mt")
+            fi
+            [ -n "$mt" ] && npn="${npn} [${mt}]"
             # SN 为占位值/空时，用 ibstat Node GUID 兜底（每卡唯一，可区分多卡）
             if [ -z "$nsn" ] || [ "$nsn" = "N/A" ] || [ "$nsn" = "1951526575073" ]; then
                 ng_ca="${NETDEV_CA[$nnic]:-}"
@@ -1501,6 +1512,20 @@ $(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then echo "| DCGM �
 | 术语 | 说明 |
 |------|------|
 $(glossary_md)
+$(if [ -n "$NIC_MLX" ]; then
+    echo ""
+    echo "### 网卡型号对照（MT 编号 → 型号，lspci 直读优先）"
+    echo ""
+    echo "| MT 编号 | 型号 |"
+    echo "|---------|------|"
+    echo "| MT4131 | ConnectX-8 |"
+    echo "| MT4129 / MT2910 / MT4125 | ConnectX-7 |"
+    echo "| MT4124 | ConnectX-6 Lx |"
+    echo "| MT4123 | ConnectX-6 Dx |"
+    echo "| MT4121 / MT4122 | ConnectX-6 |"
+    echo "| MT2892 / MT2893 | ConnectX-5 |"
+    echo "| MT2884 / MT2883 | ConnectX-4 |"
+fi)
 ---
 *由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）*
 
@@ -1726,6 +1751,12 @@ $(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then echo "  DCGM�
 
 [术语说明]
 $(glossary_txt)
+$(if [ -n "$NIC_MLX" ]; then
+    echo ""
+    echo "网卡型号对照 (MT 编号 → 型号, lspci 直读优先):"
+    echo "  MT4131=ConnectX-8  MT4129/MT2910/MT4125=ConnectX-7  MT4124=ConnectX-6 Lx"
+    echo "  MT4123=ConnectX-6 Dx  MT4121/MT4122=ConnectX-6  MT2892/MT2893=ConnectX-5  MT2884/MT2883=ConnectX-4"
+fi)
 --------------------------------------------
 数据来源说明: 本报告数值均从采集日志提取（只读解析，不重新采集）。
 检测值为采集时刻实际状态；标注"标称"的为硬件规格（如 GPU 显存 288GB 标称 vs 268.6 GiB 检测可见值，差异为 ECC/显存预留）。
