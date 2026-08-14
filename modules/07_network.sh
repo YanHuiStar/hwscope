@@ -149,9 +149,17 @@ run_network() {
             # PSID 回退：mstflint q 无 PSID 时，从 mlxfwmanager.log 按 BDF 匹配（如 Inventec 平台）
             if [ "$npsid" = "N/A" ] && [ -f "${dir}/mlxfwmanager.log" ]; then
                 local fw_psid=$(awk -v bdf="$nbdf" '
-                    $1=="Device:" && $2==bdf { in_dev=1 }
-                    in_dev && /PSID:/ { sub(/.*PSID:[[:space:]]*/, ""); print; exit }
+                    /PCI Device Name:/ { dev=$NF; sub(/^0000:/, "", dev) }
+                    dev==bdf && /PSID:/ { sub(/.*PSID:[[:space:]]*/, ""); print; exit }
                 ' "${dir}/mlxfwmanager.log" 2>/dev/null)
+                # 新版 mlxfwmanager 无 PSID 字段但有 Part Number（精确型号，如 MCX75310AAS-NEA）
+                if [ -z "$fw_psid" ]; then
+                    fw_psid=$(awk -v bdf="$nbdf" '
+                        /PCI Device Name:/ { dev=$NF; sub(/^0000:/, "", dev) }
+                        dev==bdf && /Part Number:/ { sub(/.*Part Number:[[:space:]]*/, ""); print; exit }
+                    ' "${dir}/mlxfwmanager.log" 2>/dev/null)
+                    [ -n "$fw_psid" ] && fw_psid="PN:${fw_psid}"
+                fi
                 [ -n "$fw_psid" ] && npsid="$fw_psid"
             fi
             local nfw="N/A"
