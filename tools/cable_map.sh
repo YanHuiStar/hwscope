@@ -84,6 +84,8 @@ if [ ${#UNREADABLE[@]} -gt 0 ]; then
     echo -e "${BLUE}── 断口联动验证 (DAC 无 serial 场景) ──${NC}"
     echo -e "${YELLOW}  将逐口 down 再恢复（每个口约 3-5 秒），确认物理配对${NC}"
     declare -A LINK_VERIFIED
+    # Ctrl+C/异常中断时恢复所有端口 UP（防止口停留在 DN 导致断网）
+    trap 'for _d in $DEVS; do sudo mlxlink -d "$_d" -p 1 -a UP >/dev/null 2>&1; done; exit 130' INT TERM
     for dev in $DEVS; do
         # 只验证 serial 不可读 且 未配对 的设备（跳过已通过 serial 配对的）
         if echo "$PAIRED_DEVS" | grep -qw "$dev"; then continue; fi
