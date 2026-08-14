@@ -697,9 +697,15 @@ if [ -n "$GPU_TOPO_FILE" ]; then
     _hdr=$(grep -v "^#" "$GPU_TOPO_FILE" | grep -E "NIC[0-9]" | head -1)
     # 同时记录列名与列号（动态计算，兼容 4/8 GPU 等不同卡数导致的列偏移）
     if [ -n "$_hdr" ]; then
+        # tab 偏移修正：表头以 tab/空格开头时 $1 为空，列号比数据行小 1（数据行 $1=GPU0 占位）
+        # 判定：表头首字符为空白（\t 或空格）→ 所有列号 +1
+        _tabfix=0
+        case "$_hdr" in
+            [[:space:]]*) _tabfix=1 ;;
+        esac
         while IFS= read -r _pair; do
             _nic_cols+=("${_pair%%:*}")
-            _nic_idx+=("${_pair##*:}")
+            _nic_idx+=("$(( ${_pair##*:} + _tabfix ))")
         done < <(echo "$_hdr" | awk '{for(i=1;i<=NF;i++) if($i~/^NIC[0-9]+$/) printf "%s:%d\n", $i, i}')
     fi
     if [ "${#_nic_cols[@]}" -gt 0 ]; then
