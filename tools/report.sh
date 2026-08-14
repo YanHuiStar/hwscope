@@ -641,6 +641,23 @@ if [ -f "${dcgmi_diag_level1}" ]; then
     fi
 fi
 
+# 健康检查文本（变量拼接，避免 $( ) 命令替换剥离尾换行导致排版错乱）
+HEALTH_TXT=""
+if [ "$GPU_COUNT" -eq 0 ]; then
+    HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (无 GPU)"$'\n'
+else
+    HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}"$'\n'
+fi
+if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then
+    HEALTH_TXT="${HEALTH_TXT}  NVLink   : ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)}"$'\n'
+fi
+if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
+    HEALTH_TXT="${HEALTH_TXT}  DCGM诊断 : ${DCGM_SUMMARY}"$'\n'
+fi
+if [ -n "$DCGM_NOTICE" ]; then
+    HEALTH_TXT="${HEALTH_TXT}  ⚠️ ${DCGM_NOTICE}"$'\n'
+fi
+
 # 端口模式汇总（mlxconfig_*_linktype.log：每口 IB/ETH 模式）
 LINKTYPE_SUMMARY=""
 for f in "${NET_DIR}"/mlxconfig_*_linktype.log; do
@@ -2011,13 +2028,7 @@ $(if [ -n "$nvs_txt" ]; then
 fi)
 
 [健康检查]
-$(if [ "$GPU_COUNT" -eq 0 ]; then
-    echo "  PCIe链路 : N/A (无 GPU)"
-else
-    echo "  PCIe链路 : ${GPU_DEGRADED:-✓ 全部正常}"
-fi)
-$(if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then echo "  NVLink   : ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)}"; fi)
-$(if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then echo "  DCGM诊断 : ${DCGM_SUMMARY}"; fi)$(if [ -n "$DCGM_NOTICE" ]; then echo "  ⚠️ ${DCGM_NOTICE}"; fi)
+$(printf '%s' "$HEALTH_TXT")
   SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
   线缆配对 : ${CABLE_PAIRS:-N/A}
 
