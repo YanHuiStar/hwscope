@@ -647,6 +647,7 @@ LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')
 # IB 控制器型号识别：ibstat CA type + ibdev2netdev 映射（mlx5_N ↔ ibp*），附加到 PN 列
 declare -A CA_MODEL NETDEV_CA
 NIC_MLX=0
+NIC_DPU=0
 GPU_TOPO_AVAIL=0
 if [ -f "${ibstat}" ]; then
     cur_ca=""
@@ -776,6 +777,11 @@ if [ -f "${nic_inventory}" ]; then
                 [ -n "$mt" ] && mt=$(mt_model "$mt")
             fi
             [ -n "$mt" ] && npn="${npn} [${mt}]"
+            # BlueField 系列 = DPU（Data Processing Unit，内置 Arm 处理器），标注区分普通网卡
+            if echo "$mt" | grep -qiE "BlueField"; then
+                npn="${npn} [DPU]"
+                NIC_DPU=1
+            fi
             # 芯片编号（MT 编号：MT4129 等，工程/固件视角核对用）
             nchip=""
             if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
@@ -1228,6 +1234,7 @@ GLOSSARY_ENTRIES=(
     "实际速率|当前链路协商速率（取决于对端交换机/线缆，未接为 Down）"
     "GPU直连|网卡与 GPU 处于同一 PCIe Switch（PIX），可做 GPU Direct RDMA 高速通信"
     "PIX/NODE/SYS|PCIe 拓扑连接类型：PIX=同一 Switch 直连，NODE=同 CPU/NUMA 节点，SYS=跨节点（延迟递增）"
+    "DPU|Data Processing Unit 数据处理单元（如 BlueField-3），内置 Arm 处理器，可卸载主机网络/存储/安全处理"
     "NVLink|NVIDIA GPU 间高速互联总线（B300 每卡 18 条，53.125 GB/s/条）"
     "NVSwitch|NVLink 交换芯片，连接多卡实现全互联（B300 集成于 GPU 模块内）"
     "DCGM|NVIDIA Data Center GPU Manager，GPU 诊断工具（dcgmi diag）"
