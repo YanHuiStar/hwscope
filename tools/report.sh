@@ -404,19 +404,26 @@ if [ -f "${block_devices_all}" ]; then
         END{printf "%.0f GiB", s}' 2>/dev/null)
     # 盘型号：从 disk_inventory.csv 取（MODEL/SERIAL 已分离）；排除系统盘（与盘数/容量口径一致）；回退 block_devices 提取
     if [ -f "${disk_inventory}" ]; then
-        STORAGE_MODELS=$(grep -v "^#" "${disk_inventory}" 2>/dev/null | awk -F'|' -v sys="$SYS_DISK" '$1!="" && $1!=sys && $4!="N/A" && $4!="" {print $4}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+        STORAGE_MODELS=$(grep -v "^#" "${disk_inventory}" 2>/dev/null | awk -F'|' -v sys="$SYS_DISK" '$1!="" && $1!=sys && $4!="N/A" && $4!="" && $4 !~ /MegaRAID|MR[0-9][0-9][0-9]|PERC|Smart Array|Adaptec/ {print $4}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
     else
         STORAGE_MODELS=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {print $(i-1); break}}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
     fi
 fi
 
 # 盘明细（disk_inventory.csv: name|type|size|model|serial|fw|bdf|power_on）
+# RAID 虚拟盘（逻辑盘）与物理盘分表：虚拟盘型号是 RAID 卡型号，SN 是 LUN，无 SMART，混在物理盘表会误导
 DISK_DETAILS=""
+RAID_VD_DETAILS=""
 if [ -f "${disk_inventory}" ]; then
     while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare; do
         [ -z "$dname" ] || [ "$dname" = "N/A" ] && continue
         [ "$dname" = "#" ] && continue
         [ "$dname" = "$SYS_DISK" ] && continue   # 默认排除系统盘
+        # RAID 虚拟盘判定：型号是 RAID 卡型号（MegaRAID/MRxxxx/PERC/Smart Array/Adaptec）
+        is_raid_vd=0
+        case "$dmodel" in
+            *MegaRAID*|*MR[0-9][0-9][0-9]*|*PERC*|*"Smart Array"*|*Adaptec*|*ServeRAID*) is_raid_vd=1 ;;
+        esac
         # 标称容量：优先从型号字符串自动提取（如 "PM1733a RI 3.84TB"、"MTFDKBA480TFR"→480GB），
         # Samsung 硬编码表兜底（型号无容量字样时）
         dspec=""
@@ -491,7 +498,11 @@ if [ -f "${disk_inventory}" ]; then
                 if [ -n "$_f" ] && [ "$_f" != "N/A" ]; then dfw="$_f"; break; fi
             done
         fi
-        DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}|${dspec}|${dhealth}"$'\n'
+        if [ "$is_raid_vd" -eq 1 ]; then
+            RAID_VD_DETAILS="${RAID_VD_DETAILS}${dname}|${dmodel}|${dsize}|${dsn}"$'\n'
+        else
+            DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}|${dspec}|${dhealth}"$'\n'
+        fi
     done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
 fi
 
@@ -1297,6 +1308,15 @@ gen_json() {
         done <<< "$DISK_DETAILS"
         disk_details_json=$(printf '%s' "$disk_details_json" | sed '$ s/,$//')
     fi
+    # RAID 虚拟盘 JSON 数组（dev|raid_card|size|sn）
+    local raid_vd_json=""
+    if [ -n "$RAID_VD_DETAILS" ]; then
+        while IFS='|' read -r rvdname rvdmodel rvdsize rvdsn; do
+            [ -z "$rvdname" ] && continue
+            raid_vd_json="${raid_vd_json}      {\"dev\": \"${rvdname}\", \"raid_card\": \"${rvdmodel}\", \"size\": \"${rvdsize}\", \"sn\": \"${rvdsn:-N/A}\"},"$'\n'
+        done <<< "$RAID_VD_DETAILS"
+        raid_vd_json=$(printf '%s' "$raid_vd_json" | sed '$ s/,$//')
+    fi
     # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
     local nic_details_json=""
     if [ -n "$NIC_DETAILS" ]; then
@@ -1420,6 +1440,9 @@ ${gpu_details_json}
     "system_disk_excluded": "${SYS_DISK:-N/A}",
     "disks": [
 ${disk_details_json}
+    ],
+    "raid_vds": [
+${raid_vd_json}
     ]
   },
   "network": {
@@ -1791,6 +1814,18 @@ fi)
 |---|------|------|------|------|----|------|-----|---------|----------|-------|------|------|
 $(printf '%s' "$disk_details_md")
 
+$(if [ -n "$RAID_VD_DETAILS" ]; then
+    echo "### RAID 虚拟盘（逻辑盘，底层物理盘需 storcli 查看）"
+    echo "| # | 设备 | RAID 卡 | 容量 | SN(LUN) |"
+    echo "|---|------|---------|------|---------|"
+    local rvd_seq=0
+    echo "$RAID_VD_DETAILS" | while IFS='|' read -r rvdname rvdmodel rvdsize rvdsn; do
+        [ -z "$rvdname" ] && continue
+        rvd_seq=$((rvd_seq+1))
+        echo "| ${rvd_seq} | ${rvdname} | ${rvdmodel} | ${rvdsize} | ${rvdsn:-N/A} |"
+    done
+fi)
+
 $(if [ -n "$RAID_DETAILS" ]; then
     echo "## RAID 控制器"
     echo "| # | 控制器 | 型号 | SN | 固件 | 虚拟盘 |"
@@ -2132,7 +2167,13 @@ fi)$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo 
   盘数   : ${STORAGE_COUNT:-0}
   总容量 : ${STORAGE_TOTAL:-N/A}
   盘型号 : ${STORAGE_MODELS:-N/A}
-  系统盘 : ${SYS_DISK:-N/A} (已从统计排除)$(if [ -n "$disk_details_txt" ]; then printf '\n%s' "$disk_details_txt"; fi)$(if [ -n "$RAID_DETAILS" ]; then
+  系统盘 : ${SYS_DISK:-N/A} (已从统计排除)$(if [ -n "$disk_details_txt" ]; then printf '\n%s' "$disk_details_txt"; fi)$(if [ -n "$RAID_VD_DETAILS" ]; then
+    printf '\n  RAID虚拟盘（逻辑盘）:\n'
+    echo "$RAID_VD_DETAILS" | while IFS='|' read -r rvdname rvdmodel rvdsize rvdsn; do
+        [ -z "$rvdname" ] && continue
+        printf '    %s  %s  %s  SN(LUN):%s\n' "$rvdname" "$rvdmodel" "$rvdsize" "${rvdsn:-N/A}"
+    done
+fi)$(if [ -n "$RAID_DETAILS" ]; then
     printf '\n[RAID控制器]\n'
     echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
         [ -z "$ridx" ] && continue
