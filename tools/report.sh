@@ -455,7 +455,26 @@ if [ -f "${disk_inventory}" ]; then
         case "$dspare" in
             ""|N/A|N/A%|na|NA) dspare="—" ;;
         esac
-        DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}|${dspec}"$'\n'
+        # SMART 整体健康（overall-health PASSED/FAILED 或 NVMe Critical Warning 0x00）
+        dhealth="—"
+        _disk_ctl=$(echo "$dname" | sed 's/n[0-9]*$//')   # nvme0n1 → nvme0（控制器），sda → sda
+        for _hlog in "smart_${dname}.log" "smart_${_disk_ctl}.log"; do
+            [ -f "${STO_DIR}/$_hlog" ] || continue
+            _h=$(grep -m1 -iE "SMART overall-health|SMART Health Status" "${STO_DIR}/$_hlog" 2>/dev/null)
+            if [ -n "$_h" ]; then
+                case "$_h" in
+                    *PASSED*|*OK*) dhealth="PASSED" ;;
+                    *FAILED*|*FAILING*|*BAD*) dhealth="FAILED" ;;
+                esac
+                break
+            fi
+            _cw=$(grep -m1 -i "Critical Warning" "${STO_DIR}/$_hlog" 2>/dev/null | grep -oE "0x[0-9a-fA-F]+" | head -1)
+            if [ -n "$_cw" ]; then
+                [ "$_cw" = "0x00" ] && dhealth="OK" || dhealth="⚠️${_cw}"
+                break
+            fi
+        done
+        DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}|${dspec}|${dhealth}"$'\n'
     done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
 fi
 
@@ -550,6 +569,9 @@ MST_NOTICE=""
 # IB 设备总数（CA 数量）与活动口数（State: Active）分开统计——"设备数"≠"活动口数"
 IB_COUNT=$(grep -c "^CA '" "${ibstat}" 2>/dev/null)
 IB_ACTIVE=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
+# Link 状态统计：Down（未连）+ 未插线缆（mlxlink Recommendation，排除 module 文件）
+IB_LINK_DOWN=$(grep -c "State: Down" "${ibstat}" 2>/dev/null)
+IB_UNPLUGGED=$(for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do [ -f "$f" ] || continue; case "$f" in *_module.log) continue;; esac; grep -c "Cable is unplugged" "$f" 2>/dev/null; done | awk '{s+=$1} END{print s+0}')
 # 活动口的速率分布（如 "100 Gb/s ×4"；无活动口显示 Down）
 IB_ACTIVE_SPEED=""
 if [ "${IB_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then
@@ -630,10 +652,10 @@ SEL_TOTAL=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not o
 SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
 SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -icE "pcie|aer|uncorrectable")
 
-# SEL 最近 20 条事件明细
+# SEL 告警级事件明细（只列 Critical/Error/PCIe/告警类，过滤 Boot/Timestamp 等常规噪声事件）
 SEL_DETAILS=""
 if [ -f "${ipmi_sel_elist}" ]; then
-    SEL_DETAILS=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev|^$" | tail -20 | awk -F'|' '{
+    SEL_DETAILS=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev|^$" | grep -iE "critical|fatal|warning|error|fail|pcie|aer|uncorrectable|uncorrected|thermal|voltage|power fault" | tail -20 | awk -F'|' '{
         gsub(/^ +| +$/,"",$2); gsub(/^ +| +$/,"",$3)
         gsub(/^ +| +$/,"",$4); gsub(/^ +| +$/,"",$5); gsub(/^ +| +$/,"",$6)
         if($2!="") printf "%d|%s|%s|%s|%s\n", NR, $2, $3, $4, $5
@@ -977,6 +999,19 @@ if [ -f "${ipmi_fan_sensors}" ]; then
     }')
 fi
 
+# 温度概况（ipmi_sensors_temp.log：进风/出风/CPU/内存/电源 关键温度聚合 min-max）
+TEMP_SUMMARY=""
+load_manifest "${BMC_DIR}" ipmi_sensors_temp "ipmi_sensors_temp.log"
+if [ -f "${ipmi_sensors_temp}" ]; then
+    _temp_agg() {   # $1=匹配模式, $2=标签
+        grep -v "^#" "${ipmi_sensors_temp}" 2>/dev/null | awk -F'|' -v pat="$1" 'tolower($1) ~ pat {
+            v=$2; gsub(/ /,"",v); if(v ~ /^[0-9]+(\.[0-9]+)?$/) { if(v+0>0) print v }
+        }' | sort -n | awk -v lbl="$2" 'NR==1{mn=$1} {mx=$1} END{if(mn!=""){sub(/\.0+$/,"",mn); sub(/\.0+$/,"",mx); printf "%s %s-%s°C  ", lbl, mn, mx}}'
+    }
+    TEMP_SUMMARY="$( _temp_agg 'inlet.*temp' '进风'; _temp_agg 'outlet.*temp' '出风'; _temp_agg '^cpu[0-9]+_temp' 'CPU'; _temp_agg 'dimm.*temp' '内存'; _temp_agg 'psu[0-9]+_temp' '电源'; _temp_agg 'pch.*temp' 'PCH' )"
+    TEMP_SUMMARY=$(echo "$TEMP_SUMMARY" | sed 's/  *$//')
+fi
+
 # ─── PSU 清单（ipmi_psu_fru.log：FRU 描述/型号/PN/SN） ───
 # 状态机：desc 行出现时输出上一个 FRU（PN/SN 在 Name 之后，须延迟一行）；
 # 只保留 PSU 行（PSU1_FRU/PSU4_FRU/Power Supply），过滤风扇/背板/PDB 等其他 FRU
@@ -993,6 +1028,18 @@ if [ -f "$_fru_src" ] && [ -f "${ipmi_fru_all}" ]; then
 fi
 PSU_DETAILS=""
 PSU_PLATFORM_NOTE=""
+# 电源冗余状态（PS_Redundant：0x01/ok=冗余满足，0x00=冗余失效；无数据=N/A）
+PSU_REDUNDANT="N/A"
+load_manifest "${BMC_DIR}" ipmi_sdr "ipmi_sdr.log"
+if [ -f "${ipmi_sdr}" ]; then
+    _red_line=$(grep -iE "^PS_Redundant|PSU.*Redundant" "${ipmi_sdr}" 2>/dev/null | head -1)
+    if [ -n "$_red_line" ]; then
+        case "$_red_line" in
+            *"| 0x01"*|*"| 0x1"*|*ok*) PSU_REDUNDANT="冗余满足（N+N）" ;;
+            *) PSU_REDUNDANT="⚠️ 冗余失效" ;;
+        esac
+    fi
+fi
 if [ -f "$_fru_src" ]; then
     pdesc=""; pmodel=""; ppn=""; psn=""; pending=""
     while IFS= read -r pline; do
@@ -1098,6 +1145,7 @@ if [ -f "$_fru_src" ]; then
     fi
     # PSU 尾注文本（变量拼接，避免 $( ) 命令替换剥离尾换行导致排版空行堆积）
     PSU_NOTE_TXT=""
+    [ "$PSU_REDUNDANT" != "N/A" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  电源冗余: ${PSU_REDUNDANT}"$'\n'
     [ -n "$PSU_EXTRA" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_EXTRA}"$'\n'
     [ -n "$PSU_DCMI" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_DCMI}"$'\n'
     [ -n "$PSU_PLATFORM_NOTE" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ⚠️ ${PSU_PLATFORM_NOTE}"$'\n'
@@ -1226,9 +1274,9 @@ gen_json() {
     # 盘明细 JSON 数组（name|type|size|model|sn|fw|bdf|power_on）
     local disk_details_json=""
     if [ -n "$DISK_DETAILS" ]; then
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
-            disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\", \"power_cyc\": \"${dpc}\", \"spare\": \"${dspare}\", \"size_spec\": \"${dspec}\"},"$'\n'
+            disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\", \"power_cyc\": \"${dpc}\", \"spare\": \"${dspare}\", \"size_spec\": \"${dspec}\", \"health\": \"${dhealth}\"},"$'\n'
         done <<< "$DISK_DETAILS"
         disk_details_json=$(printf '%s' "$disk_details_json" | sed '$ s/,$//')
     fi
@@ -1458,26 +1506,17 @@ EOF
 
 # ─── 术语说明（交付报告末尾，解释报告内出现的专业词） ───
 GLOSSARY_ENTRIES=(
-    "IB|InfiniBand，高速互联网络（GPU/存储集群专用），速率代际 SDR→DDR→QDR→FDR→EDR→HDR→NDR→XDR 每代翻倍"
-    "SDR/DDR/QDR/FDR/EDR/HDR/NDR/XDR|IB 速率代际：分别对应 10G/20G/40G/56G/100G/200G/400G/800G（单口 4X 计）"
-    "标称速率|网卡硬件支持的最大速率（固件声明，无需接线即可读取）"
-    "实际速率|当前链路协商速率（取决于对端交换机/线缆，未接为 Down）"
+    "IB|InfiniBand，高速互联网络（GPU/存储集群专用），速率代际 SDR→DDR→QDR→FDR→EDR→HDR→NDR→XDR 每代翻倍（10G→800G/单口）"
+    "标称/实际速率|标称=网卡硬件支持的最大速率（固件声明，无需接线）；实际=当前链路协商速率（取决于对端交换机/线缆，未接为 Down）"
     "GPU直连|网卡与 GPU 处于同一 PCIe Switch（PIX），可做 GPU Direct RDMA 高速通信"
-    "PIX/NODE/SYS|PCIe 拓扑连接类型：PIX=同一 Switch 直连，NODE=同 CPU/NUMA 节点，SYS=跨节点（延迟递增）"
-    "DPU|Data Processing Unit 数据处理单元（如 BlueField-3），内置 Arm 处理器，可卸载主机网络/存储/安全处理"
     "NVLink|NVIDIA GPU 间高速互联总线（B300 每卡 18 条，53.125 GB/s/条）"
     "NVSwitch|NVLink 交换芯片，连接多卡实现全互联（B300 集成于 GPU 模块内）"
     "DCGM|NVIDIA Data Center GPU Manager，GPU 诊断工具（dcgmi diag）"
-    "Persistence Mode|GPU 常驻模式；未开启时 DCGM 报配置类 Fail（非硬件故障）"
     "SEL|System Event Log，BMC 记录的系统事件日志（含硬件告警）"
-    "BMC|基板管理控制器，服务器带外管理（IPMI/Redfish 远程管理接口）"
     "SXM|NVIDIA 数据中心 GPU 模块化形态（非 PCIe 插卡），如 B300 SXM6"
     "PSID|网卡产品 ID（Mellanox 卡标识，用于固件匹配）"
-    "Rank|内存 Bank 分组，Rank 2 = 双列（每 DIMM 2 组存储阵列）"
-    "DAC|Direct Attach Cable，铜缆直连线（短距高速连接）"
-    "MT/s|Mega Transfers per second，内存每通道每秒传输次数（DDR5 常见 6400 MT/s）"
-    "2DPC|DIMM Per Channel=每内存通道插 2 条；2DPC 满插时信号负载大，内存降速运行属平台规范正常现象（如 6400→5200 MT/s）"
     "退役行(Remapped Rows)|GPU 显存中检测到故障后自动重映射隐藏的行，计数>0 提示显存健康问题"
+    "2DPC|DIMM Per Channel=每内存通道插 2 条；满插时信号负载大，内存降速运行属平台规范正常现象"
 )
 
 glossary_md() {
@@ -1557,10 +1596,10 @@ gen_md() {
     local disk_details_md=""
     if [ -n "$DISK_DETAILS" ]; then
         local dn=0
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
             dn=$((dn + 1))
-            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc} | ${dspare} | ${dspec:-} |"$'\n'
+            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc} | ${dspare} | ${dspec:-} | ${dhealth} |"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细 Markdown 表
@@ -1731,8 +1770,8 @@ fi)
 | 系统盘(已排除) | ${SYS_DISK:-N/A} |
 
 ### 盘明细
-| # | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% | 标称 |
-|---|------|------|------|------|----|------|-----|---------|----------|-------|------|
+| # | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% | 标称 | 健康 |
+|---|------|------|------|------|----|------|-----|---------|----------|-------|------|------|
 $(printf '%s' "$disk_details_md")
 
 $(if [ -n "$RAID_DETAILS" ]; then
@@ -1771,6 +1810,7 @@ fi)
 |----|----|
 | IB 设备数 | ${IB_COUNT:-0} |
 | IB 活动口 | ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})} |
+| IB Link 状态 | Active ${IB_ACTIVE:-0} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）} |
 | IB 标称速率 | ${IB_NOMINAL:-N/A} |
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 $(net_extra_md)
@@ -1805,7 +1845,7 @@ fi)
 | MAC | ${BMC_MAC:-N/A} |
 | SEL 事件 | ${SEL_TOTAL:-0}（Critical ${SEL_CRIT:-0}） |
 $(if [ -n "$SEL_DETAILS" ]; then
-    echo "### SEL 事件（最近 20 条）"
+    echo "### SEL 告警事件"
     echo "| # | 日期 | 时间 | 类型 | 描述 |"
     echo "|---|------|------|------|------|"
     local sel_seq=0
@@ -1813,6 +1853,8 @@ $(if [ -n "$SEL_DETAILS" ]; then
         sel_seq=$((sel_seq+1))
         echo "| ${sid} | ${sdate} | ${stime} | ${stype} | ${sdesc} |"
     done
+else
+    echo "> 告警事件: 无"
 fi)
 
 ## 风扇
@@ -1820,6 +1862,7 @@ fi)
 |----|----|
 | 数量 | ${FAN_COUNT:-0} |
 | 转速 | ${FAN_SPEED:-N/A} |
+| 温度 | ${TEMP_SUMMARY:-N/A} |
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "### 风扇明细"
     echo "| # | 风扇 | 转速(RPM) | 状态 |"
@@ -1843,10 +1886,11 @@ $(if [ -n "$PSU_DETAILS" ]; then
     done <<< "$PSU_DETAILS"
 fi)
 $(
-    # PSU 尾注（整机功耗/DCMI/平台说明），合并块避免空输出堆积空行
-    if [ -n "$PSU_EXTRA" ] || [ -n "$PSU_DCMI" ]; then
+    # PSU 尾注（冗余/整机功耗/DCMI/平台说明），合并块避免空输出堆积空行
+    if [ "$PSU_REDUNDANT" != "N/A" ] || [ -n "$PSU_EXTRA" ] || [ -n "$PSU_DCMI" ]; then
         echo ""
     fi
+    [ "$PSU_REDUNDANT" != "N/A" ] && echo "**电源冗余: ${PSU_REDUNDANT}**"
     [ -n "$PSU_EXTRA" ] && echo "**${PSU_EXTRA}**"
     [ -n "$PSU_DCMI" ] && echo "**${PSU_DCMI}**"
     [ -n "$PSU_PLATFORM_NOTE" ] && echo "> ⚠️ ${PSU_PLATFORM_NOTE}"
@@ -1903,9 +1947,7 @@ fi)
 ---
 *由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）*
 
-> 数据来源说明：本报告所有数值均从采集日志提取（只读解析，不重新采集）。检测值为采集时刻的实际状态；
-> 标注"标称"的为硬件规格（如 GPU 显存 288GB 标称 vs 268.6 GiB 检测可见值，差异为 ECC/显存预留）。
-> 各段明细见 output/&lt;SN&gt;/&lt;模块&gt;/ 下的原始日志。
+> 数据来源：只读解析采集日志（不重新采集）；"标称"为硬件规格，检测值为采集时刻实际状态；明细见 output/&lt;SN&gt;/&lt;模块&gt;/。
 EOF
     echo -e "${GREEN}[REPORT] MD: ${f}${NC}"
 }
@@ -1946,9 +1988,9 @@ gen_txt() {
     # 盘明细纯文本
     local disk_details_txt=""
     if [ -n "$DISK_DETAILS" ]; then
-        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
-            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}  spare:${dspare}  ${dspec:-}"$'\n'
+            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}  spare:${dspare}  健康:${dhealth}  ${dspec:-}"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细纯文本（TXT 专用；PSID/MST 提示并入开头，避免命令替换剥尾换行粘连）
@@ -2098,6 +2140,7 @@ fi)
 [网络]
   IB设备 : ${IB_COUNT:-0}
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
+  Link状态: Active ${IB_ACTIVE:-0} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）}
   标称速率: ${IB_NOMINAL:-N/A}
   网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)
 
@@ -2108,15 +2151,18 @@ fi)
   MAC    : ${BMC_MAC:-N/A}
   SEL    : ${SEL_TOTAL:-0} (Critical ${SEL_CRIT:-0})
 $(if [ -n "$SEL_DETAILS" ]; then
-    echo "  SEL事件(最近20条):"
+    echo "  SEL告警事件:"
     echo "$SEL_DETAILS" | while IFS='|' read -r sid sdate stime stype sdesc; do
         printf "    %-4s %-12s %-10s %-25s %s\n" "$sid" "$sdate" "$stime" "$stype" "$sdesc"
     done
+else
+    echo "  告警事件: 无"
 fi)
 
 [风扇]
   数量   : ${FAN_COUNT:-0}
   转速   : ${FAN_SPEED:-N/A}
+  温度   : ${TEMP_SUMMARY:-N/A}
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "  风扇明细:"
     echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do
@@ -2132,7 +2178,7 @@ $(if [ -n "$PSU_DETAILS" ]; then
         pseq=$((pseq+1))
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
-else echo "  N/A"; fi)$(printf '%s' "$PSU_NOTE_TXT")
+else echo "  N/A"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)
 
 [健康检查]
 $(printf '%s' "$HEALTH_TXT")
@@ -2148,9 +2194,7 @@ $(if [ -n "$NIC_MLX" ]; then
     echo "  MT4123=ConnectX-6 Dx  MT4121/MT4122=ConnectX-6  MT2892/MT2893=ConnectX-5  MT2884/MT2883=ConnectX-4"
 fi)
 --------------------------------------------
-数据来源说明: 本报告数值均从采集日志提取（只读解析，不重新采集）。
-检测值为采集时刻实际状态；标注"标称"的为硬件规格（如 GPU 显存 288GB 标称 vs 268.6 GiB 检测可见值，差异为 ECC/显存预留）。
-各段明细见 output/<SN>/<模块>/ 下原始日志。
+数据来源: 只读解析采集日志（不重新采集）；"标称"为硬件规格，检测值为采集时刻实际状态；明细见 output/<SN>/<模块>/。
 --------------------------------------------
 由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）
 EOF
@@ -2214,24 +2258,17 @@ gen_acceptance() {
               fi ;;
     esac
 
-    # 4. SEL 无 Critical 事件（SEL 采集失败/无数据 → N/A，禁止假阳性 PASS）
+    # 4. SEL 事件（合并 Critical + PCIe 错误；采集失败/无数据 → N/A，禁止假阳性 PASS）
     if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
-        add_item "SEL 无 Critical 事件" "N/A" "SEL 数据不可用（ipmitool 采集失败或无权限）"
+        add_item "SEL 事件" "N/A" "SEL 数据不可用（ipmitool 采集失败或无权限）"
     elif [ "${SEL_CRIT:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 无 Critical 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT} 条 Critical"
-    elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 无 Critical 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical（有历史事件）"
-    else
-        add_item "SEL 无 Critical 事件" "PASS" "无 SEL 事件"
-    fi
-
-    # 5. SEL 无 PCIe 错误
-    if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
-        add_item "SEL 无 PCIe 错误" "N/A" "SEL 数据不可用"
+        add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT} 条 Critical"
     elif [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 无 PCIe 错误" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
+        add_item "SEL 事件" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
+    elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical/PCIe 错误（有历史事件）"
     else
-        add_item "SEL 无 PCIe 错误" "PASS" "无 PCIe 相关 SEL"
+        add_item "SEL 事件" "PASS" "无 SEL 事件"
     fi
 
     # 6. 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示；无数据 → N/A）
@@ -2288,6 +2325,42 @@ gen_acceptance() {
         add_item "GPU VBIOS 版本一致" "WARN" "${GPU_VBIOS#⚠️ }"
     else
         add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
+    fi
+
+    # 10. 电源冗余（N+N 冗余是供电可靠性核心；失效=单点故障风险）
+    case "$PSU_REDUNDANT" in
+        N/A) add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据" ;;
+        *失效*) add_item "电源冗余（N+N）" "FAIL" "电源冗余失效（单点故障风险）" ;;
+        *) add_item "电源冗余（N+N）" "PASS" "${PSU_REDUNDANT}" ;;
+    esac
+
+    # 11. SMART 整体健康（overall-health PASSED/FAILED，比寿命%更直接的盘可用判定）
+    local dhealth_fail="" dhealth_warn="" dhealth_known=0
+    if [ -n "$DISK_DETAILS" ]; then
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
+            [ -z "$dname" ] && continue
+            case "$dhealth" in
+                FAILED) dhealth_known=$((dhealth_known+1)); dhealth_fail="${dhealth_fail}${dname}," ;;
+                ⚠️*)   dhealth_known=$((dhealth_known+1)); dhealth_warn="${dhealth_warn}${dname}(${dhealth#⚠️})," ;;
+                PASSED|OK) dhealth_known=$((dhealth_known+1)) ;;
+            esac
+        done <<< "$DISK_DETAILS"
+    fi
+    if [ "$dhealth_known" -eq 0 ]; then
+        add_item "SMART 健康状态" "N/A" "无 SMART 健康数据（旧采集或盘不支持）"
+    elif [ -n "$dhealth_fail" ]; then
+        add_item "SMART 健康状态" "FAIL" "${dhealth_fail%,}（SMART 健康评估 FAILED）"
+    elif [ -n "$dhealth_warn" ]; then
+        add_item "SMART 健康状态" "WARN" "${dhealth_warn%,}（SMART 有警告）"
+    else
+        add_item "SMART 健康状态" "PASS" "全部盘 SMART 健康评估通过"
+    fi
+
+    # 12. 整机温度正常范围（进风/出风/CPU/内存/电源/PCH 传感器均 ok）
+    if [ -z "$TEMP_SUMMARY" ]; then
+        add_item "整机温度正常" "N/A" "无温度传感器数据"
+    else
+        add_item "整机温度正常" "PASS" "${TEMP_SUMMARY}"
     fi
 
     # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
