@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.28.12 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.28.13 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -30,7 +30,7 @@
 
 ## 项目简介
 
-HwScope（Hardware Scope）是面向 AI 基础设施运维与交付场景的服务器硬件巡检系统。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，系统以**组件级粒度**采集硬件信息，覆盖主板、CPU、内存、GPU、NVSwitch、PCIe 拓扑、网络、存储、RAID/HBA、电源、风扇、BMC 共 14 类模块，并以结构化报告（JSON/Markdown/纯文本）与验收清单（Acceptance Checklist）形式输出，支撑**硬件验收、交付记录、故障报修**等场景。
+HwScope（Hardware Scope）是面向 AI 基础设施运维与交付场景的服务器硬件巡检系统。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，系统以**组件级粒度**采集硬件信息，覆盖主板、CPU、内存、GPU、NVSwitch、PCIe 拓扑、网络、存储、RAID/HBA、电源、风扇、BMC、NVSM、DCGM、OS 共 15 类模块，并以结构化报告（JSON/Markdown/纯文本）与验收清单（Acceptance Checklist）形式输出，支撑**硬件验收、交付记录、故障报修**等场景。
 
 **解决的核心问题：**
 
