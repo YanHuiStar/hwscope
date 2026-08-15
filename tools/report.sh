@@ -341,6 +341,12 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
             ggen="N/A"; gwidth="N/A"; ggenmax="N/A"; gwidthmax="N/A"
             gutil_f="N/A"; gdraw_f="N/A"
         fi
+        # 功耗回退：旧 CSV 无 power.draw 列 → 从每卡 detail 日志补（Instantaneous/Average Power Draw）
+        if [ "$gdraw_f" = "N/A" ] || [ -z "$gdraw_f" ]; then
+            _gdraw_detail=$(grep -m1 "Instantaneous Power Draw" "${GPU_DIR}/gpu_${gidx}_detail.log" 2>/dev/null | grep -oE "[0-9.]+ W" | head -1)
+            [ -z "$_gdraw_detail" ] && _gdraw_detail=$(grep -m1 "Average Power Draw" "${GPU_DIR}/gpu_${gidx}_detail.log" 2>/dev/null | grep -oE "[0-9.]+ W" | head -1)
+            [ -n "$_gdraw_detail" ] && gdraw_f="$_gdraw_detail"
+        fi
         [ -n "$gtemp_f" ] && [ "$gtemp_f" != "N/A" ] && [ "$gtemp_f" != "[N/A]" ] && gtemp_f="${gtemp_f}°C"
         # PCIe 显示：两侧都 N/A 时合并为单个 N/A（避免 N/A/N/A/N/A/N/A）
         gpcie_cur="N/A"; gpcie_max="N/A"
@@ -984,6 +990,20 @@ if [ -f "${nic_inventory}" ]; then
         NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
+# 网卡明细回退：nic_inventory.csv 空但 ibstat 有 CA（旧采集 v1.x 未生成 csv）→ 从 ibstat 构建简化明细
+# 字段：ca|ca_type|node_guid|state（ibstat 只有 CA 级信息，无接口/BDF/固件——标注回退来源）
+NIC_FALLBACK_DETAILS=""
+if [ -z "$NIC_DETAILS" ] && [ -f "${ibstat}" ]; then
+    _ca_count=$(grep -c "^CA '" "${ibstat}" 2>/dev/null)
+    if [ "$_ca_count" -gt 0 ]; then
+        NIC_FALLBACK_DETAILS=$(awk '
+            /^CA /{ca=$2; gsub(/'"'"'/,"",ca)}
+            /CA type/{type=$NF}
+            /Node GUID/{guid=$NF}
+            /State: /{state=$NF; printf "%s|%s|%s|%s\n", ca, type, guid, state}
+        ' "${ibstat}" 2>/dev/null)
+    fi
+fi
 
 # ─── PSID 缺失提示：有 Mellanox 卡但 PSID 全空时说明（采集时 MST 未启动/旧数据） ───
 PSID_NOTICE=""
@@ -1326,8 +1346,15 @@ gen_json() {
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"chip\": \"${nchip}\", \"firmware\": \"${nfw}\", \"pcie\": \"${npcie}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},"$'\n'
+            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"chip\": \"${nchip}\", \"firmware\": \"${nfw}\", \"pcie\": \"${npcie}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},\"$'\n'
         done <<< "$NIC_DETAILS"
+        nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
+    elif [ -n "$NIC_FALLBACK_DETAILS" ]; then
+        # 回退（旧采集无 nic_inventory）：ca|type|guid|state
+        while IFS='|' read -r fca ftype fguid fstate; do
+            [ -z "$fca" ] && continue
+            nic_details_json="${nic_details_json}      {\"dev\": \"${fca}\", \"ca_type\": \"${ftype}\", \"guid\": \"${fguid}\", \"state\": \"${fstate}\", \"fallback\": \"ibstat\"},\"$'\n'
+        done <<< "$NIC_FALLBACK_DETAILS"
         nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
     fi
     # NVSwitch JSON 数组
@@ -1638,12 +1665,24 @@ gen_md() {
     fi
     # 盘明细 Markdown 表
     local disk_details_md=""
+    # 整列隐藏判定：寿命%/标称/健康 整列全为占位符（旧采集无 SMART 数据）时隐藏该列（有任一值即显示）
+    local disk_has_spare=0 disk_has_spec=0 disk_has_health=0
     if [ -n "$DISK_DETAILS" ]; then
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
+            [ -z "$dname" ] && continue
+            [ -n "$dspare" ] && [ "$dspare" != "—" ] && [ "$dspare" != "N/A" ] && disk_has_spare=1
+            [ -n "$dspec" ] && [ "$dspec" != "—" ] && [ "$dspec" != "N/A" ] && disk_has_spec=1
+            [ -n "$dhealth" ] && [ "$dhealth" != "—" ] && [ "$dhealth" != "N/A" ] && disk_has_health=1
+        done <<< "$DISK_DETAILS"
         local dn=0
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
             dn=$((dn + 1))
-            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc} | ${dspare} | ${dspec:-} | ${dhealth} |"$'\n'
+            # 动态列拼接（整列无值列省略，保持表头/数据行列一致）
+            _spare_col=""; [ "$disk_has_spare" -eq 1 ] && _spare_col=" | ${dspare}"
+            _spec_col="";  [ "$disk_has_spec" -eq 1 ] && _spec_col=" | ${dspec:-}"
+            _health_col=""; [ "$disk_has_health" -eq 1 ] && _health_col=" | ${dhealth}"
+            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc}${_spare_col}${_spec_col}${_health_col} |"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细 Markdown 表
@@ -1760,8 +1799,8 @@ fi)
 | 速率 | ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-} |
 | 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
 
-### 插槽明细
-| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 原速率 | 现速率 | Rank |
+### 内存插槽明细
+| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 标称速率 | 当前速率 | Rank |
 |----|------|------|------|----|--------|--------|--------|------|
 $(printf '%s' "$dimms_md")
 
@@ -1791,7 +1830,7 @@ else
 fi)
 $(if [ -n "$gpu_details_md" ]; then
     echo ""
-    echo "### 每卡明细"
+    echo "### GPU 每卡明细"
     echo "| 卡 | 型号 | SN | 显存(默认/可用) | 功耗 | 温度 | PCIe(协商) | VBIOS |"
     echo "|----|------|----|----|------|------|----------|-------|"
     printf '%s' "$gpu_details_md"
@@ -1814,9 +1853,12 @@ fi)
 | 系统盘(已排除) | ${SYS_DISK:-N/A} |
 
 ### 盘明细
-| # | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数 | 寿命% | 标称 | 健康 |
-|---|------|------|------|------|----|------|-----|---------|----------|-------|------|------|
+| # | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数$(if [ "$disk_has_spare" -eq 1 ]; then echo " | 寿命%"; fi)$(if [ "$disk_has_spec" -eq 1 ]; then echo " | 标称"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo " | 健康"; fi) |
+|---|------|------|------|------|----|------|-----|---------|----------$(if [ "$disk_has_spare" -eq 1 ]; then echo "|-------"; fi)$(if [ "$disk_has_spec" -eq 1 ]; then echo "|------"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo "|------"; fi)|
 $(printf '%s' "$disk_details_md")
+$(if [ -n "$DISK_DETAILS" ] && { [ "$disk_has_spare" -eq 0 ] || [ "$disk_has_health" -eq 0 ]; }; then
+    echo "> 注：$(if [ "$disk_has_spare" -eq 0 ]; then echo "寿命%"; fi)$(if [ "$disk_has_spare" -eq 0 ] && [ "$disk_has_health" -eq 0 ]; then echo "、"; fi)$(if [ "$disk_has_health" -eq 0 ]; then echo "健康"; fi) 列因旧采集无 SMART 数据而隐藏"
+fi)
 
 $(if [ -n "$RAID_VD_DETAILS" ]; then
     echo "### RAID 虚拟盘（逻辑盘，底层物理盘需 storcli 查看）"
@@ -1880,6 +1922,17 @@ else
     echo "|---|------|-----|-----|----|------|------|------|------|------|"
 fi)
 $(printf '%s' "$nic_details_md")
+$(if [ -z "$nic_details_md" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
+    echo "### 网卡明细（ibstat 回退，旧采集无 nic_inventory 明细）"
+    echo "| # | CA | 型号 | Node GUID | Link 状态 |"
+    echo "|---|----|------|-----------|-----------|"
+    local nfb=0
+    echo "$NIC_FALLBACK_DETAILS" | while IFS='|' read -r fca ftype fguid fstate; do
+        [ -z "$fca" ] && continue
+        nfb=$((nfb+1))
+        echo "| ${nfb} | ${fca} | ${ftype} | ${fguid} | ${fstate} |"
+    done
+fi)
 
 $(if [ -n "$USB_NICS" ]; then
     echo "另发现 USB 外接网卡（非 PCIe，不参与网卡统计）:"
@@ -1931,6 +1984,7 @@ $(if [ -n "$FAN_DETAILS" ]; then
 fi)
 
 ## 电源 PSU
+### PSU 明细
 | # | 描述 | 型号 | 部件号 | 序列号 | 标称容量 | 当前功耗 |
 |----|------|------|--------|--------|---------|---------|
 $(if [ -n "$PSU_DETAILS" ]; then
@@ -1940,6 +1994,8 @@ $(if [ -n "$PSU_DETAILS" ]; then
         pseq=$((pseq+1))
         printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
+else
+    echo "| — | N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读） | — | — | — | — | — |"
 fi)
 $(
     # PSU 尾注（冗余/整机功耗/DCMI/平台说明），合并块避免空输出堆积空行
@@ -2043,10 +2099,19 @@ gen_txt() {
     fi
     # 盘明细纯文本
     local disk_details_txt=""
+    # 整列隐藏判定（同 MD）：寿命%/健康 整列无值省略字段（旧采集无 SMART）
+    local disk_has_spare=0 disk_has_health=0
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
-            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}  spare:${dspare}  健康:${dhealth}  ${dspec:-}"$'\n'
+            [ -n "$dspare" ] && [ "$dspare" != "—" ] && [ "$dspare" != "N/A" ] && disk_has_spare=1
+            [ -n "$dhealth" ] && [ "$dhealth" != "—" ] && [ "$dhealth" != "N/A" ] && disk_has_health=1
+        done <<< "$DISK_DETAILS"
+        while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
+            [ -z "$dname" ] && continue
+            _spare_txt=""; [ "$disk_has_spare" -eq 1 ] && _spare_txt="  spare:${dspare}"
+            _health_txt=""; [ "$disk_has_health" -eq 1 ] && _health_txt="  健康:${dhealth}"
+            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}${_spare_txt}${_health_txt}  ${dspec:-}"$'\n'
         done <<< "$DISK_DETAILS"
     fi
     # 网卡明细纯文本（TXT 专用；PSID/MST 提示并入开头，避免命令替换剥尾换行粘连）
@@ -2204,7 +2269,13 @@ fi)
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
   Link状态: Active ${IB_ACTIVE:-0} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）}
   标称速率: ${IB_NOMINAL:-N/A}
-  网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)
+  网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
+    printf '\n  网卡明细（ibstat 回退，旧采集无 nic_inventory）:\n'
+    echo "$NIC_FALLBACK_DETAILS" | while IFS='|' read -r fca ftype fguid fstate; do
+        [ -z "$fca" ] && continue
+        printf '    %s  %s  GUID:%s  %s\n' "$fca" "$ftype" "$fguid" "$fstate"
+    done
+fi)
 
 [BMC]
   型号   : ${BMC_FRU:-N/A}
@@ -2240,7 +2311,7 @@ $(if [ -n "$PSU_DETAILS" ]; then
         pseq=$((pseq+1))
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done <<< "$PSU_DETAILS"
-else echo "  N/A"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)
+else echo "  N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读）"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)
 
 [健康检查]
 $(printf '%s' "$HEALTH_TXT")
