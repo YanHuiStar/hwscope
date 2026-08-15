@@ -2272,24 +2272,25 @@ gen_acceptance() {
     local rows="" st=""
     local verdict="合格"
 
-    # 逐项评估函数：add_item "名称" "状态" "说明"
+    # 逐项评估函数：add_item "名称" "状态" "说明" [不计入N/A=1]
+    # 第4参数=1 时 N/A 不计数（机头 GPU 项：无 GPU 是平台固有形态，非数据缺失，不计入"数据不足"判定）
     add_item() {
         n=$((n + 1))
         case "$2" in
             PASS) pass=$((pass + 1)); st="✅ PASS" ;;
             FAIL) fail=$((fail + 1)); st="❌ FAIL" ;;
             WARN) warn=$((warn + 1)); st="⚠️ WARN" ;;
-            *)    na=$((na + 1));     st="— N/A" ;;
+            *)    [ "${4:-0}" != "1" ] && na=$((na + 1)); st="— N/A" ;;
         esac
         rows="${rows}| ${n} | $1 | ${st} | $3 |"$'\n'
     }
 
-    # 1. GPU PCIe 链路完整（无 GPU 机器判 N/A，避免假阳性 PASS；机头用专门文案）
+    # 1. GPU PCIe 链路完整（无 GPU 机器判 N/A 且不计入"数据不足"——无 GPU 是平台形态非数据缺失）
     if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         if [ "$HEAD_NODE" -eq 1 ]; then
-            add_item "GPU PCIe 链路完整" "N/A" "HGX 机头（无本地 GPU，模组单独采集验收）"
+            add_item "GPU PCIe 链路完整" "N/A" "HGX 机头（无本地 GPU，模组单独采集验收）" 1
         else
-            add_item "GPU PCIe 链路完整" "N/A" "无 GPU"
+            add_item "GPU PCIe 链路完整" "N/A" "无 GPU" 1
         fi
     elif [ -n "$GPU_DEGRADED" ]; then
         add_item "GPU PCIe 链路完整" "FAIL" "${GPU_DEGRADED%%,}（期望最高速率）"
@@ -2302,9 +2303,11 @@ gen_acceptance() {
         OK)   add_item "NVLink 互联" "PASS" "全互联无降级链路" ;;
         异常) add_item "NVLink 互联" "FAIL" "存在降级链路${NVLINK_CRC:+，且有非零 CRC 错误}" ;;
         *)    if [ "$HEAD_NODE" -eq 1 ]; then
-                  add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）"
+                  add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）" 1
+              elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+                  add_item "NVLink 互联" "N/A" "无 GPU" 1
               else
-                  add_item "NVLink 互联" "N/A" "无 topo 数据（旧采集或无 GPU）"
+                  add_item "NVLink 互联" "N/A" "无 topo 数据（旧采集）"
               fi ;;
     esac
 
@@ -2314,26 +2317,26 @@ gen_acceptance() {
         Fail*硬件*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
         配置项*Fail*|Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
         *)    if [ "$HEAD_NODE" -eq 1 ]; then
-                  add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）"
+                  add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）" 1
+              elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+                  add_item "DCGM 诊断" "N/A" "无 GPU" 1
               else
                   add_item "DCGM 诊断" "N/A" "未运行（DCGM 未安装或已禁用）"
               fi ;;
     esac
 
-    # 4. SEL 事件（合并 Critical + PCIe 错误；采集失败/无数据 → N/A，禁止假阳性 PASS）
-    if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
-        add_item "SEL 事件" "N/A" "SEL 数据不可用（ipmitool 采集失败或无权限）"
-    elif [ "${SEL_CRIT:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT} 条 Critical"
-    elif [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 事件" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
-    elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical/PCIe 错误（有历史事件）"
+    # 4. GPU VBIOS 版本一致（混插固件是交付要记录的固件一致性问题）
+    if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+        add_item "GPU VBIOS 版本一致" "N/A" "无 GPU" 1
+    elif [ "$GPU_VBIOS" = "N/A" ]; then
+        add_item "GPU VBIOS 版本一致" "N/A" "无 VBIOS 数据（旧采集或驱动不可用）"
+    elif echo "$GPU_VBIOS" | grep -q "不一致"; then
+        add_item "GPU VBIOS 版本一致" "WARN" "${GPU_VBIOS#⚠️ }"
     else
-        add_item "SEL 事件" "PASS" "无 SEL 事件"
+        add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
     fi
 
-    # 6. 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示；无数据 → N/A）
+    # 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示；无数据 → N/A）
     if [ -z "$MEM_SPEED" ] || [ "$MEM_SPEED" = "N/A" ]; then
         add_item "内存运行速率" "N/A" "内存速率数据不可用"
     elif [ -n "$MEM_SPEED_NOTE" ]; then
@@ -2378,25 +2381,7 @@ gen_acceptance() {
         add_item "磁盘寿命" "PASS" "全部磁盘寿命充足"
     fi
 
-    # 9. GPU VBIOS 版本一致（混插固件是交付要记录的固件一致性问题，类似内存/PCIe 降速）
-    if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        add_item "GPU VBIOS 版本一致" "N/A" "无 GPU"
-    elif [ "$GPU_VBIOS" = "N/A" ]; then
-        add_item "GPU VBIOS 版本一致" "N/A" "无 VBIOS 数据（旧采集或驱动不可用）"
-    elif echo "$GPU_VBIOS" | grep -q "不一致"; then
-        add_item "GPU VBIOS 版本一致" "WARN" "${GPU_VBIOS#⚠️ }"
-    else
-        add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
-    fi
-
-    # 10. 电源冗余（N+N 冗余是供电可靠性核心；失效=单点故障风险）
-    case "$PSU_REDUNDANT" in
-        N/A) add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据" ;;
-        *失效*) add_item "电源冗余（N+N）" "FAIL" "电源冗余失效（单点故障风险）" ;;
-        *) add_item "电源冗余（N+N）" "PASS" "${PSU_REDUNDANT}" ;;
-    esac
-
-    # 11. SMART 整体健康（overall-health PASSED/FAILED，比寿命%更直接的盘可用判定）
+    # SMART 整体健康（overall-health PASSED/FAILED，比寿命%更直接的盘可用判定）
     local dhealth_fail="" dhealth_warn="" dhealth_known=0
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
@@ -2418,11 +2403,31 @@ gen_acceptance() {
         add_item "SMART 健康状态" "PASS" "全部盘 SMART 健康评估通过"
     fi
 
+    # 电源冗余（N+N 冗余是供电可靠性核心；失效=单点故障风险）
+    case "$PSU_REDUNDANT" in
+        N/A) add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据" ;;
+        *失效*) add_item "电源冗余（N+N）" "FAIL" "电源冗余失效（单点故障风险）" ;;
+        *) add_item "电源冗余（N+N）" "PASS" "${PSU_REDUNDANT}" ;;
+    esac
+
     # 12. 整机温度正常范围（进风/出风/CPU/内存/电源/PCH 传感器均 ok）
     if [ -z "$TEMP_SUMMARY" ]; then
         add_item "整机温度正常" "N/A" "无温度传感器数据"
     else
         add_item "整机温度正常" "PASS" "${TEMP_SUMMARY}"
+    fi
+
+    # 13. SEL 事件（合并 Critical + PCIe 错误；采集失败/无数据 → N/A，禁止假阳性 PASS）
+    if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
+        add_item "SEL 事件" "N/A" "SEL 数据不可用（ipmitool 采集失败或无权限）"
+    elif [ "${SEL_CRIT:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT} 条 Critical"
+    elif [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 事件" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
+    elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical/PCIe 错误（有历史事件）"
+    else
+        add_item "SEL 事件" "PASS" "无 SEL 事件"
     fi
 
     # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
