@@ -147,7 +147,8 @@ run_storage() {
             [ -z "$smodel" ] && smodel=$(cat "/sys/block/${sname}/device/model" 2>/dev/null | xargs)
             [ -z "$ssn" ] && ssn=$(cat "/sys/block/${sname}/device/serial" 2>/dev/null | xargs)
             # SMART 属性只查一次缓存到变量（原实现每盘 4 次 smartctl -A，24 盘阵列显著拖慢）
-            local sattrs=$(smartctl -A "$sdev" 2>/dev/null)
+            local sattrs=""
+            check_cmd smartctl && sattrs=$(smartctl -A "$sdev" 2>/dev/null)
             local spo=$(echo "$sattrs" | grep -i "Power_On_Hours" | awk '{print $NF; exit}')
             if [ -z "$spo" ] || ! echo "$spo" | grep -qE "^[0-9]+$"; then spo="0"; fi
             local spc=$(echo "$sattrs" | grep -i "Power_Cycle" | awk '{print $NF; exit}')

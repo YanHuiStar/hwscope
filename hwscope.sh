@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.28.12 (2026-08)
+# Version : 1.28.13 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.28.12"
+HWSCOPE_VERSION="v1.28.13"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -116,7 +116,6 @@ usage() {
     echo "  sudo bash $0 --serial                     # 串行采集（实时输出）"
     echo "  sudo bash $0 --quiet                      # 并行静默采集"
     echo "  sudo bash $0 --modules gpu,storage        # 只采 GPU+存储"
-    exit 0
 }
 
 while [[ $# -gt 0 ]]; do
@@ -133,12 +132,12 @@ while [[ $# -gt 0 ]]; do
             if [[ "${2:-}" =~ ^[0-9]+$ ]]; then SIM_DELAY="$2"; shift 2; else SIM_DELAY=5; shift; fi ;;
         --no-module) NO_MODULE=1; shift ;;
         -q|--quiet) QUIET=1; shift ;;
-        -h|--help)  usage ;;
+        -h|--help)  usage; exit 0 ;;
         -v|--version) echo "HwScope ${HWSCOPE_VERSION} (2026-08) — Hardware Scope"
                       echo "Author: YanHui / Hermes Agent · License: Apache 2.0"
                       echo "https://github.com/YanHuiStar/hwscope"
                       exit 0 ;;
-        *) echo -e "${RED}错误: 未知参数 $1${NC}"; usage ;;
+        *) echo -e "${RED}错误: 未知参数 $1${NC}"; usage; exit 1 ;;
     esac
 done
 
@@ -211,7 +210,9 @@ SUMMARY_FILE="${OUTPUT_BASE}/summary.txt"
     echo "============================================================"; echo ""
 } > "$SUMMARY_FILE"
 
-cp "$CONF_FILE" "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null || true
+# 备份配置但脱敏密码（config_backup.conf 会随归档包外发，禁止明文凭据落盘）
+sed -E 's/^(BMC_PASS|HGX_BMC_PASS)=.*/\1="***REDACTED***"/' "$CONF_FILE" > "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null \
+    || cp "$CONF_FILE" "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null || true
 
 # ─── 模块执行 ───
 echo ""
@@ -227,6 +228,10 @@ TOTAL_COUNT=0; FILE_COUNT=0
 START_TS=$(date +%s); MOD_TIMES=""
 export SIM_DELAY   # 模拟模式秒数（conf 读取，--sim 覆盖），子 shell 继承
 export HWSCOPE_VERSION   # 版本号（模块独立进程 source common.sh 时写日志 header，缺失则显示 unknown）
+export MODULE_PARALLEL   # 模块内命令并行开关（--no-parallel 置 0；模块在独立 bash 子进程执行，必须 export 才能继承）
+# timeout 兜底：精简容器可能无 timeout（coreutils）——缺失时直接执行（无超时保护，但模块不会因命令缺失而静默失败）
+TIMEOUT_PREFIX="timeout ${MODULE_TIMEOUT:-300}"
+check_cmd timeout || TIMEOUT_PREFIX=""
 
 if [ "$PARALLEL" -eq 1 ]; then
     # ═══════════════ 并行模式 ═══════════════
@@ -253,7 +258,7 @@ if [ "$PARALLEL" -eq 1 ]; then
                 # 模块级超时保护：默认 300s/模块，防止命令卡死导致主脚本永久等待。
                 # 原实现同进程调用（WARN 计数正确）；此处模块脚本独立执行（自 source common.sh），
                 # 计数经 module_end 写入 ${id}/.warn_count 文件，主脚本读文件。
-                timeout "${MODULE_TIMEOUT:-300}" bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
+                $TIMEOUT_PREFIX bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
                 mod_rc=$?
                 echo "$(( $(date +%s) - start_ts ))" > "${OUTPUT_BASE}/.${id}_time"
                 warn=$(cat "${OUTPUT_BASE}/${id}/.warn_count" 2>/dev/null || echo 0)
@@ -330,7 +335,7 @@ else
             start_ts=$(date +%s); mkdir -p "${OUTPUT_BASE}/${id}"
             reset_warn_count
             export OUTPUT_DIR="${OUTPUT_BASE}/${id}"
-            timeout "${MODULE_TIMEOUT:-300}" bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
+            $TIMEOUT_PREFIX bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
             mod_rc=$?
             warn_count=$(cat "${OUTPUT_BASE}/${id}/.warn_count" 2>/dev/null || echo 0)
             # 超时/信号中断补记（并行分支同逻辑）

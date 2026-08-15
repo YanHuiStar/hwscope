@@ -1346,14 +1346,14 @@ gen_json() {
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"chip\": \"${nchip}\", \"firmware\": \"${nfw}\", \"pcie\": \"${npcie}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},\"$'\n'
+            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"chip\": \"${nchip}\", \"firmware\": \"${nfw}\", \"pcie\": \"${npcie}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},$'\n'
         done <<< "$NIC_DETAILS"
         nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
     elif [ -n "$NIC_FALLBACK_DETAILS" ]; then
         # 回退（旧采集无 nic_inventory）：ca|type|guid|state
         while IFS='|' read -r fca ftype fguid fstate; do
             [ -z "$fca" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${fca}\", \"ca_type\": \"${ftype}\", \"guid\": \"${fguid}\", \"state\": \"${fstate}\", \"fallback\": \"ibstat\"},\"$'\n'
+            nic_details_json="${nic_details_json}      {\"dev\": \"${fca}\", \"ca_type\": \"${ftype}\", \"guid\": \"${fguid}\", \"state\": \"${fstate}\", \"fallback\": \"ibstat\"},$'\n'
         done <<< "$NIC_FALLBACK_DETAILS"
         nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
     fi

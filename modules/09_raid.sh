@@ -23,7 +23,7 @@ run_raid() {
     module_start "$MODULE_NAME"
 
     # Phase 1: 串行获取所有设备数量 / 列表（后续命令依赖这些值）
-    run_and_log "lspci 2>/dev/null | grep -iE 'RAID|SAS|SATA|MegaRAID|Broadcom|LSI|AVAGO|MR'" \
+    run_and_log "lspci 2>/dev/null | grep -iE 'RAID|SAS|SATA|MegaRAID|Broadcom|LSI|AVAGO'" \
         "${dir}/pci_raid_hba_list.log"
 
     local ctrl_count=0 hba_count=0 hba2_count=0 raid_buses=""
