@@ -466,10 +466,19 @@ if [ -f "${gpu_remapped_rows}" ]; then
     GPU_REMAP=$(grep -v "^#" "${gpu_remapped_rows}" | grep -v "^$" | awk -F',' '{gsub(/ /,"",$1); gsub(/ /,"",$2); gsub(/ /,"",$3); gsub(/ /,"",$4); c+=$1; u+=$2; p+=$3; f+=$4} END{if(NR>0) printf "CE:%d UE:%d pending:%d fail:%d", c, u, p, f; else print "N/A"}')
 fi
 
-# VBIOS 版本（gpu_full.log 全量输出；交付验收核对固件用）
+# VBIOS 版本（每卡 detail 聚合去重；混插时标不一致而非只取第一张卡）
 GPU_VBIOS="N/A"
-load_manifest "${GPU_DIR}" gpu_full "gpu_full.log"
-if [ -f "${gpu_full}" ]; then
+if [ "${#GPU_VBIOS_MAP[@]}" -gt 0 ]; then
+    _vbios_agg=$(for _k in "${!GPU_VBIOS_MAP[@]}"; do echo "${GPU_VBIOS_MAP[$_k]}"; done | sort | uniq -c | sort -rn)
+    _vbios_uniq=$(printf '%s\n' "$_vbios_agg" | wc -l)
+    if [ "$_vbios_uniq" -eq 1 ]; then
+        GPU_VBIOS=$(printf '%s\n' "$_vbios_agg" | awk '{print $2}')
+    else
+        GPU_VBIOS="⚠️ 不一致（$(printf '%s\n' "$_vbios_agg" | awk '{printf "%s×%s ", $2, $1}' | sed 's/ $//')）"
+    fi
+fi
+# 回退：无每卡 detail 日志（旧数据）时用 gpu_full 取第一个（gpu_full 已在环境段 load）
+if [ "$GPU_VBIOS" = "N/A" ] && [ -f "${gpu_full}" ]; then
     GPU_VBIOS=$(grep -m1 "VBIOS Version" "${gpu_full}" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
     [ -z "$GPU_VBIOS" ] && GPU_VBIOS="N/A"
 fi
