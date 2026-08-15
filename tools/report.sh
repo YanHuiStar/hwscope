@@ -1123,32 +1123,35 @@ if [ -f "$_fru_src" ]; then
                 fi
             fi
         fi
-        # dmidecode type39 补型号/SN（如 DELTA DPS-3000AB-25 C / KWAD...，按 Location 匹配槽位）
+        # dmidecode type39 补型号/SN/PN/容量（按 Location 匹配槽位；无 FRU 平台用 SMBIOS 补齐）
         if [ -n "$PSU_DETAILS" ] && [ -f "${PSU_DIR}/dmidecode_psu.log" ]; then
-            # 构建 "Location→型号|厂商|SN" 映射（dmidecode type39 每个 PSU 一段，Location 行标识槽位）
+            # 构建 "Location→型号|厂商|SN|PN|容量|Revision" 映射（dmidecode type39 每个 PSU 一段）
             while IFS= read -r _dl; do
                 case "$_dl" in
                     *Location:*) _dloc=$(echo "$_dl" | awk '{print $NF}') ;;
                     *Name:*)     _dname=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
                     *Manufacturer:*) _dmfr=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
                     *"Serial Number:"*) _dsn=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
-                    *)
-                        # 段落结束（空行/下一 Handle）——把积累的映射应用到 PSU 行
+                    *"Model Part Number:"*) _dpn=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                    *"Max Power Capacity:"*) _dcap=$(echo "$_dl" | cut -d: -f2- | xargs | tr -d ' ') ;;
+                    *Revision:*) _drev=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                    *Handle*)
+                        # 段落结束（下一个 Handle 行）——此时 Location/Name/PN/容量/Revision 已读全
                         if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
                             _dnum=$(echo "$_dloc" | sed 's/^PSU//')
-                            # 型号列合并厂商（如 "DELTA DPS-3000AB-25 C"），PN 列留 N/A
-                            _dfull="${_dmfr:+${_dmfr} }${_dname}"
-                            PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v sn="${_dsn:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $4=sn} {print}')
+                            # 型号列合并厂商+Revision（如 "DELTA DPS-3000AB-25 C Rev 01F"），PN/SN/容量独立列
+                            _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
+                            PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
                         fi
-                        _dloc=""; _dname=""; _dmfr=""; _dsn=""
+                        _dloc=""; _dname=""; _dmfr=""; _dsn=""; _dpn=""; _dcap=""; _drev=""
                         ;;
                 esac
             done < <(grep -v "^#" "${PSU_DIR}/dmidecode_psu.log" 2>/dev/null)
             # 最后一段（文件尾无空行）
             if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
                 _dnum=$(echo "$_dloc" | sed 's/^PSU//')
-                _dfull="${_dmfr:+${_dmfr} }${_dname}"
-                PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v sn="${_dsn:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $4=sn} {print}')
+                _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
+                PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
             fi
         fi
         # 平台限制标注：FRU 无 PSU 条目时说明（避免客户误以为漏采）
