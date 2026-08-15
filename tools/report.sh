@@ -2279,6 +2279,17 @@ gen_acceptance() {
         add_item "磁盘寿命" "PASS" "全部磁盘寿命充足"
     fi
 
+    # 9. GPU VBIOS 版本一致（混插固件是交付要记录的固件一致性问题，类似内存/PCIe 降速）
+    if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+        add_item "GPU VBIOS 版本一致" "N/A" "无 GPU"
+    elif [ "$GPU_VBIOS" = "N/A" ]; then
+        add_item "GPU VBIOS 版本一致" "N/A" "无 VBIOS 数据（旧采集或驱动不可用）"
+    elif echo "$GPU_VBIOS" | grep -q "不一致"; then
+        add_item "GPU VBIOS 版本一致" "WARN" "${GPU_VBIOS#⚠️ }"
+    else
+        add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
+    fi
+
     # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
     if [ "$fail" -gt 0 ]; then
         verdict="不合格（${fail} 项 FAIL，需处理后再交付）"
