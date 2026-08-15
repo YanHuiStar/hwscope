@@ -136,7 +136,8 @@ load_manifest "${GPU_DIR}" gpu_full "gpu_full.log"
 # PCIe 拓扑（lspci 直读型号用，走 manifest 解耦）
 PCIE_DIR="${OUT}/pcie"
 load_manifest "${PCIE_DIR}" lspci_all "lspci_all.log"
-# PCIe Fabric Switch（PEX89xxx/PEX97xxx/Switchtec）：HGX 机头接模组的互联通道；检测到才显示
+# PCIe Fabric Switch（PEX89xxx/PEX97xxx/Switchtec）：提取无条件（JSON 字段需要原始检测值）；
+# MD/TXT 展示仅在无 GPU 时（有 GPU 的一体化/SXM 主机主板也带 PEX89，单独展示会误导为"机头"）
 FABRIC_SW=""
 if [ -f "${lspci_all}" ]; then
     FABRIC_SW=$(grep -v "^#" "${lspci_all}" 2>/dev/null | grep -oiE "PEX89[0-9xX]*|PEX97[0-9xX]*|Switchtec [A-Za-z0-9]+" | sort -u | tr '\n' ',' | sed 's/,$//')
@@ -1614,7 +1615,7 @@ gen_md() {
 | 主板 SN | ${MB_BOARD_SN:-N/A} |
 | BIOS | ${BIOS_VERSION:-N/A} |
 | 机箱 SN | ${CHASSIS_SN:-N/A} |
-$(if [ -n "$FABRIC_SW" ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（HGX 模组互联通道） |"; fi)
+$(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（HGX 模组互联通道） |"; fi)
 
 ## CPU
 | 项 | 值 |
@@ -2003,7 +2004,7 @@ HwScope 硬件巡检报告
   主板SN : ${MB_BOARD_SN:-N/A}
   BIOS   : ${BIOS_VERSION:-N/A}
   机箱SN : ${CHASSIS_SN:-N/A}
-$(if [ -n "$FABRIC_SW" ]; then echo "  PCIe Fabric Switch: ${FABRIC_SW}（HGX 模组互联通道）"; fi)
+$(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then echo "  PCIe Fabric Switch: ${FABRIC_SW}（HGX 模组互联通道）"; fi)
 
 [CPU]
   型号   : ${CPU_MODEL:-N/A}
