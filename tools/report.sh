@@ -474,6 +474,23 @@ if [ -f "${disk_inventory}" ]; then
                 break
             fi
         done
+        # SN/FW 回退：disk_inventory 的 SN/FW 为 N/A 时，从 smartctl 日志回退（RAID 逻辑盘是 SCSI 格式 Serial number:/Revision:）
+        if [ "$dsn" = "N/A" ] || [ -z "$dsn" ]; then
+            for _slog in "smart_${dname}_scsi.log" "smart_${dname}.log"; do
+                [ -f "${STO_DIR}/$_slog" ] || continue
+                _s=$(grep -m1 -iE "^Serial number:" "${STO_DIR}/$_slog" 2>/dev/null | cut -d: -f2- | xargs)
+                [ -z "$_s" ] && _s=$(grep -m1 -iE "^Serial Number:" "${STO_DIR}/$_slog" 2>/dev/null | cut -d: -f2- | xargs)
+                if [ -n "$_s" ] && [ "$_s" != "N/A" ]; then dsn="$_s"; break; fi
+            done
+        fi
+        if [ "$dfw" = "N/A" ] || [ -z "$dfw" ]; then
+            for _slog in "smart_${dname}_scsi.log" "smart_${dname}.log"; do
+                [ -f "${STO_DIR}/$_slog" ] || continue
+                _f=$(grep -m1 -iE "^Revision:" "${STO_DIR}/$_slog" 2>/dev/null | cut -d: -f2- | xargs)
+                [ -z "$_f" ] && _f=$(grep -m1 -iE "Firmware Version:" "${STO_DIR}/$_slog" 2>/dev/null | cut -d: -f2- | xargs)
+                if [ -n "$_f" ] && [ "$_f" != "N/A" ]; then dfw="$_f"; break; fi
+            done
+        fi
         DISK_DETAILS="${DISK_DETAILS}${dname}|${dtype}|${dsize}|${dmodel}|${dsn}|${dfw}|${dbdf}|${dpo}|${dpc}|${dspare}|${dspec}|${dhealth}"$'\n'
     done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
 fi

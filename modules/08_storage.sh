@@ -137,6 +137,10 @@ run_storage() {
                 ssn=$(echo "$sinfo" | grep "Serial Number:" | awk '{print $3}')
                 smodel=$(echo "$sinfo" | grep "Device Model:" | cut -d':' -f2- | xargs)
                 sfw=$(echo "$sinfo" | grep "Firmware Version:" | awk '{print $3}')
+                # SCSI 格式回退（RAID 逻辑盘/SAS：Serial number:/Product:/Revision:，ATA 关键字匹配不到）
+                [ -z "$ssn" ] && ssn=$(echo "$sinfo" | grep -iE "^Serial number:" | cut -d: -f2- | xargs)
+                [ -z "$smodel" ] && smodel=$(echo "$sinfo" | grep -iE "^Product:" | cut -d: -f2- | xargs)
+                [ -z "$sfw" ] && sfw=$(echo "$sinfo" | grep -iE "^Revision:" | cut -d: -f2- | xargs)
                 sinter=$(echo "$sinfo" | grep "SATA Version is" | cut -d':' -f2- | xargs | sed 's/ *(current:.*//')
                 [ -z "$sinter" ] && sinter="SATA"
             fi
