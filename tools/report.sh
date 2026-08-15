@@ -1344,18 +1344,17 @@ gen_json() {
     # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
     local nic_details_json=""
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
-            [ -z "$nnic" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${nnic}\", \"bdf\": \"${nnbdf}\", \"mac\": \"${nmac}\", \"serial\": \"${nsn}\", \"pn\": \"${npn}\", \"chip\": \"${nchip}\", \"firmware\": \"${nfw}\", \"pcie\": \"${npcie}\", \"psid\": \"${npsid}\", \"gpu_direct\": \"${ngd}\"},$'\n'
-        done <<< "$NIC_DETAILS"
-        nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
+        # awk 一次生成（避免 while read 在本函数上下文的空读异常；与其他管道生成模式一致）
+        nic_details_json=$(printf '%s' "$NIC_DETAILS" | awk -F'|' '
+            $1 != "" {
+                printf "      {\"dev\": \"%s\", \"bdf\": \"%s\", \"mac\": \"%s\", \"serial\": \"%s\", \"pn\": \"%s\", \"chip\": \"%s\", \"firmware\": \"%s\", \"pcie\": \"%s\", \"psid\": \"%s\", \"gpu_direct\": \"%s\"},\n", $1, $2, $3, $4, $5, $10, $6, $7, $8, $9
+            }' | sed '$ s/,$//')
     elif [ -n "$NIC_FALLBACK_DETAILS" ]; then
         # 回退（旧采集无 nic_inventory）：ca|type|guid|state
-        while IFS='|' read -r fca ftype fguid fstate; do
-            [ -z "$fca" ] && continue
-            nic_details_json="${nic_details_json}      {\"dev\": \"${fca}\", \"ca_type\": \"${ftype}\", \"guid\": \"${fguid}\", \"state\": \"${fstate}\", \"fallback\": \"ibstat\"},$'\n'
-        done <<< "$NIC_FALLBACK_DETAILS"
-        nic_details_json=$(printf '%s' "$nic_details_json" | sed '$ s/,$//')
+        nic_details_json=$(printf '%s' "$NIC_FALLBACK_DETAILS" | awk -F'|' '
+            $1 != "" {
+                printf "      {\"dev\": \"%s\", \"ca_type\": \"%s\", \"guid\": \"%s\", \"state\": \"%s\", \"fallback\": \"ibstat\"},\n", $1, $2, $3, $4
+            }' | sed '$ s/,$//')
     fi
     # NVSwitch JSON 数组
     local nvs_json=""
