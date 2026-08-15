@@ -74,6 +74,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 ## 报告与归档
 
 - 采集完成自动调用 `tools/report.sh`：从各模块日志提取关键字段，生成 `hwscope_report.{json,md,txt}` 三件套（含明细表：内存每槽/GPU每卡(含VBIOS)/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID(虚拟盘级)/HBA；内存明细含 Rank，PSU 明细含实时输入功率 + DCMI/整机功耗独立行，网卡明细含 GPU直连 标记 + chip 列 + 报告末尾术语表；HBA 直通卡章节有卡才显示）
+- **动态列隐藏**：明细表整列全为占位符（—/N/A）时隐藏该列并附注说明（如"寿命%、健康 列因旧采集无 SMART 数据而隐藏"），有任一真实值即显示；JSON 始终保留全字段（程序消费稳定，不受隐藏影响）
 - **验收清单**：`bash tools/report.sh <out> --acceptance` 生成 `hwscope_acceptance.md`（11 项逐项 PASS/FAIL/WARN/N/A + 结论判定），交付时作为交接单；判定规则：有 FAIL=不合格、有 WARN=有条件通过、N/A≥4=数据不足；**无 GPU 机头**的 GPU 相关 4 项（PCIe/NVLink/DCGM/VBIOS）判 N/A 且不计入"数据不足"（无 GPU 是平台固有形态，非数据缺失）
 - 报告**只读日志、不重新采集**，可对同一份数据反复生成；日志缺失字段显示 N/A
 - 双压缩包：`logs/<SN>-<ARCHIVE_TS>.tar.gz`（详细分级日志）+ `logs/report/<SN>-<ARCHIVE_TS>-report.tar.gz`（报告三件套），共用同一 `ARCHIVE_TS` 变量（勿各自调 date，时间戳必须一致）
