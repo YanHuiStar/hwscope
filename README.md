@@ -161,6 +161,8 @@ bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单
 - **PCIe 速率语义**：显示协商值（LnkSta），与能力（LnkCap）不一致时标注 `(能力 X)`，表头标注"协商"
 - **SN/PN/固件逐件覆盖**：整机/主板/机箱/GPU（含 VBIOS 聚合去重，混插固件自动检出）/内存每槽/盘/网卡（MST 真 SN + PSID）/PSU/RAID/HBA
 - **RAID 虚拟盘独立段**：物理盘与 RAID 逻辑盘分表（逻辑盘标注 RAID 卡型号/SN(LUN)，不混入物理盘）
+- **动态列隐藏**：整列无数据（旧采集/平台不支持）时隐藏该列并附注说明，有任一真实值即显示；JSON 始终保留全字段（程序消费稳定）
+- **表格标题标准化**：内存插槽明细/GPU 每卡明细/PSU 明细统一命名，速率列明确"标称速率/当前速率"
 - **基础设施状态**：电源冗余（N+N）、SMART 整体健康、温度概况（进风/出风/CPU/内存/电源/PCH）、IB Link 状态（Active/Down/未插线缆）
 - **NVIDIA 专属段条件显示**：NVSwitch/NVLink/DCGM 无数据时整段隐藏；无 GPU 机头 GPU 段显示 `N/A (未检测到 GPU/无 NVIDIA 驱动)`
 - **术语表**：报告末尾附 IB 速率/GPU直连/DCGM/SXM 等术语解释，非运维人员亦可读懂
