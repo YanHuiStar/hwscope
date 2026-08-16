@@ -9,3 +9,6 @@ logs/
 # 开发/测试工具（不进仓库）
 fakebin/
 scripts/
+
+# AI agent 工具残留（DeepSeek Harness 会话记忆等）
+.workbuddy/
