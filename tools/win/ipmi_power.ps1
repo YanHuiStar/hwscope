@@ -44,8 +44,8 @@ $env:IPMI_PASSWORD = $pass
 $actionDesc = @{ status = '查询电源状态'; on = '开机'; off = '强制关机'; cycle = '重启' }
 Write-Host "[BMC] $BmcIP  ${actionDesc[$Action]}..." -ForegroundColor Cyan
 
-# 干净命令：密码走环境变量（IPMI_PASSWORD），命令串不含密码
-$output = & ipmitool -H $BmcIP -U $User -I lanplus power $Action 2>&1
+# 干净命令：密码走环境变量（-E 读 IPMI_PASSWORD），命令串不含密码
+$output = & ipmitool -E -H $BmcIP -U $User -I lanplus power $Action 2>&1
 $exitCode = $LASTEXITCODE
 
 if ($exitCode -eq 0) {

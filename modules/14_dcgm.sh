@@ -59,7 +59,7 @@ write_manifest "${dir}/manifest.txt" \
     # DCGM hostengine 未启动提示（discovery/stats 降级，仅 diag 可用）
     if [ "$DCGM_NOT_STARTED" -eq 1 ]; then
         echo "⚠️ DCGM hostengine 未启动（sudo systemctl start nvidia-dcgm 可启用）：discovery/stats 未采集，diag 结果正常" > "${dir}/dcgm_notice.log"
-        write_manifest "${dir}/manifest.txt" "dcgm_notice" "dcgm_notice.log"
+        write_manifest --append "${dir}/manifest.txt" "dcgm_notice" "dcgm_notice.log"
     fi
 
     module_end "$MODULE_NAME"

@@ -36,7 +36,7 @@ else
 fi
 
 IPMI_CMD="ipmitool"
-[ -n "$BMC_IP" ] && IPMI_CMD="ipmitool -H ${BMC_IP} -U ${BMC_USER} -I lanplus"
+[ -n "$BMC_IP" ] && IPMI_CMD="ipmitool -E -H ${BMC_IP} -U ${BMC_USER} -I lanplus"
 
 # ─── 功能表 ───
 OPS=(

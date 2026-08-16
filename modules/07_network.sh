@@ -129,7 +129,9 @@ run_network() {
                 mstdev=$(mst status 2>/dev/null | grep -i "$nbdf" | awk '{print $1}' | head -1)
                 [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep -i "${nbdf//:}" | head -1)
                 if [ -n "$mstdev" ]; then
-                    local mq_out=$(mstflint -d "$mstdev" q 2>/dev/null)
+                    # 声明与赋值分离：local mq_out=$(...) 会吞掉命令退出码（local 本身恒返回 0）
+                    local mq_out
+                    mq_out=$(mstflint -d "$mstdev" q 2>/dev/null)
                     if [ $? -ne 0 ]; then
                         mstflint_failed=1
                         MSTFLINT_FAILED_COUNT=$((MSTFLINT_FAILED_COUNT + 1))
