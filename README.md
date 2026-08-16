@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.28.18 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.28.19 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -134,7 +134,9 @@ bash hwscope.sh --skip dcgm,nvsm      # 跳过指定模块
 # 其他
 bash hwscope.sh --output /data/x      # 指定输出目录
 bash hwscope.sh --force               # 覆盖已有目录
+bash hwscope.sh --module-timeout 600  # 单模块超时秒数（默认 300，防止命令卡死）
 bash hwscope.sh --no-module           # 跳过光模块查询（缩短采集时长约 48s）
+bash hwscope.sh --sim 5               # 模拟模式（每模块等待 5 秒，演示/测试用）
 bash hwscope.sh --version             # 版本信息
 
 # 单独执行模块
@@ -332,7 +334,7 @@ output/
 ```text
 output/SN123456789/
 ├── hwscope.log              # 执行日志（纯文本）
-├── config_backup.conf       # 配置快照
+├── config_backup.conf       # 配置快照（密码已脱敏）
 ├── summary.txt              # 汇总（含 WARN 计数）
 ├── hwscope_report.json      # 汇总报告（结构化）
 ├── hwscope_report.md        # 汇总报告（Markdown）
@@ -409,6 +411,14 @@ MODULE_TIMEOUT=300         # 模块级超时（秒），防止命令卡死
 - **真实数据只读** — 采集模块仅在 /tmp 副本测试（真实目录重跑会覆盖数据）；report.sh 只读生成器可直接跑真实目录
 - **manifest 解耦** — 模块声明输出文件，报告生成器读 manifest，改文件名不连累报告
 - **报告术语表** — 末尾附术语解释，非运维人员亦可读懂
+
+## 数据隐私与合规
+
+- **敏感数据**：采集结果含设备序列号（SN）、MAC 地址、BMC IP 等硬件标识，属运维敏感信息，**仅限内部使用，禁止提交公开仓库或对外分发**
+- **仓库隔离**：`output/`、`logs/` 已加入 `.gitignore`，采集数据不会进入 git 索引；提交前务必 `git status` 审查，禁用 `git add -A`
+- **凭据脱敏**：BMC 密码经 `IPMI_PASSWORD` 环境变量传递（不落盘命令行/日志/进程列表）；`config_backup.conf` 备份时密码自动脱敏为 `***REDACTED***`
+- **只读承诺**：采集模块仅只读查询，不修改硬件配置；DCGM 仅 Level 1 纯获取；`test/` 压测工具会施加负载，生产环境谨慎使用
+- **WSL 说明**：WSL 下 `sudo` 会重置 `PATH` 导致 `nvidia-smi` 检测失败，脚本已内置路径兜底；WSL 虚拟盘自动跳过 SMART
 
 ## License
 
