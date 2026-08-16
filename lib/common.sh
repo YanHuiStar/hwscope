@@ -13,6 +13,13 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# WSL 下 sudo 会重置 PATH（secure_path 不含 /usr/lib/wsl/lib），导致 nvidia-smi 检测失败
+# 兜底：nvidia-smi 不在 PATH 但存在于 WSL 路径时显式加入（真机 Linux 无此路径，条件不满足，无副作用）
+if ! command -v nvidia-smi >/dev/null 2>&1 && [ -x /usr/lib/wsl/lib/nvidia-smi ]; then
+    PATH="/usr/lib/wsl/lib:${PATH}"
+    export PATH
+fi
+
 HOSTNAME=$(hostname 2>/dev/null || echo "unknown")
 
 # ─── 版本号（hwscope.sh 会覆盖此值） ───
