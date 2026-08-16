@@ -1,10 +1,11 @@
 #!/bin/bash
 # =============================================================================
-# sync_version.sh — 从 hwscope.sh 读取版本号，同步到 README.md
+# sync_version.sh — 从 hwscope.sh 读取版本号，同步到 hwscope.sh 注释 + README.md
 # 用法: bash tools/sync_version.sh
 # 原理: hwscope.sh 的 HWSCOPE_VERSION 是唯一权威来源，
-#       本脚本读取后自动更新 README.md 的 Version 徽章。
-#       不修改 hwscope.sh 本身（只读）。
+#       本脚本读取后自动同步到：
+#       ① hwscope.sh 头部注释行 (# Version : X.Y.Z)
+#       ② README.md 的 Version 徽章
 # =============================================================================
 
 set -eo pipefail
@@ -26,6 +27,17 @@ fi
 
 echo "[INFO] 版本: ${VER}"
 
+# ─── 同步 hwscope.sh 头部注释行 ───
+# 替换 # Version : X.Y.Z 中的版本号
+if sed "s/^# Version : [0-9][0-9.]*/# Version : ${VER_NUM}/" "$HWSCOPE" > "${HWSCOPE}.tmp"; then
+    mv "${HWSCOPE}.tmp" "$HWSCOPE"
+    echo "[OK] hwscope.sh 注释 → ${VER_NUM}"
+else
+    echo "[ERROR] hwscope.sh 注释同步失败" >&2
+    rm -f "${HWSCOPE}.tmp" 2>/dev/null || true
+    exit 1
+fi
+
 # ─── 同步 README.md（Version 徽章）───
 README="${SCRIPT_DIR}/README.md"
 if [ ! -f "$README" ]; then
@@ -38,22 +50,29 @@ cp "$README" "${README}.bak"
 # 替换 Version 徽章（精确匹配 **Version:** 后跟数字）
 if sed "s/\*\*Version:\*\* [0-9][0-9.]*/\*\*Version:\*\* ${VER_NUM}/" "$README" > "${README}.tmp"; then
     mv "${README}.tmp" "$README"
-    rm -f "${README}.bak"
+    rm -f "${README}.bak" 2>/dev/null || true
     echo "[OK] README.md → ${VER_NUM}"
 else
     echo "[ERROR] sed 替换失败，已回滚" >&2
-    mv "${README}.bak" "$README"
-    rm -f "${README}.tmp"
+    mv "${README}.bak" "$README" 2>/dev/null || true
+    rm -f "${README}.tmp" 2>/dev/null || true
     exit 1
 fi
 
 # ─── 验证一致性 ───
 echo ""
 echo "=== 版本一致性检查 ==="
-echo "hwscope.sh : ${VER}"
-grep -m1 "Version" "$README" | sed 's/^/README.md : /'
+echo "hwscope.sh 变量 : ${VER}"
+HEAD_VER=$(grep -m1 "^# Version" "$HWSCOPE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+echo "hwscope.sh 注释 : ${HEAD_VER}"
+grep -m1 "Version" "$README" | sed 's/^/README.md      : /'
 
-# 确认 README 版本号已更新
+# 确认三处版本号一致
+if [ "$HEAD_VER" != "$VER_NUM" ]; then
+    echo "[ERROR] hwscope.sh 注释不一致: 期望 ${VER_NUM}, 实际 ${HEAD_VER}" >&2
+    exit 1
+fi
+
 README_VER=$(grep -oP '\*\*Version:\*\* \K[0-9][0-9.]*' "$README" | head -1)
 if [ "$README_VER" != "$VER_NUM" ]; then
     echo "[ERROR] README 版本不一致: 期望 ${VER_NUM}, 实际 ${README_VER}" >&2
