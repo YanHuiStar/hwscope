@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.28.16 (2026-08)
+# Version : 1.28.17 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.28.16"
+HWSCOPE_VERSION="v1.28.17"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -97,6 +97,7 @@ usage() {
     echo "  --parallel                      并行执行所有模块（默认开启）"
     echo "  --serial                        串行执行（实时输出每模块结果）"
     echo "  --no-parallel                   禁用模块内命令并行（降级为逐条执行）"
+    echo "  --module-timeout N              单模块超时秒数（默认 300）"
     echo "  --sim [N]                       模拟模式：每模块等待 N 秒（默认 5）"
     echo "  --no-module                     跳过光模块查询（缩短采集时长约 48s）"
     echo "  --output /path/to/dir           指定输出目录"
@@ -127,6 +128,8 @@ while [[ $# -gt 0 ]]; do
         --parallel) PARALLEL=1; shift ;;
         --serial)   PARALLEL=0; shift ;;
         --no-parallel) MODULE_PARALLEL=0; shift ;;
+        --module-timeout)
+            if [[ "${2:-}" =~ ^[0-9]+$ ]]; then MODULE_TIMEOUT="$2"; shift 2; else echo -e "${RED}错误: --module-timeout 需要正整数秒数${NC}"; exit 1; fi ;;
         --sim)
             # 模拟模式：每模块等待 N 秒（--sim 或 --sim N，N 默认 5）
             if [[ "${2:-}" =~ ^[0-9]+$ ]]; then SIM_DELAY="$2"; shift 2; else SIM_DELAY=5; shift; fi ;;
@@ -237,6 +240,7 @@ START_TS=$(date +%s); MOD_TIMES=""
 export SIM_DELAY   # 模拟模式秒数（conf 读取，--sim 覆盖），子 shell 继承
 export HWSCOPE_VERSION   # 版本号（模块独立进程 source common.sh 时写日志 header，缺失则显示 unknown）
 export MODULE_PARALLEL   # 模块内命令并行开关（--no-parallel 置 0；模块在独立 bash 子进程执行，必须 export 才能继承）
+export QUIET             # 静默模式（--quiet 置 1；模块子进程 run_and_log 需继承以抑制逐命令输出）
 # timeout 兜底：精简容器可能无 timeout（coreutils）——缺失时直接执行（无超时保护，但模块不会因命令缺失而静默失败）
 TIMEOUT_PREFIX="timeout ${MODULE_TIMEOUT:-300}"
 check_cmd timeout || TIMEOUT_PREFIX=""

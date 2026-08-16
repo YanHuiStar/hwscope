@@ -208,12 +208,12 @@ run_network() {
     # MST 未启动提示（只读原则不自动 start；SN 为 GUID 兜底时用户可手动补真 SN）
     if [ "$MST_NOT_STARTED" -eq 1 ]; then
         echo "⚠️ MST 服务未启动（sudo mst start 可启用）：Mellanox 卡 SN/PSID 未读到，报告以 GUID 兜底" > "${dir}/mst_notice.log"
-        echo "mst_notice=mst_notice.log" >> "${dir}/manifest.txt"
+        write_manifest --append "${dir}/manifest.txt" "mst_notice" "mst_notice.log"
     fi
     # mstflint 部分失败提示
     if [ "$MSTFLINT_FAILED_COUNT" -gt 0 ]; then
         echo "⚠️ $MSTFLINT_FAILED_COUNT 张 Mellanox 卡的 mstflint 查询失败（SN/PSID 可能不准确），请检查日志" > "${dir}/mstflint_failed.log"
-        echo "mstflint_failed=mstflint_failed.log" >> "${dir}/manifest.txt"
+        write_manifest --append "${dir}/manifest.txt" "mstflint_failed" "mstflint_failed.log"
     fi
 
     module_end "$MODULE_NAME"
