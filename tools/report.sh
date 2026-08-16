@@ -2357,7 +2357,7 @@ gen_acceptance() {
     # 3. DCGM 诊断
     case "${DCGM_SUMMARY:-N/A}" in
         通过*) add_item "DCGM 诊断" "PASS" "${DCGM_SUMMARY}" ;;
-        Fail*硬件*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
+        Fail*硬件:[1-9]*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
         配置项*Fail*|Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
         *)    if [ "$HEAD_NODE" -eq 1 ]; then
                   add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）" 1
