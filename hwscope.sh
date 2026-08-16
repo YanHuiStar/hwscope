@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.28.14"
+HWSCOPE_VERSION="v1.28.15"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -181,6 +181,14 @@ fi
 
 if [ -d "$OUTPUT_BASE" ]; then
     if [ "$FORCE_MODE" -eq 1 ]; then
+        # rm -rf 护栏：拒绝系统根/一级系统目录及过短路径（防 --output 误敲导致灾难性删除）
+        case "$OUTPUT_BASE" in
+            /|/bin|/boot|/dev|/etc|/home|/lib|/lib64|/media|/mnt|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var)
+                echo -e "${RED}[ERROR] 拒绝删除系统目录: ${OUTPUT_BASE}${NC}"; exit 1 ;;
+        esac
+        if [ "${#OUTPUT_BASE}" -lt 6 ]; then
+            echo -e "${RED}[ERROR] 输出路径过短，拒绝删除: ${OUTPUT_BASE}（请检查 --output 参数）${NC}"; exit 1
+        fi
         rm -rf "$OUTPUT_BASE"
         echo -e "${YELLOW}[WARN] 覆盖已有输出目录: ${OUTPUT_BASE}${NC}"
     else

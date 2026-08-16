@@ -50,7 +50,8 @@ run_bmc() {
     if [ -n "$BMC_IP" ] && check_cmd ipmitool; then
         echo -e "${BLUE}[BMC] Remote BMC: ${BMC_IP}${NC}"
         export IPMI_PASSWORD="${BMC_PASS}"
-        local ipmi_cmd="timeout 8 ipmitool -H ${BMC_IP} -U ${BMC_USER} -I ${BMC_INTERFACE}"
+        # -E: 从 IPMI_PASSWORD 环境变量读密码（无 -E 会交互式等密码，被 timeout 杀掉）
+        local ipmi_cmd="timeout 8 ipmitool -E -H ${BMC_IP} -U ${BMC_USER} -I ${BMC_INTERFACE}"
 
         run_and_log_parallel 4 \
             "${ipmi_cmd} fru print" "${dir}/remote_bmc_fru.log" \
@@ -66,7 +67,7 @@ run_bmc() {
     if [ -n "$HGX_BMC_IP" ] && check_cmd ipmitool; then
         echo -e "${BLUE}[BMC] HGX Baseboard BMC: ${HGX_BMC_IP}${NC}"
         export IPMI_PASSWORD="${HGX_BMC_PASS}"
-        local hgx_cmd="timeout 8 ipmitool -H ${HGX_BMC_IP} -U ${HGX_BMC_USER} -I ${BMC_INTERFACE}"
+        local hgx_cmd="timeout 8 ipmitool -E -H ${HGX_BMC_IP} -U ${HGX_BMC_USER} -I ${BMC_INTERFACE}"
 
         run_and_log_parallel 4 \
             "${hgx_cmd} fru print 2>&1" "${dir}/hgx_bmc_fru.log" \

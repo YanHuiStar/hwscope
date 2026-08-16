@@ -215,14 +215,24 @@ summary_append() {
 # ─── 模块输出清单（manifest）───
 # 格式：bash key=value（可直接 source）
 # 用法：write_manifest "${dir}/manifest.txt" "gpu_full" "gpu_full.log" "gpu_inventory" "gpu_inventory.csv" ...
+#       write_manifest --append "${dir}/manifest.txt" "extra_key" "extra.log"   # 追加条目（不清空已有内容）
 write_manifest() {
+    local append=0
+    if [ "$1" = "--append" ]; then append=1; shift; fi
     local manifest_file="$1"; shift
-    {
-        echo "# HwScope module output manifest"
-        echo "# Generated: $(date '+%Y-%m-%d %H:%M:%S')"
+    if [ "$append" -eq 1 ]; then
         while [ $# -ge 2 ]; do
             echo "${1}=${2}"
             shift 2
-        done
-    } > "$manifest_file"
+        done >> "$manifest_file"
+    else
+        {
+            echo "# HwScope module output manifest"
+            echo "# Generated: $(date '+%Y-%m-%d %H:%M:%S')"
+            while [ $# -ge 2 ]; do
+                echo "${1}=${2}"
+                shift 2
+            done
+        } > "$manifest_file"
+    fi
 }
