@@ -74,35 +74,6 @@ get_csv_col_index() {
     }'
 }
 
-# ─── JSON 明细数组生成辅助 ───
-# 用法: gen_details_json <分隔的数据> <字段映射>
-# 输入: 管道分隔的多行数据（如 CPU_DETAILS）
-# 字段映射格式: "字段名:字段索引" （索引从 1 开始）
-# 示例: gen_details_json "$CPU_DETAILS" "socket:1 model:2 cores:3 threads:4"
-gen_details_json() {
-    local data="$1" fields="$2"
-    [ -z "$data" ] && return
-
-    local output=""
-    while IFS='|' read -r line; do
-        [ -z "$line" ] && continue
-        local json_line="{"
-        local first=1
-        while IFS=':' read -r name idx; do
-            [ -z "$name" ] && continue
-            local value=$(echo "$line" | cut -d'|' -f"$idx" 2>/dev/null)
-            [ -z "$first" ] && json_line="${json_line}, "
-            json_line="${json_line}\"${name}\": \"${value}\""
-            first=0
-        done <<< "$fields"
-        json_line="${json_line}},"
-        output="${output}      ${json_line}"$'\n'
-    done <<< "$data"
-
-    # 移除最后一个逗号
-    printf '%s' "$output" | sed '$ s/,$//'
-}
-
 # ─── 收集基础信息 ───
 SUMMARY="${OUT}/summary.txt"
 HOSTNAME=$(extract "Hostname" "$SUMMARY")
@@ -1308,7 +1279,7 @@ gen_json() {
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
             dimms_json="${dimms_json}      {\"index\": \"${dseq}\", \"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"nominal_speed\": \"${dnom}\", \"current_speed\": \"${dcur}\", \"rank\": \"${drank:-N/A}\"},"$'\n'
-        done <<< "$MEM_DIMMS"
+        done < <(printf '%s\n' "$MEM_DIMMS")
         dimms_json=$(printf '%s' "$dimms_json" | sed '$ s/,$//')
     fi
     # GPU 每卡明细 JSON 数组（idx|name|serial|mem|power|temp|util|pcie_cur|pcie_max）
@@ -1320,7 +1291,7 @@ gen_json() {
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gvb; do
             [ -z "$gidx" ] && continue
             gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\", \"vbios\": \"${gvb:-N/A}\"},"$'\n'
-        done <<< "$GPU_DETAILS"
+        done < <(printf '%s\n' "$GPU_DETAILS")
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
     # 盘明细 JSON 数组（name|type|size|model|sn|fw|bdf|power_on）
@@ -1329,7 +1300,7 @@ gen_json() {
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
             disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\", \"power_cyc\": \"${dpc}\", \"spare\": \"${dspare}\", \"size_spec\": \"${dspec}\", \"health\": \"${dhealth}\"},"$'\n'
-        done <<< "$DISK_DETAILS"
+        done < <(printf '%s\n' "$DISK_DETAILS")
         disk_details_json=$(printf '%s' "$disk_details_json" | sed '$ s/,$//')
     fi
     # RAID 虚拟盘 JSON 数组（dev|raid_card|size|sn）
@@ -1338,7 +1309,7 @@ gen_json() {
         while IFS='|' read -r rvdname rvdmodel rvdsize rvdsn; do
             [ -z "$rvdname" ] && continue
             raid_vd_json="${raid_vd_json}      {\"dev\": \"${rvdname}\", \"raid_card\": \"${rvdmodel}\", \"size\": \"${rvdsize}\", \"sn\": \"${rvdsn:-N/A}\"},"$'\n'
-        done <<< "$RAID_VD_DETAILS"
+        done < <(printf '%s\n' "$RAID_VD_DETAILS")
         raid_vd_json=$(printf '%s' "$raid_vd_json" | sed '$ s/,$//')
     fi
     # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
@@ -1347,12 +1318,14 @@ gen_json() {
         # awk 一次生成（避免 while read 在本函数上下文的空读异常；与其他管道生成模式一致）
         nic_details_json=$(printf '%s' "$NIC_DETAILS" | awk -F'|' '
             $1 != "" {
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
                 printf "      {\"dev\": \"%s\", \"bdf\": \"%s\", \"mac\": \"%s\", \"serial\": \"%s\", \"pn\": \"%s\", \"chip\": \"%s\", \"firmware\": \"%s\", \"pcie\": \"%s\", \"psid\": \"%s\", \"gpu_direct\": \"%s\"},\n", $1, $2, $3, $4, $5, $10, $6, $7, $8, $9
             }' | sed '$ s/,$//')
     elif [ -n "$NIC_FALLBACK_DETAILS" ]; then
         # 回退（旧采集无 nic_inventory）：ca|type|guid|state
         nic_details_json=$(printf '%s' "$NIC_FALLBACK_DETAILS" | awk -F'|' '
             $1 != "" {
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
                 printf "      {\"dev\": \"%s\", \"ca_type\": \"%s\", \"guid\": \"%s\", \"state\": \"%s\", \"fallback\": \"ibstat\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
     fi
@@ -1362,7 +1335,7 @@ gen_json() {
         while IFS='|' read -r nidx nstat ntemp nports; do
             [ -z "$nidx" ] && continue
             nvs_json="${nvs_json}      {\"id\": \"${nidx}\", \"state\": \"${nstat}\", \"temp\": \"${ntemp}\", \"ports\": \"${nports}\"},"$'\n'
-        done <<< "$NVS_DETAILS"
+        done < <(printf '%s\n' "$NVS_DETAILS")
         nvs_json=$(printf '%s' "$nvs_json" | sed '$ s/,$//')
     fi
     # CPU 每 Socket 明细 JSON 数组
@@ -1371,7 +1344,7 @@ gen_json() {
         while IFS='|' read -r csocket cmodel ccores cthreads cmaxspd ccurspd cstep; do
             [ -z "$csocket" ] && continue
             cpu_details_json="${cpu_details_json}      {\"socket\": \"${csocket}\", \"model\": \"${cmodel}\", \"cores\": \"${ccores}\", \"threads\": \"${cthreads}\", \"max_speed\": \"${cmaxspd}\", \"cur_speed\": \"${ccurspd}\", \"stepping\": \"${cstep}\"},"$'\n'
-        done <<< "$CPU_DETAILS"
+        done < <(printf '%s\n' "$CPU_DETAILS")
         cpu_details_json=$(printf '%s' "$cpu_details_json" | sed '$ s/,$//')
     fi
     # SEL 最近事件 JSON 数组
@@ -1380,7 +1353,7 @@ gen_json() {
         while IFS='|' read -r sid sdate stime stype sdesc; do
             [ -z "$sid" ] && continue
             sel_details_json="${sel_details_json}      {\"id\": \"${sid}\", \"date\": \"${sdate}\", \"time\": \"${stime}\", \"type\": \"${stype}\", \"description\": \"${sdesc}\"},"$'\n'
-        done <<< "$SEL_DETAILS"
+        done < <(printf '%s\n' "$SEL_DETAILS")
         sel_details_json=$(printf '%s' "$sel_details_json" | sed '$ s/,$//')
     fi
     # 风扇明细 JSON 数组
@@ -1389,7 +1362,7 @@ gen_json() {
         while IFS='|' read -r fname frpm fstatus; do
             [ -z "$fname" ] && continue
             fan_details_json="${fan_details_json}      {\"name\": \"${fname}\", \"rpm\": \"${frpm}\", \"status\": \"${fstatus}\"},"$'\n'
-        done <<< "$FAN_DETAILS"
+        done < <(printf '%s\n' "$FAN_DETAILS")
         fan_details_json=$(printf '%s' "$fan_details_json" | sed '$ s/,$//')
     fi
     cat > "$f" << EOF
@@ -1431,7 +1404,7 @@ gen_json() {
     "current_speed": "${CPU_CUR_SPEED:-N/A}",
     "details": [
 $(if [ -n "$CPU_DETAILS" ]; then
-    echo "$CPU_DETAILS" | awk -F'|' '{printf "      {\"index\": \"%d\", \"socket\": \"%s\", \"model\": \"%s\", \"cores\": \"%s\", \"threads\": \"%s\", \"max_speed\": \"%s\", \"cur_speed\": \"%s\", \"stepping\": \"%s\", \"serial\": \"%s\"},\n", NR, $1, $2, $3, $4, $5, $6, $7, $8}' | sed '$ s/,$//'
+    echo "$CPU_DETAILS" | awk -F'|' '{for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) } printf "      {\"index\": \"%d\", \"socket\": \"%s\", \"model\": \"%s\", \"cores\": \"%s\", \"threads\": \"%s\", \"max_speed\": \"%s\", \"cur_speed\": \"%s\", \"stepping\": \"%s\", \"serial\": \"%s\"},\n", NR, $1, $2, $3, $4, $5, $6, $7, $8}' | sed '$ s/,$//'
 fi)
     ]
   },
@@ -1493,7 +1466,7 @@ $(if [ -n "$USB_NICS" ]; then
     while IFS='|' read -r unnic unmac unpn unfw; do
         [ -z "$unnic" ] && continue
         ujson="${ujson}      {\"dev\": \"${unnic}\", \"mac\": \"${unmac}\", \"pn\": \"${unpn:-}\", \"firmware\": \"${unfw:-}\"},"$'\n'
-    done <<< "$USB_NICS"
+    done < <(printf '%s\n' "$USB_NICS")
     printf '%s' "$ujson" | sed '$ s/,$//'
 fi)
     ]
@@ -1534,7 +1507,7 @@ $(if [ -n "$PSU_DETAILS" ]; then
         pseq=$((pseq+1))
         printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s", "capacity": "%s", "power_in": "%s"},' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
         echo ""
-    done <<< "$PSU_DETAILS" | sed '$ s/,$//'
+    done < <(printf '%s\n' "$PSU_DETAILS") | sed '$ s/,$//'
 fi)
     ]
   },
@@ -1640,7 +1613,7 @@ gen_md() {
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
             dimms_md="${dimms_md}| ${dseq} | ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dnom} | ${dcur} | ${drank:-N/A} |"$'\n'
-        done <<< "$MEM_DIMMS"
+        done < <(printf '%s\n' "$MEM_DIMMS")
     fi
     # GPU 每卡明细 Markdown 表
     local gpu_details_md=""
@@ -1660,7 +1633,7 @@ gen_md() {
             else
                 gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gpcie_disp} | ${gvb:-N/A} |"$'\n'
             fi
-        done <<< "$GPU_DETAILS"
+        done < <(printf '%s\n' "$GPU_DETAILS")
     fi
     # 盘明细 Markdown 表
     local disk_details_md=""
@@ -1672,7 +1645,7 @@ gen_md() {
             [ -n "$dspare" ] && [ "$dspare" != "—" ] && [ "$dspare" != "N/A" ] && disk_has_spare=1
             [ -n "$dspec" ] && [ "$dspec" != "—" ] && [ "$dspec" != "N/A" ] && disk_has_spec=1
             [ -n "$dhealth" ] && [ "$dhealth" != "—" ] && [ "$dhealth" != "N/A" ] && disk_has_health=1
-        done <<< "$DISK_DETAILS"
+        done < <(printf '%s\n' "$DISK_DETAILS")
         local dn=0
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
@@ -1682,7 +1655,7 @@ gen_md() {
             _spec_col="";  [ "$disk_has_spec" -eq 1 ] && _spec_col=" | ${dspec:-}"
             _health_col=""; [ "$disk_has_health" -eq 1 ] && _health_col=" | ${dhealth}"
             disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc}${_spare_col}${_spec_col}${_health_col} |"$'\n'
-        done <<< "$DISK_DETAILS"
+        done < <(printf '%s\n' "$DISK_DETAILS")
     fi
     # 网卡明细 Markdown 表
     local nic_details_md=""
@@ -1696,7 +1669,7 @@ gen_md() {
             else
                 nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} |"$'\n'
             fi
-        done <<< "$NIC_DETAILS"
+        done < <(printf '%s\n' "$NIC_DETAILS")
     fi
     # NVSwitch Markdown 表
     local nvs_md=""
@@ -1704,7 +1677,7 @@ gen_md() {
         while IFS='|' read -r nidx nstat ntemp nports; do
             [ -z "$nidx" ] && continue
             nvs_md="${nvs_md}| ${nidx} | ${nstat} | ${ntemp} | ${nports} |"$'\n'
-        done <<< "$NVS_DETAILS"
+        done < <(printf '%s\n' "$NVS_DETAILS")
     fi
     # CPU 每 Socket 明细 Markdown 表
     local cpu_details_md=""
@@ -1712,7 +1685,7 @@ gen_md() {
         while IFS='|' read -r csocket cmodel ccores cthreads cmaxspd ccurspd cstep; do
             [ -z "$csocket" ] && continue
             cpu_details_md="${cpu_details_md}| ${csocket} | ${cmodel} | ${ccores} | ${cthreads} | ${cmaxspd} | ${ccurspd} | ${cstep} |"$'\n'
-        done <<< "$CPU_DETAILS"
+        done < <(printf '%s\n' "$CPU_DETAILS")
     fi
     # SEL 最近事件 Markdown 表
     local sel_details_md=""
@@ -1720,7 +1693,7 @@ gen_md() {
         while IFS='|' read -r sid sdate stime stype sdesc; do
             [ -z "$sid" ] && continue
             sel_details_md="${sel_details_md}| ${sid} | ${sdate} | ${stime} | ${stype} | ${sdesc} |"$'\n'
-        done <<< "$SEL_DETAILS"
+        done < <(printf '%s\n' "$SEL_DETAILS")
     fi
     # 风扇明细 Markdown 表
     local fan_details_md=""
@@ -1730,7 +1703,7 @@ gen_md() {
             [ -z "$fname" ] && continue
             fn=$((fn + 1))
             fan_details_md="${fan_details_md}| ${fn} | ${fname} | ${frpm} | ${fstatus} |"$'\n'
-        done <<< "$FAN_DETAILS"
+        done < <(printf '%s\n' "$FAN_DETAILS")
     fi
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
@@ -1771,7 +1744,7 @@ $(if [ -n "$CPU_DETAILS" ]; then
     while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
         [ -z "$cs" ] && continue
         [ -n "$csn" ] && c_has_sn=1
-    done <<< "$CPU_DETAILS"
+    done < <(printf '%s\n' "$CPU_DETAILS")
     echo "### CPU 明细"
     if [ "$c_has_sn" -eq 1 ]; then
         echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping | SN |"
@@ -1941,7 +1914,7 @@ $(if [ -n "$USB_NICS" ]; then
     while IFS='|' read -r unnic unmac unpn unfw; do
         [ -z "$unnic" ] && continue
         echo "| ${unnic} | ${unmac} | ${unpn:-—} | ${unfw:-—} |"
-    done <<< "$USB_NICS"
+    done < <(printf '%s\n' "$USB_NICS")
 fi)
 
 ## BMC
@@ -1992,7 +1965,7 @@ $(if [ -n "$PSU_DETAILS" ]; then
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
         printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
-    done <<< "$PSU_DETAILS"
+    done < <(printf '%s\n' "$PSU_DETAILS")
 else
     echo "| — | N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读） | — | — | — | — | — |"
 fi)
@@ -2074,7 +2047,7 @@ gen_txt() {
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
             dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  标称${dnom}/现${dcur}  Rank:${drank:-N/A}"$'\n'
-        done <<< "$MEM_DIMMS"
+        done < <(printf '%s\n' "$MEM_DIMMS")
     fi
     # GPU 每卡明细纯文本
     local gpu_details_txt=""
@@ -2094,7 +2067,7 @@ gen_txt() {
             else
                 gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  PCIe(协商):${gpcie_disp}  VBIOS:${gvb:-N/A}"$'\n'
             fi
-        done <<< "$GPU_DETAILS"
+        done < <(printf '%s\n' "$GPU_DETAILS")
     fi
     # 盘明细纯文本
     local disk_details_txt=""
@@ -2105,13 +2078,13 @@ gen_txt() {
             [ -z "$dname" ] && continue
             [ -n "$dspare" ] && [ "$dspare" != "—" ] && [ "$dspare" != "N/A" ] && disk_has_spare=1
             [ -n "$dhealth" ] && [ "$dhealth" != "—" ] && [ "$dhealth" != "N/A" ] && disk_has_health=1
-        done <<< "$DISK_DETAILS"
+        done < <(printf '%s\n' "$DISK_DETAILS")
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
             _spare_txt=""; [ "$disk_has_spare" -eq 1 ] && _spare_txt="  spare:${dspare}"
             _health_txt=""; [ "$disk_has_health" -eq 1 ] && _health_txt="  健康:${dhealth}"
             disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}${_spare_txt}${_health_txt}  ${dspec:-}"$'\n'
-        done <<< "$DISK_DETAILS"
+        done < <(printf '%s\n' "$DISK_DETAILS")
     fi
     # 网卡明细纯文本（TXT 专用；PSID/MST 提示并入开头，避免命令替换剥尾换行粘连）
     local nic_details_txt=""
@@ -2125,7 +2098,7 @@ gen_txt() {
             else
                 nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}"$'\n'
             fi
-        done <<< "$NIC_DETAILS"
+        done < <(printf '%s\n' "$NIC_DETAILS")
     fi
     # USB 外接网卡（非 PCIe）追加到明细末尾，独立成段
     if [ -n "$USB_NICS" ]; then
@@ -2133,7 +2106,7 @@ gen_txt() {
         while IFS='|' read -r unnic unmac unpn unfw; do
             [ -z "$unnic" ] && continue
             nic_details_txt="${nic_details_txt}    ${unnic}  ${unmac}  ${unpn:-—}  FW:${unfw:-—}"$'\n'
-        done <<< "$USB_NICS"
+        done < <(printf '%s\n' "$USB_NICS")
     fi
     # NVSwitch 纯文本
     local nvs_txt=""
@@ -2141,7 +2114,7 @@ gen_txt() {
         while IFS='|' read -r nidx nstat ntemp nports; do
             [ -z "$nidx" ] && continue
             nvs_txt="${nvs_txt}    NVSwitch${nidx}  ${nstat}  ${ntemp}  端口:${nports}"$'\n'
-        done <<< "$NVS_DETAILS"
+        done < <(printf '%s\n' "$NVS_DETAILS")
     fi
     # CPU 每 Socket 明细纯文本
     local cpu_details_txt=""
@@ -2149,7 +2122,7 @@ gen_txt() {
         while IFS='|' read -r csocket cmodel ccores cthreads cmaxspd ccurspd cstep; do
             [ -z "$csocket" ] && continue
             cpu_details_txt="${cpu_details_txt}    ${csocket}  ${cmodel}  ${ccores}C/${cthreads}T  ${cmaxspd}/${ccurspd}  ${cstep}"$'\n'
-        done <<< "$CPU_DETAILS"
+        done < <(printf '%s\n' "$CPU_DETAILS")
     fi
     # SEL 最近事件纯文本
     local sel_details_txt=""
@@ -2157,7 +2130,7 @@ gen_txt() {
         while IFS='|' read -r sid sdate stime stype sdesc; do
             [ -z "$sid" ] && continue
             sel_details_txt="${sel_details_txt}    ${sid}  ${sdate} ${stime}  ${stype}  ${sdesc}"$'\n'
-        done <<< "$SEL_DETAILS"
+        done < <(printf '%s\n' "$SEL_DETAILS")
     fi
     # 风扇明细纯文本
     local fan_details_txt=""
@@ -2165,7 +2138,7 @@ gen_txt() {
         while IFS='|' read -r fname frpm fstatus; do
             [ -z "$fname" ] && continue
             fan_details_txt="${fan_details_txt}    ${fname}  ${frpm} RPM  ${fstatus}"$'\n'
-        done <<< "$FAN_DETAILS"
+        done < <(printf '%s\n' "$FAN_DETAILS")
     fi
     cat > "$f" << EOF
 ============================================
@@ -2309,7 +2282,7 @@ $(if [ -n "$PSU_DETAILS" ]; then
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
-    done <<< "$PSU_DETAILS"
+    done < <(printf '%s\n' "$PSU_DETAILS")
 else echo "  N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读）"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)
 
 [健康检查]
@@ -2439,7 +2412,7 @@ gen_acceptance() {
                     disk_warn="${disk_warn}${dname}(${dspare}),"
                 fi
             fi
-        done <<< "$DISK_DETAILS"
+        done < <(printf '%s\n' "$DISK_DETAILS")
     fi
     if [ -z "$DISK_DETAILS" ]; then
         add_item "磁盘寿命" "N/A" "无数据盘或盘数据不可用"
@@ -2461,7 +2434,7 @@ gen_acceptance() {
                 ⚠️*)   dhealth_known=$((dhealth_known+1)); dhealth_warn="${dhealth_warn}${dname}(${dhealth#⚠️})," ;;
                 PASSED|OK) dhealth_known=$((dhealth_known+1)) ;;
             esac
-        done <<< "$DISK_DETAILS"
+        done < <(printf '%s\n' "$DISK_DETAILS")
     fi
     if [ "$dhealth_known" -eq 0 ]; then
         add_item "SMART 健康状态" "N/A" "无 SMART 健康数据（旧采集或盘不支持）"
