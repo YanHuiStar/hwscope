@@ -954,6 +954,12 @@ if [ -f "${nic_inventory}" ]; then
         fi
         # PCIe 无数据（N/A/N/A）→ 统一 "—"
         case "${npcie_cap:-}" in ""|N/A|N/A/N/A|/|na|NA) npcie_cap="—" ;; esac
+        # 固件回退：旧采集 csv 固件被 awk 截断成第一段（如 "0x00012b2c," 带逗号 / "9.00" 丢 NVM 版本）
+        # → 从 ethtool_<dev>_driver.log 取完整固件字符串（新采集已修复，此处兼容旧数据）
+        if echo "$nfw" | grep -qE ",$|^[0-9]+\.[0-9]+$"; then
+            _nfw_full=$(grep -m1 "firmware-version" "${NET_DIR}/ethtool_${nnic}_driver.log" 2>/dev/null | cut -d: -f2- | xargs)
+            [ -n "$_nfw_full" ] && nfw="$_nfw_full"
+        fi
         # 无数据统一占位 "—"（N/A/空 → —；仅 GPU直连 保留三态语义）
         case "${nsn:-}" in ""|N/A|na|NA) nsn="—" ;; esac
         case "${npn:-}" in ""|N/A|na|NA) npn="—" ;; esac
@@ -1260,6 +1266,11 @@ fi
 # PEX89/97 交换机管理端点被 lspci 分类为 Serial Attached SCSI controller，非 RAID/HBA 卡）
 RAID_PCI_PRESENT=$(grep -iE "RAID bus controller" "${lspci_all}" 2>/dev/null | grep -viE "Intel.*VMD|Volume Management|PCIe Switch management endpoint|PEX89|PEX97" | head -1)
 RAID_VMD_PRESENT=$(grep -icE "RAID bus controller.*Intel.*VMD|Volume Management Device NVMe RAID" "${lspci_all}" 2>/dev/null)
+# Linux 软件 RAID（mdadm /proc/mdstat：md 设备列表，如 "md0 : active raid1 sda1 sdb1"）
+MD_RAID_LIST=""
+if [ -f "${RAID_DIR}/mdstat.log" ]; then
+    MD_RAID_LIST=$(grep -E "^md[0-9]+ : active" "${RAID_DIR}/mdstat.log" 2>/dev/null | awk '{print $1}' | tr '\n' ',' | sed 's/,$//')
+fi
 
 # ─── HBA 直通卡（sas3_hba*.log / sas2_hba*.log：有卡才显示，无卡段隐藏） ───
 # sas3ircu display / sas2ircu display 输出含 Controller Type / Firmware / Status
@@ -1879,6 +1890,9 @@ else
     if [ -n "$RAID_PCI_PRESENT" ]; then
         echo "## RAID 控制器"
         echo "> ⚠️ 检测到 RAID 控制器（$(echo "$RAID_PCI_PRESENT" | sed 's/.*: //' | xargs)），但 storcli64 未安装或采集失败——RAID 配置/虚拟盘/底层盘信息不可用，需现场安装 storcli64 后重采"
+    elif [ -n "$MD_RAID_LIST" ]; then
+        echo "## RAID 控制器"
+        echo "> ℹ️ Linux 软件 RAID（mdadm）: ${MD_RAID_LIST}（系统级软 RAID，非硬件 RAID 卡）"
     elif [ "${RAID_VMD_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
         echo "## RAID 控制器"
         echo "> ℹ️ 检测到 Intel VMD NVMe RAID（虚拟 RAID，非独立卡，由系统管理）"
@@ -2263,6 +2277,9 @@ fi)$(if [ -n "$RAID_DETAILS" ]; then
 fi)$(if [ -z "$RAID_DETAILS" ] && [ -n "$RAID_PCI_PRESENT" ]; then
     printf '\n[RAID控制器]\n'
     printf '  ⚠️ 检测到 RAID 控制器（%s），但 storcli64 未安装或采集失败——RAID 配置/虚拟盘/底层盘信息不可用，需现场安装 storcli64 后重采\n' "$(echo "$RAID_PCI_PRESENT" | sed 's/.*: //' | xargs)"
+elif [ -z "$RAID_DETAILS" ] && [ -n "$MD_RAID_LIST" ]; then
+    printf '\n[RAID控制器]\n'
+    printf '  ℹ️ Linux 软件 RAID（mdadm）: %s（系统级软 RAID，非硬件 RAID 卡）\n' "$MD_RAID_LIST"
 elif [ -z "$RAID_DETAILS" ] && [ "${RAID_VMD_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
     printf '\n[RAID控制器]\n'
     printf '  ℹ️ 检测到 Intel VMD NVMe RAID（虚拟 RAID，非独立卡，由系统管理）\n'

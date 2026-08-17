@@ -89,6 +89,9 @@ run_raid() {
         done <<< "$raid_buses"
     fi
 
+    # Linux 软件 RAID（mdadm /proc/mdstat：检测 md 设备，无则空文件）
+    raid_jobs+=("cat /proc/mdstat 2>/dev/null" "${dir}/mdstat.log")
+
     # Phase 3: 并行执行所有采集任务
     [ "${#raid_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${raid_jobs[@]}" 
 
