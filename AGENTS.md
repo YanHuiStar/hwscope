@@ -109,7 +109,6 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
   `powershell -NoProfile -Command "[System.Management.Automation.Language.Parser]::ParseFile('<path>',[ref]$null,[ref]$e) > $null; $e.Count"`（输出 0 = 无错误）
 - 交互式脚本尽量零依赖（纯 .NET/PowerShell 内置）；需要管理员权限的操作在脚本内自检并提示提升方式
 - 每个工具提供同名 .bat 启动器（chcp 65001 + ExecutionPolicy Bypass + 管理员提升/参数透传）
-- `greenhub_proxy.sh`：动态探测 GreenHub(v2ray) 代理端口（config 端口可能滞后于实际监听），输出可用代理地址供 git `-c http.proxy=` 复用；`bash tools/win/greenhub_proxy.sh -t` 测试模式
 
 ## 新增模块流程
 
