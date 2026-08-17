@@ -260,16 +260,72 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         gsub(/ MiB/, "", $col)
         sum += $col
     } END{printf "%.0f GiB", sum/1024}')
-    # 每卡额定规格（型号→额定映射，标注检测值 vs 规格的差异；未知型号显示检测值）
+    # ─── GPU 额定显存规格库 + 检测值交叉验证 ───
+    # 检测值（memory.total MiB）永远来自硬件；额定值（厂商规格）来自此规格库。
+    # 匹配算法：型号模式 → 候选额定值列表 → 与检测值交叉验证（GB 十进制/GiB 双口径，取近者）：
+    #   差值 < 3% → 匹配成功（额定 = 厂商值，如 H200 检测 143771MiB≈141GiB）
+    #   全部不匹配 → ⚠️ 疑似魔改/伪装（如 RTX 2080Ti 魔改 22GB、低端卡刷 BIOS 伪装）
+    # 多版本型号（A100 40/80GB、V100 16/32GB、RTX 3080 10/12GB）给候选列表，检测值自动选近者
     GPU_MODEL_LINE=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f2)
+    GPU_MEM_DET_MIB=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f6 | grep -oE "[0-9]+" | head -1)
     GPU_MEM_SPEC=""
-    case "$GPU_MODEL_LINE" in
-        *B300*)   GPU_MEM_SPEC="288GB/卡" ;;
-        *B200*)   GPU_MEM_SPEC="192GB/卡" ;;
-        *H200*)   GPU_MEM_SPEC="141GB/卡" ;;
-        *H100*)   GPU_MEM_SPEC="80GB/卡" ;;
-        *)        GPU_MEM_SPEC="" ;;
-    esac
+    GPU_MEM_SPEC_NOTE=""
+    if [ -n "$GPU_MODEL_LINE" ] && [ -n "$GPU_MEM_DET_MIB" ]; then
+        _cands=""
+        case "$GPU_MODEL_LINE" in
+            *B300*|*GB300*)   _cands="288" ;;
+            *B200*|*GB200*)   _cands="192" ;;
+            *H200*)           _cands="141" ;;
+            *H20*)            _cands="96" ;;
+            *H100*|*H800*)    _cands="80" ;;
+            *A100*|*A800*)    _cands="40|80" ;;
+            *A30*|*A10*)      _cands="24" ;;
+            *A16*)            _cands="16" ;;
+            *A40*|*A6000*|*"RTX 6000"*|*L40S*|*L40*|*L20*) _cands="48" ;;
+            *"RTX 5000 Ada"*)   _cands="32" ;;
+            *"RTX 4500 Ada"*)   _cands="24" ;;
+            *"RTX 4000 Ada"*)   _cands="20" ;;
+            *L4*)             _cands="24" ;;
+            *T4*)             _cands="16" ;;
+            *V100*)           _cands="16|32" ;;
+            *P100*)           _cands="12|16" ;;
+            *P40*)            _cands="24" ;;
+            *P4*)             _cands="8" ;;
+            *"RTX 4090"*)       _cands="24" ;;
+            *"RTX 4080"*)       _cands="16" ;;
+            *"RTX 4070"*)       _cands="12" ;;
+            *"RTX 4060"*)       _cands="8|16" ;;
+            *"RTX 3090"*)       _cands="24" ;;
+            *"RTX 3080 Ti"*)  _cands="12" ;;
+            *"RTX 3080"*)       _cands="10|12" ;;
+            *"RTX 3070"*)       _cands="8" ;;
+            *"RTX 3060"*)       _cands="12" ;;
+            *"RTX 2080 Ti"*)  _cands="11" ;;
+            *"RTX 2080"*)       _cands="8" ;;
+            *"GTX 1080 Ti"*)  _cands="11" ;;
+            *"GTX 1080"*)       _cands="8" ;;
+            *)                _cands="" ;;
+        esac
+        if [ -n "$_cands" ]; then
+            # 交叉验证：找与检测 MiB 最接近的候选口径（GB 十进制≈953.674 MiB/GB；GiB=1024 MiB/GiB）
+            _best_c="" _best_diff="" _best_mib=""
+            for _c in ${_cands//|/ }; do
+                for _mib in $(awk -v c="$_c" 'BEGIN{printf "%.0f %.0f", c*1000000000/1048576, c*1024}' < /dev/null); do
+                    _diff=$(awk -v d="$GPU_MEM_DET_MIB" -v m="$_mib" 'BEGIN{printf "%.4f", (d>m?d-m:m-d)/d}' < /dev/null)
+                    if [ -z "$_best_diff" ] || awk -v a="$_diff" -v b="$_best_diff" 'BEGIN{exit !(a<b)}'; then
+                        _best_diff="$_diff"; _best_c="$_c"; _best_mib="$_mib"
+                    fi
+                done
+            done
+            if awk -v d="$_best_diff" 'BEGIN{exit !(d<0.03)}'; then
+                GPU_MEM_SPEC="${_best_c}GB/卡"
+            else
+                GPU_MEM_MISMATCH=$(awk -v d="$GPU_MEM_DET_MIB" 'BEGIN{printf "%.0f", d/1024}' < /dev/null)
+                GPU_MEM_SPEC="${_best_c}GB"
+                GPU_MEM_SPEC_NOTE="⚠️ 检测 ${GPU_MEM_MISMATCH}GB 与额定 ${_best_c}GB 不符（疑似显存魔改或伪装，需核实）"
+            fi
+        fi
+    fi
     GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${power_col:-8}" -F',' '{
         gsub(/ W/, "", $col)
         if($col+0 > max+0) max = $col
@@ -1822,7 +1878,7 @@ else
     echo "|----|----|"
     echo "| 数量 | ${GPU_COUNT:-0} |"
     echo "| 型号 | ${GPU_NAMES:-N/A} |"
-    echo "| 显存总量 | ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}） |"
+    echo "| 显存总量 | ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）${GPU_MEM_SPEC_NOTE:+ ${GPU_MEM_SPEC_NOTE}} |"
     echo "| 额定功耗 | ${GPU_POWER:-N/A} |"
     echo "| 温度 | ${GPU_TEMP:-N/A} |"
     echo "| ECC | ${GPU_ECC:-N/A} |"
@@ -2258,7 +2314,7 @@ $(if [ "$GPU_COUNT" -eq 0 ]; then
 else
     echo "  数量   : ${GPU_COUNT:-0}"
     echo "  型号   : ${GPU_NAMES:-N/A}"
-    echo "  显存   : ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）"
+    echo "  显存   : ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）${GPU_MEM_SPEC_NOTE:+ ${GPU_MEM_SPEC_NOTE}}"
     echo "  功耗   : ${GPU_POWER:-N/A}（额定）"
     echo "  温度   : ${GPU_TEMP:-N/A}"
     echo "  ECC    : ${GPU_ECC:-N/A}"
