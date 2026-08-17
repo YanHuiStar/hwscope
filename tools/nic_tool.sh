@@ -52,7 +52,7 @@ read -p "选择设备 (默认 ${DEVS%% *}): " -r dev
 [ -z "$dev" ] && dev="${DEVS%% *}"
 [ ! -d "/sys/class/infiniband/${dev}" ] && echo -e "${RED}[ERROR] 无效设备 ${dev}${NC}" && exit 1
 
-REPORT_DIR="${SCRIPT_DIR}/output/nic_tool_$(date '+%Y%m%d_%H%M%S')"
+REPORT_DIR="${SCRIPT_DIR}/output/nic_tool_$(date '+%Y%m%d%H%M%S')"
 mkdir -p "$REPORT_DIR"
 
 # ─── 模式切换子菜单（选项 7） ───

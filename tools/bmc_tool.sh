@@ -64,7 +64,7 @@ echo ""
 read -p "选择操作 (1-8, 多个用逗号): " -r choices
 [ -z "$choices" ] && echo "跳过" && exit 0
 
-REPORT_DIR="${SCRIPT_DIR}/output/bmc_tool_$(date '+%Y%m%d_%H%M%S')"
+REPORT_DIR="${SCRIPT_DIR}/output/bmc_tool_$(date '+%Y%m%d%H%M%S')"
 mkdir -p "$REPORT_DIR"
 
 IFS=',' read -ra SELECTED <<< "$choices"

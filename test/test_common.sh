@@ -8,7 +8,7 @@
 # 初始化日志目录（输出到 logs/test/<时间戳>/）
 test_init() {
     local test_name="$1"
-    local base="${SCRIPT_DIR}/logs/test/$(date '+%Y%m%d_%H%M%S')"
+    local base="${SCRIPT_DIR}/logs/test/$(date '+%Y%m%d%H%M%S')"
     mkdir -p "$base"
     REPORT_DIR="$base"
     REPORT_LOG="${base}/${test_name}.log"

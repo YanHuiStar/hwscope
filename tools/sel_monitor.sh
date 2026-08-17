@@ -21,7 +21,7 @@ mkdir -p "$BASE_DIR"
 BASELINE="${BASE_DIR}/sel_baseline.txt"
 LAST_SEEN="${BASE_DIR}/sel_last.txt"
 NOW="${BASE_DIR}/sel_now.txt"
-REPORT="${BASE_DIR}/sel_report_$(date '+%Y%m%d_%H%M%S').txt"
+REPORT="${BASE_DIR}/sel_report_$(date '+%Y%m%d%H%M%S').txt"
 
 # ─── 抓取当前 SEL（过滤词只匹配 ipmitool 自身报错，不能过滤事件内容里的 "Error"） ───
 ipmitool sel elist 2>&1 | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" > "$NOW" || true
