@@ -302,6 +302,7 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
             gused_f=$(awk "BEGIN{printf \"%.1f GiB\", ${gused_f%MiB}/1024}" < /dev/null)
         fi
         gdraw_f=${gdraw// /}
+        glimit_f=${glimit// /}
         gtemp_f=${gtemp// /}
         gutil_f=${gutil// /}
         gwidth=${gwidth// /}
@@ -326,7 +327,7 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         [ "$ggen" != "N/A" ] && [ -n "$ggen" ] && gpcie_cur="${ggen}x${gwidth}"
         [ "$ggenmax" != "N/A" ] && [ -n "$ggenmax" ] && gpcie_max="${ggenmax}x${gwidthmax}"
         [ "$gpcie_cur" = "N/A" ] && [ "$gpcie_max" != "N/A" ] && gpcie_cur="?"
-        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}"$'\n'
+        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}|${gused_f}|${glimit_f}"$'\n'
         # PCIe 宽度降级检测（宽度空闲不变，是最可靠信号；gen 低可能是省电不算）
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
@@ -343,10 +344,10 @@ if [ -n "$GPU_DETAILS" ]; then
         gvb_ver=$(grep -m1 "VBIOS Version" "$gf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
         [ -n "$gvb_ver" ] && GPU_VBIOS_MAP["$gvb_idx"]="$gvb_ver"
     done
-    # 明细行追加第 10 列 VBIOS（映射不到置 N/A）
-    GPU_DETAILS=$(while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax; do
+    # 明细行追加第 11 列 VBIOS（映射不到置 N/A）
+    GPU_DETAILS=$(while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit; do
         [ -z "$gidx" ] && continue
-        echo "${gidx}|${gname}|${gsn}|${gmem}|${gdraw}|${gtemp}|${gutil}|${gpcie}|${gmax}|${GPU_VBIOS_MAP[$gidx]:-N/A}"
+        echo "${gidx}|${gname}|${gsn}|${gmem}|${gdraw}|${gtemp}|${gutil}|${gpcie}|${gmax}|${gused}|${glimit}|${GPU_VBIOS_MAP[$gidx]:-N/A}"
     done <<< "$GPU_DETAILS")
 fi
 # ECC 模式与累计错误（列: 3=mode, 4-7=错误计数）
@@ -1310,9 +1311,9 @@ gen_json() {
         # 每卡显存标注标称（如 B300: 268.6 GiB (标称288GB)）
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gvb; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
             [ -z "$gidx" ] && continue
-            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"temp\": \"${gtemp}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\", \"vbios\": \"${gvb:-N/A}\"},"$'\n'
+            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_used\": \"${gused:-N/A}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"power_limit\": \"${glimit:-N/A}\", \"temp\": \"${gtemp}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\", \"vbios\": \"${gvb:-N/A}\"},"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
@@ -1643,18 +1644,33 @@ gen_md() {
         # 每卡显存显示 默认(标称)/可用（如 288GB/268.6 GiB 可用），防止客户误读检测值为卡容量
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gvb; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
             [ -z "$gidx" ] && continue
             # PCIe 合并：满速只显当前值，降速才标注能力（如 "5x8 (能力 5x16)"）
             gpcie_disp="$gpcie"
             if [ "$gpcie" != "N/A" ] && [ "$gmax" != "N/A" ] && [ -n "$gmax" ] && [ "$gpcie" != "$gmax" ]; then
                 gpcie_disp="${gpcie} (能力 ${gmax})"
             fi
-            if [ -n "$gmem_spec" ]; then
-                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem_spec}/${gmem} 可用 | ${gdraw} | ${gtemp} | ${gpcie_disp} | ${gvb:-N/A} |"$'\n'
-            else
-                gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem} | ${gdraw} | ${gtemp} | ${gpcie_disp} | ${gvb:-N/A} |"$'\n'
+            # 显存可用/总（可用 = 总量 - 已用，双值让客户看到余量；未分配 used=0 时省略冗余）
+            gmem_disp="${gmem:-N/A}"
+            if [ -n "$gmem" ] && [ -n "$gused" ] && [ "$gmem" != "N/A" ] && [ "$gused" != "N/A" ]; then
+                _gm=$(echo "$gmem" | grep -oE "[0-9.]+" | head -1)
+                _gu=$(echo "$gused" | grep -oE "[0-9.]+" | head -1)
+                if [ -n "$_gm" ] && [ -n "$_gu" ]; then
+                    _gavail=$(awk "BEGIN{printf \"%.1f GiB\", ${_gm}-${_gu}}" < /dev/null)
+                    if [ "$_gavail" = "$gmem" ]; then
+                        gmem_disp="${gmem} 总"
+                    else
+                        gmem_disp="${_gavail} 可用 / ${gmem} 总"
+                    fi
+                fi
             fi
+            # 功耗当前/上限（power.draw / power.limit）
+            gdraw_disp="${gdraw:-N/A}"
+            if [ -n "$gdraw" ] && [ -n "$glimit" ] && [ "$gdraw" != "N/A" ] && [ "$glimit" != "N/A" ]; then
+                gdraw_disp="${gdraw} / ${glimit} 上限"
+            fi
+            gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem_disp} | ${gdraw_disp} | ${gtemp} | ${gpcie_disp} | ${gvb:-N/A} |"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
     fi
     # 盘明细 Markdown 表
@@ -1827,7 +1843,7 @@ fi)
 $(if [ -n "$gpu_details_md" ]; then
     echo ""
     echo "### GPU 每卡明细"
-    echo "| 卡 | 型号 | SN | 显存(默认/可用) | 功耗 | 温度 | PCIe(协商) | VBIOS |"
+    echo "| 卡 | 型号 | SN | 显存(可用/总) | 功耗(当前/上限) | 温度 | PCIe(协商) | VBIOS |"
     echo "|----|------|----|----|------|------|----------|-------|"
     printf '%s' "$gpu_details_md"
 fi)
@@ -2096,21 +2112,36 @@ gen_txt() {
     # GPU 每卡明细纯文本
     local gpu_details_txt=""
     if [ -n "$GPU_DETAILS" ]; then
-        # 每卡显存显示 默认(标称)/可用（如 288GB/268.6 GiB 可用）
+        # 每卡显存 可用/总 + 功耗 当前/上限（双值让客户看到余量）
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gvb; do
+        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
             [ -z "$gidx" ] && continue
             # PCIe 合并：满速只显当前值，降速才标注能力（如 "5x8 (能力 5x16)"）
             gpcie_disp="$gpcie"
             if [ "$gpcie" != "N/A" ] && [ "$gmax" != "N/A" ] && [ -n "$gmax" ] && [ "$gpcie" != "$gmax" ]; then
                 gpcie_disp="${gpcie} (能力 ${gmax})"
             fi
-            if [ -n "$gmem_spec" ]; then
-                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem_spec}/${gmem} 可用  ${gdraw}  ${gtemp}  PCIe(协商):${gpcie_disp}  VBIOS:${gvb:-N/A}"$'\n'
-            else
-                gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  ${gmem}  ${gdraw}  ${gtemp}  PCIe(协商):${gpcie_disp}  VBIOS:${gvb:-N/A}"$'\n'
+            # 显存可用/总（未分配 used=0 时省略冗余）
+            gmem_disp="${gmem:-N/A}"
+            if [ -n "$gmem" ] && [ -n "$gused" ] && [ "$gmem" != "N/A" ] && [ "$gused" != "N/A" ]; then
+                _gm=$(echo "$gmem" | grep -oE "[0-9.]+" | head -1)
+                _gu=$(echo "$gused" | grep -oE "[0-9.]+" | head -1)
+                if [ -n "$_gm" ] && [ -n "$_gu" ]; then
+                    _gavail=$(awk "BEGIN{printf \"%.1f GiB\", ${_gm}-${_gu}}" < /dev/null)
+                    if [ "$_gavail" = "$gmem" ]; then
+                        gmem_disp="${gmem} 总"
+                    else
+                        gmem_disp="${_gavail} 可用/${gmem} 总"
+                    fi
+                fi
             fi
+            # 功耗当前/上限
+            gdraw_disp="${gdraw:-N/A}"
+            if [ -n "$gdraw" ] && [ -n "$glimit" ] && [ "$gdraw" != "N/A" ] && [ "$glimit" != "N/A" ]; then
+                gdraw_disp="${gdraw}/${glimit} 上限"
+            fi
+            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  PCIe(协商):${gpcie_disp}  VBIOS:${gvb:-N/A}"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
     fi
     # 盘明细纯文本
