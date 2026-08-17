@@ -244,6 +244,8 @@ if [ -f "$GPU_CSV" ]; then
         GPU_CSV=""
     fi
 fi
+# GPU 硬件存在性（lspci 3D controller NVIDIA 数量）——区分「无 GPU」vs「有 GPU 但驱动异常/采集失败」
+GPU_PCI_PRESENT=$(grep -c "3D controller: NVIDIA" "${lspci_all}" 2>/dev/null)
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
     GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ',' | sed 's/,$//')
@@ -728,6 +730,8 @@ HEALTH_TXT=""
 if [ "$GPU_COUNT" -eq 0 ]; then
     if [ "$HEAD_NODE" -eq 1 ]; then
         HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (HGX 机头无本地 GPU，模组单独采集)"$'\n'
+    elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+        HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 NVIDIA GPU 但 nvidia-smi 无数据（驱动未安装或异常）"$'\n'
     else
         HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (无 GPU)"$'\n'
     fi
@@ -1251,6 +1255,10 @@ if [ -f "${storcli_controllers}" ] && grep -q "Controller = " "${storcli_control
         raidx=$((raidx + 1))
     done
 fi
+# RAID 硬件存在性（lspci RAID/SAS controller，排除 Intel VMD 虚拟 RAID 与 PCIe Switch 管理端点——
+# PEX89/97 交换机管理端点被 lspci 分类为 Serial Attached SCSI controller，非 RAID/HBA 卡）
+RAID_PCI_PRESENT=$(grep -iE "RAID bus controller|SAS controller|Serial Attached SCSI" "${lspci_all}" 2>/dev/null | grep -viE "Intel.*VMD|Volume Management|PCIe Switch management endpoint|PEX89|PEX97" | head -1)
+RAID_VMD_PRESENT=$(grep -icE "RAID bus controller.*Intel.*VMD|Volume Management Device NVMe RAID" "${lspci_all}" 2>/dev/null)
 
 # ─── HBA 直通卡（sas3_hba*.log / sas2_hba*.log：有卡才显示，无卡段隐藏） ───
 # sas3ircu display / sas2ircu display 输出含 Controller Type / Firmware / Status
@@ -1267,6 +1275,8 @@ for hf in "${RAID_DIR}"/sas3_hba*.log "${RAID_DIR}"/sas2_hba*.log; do
     hports=$(grep -ciE "SAS Address" "$hf" 2>/dev/null)
     HBA_DETAILS="${HBA_DETAILS}${hname}|${htype:-N/A}|${hfw:-N/A}|${hsn:-N/A}|${hstat:-N/A}|${hsas:-N/A}|${hports:-0}"$'\n'
 done
+# HBA 硬件存在性（lspci SAS controller，排除 MegaRAID 已计入 RAID_PCI_PRESENT、Intel VMD 与 PCIe Switch 管理端点）
+HBA_PCI_PRESENT=$(grep -iE "SAS controller|Serial Attached SCSI|SAS3008|SAS3108|SAS3508" "${lspci_all}" 2>/dev/null | grep -viE "MegaRAID|VMD|Volume Management|PCIe Switch management endpoint|PEX89|PEX97" | head -1)
 
 # ─── 生成 JSON ───
 gen_json() {
@@ -1782,8 +1792,10 @@ $(if [ "$GPU_COUNT" -eq 0 ]; then
     echo "|----|----|"
     if [ "$HEAD_NODE" -eq 1 ]; then
         echo "| 状态 | HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集） |"
+    elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+        echo "| 状态 | ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 NVIDIA GPU（PCI 3D controller），但 nvidia-smi 无数据（驱动未安装或异常） |"
     else
-        echo "| 状态 | N/A（未检测到 GPU/无 NVIDIA 驱动） |"
+        echo "| 状态 | N/A（无 GPU） |"
     fi
 else
     echo "| 项 | 值 |"
@@ -1862,6 +1874,14 @@ $(if [ -n "$RAID_DETAILS" ]; then
             done
         fi
     done
+else
+    if [ -n "$RAID_PCI_PRESENT" ]; then
+        echo "## RAID 控制器"
+        echo "> ⚠️ 检测到 RAID 控制器（$(echo "$RAID_PCI_PRESENT" | sed 's/.*: //' | xargs)），但 storcli64 未安装或采集失败——RAID 配置/虚拟盘/底层盘信息不可用，需现场安装 storcli64 后重采"
+    elif [ "${RAID_VMD_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+        echo "## RAID 控制器"
+        echo "> ℹ️ 检测到 Intel VMD NVMe RAID（虚拟 RAID，非独立卡，由系统管理）"
+    fi
 fi)
 
 $(if [ -n "$HBA_DETAILS" ]; then
@@ -1873,6 +1893,11 @@ $(if [ -n "$HBA_DETAILS" ]; then
         hseq=$((hseq + 1))
         echo "| ${hseq} | ${hname} | ${htype} | ${hfw} | ${hsn} | ${hstat} | ${hsas} | ${hports} |"
     done
+else
+    if [ -n "$HBA_PCI_PRESENT" ]; then
+        echo "## HBA 直通卡"
+        echo "> ⚠️ 检测到 SAS HBA（$(echo "$HBA_PCI_PRESENT" | sed 's/.*: //' | xargs)），但 sas3ircu/sas2ircu 未安装或采集失败——HBA 型号/固件/端口信息不可用"
+    fi
 fi)
 
 ## 网络
@@ -1924,8 +1949,10 @@ fi)
 | 固件 | ${BMC_FW:-N/A} |
 | IP | ${BMC_IP:-N/A} |
 | MAC | ${BMC_MAC:-N/A} |
-| SEL 事件 | ${SEL_TOTAL:-0}（Critical ${SEL_CRIT:-0}） |
-$(if [ -n "$SEL_DETAILS" ]; then
+| SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0}（Critical ${SEL_CRIT:-0}）"; else echo "⚠️ 数据不可用"; fi) |
+$(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
+    echo "> ⚠️ SEL 数据不可用（ipmitool 采集失败或无权限），事件列表不完整"
+elif [ -n "$SEL_DETAILS" ]; then
     echo "### SEL 告警事件"
     echo "| # | 日期 | 时间 | 类型 | 描述 |"
     echo "|---|------|------|------|------|"
@@ -1953,6 +1980,8 @@ $(if [ -n "$FAN_DETAILS" ]; then
         fan_seq=$((fan_seq+1))
         echo "| ${fan_seq} | ${fname} | ${fval} | ${fstatus} |"
     done
+elif [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+    echo "> ⚠️ 未采集到风扇数据（ipmitool 风扇传感器不可读或平台无风扇传感器）"
 fi)
 
 ## 电源 PSU
@@ -2190,8 +2219,10 @@ $(printf '%s' "$dimms_txt")
 $(if [ "$GPU_COUNT" -eq 0 ]; then
     if [ "$HEAD_NODE" -eq 1 ]; then
         echo "  HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集）"
+    elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+        echo "  ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 NVIDIA GPU（PCI 3D controller），但 nvidia-smi 无数据（驱动未安装或异常）"
     else
-        echo "  N/A (未检测到 GPU/无 NVIDIA 驱动)"
+        echo "  N/A (无 GPU)"
     fi
 else
     echo "  数量   : ${GPU_COUNT:-0}"
@@ -2228,12 +2259,21 @@ fi)$(if [ -n "$RAID_DETAILS" ]; then
             done
         fi
     done
+fi)$(if [ -z "$RAID_DETAILS" ] && [ -n "$RAID_PCI_PRESENT" ]; then
+    printf '\n[RAID控制器]\n'
+    printf '  ⚠️ 检测到 RAID 控制器（%s），但 storcli64 未安装或采集失败——RAID 配置/虚拟盘/底层盘信息不可用，需现场安装 storcli64 后重采\n' "$(echo "$RAID_PCI_PRESENT" | sed 's/.*: //' | xargs)"
+elif [ -z "$RAID_DETAILS" ] && [ "${RAID_VMD_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+    printf '\n[RAID控制器]\n'
+    printf '  ℹ️ 检测到 Intel VMD NVMe RAID（虚拟 RAID，非独立卡，由系统管理）\n'
 fi)$(if [ -n "$HBA_DETAILS" ]; then
     printf '\n[HBA直通卡]\n'
     echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
         [ -z "$hname" ] && continue
         printf '  %s  %s  固件:%s  SN:%s  状态:%s  SAS:%s  端口:%s\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat" "$hsas" "$hports"
     done
+fi)$(if [ -z "$HBA_DETAILS" ] && [ -n "$HBA_PCI_PRESENT" ]; then
+    printf '\n[HBA直通卡]\n'
+    printf '  ⚠️ 检测到 SAS HBA（%s），但 sas3ircu/sas2ircu 未安装或采集失败——HBA 型号/固件/端口信息不可用\n' "$(echo "$HBA_PCI_PRESENT" | sed 's/.*: //' | xargs)"
 fi)
 
 [网络]
@@ -2254,8 +2294,10 @@ fi)
   固件   : ${BMC_FW:-N/A}
   IP     : ${BMC_IP:-N/A}
   MAC    : ${BMC_MAC:-N/A}
-  SEL    : ${SEL_TOTAL:-0} (Critical ${SEL_CRIT:-0})
-$(if [ -n "$SEL_DETAILS" ]; then
+  SEL    : $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} (Critical ${SEL_CRIT:-0})"; else echo "⚠️ 数据不可用"; fi)
+$(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
+    echo "  ⚠️ SEL 数据不可用（ipmitool 采集失败或无权限），事件列表不完整"
+elif [ -n "$SEL_DETAILS" ]; then
     echo "  SEL告警事件:"
     echo "$SEL_DETAILS" | while IFS='|' read -r sid sdate stime stype sdesc; do
         printf "    %-4s %-12s %-10s %-25s %s\n" "$sid" "$sdate" "$stime" "$stype" "$sdesc"
@@ -2273,6 +2315,8 @@ $(if [ -n "$FAN_DETAILS" ]; then
     echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do
         printf "    %-16s %8s RPM  %s\n" "$fname" "$fval" "$fstatus"
     done
+elif [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+    echo "  ⚠️ 未采集到风扇数据（ipmitool 风扇传感器不可读或平台无风扇传感器）"
 fi)
 
 [电源PSU]
@@ -2328,10 +2372,13 @@ gen_acceptance() {
         rows="${rows}| ${n} | $1 | ${st} | $3 |"$'\n'
     }
 
-    # 1. GPU PCIe 链路完整（无 GPU 机器判 N/A 且不计入"数据不足"——无 GPU 是平台形态非数据缺失）
+    # 1. GPU PCIe 链路完整（无 GPU 机器判 N/A 且不计入"数据不足"——无 GPU 是平台形态非数据缺失；
+    #    有 GPU 但驱动异常（lspci 3D controller 存在但 nvidia-smi 无数据）→ WARN，无法验收即问题）
     if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         if [ "$HEAD_NODE" -eq 1 ]; then
             add_item "GPU PCIe 链路完整" "N/A" "HGX 机头（无本地 GPU，模组单独采集验收）" 1
+        elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+            add_item "GPU PCIe 链路完整" "WARN" "检测到 ${GPU_PCI_PRESENT} 个 NVIDIA GPU（PCI 3D controller）但 nvidia-smi 无数据（驱动未安装或异常）"
         else
             add_item "GPU PCIe 链路完整" "N/A" "无 GPU" 1
         fi
@@ -2347,6 +2394,8 @@ gen_acceptance() {
         异常) add_item "NVLink 互联" "FAIL" "存在降级链路${NVLINK_CRC:+，且有非零 CRC 错误}" ;;
         *)    if [ "$HEAD_NODE" -eq 1 ]; then
                   add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）" 1
+              elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+                  add_item "NVLink 互联" "WARN" "检测到 NVIDIA GPU 但驱动异常，NVLink 状态不可用"
               elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
                   add_item "NVLink 互联" "N/A" "无 GPU" 1
               else
@@ -2361,6 +2410,8 @@ gen_acceptance() {
         配置项*Fail*|Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
         *)    if [ "$HEAD_NODE" -eq 1 ]; then
                   add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）" 1
+              elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+                  add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行"
               elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
                   add_item "DCGM 诊断" "N/A" "无 GPU" 1
               else
@@ -2370,7 +2421,11 @@ gen_acceptance() {
 
     # 4. GPU VBIOS 版本一致（混插固件是交付要记录的固件一致性问题）
     if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        add_item "GPU VBIOS 版本一致" "N/A" "无 GPU" 1
+        if [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+            add_item "GPU VBIOS 版本一致" "WARN" "检测到 NVIDIA GPU 但驱动异常，VBIOS 不可读"
+        else
+            add_item "GPU VBIOS 版本一致" "N/A" "无 GPU" 1
+        fi
     elif [ "$GPU_VBIOS" = "N/A" ]; then
         add_item "GPU VBIOS 版本一致" "N/A" "无 VBIOS 数据（旧采集或驱动不可用）"
     elif echo "$GPU_VBIOS" | grep -q "不一致"; then
