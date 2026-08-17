@@ -12,3 +12,4 @@ scripts/
 
 # AI agent 工具残留（DeepSeek Harness 会话记忆等）
 .workbuddy/
+workspace/
