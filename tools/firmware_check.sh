@@ -14,7 +14,7 @@ source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 BASE_DIR="${SCRIPT_DIR}/logs/fw_check"
 mkdir -p "$BASE_DIR"
 BASELINE="${BASE_DIR}/fw_baseline.txt"
-NOW="${BASE_DIR}/fw_now_$(date '+%Y%m%d_%H%M%S').txt"
+NOW="${BASE_DIR}/fw_now_$(date '+%Y%m%d%H%M%S').txt"
 
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  固件版本核对${NC}"

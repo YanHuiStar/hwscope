@@ -13,7 +13,7 @@ detect_machine_id() {
         [ -z "$mid" ] && mid=$(dmidecode -t baseboard 2>/dev/null | grep -i 'Serial Number' | grep -v 'Not Specified' | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
         [ -z "$mid" ] && mid=$(dmidecode -t system 2>/dev/null | grep -i 'UUID' | head -1 | awk -F': ' '{print $2}' | tr -d ' -')
     fi
-    [ -z "$mid" ] && mid=$(date '+%Y%m%d_%H%M%S')
+    [ -z "$mid" ] && mid=$(date '+%Y%m%d%H%M%S')
     echo "$mid"
 }
 

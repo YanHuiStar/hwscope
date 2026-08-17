@@ -125,7 +125,7 @@ read -rp "确认将 $TARGET 配置为 DHCP 自动获取 IP? (y/N) " ans
 [[ ! "$ans" =~ ^[Yy] ]] && echo "已取消" && exit 0
 
 # ─── 备份 ───
-BK="/etc/netplan/backup-$(date +%Y%m%d_%H%M%S)"
+BK="/etc/netplan/backup-$(date +%Y%m%d%H%M%S)"
 mkdir -p "$BK"
 cp -a /etc/netplan/*.y*ml "$BK"/ 2>/dev/null
 echo "[备份] netplan 配置 → $BK/"
