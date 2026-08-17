@@ -2752,6 +2752,9 @@ gen_acceptance() {
     } > "$f"
     echo -e "${GREEN}[REPORT] 验收清单: ${f}${NC}"
     echo -e "${GREEN}[REPORT] 判定: ${verdict}${NC}"
+    # 验收清单 HTML（同 md2html.awk 转换，交付交接单展示用）
+    awk -f "${SCRIPT_DIR}/tools/md2html.awk" "$f" > "${OUT}/hwscope_acceptance.html" 2>/dev/null && \
+        echo -e "${GREEN}[REPORT] 验收清单 HTML: ${OUT}/hwscope_acceptance.html${NC}"
 }
 
 case "$FORMAT" in
