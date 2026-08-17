@@ -83,8 +83,8 @@ BEGIN {
     if (in_table == 0) {
         print "<table><thead><tr>"
         for (i = 1; i <= n; i++) {
-            trim_cell(cells[i])
-            print "<th>" cells[i] "</th>"
+            c = trim_cell(cells[i])
+            print "<th>" esc_html(c) "</th>"
         }
         print "</tr></thead><tbody>"
         in_table = 1
@@ -92,10 +92,10 @@ BEGIN {
     }
     print "<tr>"
     for (i = 1; i <= n; i++) {
-        trim_cell(cells[i])
-        cls = cell_class(cells[i])
-        if (cls != "") print "<td class='" cls "'>" cells[i] "</td>"
-        else print "<td>" cells[i] "</td>"
+        c = trim_cell(cells[i])
+        cls = cell_class(c)
+        if (cls != "") print "<td class='" cls "'>" esc_html(c) "</td>"
+        else print "<td>" esc_html(c) "</td>"
     }
     print "</tr>"
     next
@@ -137,11 +137,20 @@ function trim_cell(s) {
     return s
 }
 
+# HTML 转义（先 & 后 < > "，防二次转义）；cell_class 在转义前调用（用原始文本判色）
+function esc_html(s) {
+    gsub(/&/, "\\&amp;", s)
+    gsub(/</, "\\&lt;", s)
+    gsub(/>/, "\\&gt;", s)
+    gsub(/"/, "\\&quot;", s)
+    return s
+}
+
 function cell_class(s) {
     if (s ~ /FAIL|不合格|❌/) return "fail"
     if (s ~ /WARN|⚠️/) return "warn"
     if (s ~ /PASS|✅|合格/) return "pass"
-    if (s ~ /^N\/A$|^—$|^无$|数据不足/) return "na"
+    if (s ~ /N\/A$|^—$|^无$|数据不足/) return "na"   # N/A 锚定结尾：匹配 "N/A" 与 "— N/A"，不误伤 "N/A（...）" 说明
     return ""
 }
 

@@ -290,7 +290,7 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
             *"RTX 4000 Ada"*)        _cands="20" ;;
             *"RTX 2000"*)            _cands="16" ;;          # 2000 Ada / 2000E Ada
             *"RTX A2000"*)           _cands="6|12" ;;
-            *"RTX A1000"*)           _cands="8" ;;
+            *A1000*)                 _cands="4|8" ;;          # 桌面8G/移动4G；无 RTX 前缀也匹配（防落到 A100 误配触发魔改误报）
             *"RTX A400"*)            _cands="4" ;;
             *"RTX A6000"*)           _cands="48" ;;
             *"RTX A5000"*)           _cands="24" ;;
@@ -2215,8 +2215,8 @@ gen_txt() {
     fi
     # 盘明细纯文本
     local disk_details_txt=""
-    # 整列隐藏判定（同 MD）：寿命%/健康 整列无值省略字段（旧采集无 SMART）
-    local disk_has_spare=0 disk_has_health=0
+    # 整列隐藏判定（同 MD）：寿命%/额定/健康 整列无值省略字段（旧采集无 SMART）
+    local disk_has_spare=0 disk_has_spec=0 disk_has_health=0
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
@@ -2678,7 +2678,7 @@ gen_acceptance() {
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
-            if echo "${npn}${nchip}" | grep -qiE "ConnectX|MT[0-9]{4}"; then
+            if echo "${npn}${nchip}" | grep -qiE "ConnectX|MCX[0-9]|MT[0-9]{4}"; then
                 ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
                 [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="${npn:-N/A}"
             else
