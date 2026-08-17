@@ -2469,6 +2469,14 @@ EOF
     echo -e "${GREEN}[REPORT] TXT: ${f}${NC}"
 }
 
+# ─── HTML 报告（MD → HTML，md2html.awk 内嵌专业样式；交付/展示用）───
+gen_html() {
+    local f="${OUT}/hwscope_report.md"
+    [ -f "$f" ] || return 0
+    awk -f "${SCRIPT_DIR}/tools/md2html.awk" "$f" > "${OUT}/hwscope_report.html" 2>/dev/null || return 0
+    echo -e "${GREEN}[REPORT] HTML: ${OUT}/hwscope_report.html${NC}"
+}
+
 # ─── 验收清单生成（--acceptance）───
 # 逐项评估硬件状态，输出 hwscope_acceptance.md（交付交接单）
 # 项状态: PASS=通过 / FAIL=不通过 / WARN=有条件通过 / N/A=无数据
@@ -2748,10 +2756,10 @@ gen_acceptance() {
 
 case "$FORMAT" in
     --json) gen_json ;;
-    --md)   gen_md ;;
+    --md)   gen_md; gen_html ;;
     --txt)  gen_txt ;;
     --acceptance) gen_acceptance ;;
-    *)      gen_json; gen_md; gen_txt ;;
+    *)      gen_json; gen_md; gen_txt; gen_html ;;
 esac
 
 echo -e "${GREEN}[REPORT] 生成完成${NC}"
