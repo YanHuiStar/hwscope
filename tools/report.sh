@@ -2545,7 +2545,27 @@ gen_acceptance() {
     {
         echo "# HwScope 验收清单（Acceptance Checklist）"
         echo ""
+        echo "## 硬件概览"
+        echo ""
         echo "- 机器: ${OUT##*/}"
+        echo "- 平台: ${PLATFORM_LABEL:-N/A}"
+        echo "- CPU: ${CPU_MODEL:-N/A} ×${CPU_SOCKETS:-0} 路（${CPU_CORES:-0} 核/颗）"
+        echo "- 内存: ${MEM_TYPE:-DDR} ${MEM_TOTAL:-N/A}（${MEM_POPULATED:-0} 槽）"
+        if [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "- GPU: ${GPU_NAMES:-N/A} ×${GPU_COUNT}（${GPU_MEM:-N/A}）"
+        else
+            echo "- GPU: 无"
+        fi
+        echo "- 存储: ${STORAGE_COUNT:-0} 盘 / ${STORAGE_TOTAL:-0}"
+        if [ "${IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "- 网络: ${IB_COUNT}×IB"
+        else
+            echo "- 网络: 无 IB"
+        fi
+        echo "- BMC: ${BMC_FRU:-N/A}（固件 ${BMC_FW:-N/A}）"
+        echo ""
+        echo "## 验收信息"
+        echo ""
         echo "- 生成时间: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "- 采集版本: ${VERSION:-unknown} / 报告版本: ${REPORT_VERSION:-unknown}"
         echo ""
