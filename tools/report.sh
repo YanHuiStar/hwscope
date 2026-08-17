@@ -183,16 +183,16 @@ MEM_DIR="${OUT}/memory"
 load_manifest "${MEM_DIR}" proc_meminfo "proc_meminfo.log"
 load_manifest "${MEM_DIR}" dmidecode_memory_full "dmidecode_memory_full.log"
 MEM_TOTAL=$(grep -m1 "MemTotal" "${proc_meminfo}" 2>/dev/null | awk '{printf "%.1f GiB", $2/1024/1024}')
-# 速率：优先取实际运行速率（Configured Memory Speed），fallback 标称 Speed
+# 速率：优先取实际运行速率（Configured Memory Speed），fallback 额定 Speed
 MEM_SPEED=$(extract "Configured Memory Speed" "${dmidecode_memory_full}")
 [ -z "$MEM_SPEED" ] && MEM_SPEED=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
 MEM_SPEED_NOTE=""
-# 降速检测：标称 Speed 与运行速率不一致时提示（如 6400 标称 / 5200 实际）
+# 降速检测：额定 Speed 与运行速率不一致时提示（如 6400 额定 / 5200 实际）
 # 插满降速是 DDR5 物理必然（信号负载/散热），不算故障；未插满仍降速才需关注
 # 正文保留提示（信息价值），验收清单判定时再结合插满状态区分
 MEM_NOM=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
 if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null; then
-    MEM_SPEED_NOTE="⚠️ 降速运行（标称 ${MEM_NOM}）"
+    MEM_SPEED_NOTE="⚠️ 降速运行（额定 ${MEM_NOM}）"
 fi
 MEM_SLOTS=$(grep -c "Memory Device" "${dmidecode_memory_full}" 2>/dev/null)
 MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${dmidecode_memory_full}" 2>/dev/null)
@@ -201,7 +201,7 @@ MEM_FULL=0
 [ "${MEM_POPULATED:-0}" -ge "${MEM_SLOTS:-0}" ] 2>/dev/null && [ "${MEM_SLOTS:-0}" -gt 0 ] && MEM_FULL=1
 # 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率|Rank），空槽跳过
 # 行模式状态机：从 "Memory Device" 段头开始，空行结束（Size 行在 Locator 之前）
-# 速率语义：Speed=模块标称（原速率），Configured Memory Speed=当前实际运行（现速率）
+# 速率语义：Speed=模块额定（原速率），Configured Memory Speed=当前实际运行（现速率）
 MEM_DIMMS=""
 if [ -f "${dmidecode_memory_full}" ]; then
     MEM_DIMMS=$(awk '
@@ -217,7 +217,7 @@ if [ -f "${dmidecode_memory_full}" ]; then
         in_dimm && /^[[:space:]]*$/ { if(size!="") printf "%s|%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur, rank; in_dimm=0 }
     ' "${dmidecode_memory_full}" 2>/dev/null)
 fi
-# 物理标称总量（每槽 Size 求和，64GB×32=2048GB）——与系统可见(MEM_TOTAL)区分，需在 MEM_DIMMS 之后计算
+# 物理额定总量（每槽 Size 求和，64GB×32=2048GB）——与系统可见(MEM_TOTAL)区分，需在 MEM_DIMMS 之后计算
 MEM_TOTAL_PHYS=""
 if [ -n "$MEM_DIMMS" ]; then
     MEM_TOTAL_PHYS=$(echo "$MEM_DIMMS" | awk -F'|' '{gsub(/[^0-9.]/,"",$2); if($2+0>0) sum+=$2} END{if(sum>0) printf "%.0fGB", sum; else print ""}')
@@ -260,7 +260,7 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         gsub(/ MiB/, "", $col)
         sum += $col
     } END{printf "%.0f GiB", sum/1024}')
-    # 每卡标称规格（型号→标称映射，标注检测值 vs 规格的差异；未知型号显示检测值）
+    # 每卡额定规格（型号→额定映射，标注检测值 vs 规格的差异；未知型号显示检测值）
     GPU_MODEL_LINE=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f2)
     GPU_MEM_SPEC=""
     case "$GPU_MODEL_LINE" in
@@ -279,7 +279,7 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         sum += t
         if(t+0 > tmax+0) tmax = t
     } END{printf "%.0f°C (max %.0f)", sum/NR, tmax}')
-    # 标称总量（单卡标称 × 卡数，如 288GB×8=2304GB）；与可用总量(GPU_MEM)并列显示
+    # 额定总量（单卡额定 × 卡数，如 288GB×8=2304GB）；与可用总量(GPU_MEM)并列显示
     GPU_MEM_SPEC_TOTAL=""
     if [ -n "$GPU_MEM_SPEC" ]; then
         GPU_MEM_SPEC_NUM=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+" | head -1)
@@ -404,27 +404,27 @@ if [ -f "${disk_inventory}" ]; then
         case "$dmodel" in
             *MegaRAID*|*MR[0-9][0-9][0-9]*|*PERC*|*"Smart Array"*|*Adaptec*|*ServeRAID*) is_raid_vd=1 ;;
         esac
-        # 标称容量：优先从型号字符串自动提取（如 "PM1733a RI 3.84TB"、"MTFDKBA480TFR"→480GB），
+        # 额定容量：优先从型号字符串自动提取（如 "PM1733a RI 3.84TB"、"MTFDKBA480TFR"→480GB），
         # Samsung 硬编码表兜底（型号无容量字样时）
         dspec=""
         case "$dmodel" in
-            *MZWL61T9HFLT*|*MZWL61T9HBLN*) dspec="标称1.92TB" ;;
-            *MZWL63T8HFLT*|*MZWL63T8HBLN*) dspec="标称3.84TB" ;;
-            *MZWL67T6HFLT*) dspec="标称7.68TB" ;;
-            *MZ7L31T9*|*MZ7LH1T9*) dspec="标称1.92TB" ;;
-            *MZ7L33T8*|*MZ7LH3T8*) dspec="标称3.84TB" ;;
-            *MZ7L37T6*) dspec="标称7.68TB" ;;
-            *MZQL21T9*) dspec="标称1.92TB" ;;
-            *MZQL23T8*) dspec="标称3.84TB" ;;
-            *MZQL27T6*) dspec="标称7.68TB" ;;
-            *MZIL21T6*) dspec="标称1.6TB" ;;
-            *MZIL23T8*) dspec="标称3.2TB" ;;
-            *MZIL27T6*) dspec="标称6.4TB" ;;
+            *MZWL61T9HFLT*|*MZWL61T9HBLN*) dspec="额定1.92TB" ;;
+            *MZWL63T8HFLT*|*MZWL63T8HBLN*) dspec="额定3.84TB" ;;
+            *MZWL67T6HFLT*) dspec="额定7.68TB" ;;
+            *MZ7L31T9*|*MZ7LH1T9*) dspec="额定1.92TB" ;;
+            *MZ7L33T8*|*MZ7LH3T8*) dspec="额定3.84TB" ;;
+            *MZ7L37T6*) dspec="额定7.68TB" ;;
+            *MZQL21T9*) dspec="额定1.92TB" ;;
+            *MZQL23T8*) dspec="额定3.84TB" ;;
+            *MZQL27T6*) dspec="额定7.68TB" ;;
+            *MZIL21T6*) dspec="额定1.6TB" ;;
+            *MZIL23T8*) dspec="额定3.2TB" ;;
+            *MZIL27T6*) dspec="额定6.4TB" ;;
             *)
                 # Micron 型号规则: MTFDKBA480TFR / MTFDHBE960TFR → 数字=容量GB（T 是家族代号非 TB）
                 if echo "$dmodel" | grep -qE 'MTFD[KHC][A-Z]{2}[0-9]{3,4}TFR'; then
                     micap=$(echo "$dmodel" | grep -oE '[0-9]{3,4}TFR' | head -1 | grep -oE '[0-9]+')
-                    [ -n "$micap" ] && dspec="标称${micap}GB"
+                    [ -n "$micap" ] && dspec="额定${micap}GB"
                 fi
                 # 通用提取：型号中显式容量（3.84TB / 1.92T / 480G 等）
                 if [ -z "$dspec" ]; then
@@ -433,7 +433,7 @@ if [ -f "${disk_inventory}" ]; then
                         # 统一单位：T→TB，G→GB（保留一位小数）
                         num=$(echo "$cap" | grep -oE '[0-9]+(\.[0-9]+)?')
                         unit=$(echo "$cap" | grep -oE '[TtGg]' | tr '[:lower:]' '[:upper:]')
-                        dspec="标称${num}${unit}B"
+                        dspec="额定${num}${unit}B"
                     fi
                 fi
                 ;;
@@ -588,7 +588,7 @@ fi
 IB_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | tail -1)
 [ -n "$IB_SPEED" ] && IB_SPEED="${IB_SPEED} Gb/s"
 
-# 标称速率（卡能力，无需接线）：解析 mlxlink Enabled Link Speed 位图，取最大速率族
+# 额定速率（卡能力，无需接线）：解析 mlxlink Enabled Link Speed 位图，取最大速率族
 # Mellanox 位图: bit0=SDR(10G) bit1=DDR(20G) bit2=QDR(40G) bit3=FDR10(40G) bit4=FDR(56G)
 #                bit5=EDR(100G) bit6=HDR(200G) bit7=NDR(400G) bit8=XDR(800G) bit9=GDR(1600G)
 IB_NOMINAL="N/A"
@@ -613,7 +613,7 @@ for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do
     fi
     _NOMINAL_SPEEDS+=("$_nom")
 done
-# 取所有口中最大标称速率
+# 取所有口中最大额定速率
 if [ "${#_NOMINAL_SPEEDS[@]}" -gt 0 ]; then
     for _s in "${_NOMINAL_SPEEDS[@]}"; do
         _g=$(echo "$_s" | grep -oE "^[0-9]+" || echo 0)
@@ -1202,7 +1202,7 @@ if [ -f "$_fru_src" ]; then
                     desc=f[1]
                     pnum=""
                     if(desc ~ /PSU[0-9]+/) { pnum=desc; sub(/.*PSU/, "", pnum); sub(/[^0-9].*/, "", pnum) }
-                    # 标称容量：从型号解析（DLG3200=3200W, DLG2600=2600W, DLG2000=2000W, DLG1600=1600W...）
+                    # 额定容量：从型号解析（DLG3200=3200W, DLG2600=2600W, DLG2000=2000W, DLG1600=1600W...）
                     model=f[2]
                     cap=""
                     if(model ~ /3200/) cap="3200W"
@@ -1308,7 +1308,7 @@ gen_json() {
     # GPU 每卡明细 JSON 数组（idx|name|serial|mem|power|temp|util|pcie_cur|pcie_max）
     local gpu_details_json=""
     if [ -n "$GPU_DETAILS" ]; then
-        # 每卡显存标注标称（如 B300: 268.6 GiB (标称288GB)）
+        # 每卡显存标注额定（如 B300: 268.6 GiB (额定288GB)）
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
@@ -1573,7 +1573,7 @@ EOF
 # ─── 术语说明（交付报告末尾，解释报告内出现的专业词） ───
 GLOSSARY_ENTRIES=(
     "IB|InfiniBand，高速互联网络（GPU/存储集群专用），速率代际 SDR→DDR→QDR→FDR→EDR→HDR→NDR→XDR 每代翻倍（10G→800G/单口）"
-    "标称/实际速率|标称=网卡硬件支持的最大速率（固件声明，无需接线）；实际=当前链路协商速率（取决于对端交换机/线缆，未接为 Down）"
+    "额定/实际速率|额定=网卡硬件支持的最大速率（固件声明，无需接线）；实际=当前链路协商速率（取决于对端交换机/线缆，未接为 Down）"
     "GPU直连|网卡与 GPU 处于同一 PCIe Switch（PIX），可做 GPU Direct RDMA 高速通信"
     "NVLink|NVIDIA GPU 间高速互联总线（B300 每卡 18 条，53.125 GB/s/条）"
     "NVSwitch|NVLink 交换芯片，连接多卡实现全互联（B300 集成于 GPU 模块内）"
@@ -1641,7 +1641,7 @@ gen_md() {
     # GPU 每卡明细 Markdown 表
     local gpu_details_md=""
     if [ -n "$GPU_DETAILS" ]; then
-        # 每卡显存显示 默认(标称)/可用（如 288GB/268.6 GiB 可用），防止客户误读检测值为卡容量
+        # 每卡显存显示 默认(额定)/可用（如 288GB/268.6 GiB 可用），防止客户误读检测值为卡容量
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
@@ -1651,12 +1651,12 @@ gen_md() {
             if [ "$gpcie" != "N/A" ] && [ "$gmax" != "N/A" ] && [ -n "$gmax" ] && [ "$gpcie" != "$gmax" ]; then
                 gpcie_disp="${gpcie} (能力 ${gmax})"
             fi
-            # 显存 检测/标称（检测=采集可见值 GiB，标称=规格 GB，差异为 ECC/显存预留）
+            # 显存 检测/额定（检测=采集可见值 GiB，额定=规格 GB，差异为 ECC/显存预留）
             gmem_disp="${gmem:-N/A}"
             if [ -n "$gmem_spec" ] && [ "$gmem" != "N/A" ] && [ -n "$gmem" ]; then
                 gmem_disp="${gmem}/${gmem_spec}"
             fi
-            # 功耗 检测/标称（检测=当前功耗，标称=规格最大功耗）
+            # 功耗 检测/额定（检测=当前功耗，额定=规格最大功耗）
             gdraw_disp="${gdraw:-N/A}"
             if [ -n "$gdraw" ] && [ -n "$glimit" ] && [ "$gdraw" != "N/A" ] && [ "$glimit" != "N/A" ]; then
                 _gl=$(echo "$glimit" | grep -oE "[0-9.]+" | head -1 | awk '{printf "%g", $1}')
@@ -1667,7 +1667,7 @@ gen_md() {
     fi
     # 盘明细 Markdown 表
     local disk_details_md=""
-    # 整列隐藏判定：寿命%/标称/健康 整列全为占位符（旧采集无 SMART 数据）时隐藏该列（有任一值即显示）
+    # 整列隐藏判定：寿命%/额定/健康 整列全为占位符（旧采集无 SMART 数据）时隐藏该列（有任一值即显示）
     local disk_has_spare=0 disk_has_spec=0 disk_has_health=0
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
@@ -1680,11 +1680,11 @@ gen_md() {
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
             dn=$((dn + 1))
-            # 动态列拼接（整列无值列省略，保持表头/数据行列一致）
+            # 动态列拼接（整列无值列省略，保持表头/数据行列一致；额定列紧跟容量便于检测/规格对比）
             _spare_col=""; [ "$disk_has_spare" -eq 1 ] && _spare_col=" | ${dspare}"
-            _spec_col="";  [ "$disk_has_spec" -eq 1 ] && _spec_col=" | ${dspec:-}"
+            _spec_col="";  [ "$disk_has_spec" -eq 1 ] && _spec_col=" | ${dspec#额定}"   # MD 有列头"额定"，值去前缀防重复
             _health_col=""; [ "$disk_has_health" -eq 1 ] && _health_col=" | ${dhealth}"
-            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc}${_spare_col}${_spec_col}${_health_col} |"$'\n'
+            disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize}${_spec_col} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc}${_spare_col}${_health_col} |"$'\n'
         done < <(printf '%s\n' "$DISK_DETAILS")
     fi
     # 网卡明细 Markdown 表
@@ -1775,7 +1775,7 @@ $(if [ -n "$CPU_DETAILS" ]; then
         [ -z "$cs" ] && continue
         [ -n "$csn" ] && c_has_sn=1
     done < <(printf '%s\n' "$CPU_DETAILS")
-    echo "### CPU 明细"
+    echo "### 处理器明细（CPU）"
     if [ "$c_has_sn" -eq 1 ]; then
         echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping | SN |"
         echo "|---|--------|------|------|------|---------|---------|----------|----|"
@@ -1801,8 +1801,8 @@ fi)
 | 速率 | ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-} |
 | 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
 
-### 内存插槽明细
-| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 标称速率 | 当前速率 | Rank |
+### 内存模块明细（DIMM）
+| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
 |----|------|------|------|----|--------|--------|--------|------|
 $(printf '%s' "$dimms_md")
 
@@ -1822,8 +1822,8 @@ else
     echo "|----|----|"
     echo "| 数量 | ${GPU_COUNT:-0} |"
     echo "| 型号 | ${GPU_NAMES:-N/A} |"
-    echo "| 显存总量 | ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/标称${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}） |"
-    echo "| 标称功耗 | ${GPU_POWER:-N/A} |"
+    echo "| 显存总量 | ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}） |"
+    echo "| 额定功耗 | ${GPU_POWER:-N/A} |"
     echo "| 温度 | ${GPU_TEMP:-N/A} |"
     echo "| ECC | ${GPU_ECC:-N/A} |"
     echo "| 退役行 | ${GPU_REMAP:-N/A} |"
@@ -1834,8 +1834,8 @@ else
 fi)
 $(if [ -n "$gpu_details_md" ]; then
     echo ""
-    echo "### GPU 每卡明细"
-    echo "| 卡 | 型号 | SN | 显存(检测/标称) | 功耗(检测/标称) | 温度 | PCIe(协商) | VBIOS |"
+    echo "### 图形处理器明细（GPU）"
+    echo "| 卡 | 型号 | SN | 显存(检测/额定) | 功耗(检测/额定) | 温度 | PCIe(协商) | VBIOS |"
     echo "|----|------|----|----|------|------|----------|-------|"
     printf '%s' "$gpu_details_md"
 fi)
@@ -1856,16 +1856,16 @@ fi)
 | 盘型号 | ${STORAGE_MODELS:-N/A} |
 | 系统盘(已排除) | ${SYS_DISK:-N/A} |
 
-### 盘明细
-| # | 设备 | 类型 | 容量 | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数$(if [ "$disk_has_spare" -eq 1 ]; then echo " | 寿命%"; fi)$(if [ "$disk_has_spec" -eq 1 ]; then echo " | 标称"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo " | 健康"; fi) |
-|---|------|------|------|------|----|------|-----|---------|----------$(if [ "$disk_has_spare" -eq 1 ]; then echo "|-------"; fi)$(if [ "$disk_has_spec" -eq 1 ]; then echo "|------"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo "|------"; fi)|
+### 存储盘明细
+| # | 设备 | 类型 | 容量$(if [ "$disk_has_spec" -eq 1 ]; then echo " | 额定"; fi) | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数$(if [ "$disk_has_spare" -eq 1 ]; then echo " | 寿命%"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo " | 健康"; fi) |
+|---|------|------|------$(if [ "$disk_has_spec" -eq 1 ]; then echo "|------"; fi)|------|----|------|-----|---------|----------$(if [ "$disk_has_spare" -eq 1 ]; then echo "|-------"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo "|------"; fi)|
 $(printf '%s' "$disk_details_md")
 $(if [ -n "$DISK_DETAILS" ] && { [ "$disk_has_spare" -eq 0 ] || [ "$disk_has_health" -eq 0 ]; }; then
     echo "> 注：$(if [ "$disk_has_spare" -eq 0 ]; then echo "寿命%"; fi)$(if [ "$disk_has_spare" -eq 0 ] && [ "$disk_has_health" -eq 0 ]; then echo "、"; fi)$(if [ "$disk_has_health" -eq 0 ]; then echo "健康"; fi) 列因旧采集无 SMART 数据而隐藏"
 fi)
 
 $(if [ -n "$RAID_VD_DETAILS" ]; then
-    echo "### RAID 虚拟盘（逻辑盘，底层物理盘需 storcli 查看）"
+    echo "### RAID 虚拟盘明细（VD）"
     echo "| # | 设备 | RAID 卡 | 容量 | SN(LUN) |"
     echo "|---|------|---------|------|---------|"
     local rvd_seq=0
@@ -1908,7 +1908,7 @@ else
 fi)
 
 $(if [ -n "$HBA_DETAILS" ]; then
-    echo "## HBA 直通卡"
+    echo "## 主机总线适配器明细（HBA）"
     echo "| # | 控制器 | 型号 | 固件 | SN | 状态 | SAS地址 | 端口 |"
     echo "|---|--------|------|------|----|------|---------|------|"
     echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
@@ -1918,7 +1918,7 @@ $(if [ -n "$HBA_DETAILS" ]; then
     done
 else
     if [ -n "$HBA_PCI_PRESENT" ]; then
-        echo "## HBA 直通卡"
+        echo "## 主机总线适配器明细（HBA）"
         echo "> ⚠️ 检测到 SAS HBA（$(echo "$HBA_PCI_PRESENT" | sed 's/.*: //' | xargs)），但 sas3ircu/sas2ircu 未安装或采集失败——HBA 型号/固件/端口信息不可用"
     fi
 fi)
@@ -1929,11 +1929,11 @@ fi)
 | IB 设备数 | ${IB_COUNT:-0} |
 | IB 活动口 | ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})} |
 | IB Link 状态 | Active ${IB_ACTIVE:-0} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）} |
-| IB 标称速率 | ${IB_NOMINAL:-N/A} |
+| IB 额定速率 | ${IB_NOMINAL:-N/A} |
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 $(net_extra_md)
 
-### 网卡明细
+### 网络适配器明细（NIC）
 $(if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
     echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | GPU直连 |"
     echo "|---|------|-----|-----|----|------|------|------|------|------|------|"
@@ -1943,7 +1943,7 @@ else
 fi)
 $(printf '%s' "$nic_details_md")
 $(if [ -z "$nic_details_md" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
-    echo "### 网卡明细（ibstat 回退，旧采集无 nic_inventory 明细）"
+    echo "### 网络适配器明细（NIC，ibstat 回退，旧采集无 nic_inventory）"
     echo "| # | CA | 型号 | Node GUID | Link 状态 |"
     echo "|---|----|------|-----------|-----------|"
     local nfb=0
@@ -1995,7 +1995,7 @@ fi)
 | 转速 | ${FAN_SPEED:-N/A} |
 | 温度 | ${TEMP_SUMMARY:-N/A} |
 $(if [ -n "$FAN_DETAILS" ]; then
-    echo "### 风扇明细"
+    echo "### 散热风扇明细"
     echo "| # | 风扇 | 转速(RPM) | 状态 |"
     echo "|---|------|----------|------|"
     local fan_seq=0
@@ -2008,8 +2008,8 @@ elif [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
 fi)
 
 ## 电源 PSU
-### PSU 明细
-| # | 描述 | 型号 | 部件号 | 序列号 | 标称容量 | 当前功耗 |
+### 电源模块明细（PSU）
+| # | 描述 | 型号 | 部件号 | 序列号 | 额定容量 | 当前功耗 |
 |----|------|------|--------|--------|---------|---------|
 $(if [ -n "$PSU_DETAILS" ]; then
     local pseq=0
@@ -2068,7 +2068,7 @@ $(
 $(glossary_md)
 $(if [ -n "$NIC_MLX" ]; then
     echo ""
-    echo "### 网卡型号对照（MT 编号 → 型号，lspci 直读优先）"
+    echo "### 网卡型号对照表"
     echo ""
     echo "| MT 编号 | 型号 |"
     echo "|---------|------|"
@@ -2083,7 +2083,7 @@ fi)
 ---
 *由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）*
 
-> 数据来源：只读解析采集日志（不重新采集）；"标称"为硬件规格，检测值为采集时刻实际状态；明细见 output/&lt;SN&gt;/&lt;模块&gt;/。
+> 数据来源：只读解析采集日志（不重新采集）；"额定"为硬件规格，检测值为采集时刻实际状态；明细见 output/&lt;SN&gt;/&lt;模块&gt;/。
 EOF
     echo -e "${GREEN}[REPORT] MD: ${f}${NC}"
 }
@@ -2098,7 +2098,7 @@ gen_txt() {
         while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank; do
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
-            dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  标称${dnom}/现${dcur}  Rank:${drank:-N/A}"$'\n'
+            dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  额定${dnom}/现${dcur}  Rank:${drank:-N/A}"$'\n'
         done < <(printf '%s\n' "$MEM_DIMMS")
     fi
     # GPU 每卡明细纯文本
@@ -2114,12 +2114,12 @@ gen_txt() {
             if [ "$gpcie" != "N/A" ] && [ "$gmax" != "N/A" ] && [ -n "$gmax" ] && [ "$gpcie" != "$gmax" ]; then
                 gpcie_disp="${gpcie} (能力 ${gmax})"
             fi
-            # 显存 检测/标称（检测=采集可见值 GiB，标称=规格 GB）
+            # 显存 检测/额定（检测=采集可见值 GiB，额定=规格 GB）
             gmem_disp="${gmem:-N/A}"
             if [ -n "$gmem_spec" ] && [ "$gmem" != "N/A" ] && [ -n "$gmem" ]; then
                 gmem_disp="${gmem}/${gmem_spec}"
             fi
-            # 功耗 检测/标称（检测=当前功耗，标称=规格最大功耗）
+            # 功耗 检测/额定（检测=当前功耗，额定=规格最大功耗）
             gdraw_disp="${gdraw:-N/A}"
             if [ -n "$gdraw" ] && [ -n "$glimit" ] && [ "$gdraw" != "N/A" ] && [ "$glimit" != "N/A" ]; then
                 _gl=$(echo "$glimit" | grep -oE "[0-9.]+" | head -1 | awk '{printf "%g", $1}')
@@ -2141,8 +2141,9 @@ gen_txt() {
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
             _spare_txt=""; [ "$disk_has_spare" -eq 1 ] && _spare_txt="  spare:${dspare}"
+            _spec_txt="";  [ "$disk_has_spec" -eq 1 ] && _spec_txt="  ${dspec:-}"
             _health_txt=""; [ "$disk_has_health" -eq 1 ] && _health_txt="  健康:${dhealth}"
-            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}${_spare_txt}${_health_txt}  ${dspec:-}"$'\n'
+            disk_details_txt="${disk_details_txt}    ${dname}  ${dtype}  ${dsize}${_spec_txt}  ${dmodel}  SN:${dsn}  FW:${dfw}  ${dbdf}  ${dpo}h  cyc:${dpc}${_spare_txt}${_health_txt}"$'\n'
         done < <(printf '%s\n' "$DISK_DETAILS")
     fi
     # 网卡明细纯文本（TXT 专用；PSID/MST 提示并入开头，避免命令替换剥尾换行粘连）
@@ -2257,8 +2258,8 @@ $(if [ "$GPU_COUNT" -eq 0 ]; then
 else
     echo "  数量   : ${GPU_COUNT:-0}"
     echo "  型号   : ${GPU_NAMES:-N/A}"
-    echo "  显存   : ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/标称${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）"
-    echo "  功耗   : ${GPU_POWER:-N/A}（标称）"
+    echo "  显存   : ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）"
+    echo "  功耗   : ${GPU_POWER:-N/A}（额定）"
     echo "  温度   : ${GPU_TEMP:-N/A}"
     echo "  ECC    : ${GPU_ECC:-N/A}"
     echo "  退役行 : ${GPU_REMAP:-N/A}"
@@ -2313,7 +2314,7 @@ fi)
   IB设备 : ${IB_COUNT:-0}
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
   Link状态: Active ${IB_ACTIVE:-0} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）}
-  标称速率: ${IB_NOMINAL:-N/A}
+  额定速率: ${IB_NOMINAL:-N/A}
   网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
     printf '\n  网卡明细（ibstat 回退，旧采集无 nic_inventory）:\n'
     echo "$NIC_FALLBACK_DETAILS" | while IFS='|' read -r fca ftype fguid fstate; do
@@ -2376,7 +2377,7 @@ $(if [ -n "$NIC_MLX" ]; then
     echo "  MT4123=ConnectX-6 Dx  MT4121/MT4122=ConnectX-6  MT2892/MT2893=ConnectX-5  MT2884/MT2883=ConnectX-4"
 fi)
 --------------------------------------------
-数据来源: 只读解析采集日志（不重新采集）；"标称"为硬件规格，检测值为采集时刻实际状态；明细见 output/<SN>/<模块>/。
+数据来源: 只读解析采集日志（不重新采集）；"额定"为硬件规格，检测值为采集时刻实际状态；明细见 output/<SN>/<模块>/。
 --------------------------------------------
 由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）
 EOF
@@ -2477,7 +2478,7 @@ gen_acceptance() {
             add_item "内存运行速率" "WARN" "${MEM_SPEED_NOTE}（仅插 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽仍降速，建议核查）"
         fi
     else
-        add_item "内存运行速率" "PASS" "标称速率运行（${MEM_SPEED:-N/A}）"
+        add_item "内存运行速率" "PASS" "额定速率运行（${MEM_SPEED:-N/A}）"
     fi
 
     # 7. 线缆配对完整
