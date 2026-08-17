@@ -167,7 +167,9 @@ run_network() {
             fi
             local nfw="N/A"
             if check_cmd ethtool; then
-                nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | awk '{print $2}')
+                # 固件是多段字符串（如 "9.00 0x8000d9a8 1.3256.0" / "0x00012b2c, 1.3429.0"），
+                # 取冒号后全部（awk 只取第一段会丢 NVM 版本且带逗号）
+                nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | cut -d: -f2- | xargs)
             fi
             local nspd="N/A" nwd="N/A" ncap_spd="N/A" ncap_wd="N/A"
             if check_cmd lspci; then
