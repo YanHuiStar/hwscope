@@ -1255,9 +1255,10 @@ if [ -f "${storcli_controllers}" ] && grep -q "Controller = " "${storcli_control
         raidx=$((raidx + 1))
     done
 fi
-# RAID 硬件存在性（lspci RAID/SAS controller，排除 Intel VMD 虚拟 RAID 与 PCIe Switch 管理端点——
+# RAID 硬件存在性（lspci 仅匹配 RAID bus controller 类目——SAS controller/Serial Attached SCSI 是
+# HBA 直通卡类目，归 HBA_PCI_PRESENT；排除 Intel VMD 虚拟 RAID 与 PCIe Switch 管理端点——
 # PEX89/97 交换机管理端点被 lspci 分类为 Serial Attached SCSI controller，非 RAID/HBA 卡）
-RAID_PCI_PRESENT=$(grep -iE "RAID bus controller|SAS controller|Serial Attached SCSI" "${lspci_all}" 2>/dev/null | grep -viE "Intel.*VMD|Volume Management|PCIe Switch management endpoint|PEX89|PEX97" | head -1)
+RAID_PCI_PRESENT=$(grep -iE "RAID bus controller" "${lspci_all}" 2>/dev/null | grep -viE "Intel.*VMD|Volume Management|PCIe Switch management endpoint|PEX89|PEX97" | head -1)
 RAID_VMD_PRESENT=$(grep -icE "RAID bus controller.*Intel.*VMD|Volume Management Device NVMe RAID" "${lspci_all}" 2>/dev/null)
 
 # ─── HBA 直通卡（sas3_hba*.log / sas2_hba*.log：有卡才显示，无卡段隐藏） ───
