@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.28.34 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.28.35 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -30,7 +30,7 @@
 
 ## 项目简介
 
-HwScope（Hardware Scope）是面向 AI 基础设施运维与交付场景的服务器硬件巡检系统。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，系统以**组件级粒度**采集硬件信息，覆盖主板、CPU、内存、GPU、NVSwitch、PCIe 拓扑、网络、存储、RAID/HBA、电源、风扇、BMC、NVSM、DCGM、OS 共 15 类模块，并以结构化报告（JSON/Markdown/纯文本）与验收清单（Acceptance Checklist）形式输出，支撑**硬件验收、交付记录、故障报修**等场景。
+HwScope（Hardware Scope）是面向 AI 基础设施运维与交付场景的服务器硬件巡检系统。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，系统以**组件级粒度**采集硬件信息，覆盖主板、CPU、内存、GPU、NVSwitch、PCIe 拓扑、网络、存储、RAID/HBA、电源、风扇、BMC、NVSM、DCGM、OS 共 15 类模块，并以结构化报告（JSON/Markdown/纯文本/HTML）与验收清单（Acceptance Checklist）形式输出，支撑**硬件验收、交付记录、故障报修**等场景。
 
 **解决的核心问题：**
 
@@ -147,7 +147,7 @@ bash modules/04_gpu.sh /tmp/out
 
 ```bash
 # 采集完成后自动生成；可对任意已有采集目录手动重跑（只读，不重新采集）
-bash tools/report.sh <output_dir>              # 生成 JSON + Markdown + TXT 三件套
+bash tools/report.sh <output_dir>              # 生成 JSON + Markdown + TXT + HTML 四件套
 bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单
 ```
 
@@ -167,11 +167,15 @@ bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单
 - **表格标题标准化**：内存插槽明细/GPU 每卡明细/PSU 明细统一命名，速率列明确"标称速率/当前速率"
 - **基础设施状态**：电源冗余（N+N）、SMART 整体健康、温度概况（进风/出风/CPU/内存/电源/PCH）、IB Link 状态（Active/Down/未插线缆）
 - **NVIDIA 专属段条件显示**：NVSwitch/NVLink/DCGM 无数据时整段隐藏；无 GPU 机头 GPU 段显示 `N/A (未检测到 GPU/无 NVIDIA 驱动)`
+- **GPU 额定显存规格库 + 魔改识别**：内置 60+ 主流 NVIDIA 型号（B/H/A/L/RTX PRO/消费卡）额定显存规格，**检测值交叉验证**（GB/GiB 双口径 3% 容差）自动匹配正确容量；检测与额定不符（如 RTX 2080Ti 魔改 22GB）→ `⚠️ 疑似显存魔改或伪装` 提示
 - **术语表**：报告末尾附 IB 速率/GPU直连/DCGM/SXM 等术语解释，非运维人员亦可读懂
+- **HTML 报告**：`hwscope_report.html` 浏览器交付版（卡片分区/状态着色/斑马纹表格/打印友好），无外部依赖双击即开
 
 ### 验收清单（Acceptance Checklist）
 
-交付场景自动生成 `hwscope_acceptance.md`，含 **11 项判定**与结论汇总：
+交付场景自动生成 `hwscope_acceptance.{md,html}`，含**硬件概览（配置单）**、**11 项判定**与结论汇总：
+
+**硬件概览**：自动生成自检测数据的配置单表格（项目/规格型号描述/单位/数量）——准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理，可对照采购配置单逐项核对。
 
 | # | 检查项 | # | 检查项 |
 |---|--------|---|--------|
@@ -260,7 +264,7 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `net_dhcp.sh` | 一键配置网口 DHCP 自动获取 IP（识别物理网口/自动选择/写 netplan） | netplan（Ubuntu 24.04） |
 | `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT），apt/dnf 自动识别 | - |
 | `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
-| `report.sh` | 从采集结果生成 json/md/txt 汇总报告（内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/RAID/HBA/风扇/温度明细 + 术语表）；`--acceptance` 生成验收清单交接单 | 采集完成后自动调用 |
+| `report.sh` | 从采集结果生成 json/md/txt/html 汇总报告（内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/RAID/HBA/风扇/温度明细 + 术语表）；`--acceptance` 生成验收清单交接单 | 采集完成后自动调用 |
 | `cable_map.sh` | 线缆拓扑图（BDF↔mlx5 映射 + EEPROM serial 线缆配对 + 断口联动验证） | mlxlink |
 | `firmware_check.sh` | 固件版本核对（GPU VBIOS/BMC/CX8/NVSwitch），支持基线保存+对比 | nvidia-smi, ipmitool |
 | `nvlink_verify.sh` | NVLink 完整性校验（全互联验证 + CRC 错误 + 降级链路检测） | nvidia-smi |
@@ -279,7 +283,7 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `ipmi_power.ps1` / `.bat` | BMC 远程电源控制 | 开机/关机/重启/状态（密码走环境变量，不落盘） |
 | `wol.ps1` / `.bat` | 远程唤醒 | Wake-on-LAN 魔术包 |
 | `ssh_batch.ps1` / `.bat` | 批量命令 | 对多台服务器执行同一条命令 |
-| `fetch_report.ps1` / `.bat` | 巡检汇总 | 拉取各机报告三件套，按主机名归档 |
+| `fetch_report.ps1` / `.bat` | 巡检汇总 | 拉取各机报告四件套，按主机名归档 |
 | `dhcp_server.ps1` / `.bat` | 直连自动分配 IP | 纯 PowerShell DHCP 服务（零依赖），配合 `net_dhcp.sh` 即插即通 |
 | `unblock_ps.ps1` / `.bat` | 首次使用前 | 解除 .ps1 运行限制 |
 
@@ -357,7 +361,7 @@ output/SN123456789/
     └── report/              # 报告归档 tar.gz（单独打包）
 ```
 
-采集完成后自动归档至 `logs/<SN>-<时间戳>.tar.gz`，报告三件套另打包至 `logs/report/<SN>-<时间戳>-report.tar.gz`。
+采集完成后自动归档至 `logs/<SN>-<时间戳>.tar.gz`，报告四件套另打包至 `logs/report/<SN>-<时间戳>-report.tar.gz`。
 
 ### 日志格式
 
