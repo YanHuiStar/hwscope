@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.28.22 (2026-08)
+# Version : 1.28.23 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.28.22"
+HWSCOPE_VERSION="v1.28.23"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -430,7 +430,9 @@ echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}[ARCHIVE] 开始打包归档...${NC}"
 echo -e "${CYAN}========================================${NC}"
 LOGS_DIR="${SCRIPT_DIR}/logs"
-ARCHIVE_TS=$(date '+%Y%m%d_%H%M%S')
+# 复用输出目录时间戳（179 行 local_timestamp）——输出目录/日志包/报告包三处时间戳必须一致，
+# 独立调 date 会因采集跨秒产生不同时间戳，目录与压缩包对不上
+ARCHIVE_TS="${local_timestamp:-$(date '+%Y%m%d_%H%M%S')}"
 ARCHIVE_NAME="${MACHINE_ID}-${ARCHIVE_TS}.tar.gz"
 mkdir -p "$LOGS_DIR"
 if check_cmd tar; then
