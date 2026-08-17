@@ -2660,27 +2660,63 @@ gen_acceptance() {
         verdict="合格（全部通过）"
     fi
 
+    # ── 配置单派生（硬件概览表格数据：内存每槽/网卡归类/PSU 汇总/盘型号） ──
+    ACC_MEM_DIMM="N/A"
+    if [ "${MEM_POPULATED:-0}" -gt 0 ] 2>/dev/null && [ -n "${MEM_TOTAL_PHYS:-}" ]; then
+        _mtp=$(echo "$MEM_TOTAL_PHYS" | grep -oE "[0-9.]+" | head -1)
+        [ -n "$_mtp" ] && ACC_MEM_DIMM=$(awk -v t="$_mtp" -v p="$MEM_POPULATED" 'BEGIN{printf "%.0fGB", t/p}' < /dev/null)
+    fi
+    ACC_NIC_IB="N/A"; ACC_NIC_IB_COUNT=0; ACC_NIC_ETH="N/A"; ACC_NIC_ETH_COUNT=0
+    if [ -n "$NIC_DETAILS" ]; then
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
+            [ -z "$nnic" ] && continue
+            if echo "${npn}${nchip}" | grep -qiE "ConnectX|MT[0-9]{4}"; then
+                ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
+                [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="${npn:-N/A}"
+            else
+                ACC_NIC_ETH_COUNT=$((ACC_NIC_ETH_COUNT+1))
+                [ "$ACC_NIC_ETH" = "N/A" ] && ACC_NIC_ETH="$(echo "${npn:-N/A}" | sed 's/Intel Corporation Ethernet Controller //; s/ for 10GBASE-T.*//; s/ (rev [0-9]*)//')"
+            fi
+        done < <(printf '%s\n' "$NIC_DETAILS")
+    fi
+    ACC_PSU_MODEL="N/A"; ACC_PSU_CAP="N/A"; ACC_PSU_COUNT=0
+    if [ -n "$PSU_DETAILS" ]; then
+        while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
+            [ -z "$pdesc" ] && continue
+            ACC_PSU_COUNT=$((ACC_PSU_COUNT+1))
+            [ "$ACC_PSU_MODEL" = "N/A" ] && [ "$pmodel" != "N/A" ] && [ -n "$pmodel" ] && ACC_PSU_MODEL="$pmodel"
+            [ "$ACC_PSU_CAP" = "N/A" ] && [ "$pcap" != "N/A" ] && [ -n "$pcap" ] && ACC_PSU_CAP="$pcap"
+        done < <(printf '%s\n' "$PSU_DETAILS")
+    fi
+    ACC_DISK_MODEL="N/A"
+    if [ -n "${STORAGE_MODELS:-}" ]; then
+        ACC_DISK_MODEL=$(echo "$STORAGE_MODELS" | tr ',' '\n' | head -1)
+    fi
+
     {
         echo "# HwScope 验收清单（Acceptance Checklist）"
         echo ""
-        echo "## 硬件概览"
+        echo "## 硬件概览（配置单，自动生成自检测数据）"
         echo ""
-        echo "- 机器: ${OUT##*/}"
-        echo "- 平台: ${PLATFORM_LABEL:-N/A}"
-        echo "- CPU: ${CPU_MODEL:-N/A} ×${CPU_SOCKETS:-0} 路（${CPU_CORES:-0} 核/颗）"
-        echo "- 内存: ${MEM_TYPE:-DDR} ${MEM_TOTAL:-N/A}（${MEM_POPULATED:-0} 槽）"
+        echo "| 项目 | 规格型号描述（含配置） | 单位 | 数量 |"
+        echo "|------|------------------------|------|------|"
+        echo "| 准系统 | ${MB_MANUFACTURER:-N/A} ${MB_PRODUCT:-N/A}（机箱 SN: ${CHASSIS_SN:-N/A}，BIOS: ${BIOS_VERSION:-N/A}） | 台 | 1 |"
+        echo "| CPU | ${CPU_MODEL:-N/A}（${CPU_CORES:-0} 核/颗，${CPU_MAX_SPEED:-N/A}MHz） | 颗 | ${CPU_SOCKETS:-0} |"
+        echo "| 内存 | ${MEM_TYPE:-DDR} ${ACC_MEM_DIMM:-N/A} ECC RDIMM（额定 ${MEM_NOM:-N/A}，实际 ${MEM_SPEED:-N/A}） | 条 | ${MEM_POPULATED:-0} |"
         if [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "- GPU: ${GPU_NAMES:-N/A} ×${GPU_COUNT}（${GPU_MEM:-N/A}）"
+            echo "| GPU模组 | ${GPU_NAMES:-N/A}（${GPU_MEM_SPEC:-N/A} HBM） | 张 | ${GPU_COUNT} |"
         else
-            echo "- GPU: 无"
+            echo "| GPU模组 | 无（${PLATFORM_LABEL:-N/A} 平台） | — | — |"
         fi
-        echo "- 存储: ${STORAGE_COUNT:-0} 盘 / ${STORAGE_TOTAL:-0}"
-        if [ "${IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "- 网络: ${IB_COUNT}×IB"
-        else
-            echo "- 网络: 无 IB"
+        if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| 计算网卡 | ${ACC_NIC_IB:-N/A}（IB ${IB_NOMINAL:-N/A}） | 张 | ${ACC_NIC_IB_COUNT} |"
         fi
-        echo "- BMC: ${BMC_FRU:-N/A}（固件 ${BMC_FW:-N/A}）"
+        if [ "${ACC_NIC_ETH_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 张 | ${ACC_NIC_ETH_COUNT} |"
+        fi
+        echo "| 存储 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
+        echo "| 电源模块 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
+        echo "| 系统管理 | BMC（固件 ${BMC_FW:-N/A}） | 套 | 1 |"
         echo ""
         echo "## 验收信息"
         echo ""
