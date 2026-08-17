@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.28.35 (2026-08)
+# Version : 1.28.36 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -81,7 +81,7 @@ MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.28.35"
+HWSCOPE_VERSION="v1.28.36"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -440,17 +440,17 @@ if check_cmd tar; then
     echo -e "${GREEN}[ARCHIVE]${NC} 日志包: ${LOGS_DIR}/${ARCHIVE_NAME}"
 fi
 
-# 报告单独打包到 logs/report/（与详细日志包对应）
+# 报告单独打包到 logs/report/（与详细日志包对应；HTML 件条件加入——旧数据/部分生成时可能缺失）
 if check_cmd tar; then
     REPORT_DIR="${LOGS_DIR}/report"
     mkdir -p "$REPORT_DIR"
     if ls "${OUTPUT_BASE}"/hwscope_report.* >/dev/null 2>&1; then
         REPORT_ARCHIVE="${REPORT_DIR}/${MACHINE_ID}-${ARCHIVE_TS}-report.tar.gz"
-        tar czf "$REPORT_ARCHIVE" -C "$OUTPUT_BASE" \
-            hwscope_report.json hwscope_report.md hwscope_report.txt \
-            hwscope_acceptance.md 2>/dev/null || \
-        tar czf "$REPORT_ARCHIVE" -C "$OUTPUT_BASE" \
-            hwscope_report.json hwscope_report.md hwscope_report.txt
+        REPORT_FILES="hwscope_report.json hwscope_report.md hwscope_report.txt"
+        [ -f "${OUTPUT_BASE}/hwscope_report.html" ] && REPORT_FILES="${REPORT_FILES} hwscope_report.html"
+        [ -f "${OUTPUT_BASE}/hwscope_acceptance.md" ] && REPORT_FILES="${REPORT_FILES} hwscope_acceptance.md"
+        [ -f "${OUTPUT_BASE}/hwscope_acceptance.html" ] && REPORT_FILES="${REPORT_FILES} hwscope_acceptance.html"
+        tar czf "$REPORT_ARCHIVE" -C "$OUTPUT_BASE" $REPORT_FILES
         echo -e "${GREEN}[ARCHIVE]${NC} 报告包: ${REPORT_ARCHIVE}"
     fi
 fi
