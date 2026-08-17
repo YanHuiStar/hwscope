@@ -264,10 +264,10 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_MODEL_LINE=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f2)
     GPU_MEM_SPEC=""
     case "$GPU_MODEL_LINE" in
-        *B300*)   GPU_MEM_SPEC="标称 288GB/卡" ;;
-        *B200*)   GPU_MEM_SPEC="标称 192GB/卡" ;;
-        *H200*)   GPU_MEM_SPEC="标称 141GB/卡" ;;
-        *H100*)   GPU_MEM_SPEC="标称 80GB/卡" ;;
+        *B300*)   GPU_MEM_SPEC="288GB/卡" ;;
+        *B200*)   GPU_MEM_SPEC="192GB/卡" ;;
+        *H200*)   GPU_MEM_SPEC="141GB/卡" ;;
+        *H100*)   GPU_MEM_SPEC="80GB/卡" ;;
         *)        GPU_MEM_SPEC="" ;;
     esac
     GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${power_col:-8}" -F',' '{
@@ -1651,24 +1651,16 @@ gen_md() {
             if [ "$gpcie" != "N/A" ] && [ "$gmax" != "N/A" ] && [ -n "$gmax" ] && [ "$gpcie" != "$gmax" ]; then
                 gpcie_disp="${gpcie} (能力 ${gmax})"
             fi
-            # 显存可用/总（可用 = 总量 - 已用，双值让客户看到余量；未分配 used=0 时省略冗余）
+            # 显存 检测/标称（检测=采集可见值 GiB，标称=规格 GB，差异为 ECC/显存预留）
             gmem_disp="${gmem:-N/A}"
-            if [ -n "$gmem" ] && [ -n "$gused" ] && [ "$gmem" != "N/A" ] && [ "$gused" != "N/A" ]; then
-                _gm=$(echo "$gmem" | grep -oE "[0-9.]+" | head -1)
-                _gu=$(echo "$gused" | grep -oE "[0-9.]+" | head -1)
-                if [ -n "$_gm" ] && [ -n "$_gu" ]; then
-                    _gavail=$(awk "BEGIN{printf \"%.1f GiB\", ${_gm}-${_gu}}" < /dev/null)
-                    if [ "$_gavail" = "$gmem" ]; then
-                        gmem_disp="${gmem} 总"
-                    else
-                        gmem_disp="${_gavail} 可用 / ${gmem} 总"
-                    fi
-                fi
+            if [ -n "$gmem_spec" ] && [ "$gmem" != "N/A" ] && [ -n "$gmem" ]; then
+                gmem_disp="${gmem}/${gmem_spec}"
             fi
-            # 功耗当前/上限（power.draw / power.limit）
+            # 功耗 检测/标称（检测=当前功耗，标称=规格最大功耗）
             gdraw_disp="${gdraw:-N/A}"
             if [ -n "$gdraw" ] && [ -n "$glimit" ] && [ "$gdraw" != "N/A" ] && [ "$glimit" != "N/A" ]; then
-                gdraw_disp="${gdraw} / ${glimit} 上限"
+                _gl=$(echo "$glimit" | grep -oE "[0-9.]+" | head -1 | awk '{printf "%g", $1}')
+                gdraw_disp="${gdraw}/${_gl}W"
             fi
             gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem_disp} | ${gdraw_disp} | ${gtemp} | ${gpcie_disp} | ${gvb:-N/A} |"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
@@ -1830,8 +1822,8 @@ else
     echo "|----|----|"
     echo "| 数量 | ${GPU_COUNT:-0} |"
     echo "| 型号 | ${GPU_NAMES:-N/A} |"
-    echo "| 显存总量 | ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}/${GPU_MEM:-N/A} 可用${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})} |"
-    echo "| 功耗上限 | ${GPU_POWER:-N/A} |"
+    echo "| 显存总量 | ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/标称${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}） |"
+    echo "| 标称功耗 | ${GPU_POWER:-N/A} |"
     echo "| 温度 | ${GPU_TEMP:-N/A} |"
     echo "| ECC | ${GPU_ECC:-N/A} |"
     echo "| 退役行 | ${GPU_REMAP:-N/A} |"
@@ -1843,7 +1835,7 @@ fi)
 $(if [ -n "$gpu_details_md" ]; then
     echo ""
     echo "### GPU 每卡明细"
-    echo "| 卡 | 型号 | SN | 显存(可用/总) | 功耗(当前/上限) | 温度 | PCIe(协商) | VBIOS |"
+    echo "| 卡 | 型号 | SN | 显存(检测/标称) | 功耗(检测/标称) | 温度 | PCIe(协商) | VBIOS |"
     echo "|----|------|----|----|------|------|----------|-------|"
     printf '%s' "$gpu_details_md"
 fi)
@@ -2122,24 +2114,16 @@ gen_txt() {
             if [ "$gpcie" != "N/A" ] && [ "$gmax" != "N/A" ] && [ -n "$gmax" ] && [ "$gpcie" != "$gmax" ]; then
                 gpcie_disp="${gpcie} (能力 ${gmax})"
             fi
-            # 显存可用/总（未分配 used=0 时省略冗余）
+            # 显存 检测/标称（检测=采集可见值 GiB，标称=规格 GB）
             gmem_disp="${gmem:-N/A}"
-            if [ -n "$gmem" ] && [ -n "$gused" ] && [ "$gmem" != "N/A" ] && [ "$gused" != "N/A" ]; then
-                _gm=$(echo "$gmem" | grep -oE "[0-9.]+" | head -1)
-                _gu=$(echo "$gused" | grep -oE "[0-9.]+" | head -1)
-                if [ -n "$_gm" ] && [ -n "$_gu" ]; then
-                    _gavail=$(awk "BEGIN{printf \"%.1f GiB\", ${_gm}-${_gu}}" < /dev/null)
-                    if [ "$_gavail" = "$gmem" ]; then
-                        gmem_disp="${gmem} 总"
-                    else
-                        gmem_disp="${_gavail} 可用/${gmem} 总"
-                    fi
-                fi
+            if [ -n "$gmem_spec" ] && [ "$gmem" != "N/A" ] && [ -n "$gmem" ]; then
+                gmem_disp="${gmem}/${gmem_spec}"
             fi
-            # 功耗当前/上限
+            # 功耗 检测/标称（检测=当前功耗，标称=规格最大功耗）
             gdraw_disp="${gdraw:-N/A}"
             if [ -n "$gdraw" ] && [ -n "$glimit" ] && [ "$gdraw" != "N/A" ] && [ "$glimit" != "N/A" ]; then
-                gdraw_disp="${gdraw}/${glimit} 上限"
+                _gl=$(echo "$glimit" | grep -oE "[0-9.]+" | head -1 | awk '{printf "%g", $1}')
+                gdraw_disp="${gdraw}/${_gl}W"
             fi
             gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  PCIe(协商):${gpcie_disp}  VBIOS:${gvb:-N/A}"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
@@ -2273,8 +2257,8 @@ $(if [ "$GPU_COUNT" -eq 0 ]; then
 else
     echo "  数量   : ${GPU_COUNT:-0}"
     echo "  型号   : ${GPU_NAMES:-N/A}"
-    echo "  显存   : ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}/${GPU_MEM:-N/A} 可用${GPU_MEM_SPEC:+ (${GPU_MEM_SPEC})}"
-    echo "  功耗   : ${GPU_POWER:-N/A}"
+    echo "  显存   : ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/标称${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）"
+    echo "  功耗   : ${GPU_POWER:-N/A}（标称）"
     echo "  温度   : ${GPU_TEMP:-N/A}"
     echo "  ECC    : ${GPU_ECC:-N/A}"
     echo "  退役行 : ${GPU_REMAP:-N/A}"
