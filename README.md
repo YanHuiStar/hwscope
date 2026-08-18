@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.30.0 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.31.0 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -56,6 +56,11 @@ HwScope（Hardware Scope）是面向 AI 基础设施运维与交付场景的服�
 | **压测归档** | `--test-dir` 关联压测目录，报告新增压测章节（测试项/结果/耗时/详情文件），test/ 写 manifest 解耦 |
 | **多机横向对比** | `tools/batch_compare.sh` 读各机 JSON 生成同字段对比表，批次差异 ⚠️ 一眼可见 |
 | **报告基线对比** | `report.sh --baseline <历史目录>` 同机/同型号时序差异：固件版本变化/内存增减/盘更换/GPU 序列号变动/BIOS 升级 |
+| **固件基线自动导入** | `tools/fw_baseline_import.sh` 从基准机采集目录一键生成 fw_required.txt（--diff 预览/--apply 写入） |
+| **能耗持续采样** | `tools/power_monitor.sh` 后台常驻采功耗 → CSV + 小时/日聚合 + 梯形积分 kWh 核算（补 16_power 单点快照） |
+| **报告在线预览** | `tools/report_server.sh` 本地 HTTP 浏览历次报告归档（解包 + 索引页，点开即见 HTML） |
+| **SSH 批量运维** | `tools/remote_batch.sh` 多机同命令/推送文件，逐机输出落盘 + 汇总 |
+| **DHCP 租约联动** | `dhcp_server.sh leases-export` 租约导出 CSV + `reconcile` 与采集报告 BMC IP/MAC 交叉核对上架清单 |
 | **交付级验收清单** | 13 项判定（GPU 链路/NVLink/DCGM/VBIOS/内存/线缆/磁盘/SMART/电源冗余/温度/SEL/固件版本合规/OS-BMC 口径一致），**有/无 GPU 场景采用差异化通过标准** |
 | **平台自适应** | SXM 四重检测（nvswitch CLI → lspci NVSwitch → fabricmanager 进程 → NVLink 交叉验证）；WSL 虚拟盘自动跳过 SMART |
 | **NVIDIA 专属段条件显示** | NVSwitch/NVLink/DCGM 无数据时整段隐藏，非 NVIDIA 平台报告干净 |
@@ -171,11 +176,28 @@ ssh-copy-id root@10.0.0.1                                     # 首次配置免�
 # 多机横向对比（读各机 hwscope_report.json，差异 ⚠️ 标注）
 bash tools/batch_compare.sh output/SN1 output/SN2 output/SN3
 
+# SSH 批量运维（同命令/推送文件，逐机输出落盘）
+bash tools/remote_batch.sh -H "root@10.0.0.1 root@10.0.0.2" -c "uptime && nvidia-smi -L"
+
 # DHCP 服务器（dnsmasq，新上架服务器批量发 IP；默认 192.168.50.0/24 .100-.200）
-sudo bash tools/dhcp_server.sh install    # 安装 dnsmasq
-sudo bash tools/dhcp_server.sh config     # 生成配置（可加 --subnet/--range/--lease 定制）
-sudo bash tools/dhcp_server.sh start      # 启动
-sudo bash tools/dhcp_server.sh leases     # 查看租约表
+sudo bash tools/dhcp_server.sh install          # 安装 dnsmasq
+sudo bash tools/dhcp_server.sh config           # 生成配置（可加 --subnet/--range/--lease 定制）
+sudo bash tools/dhcp_server.sh start            # 启动
+sudo bash tools/dhcp_server.sh leases           # 查看租约表
+sudo bash tools/dhcp_server.sh leases-export /tmp/leases.csv        # 租约导出 CSV
+sudo bash tools/dhcp_server.sh reconcile output/SN1 output/SN2     # 租约↔采集台账交叉核对
+
+# 固件基线自动导入（先采一台"基准机"，把其固件版本固化为基线）
+bash tools/fw_baseline_import.sh output/GOLDEN-SN --diff    # 预览差异
+bash tools/fw_baseline_import.sh output/GOLDEN-SN --apply   # 写入 conf/fw_required.txt
+
+# 能耗持续采样（后台常驻，stop 输出聚合与 kWh 核算）
+bash tools/power_monitor.sh start --interval 60 --duration 86400
+bash tools/power_monitor.sh status; bash tools/power_monitor.sh stop
+
+# 报告在线预览（浏览器浏览历次报告归档）
+bash tools/report_server.sh --port 8080 --open
+bash tools/report_server.sh --stop
 ```
 
 ---
@@ -300,10 +322,14 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `net_dhcp.sh` | 一键配置网口 DHCP 自动获取 IP（识别物理网口/自动选择/写 netplan） | netplan（Ubuntu 24.04） |
 | `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT），apt/dnf 自动识别 | - |
 | `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
-| `report.sh` | 从采集结果生成 json/md/txt/html 汇总报告（内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/RAID/HBA/风扇/温度明细 + 固件合规/能耗台账/BMC一致性/压测归档 + 术语表）；`--acceptance` 生成验收清单交接单；`--test-dir` 关联压测目录 | 采集完成后自动调用 |
+| `report.sh` | 从采集结果生成 json/md/txt/html 汇总报告（内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/RAID/HBA/风扇/温度明细 + 固件合规/能耗台账/BMC一致性/压测归档/基线对比 + 术语表）；`--acceptance` 生成 13 项验收清单；`--test-dir` 关联压测目录；`--baseline` 时序差异对比 | 采集完成后自动调用 |
 | `batch_compare.sh` | 多机横向对比：读各机 hwscope_report.json 生成同字段对比表，差异 ⚠️ 标注（批次一致性抽检） | - |
 | `remote_collect.sh` | SSH 远程采集：tar 临时推送 → 远端执行 hwscope → 结果回拉 → 清理（SSH key 认证，密码不落盘） | ssh, tar |
-| `dhcp_server.sh` | dnsmasq 封装：安装/生成配置/启停/租约查询，新上架服务器批量发 IP（交付场景） | dnsmasq |
+| `remote_batch.sh` | SSH 批量运维：对 N 台机器执行同一命令/推送同一文件，逐机输出落盘（集群巡检） | ssh, scp |
+| `dhcp_server.sh` | dnsmasq 封装：安装/生成配置/启停/租约查询 + `leases-export` 租约导出 CSV + `reconcile` 租约↔采集台账交叉核对（上架清单） | dnsmasq |
+| `fw_baseline_import.sh` | 固件基线自动导入：从基准机采集目录/表格文件生成 conf/fw_required.txt（--diff 预览 / --apply 写入，自动备份） | - |
+| `power_monitor.sh` | 能耗持续采样：后台常驻采 DCMI/Redfish 功耗 → CSV + 小时/日聚合 + 梯形积分 kWh 核算（start/stop/status） | ipmitool |
+| `report_server.sh` | 报告在线预览：解包 logs/report/ 归档 + 索引页 + python3 http.server 浏览 HTML 报告（--port/--open/--stop） | python3 |
 | `cable_map.sh` | 线缆拓扑图（BDF↔mlx5 映射 + EEPROM serial 线缆配对 + 断口联动验证） | mlxlink |
 | `firmware_check.sh` | 固件版本核对（GPU VBIOS/BMC/CX8/NVSwitch），支持基线保存+对比 | nvidia-smi, ipmitool |
 | `nvlink_verify.sh` | NVLink 完整性校验（全互联验证 + CRC 错误 + 降级链路检测） | nvidia-smi |

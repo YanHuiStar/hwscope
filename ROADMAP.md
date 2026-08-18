@@ -20,35 +20,35 @@
 
 ## 采集层（modules/）
 
-- [ ] **[P2] 固件基线自动导入** — 从厂商验收手册/Redfish 自动拉取推荐固件版本写入 `conf/fw_required.txt`，替代人工录入
-  - 依赖：厂商文档结构化来源（PDF/表格）或 BMC Redfish 提供推荐版本
-  - 验收标准：一条命令更新基线，diff 提示变化
-  - 备注：`15_firmware` 已完成（v1.29.0），当前基线为人工维护
-
-- [ ] **[P2] 能耗持续采样** — `tools/power_monitor.sh` 定时采样整机功耗（DCMI/Redfish），生成小时/日能耗曲线与核算报表
-  - 依赖：`16_power` 模块（v1.29.0 已落单点快照）
-  - 验收标准：后台常驻采样 N 小时，输出 CSV + 图表数据，报告可引用
+- [ ] **[P2] 能耗曲线入报告** — `power_monitor.sh` 采样 CSV 结果经 `report.sh` 新参数（如 `--power-csv`）并入报告"能耗台账"段，展示小时/日聚合与核算
+  - 依赖：`power_monitor.sh`（v1.31.0 已产出 CSV/聚合）+ report.sh 解析
+  - 验收标准：一份报告同时含单点快照与持续采样曲线数据
 
 ## 报告层（tools/report.sh）
 
-- [ ] **[P2] 报告在线预览** — `tools/report_server.sh` 本地 HTTP 服务浏览历次报告归档（logs/report/），按 SN/时间筛选
-  - 依赖：Python3 http.server 或 lighttpd；`hwscope_report.html` 四件套已具备
-  - 验收标准：浏览器打开归档列表，点开即见 HTML 报告
+- [ ] **[P2] 报告图表化（HTML）** — md2html.awk 输出 HTML 内嵌轻量图表（SVG 能耗曲线/内存占比/温度趋势），零 JS 依赖
+  - 依赖：现 HTML 报告四件套 + power_monitor CSV
+  - 验收标准：无外部依赖双击打开即有可视化
+
+- [ ] **[P2] 数据入库（SQLite）** — `tools/hwdb.sh` 将各机 hwscope_report.json 关键字段导入 SQLite，支持按 SN/型号/批次查询与导出
+  - 依赖：sqlite3（多数发行版自带）
+  - 验收标准：批量导入 N 机，一条 SQL 查出批次全部 GPU 型号/固件版本
 
 ## 工具层（tools/）
 
-- [ ] **[P2] SSH 批量运维 `tools/remote_batch.sh`** — 对 N 台机器执行同一命令/推送同一文件并收集输出
-  - 依赖：SSH key（同 remote_collect.sh）；已有 Windows 侧 `ssh_batch.ps1` 对应
-  - 验收标准：一行命令对列表内全部机器执行并回显各机结果
-  - 备注：`remote_collect.sh` 单机远程采集已完成（v1.29.0）
+- [ ] **[P2] 批量采集联动** — `remote_batch.sh` + `remote_collect.sh` 组合：一行命令对 N 台机器远程采集并逐个回拉，自动 `batch_compare.sh` 汇总
+  - 依赖：remote_batch（v1.31.0）+ remote_collect（v1.29.0）+ batch_compare（v1.29.0）
+  - 验收标准：`bash tools/remote_batch.sh -H "h1 h2 h3" -c "bash /tmp/hwscope.sh"` 后一键出对比表
 
-- [ ] **[P2] DHCP 租约与 IP 台账联动** — `dhcp_server.sh` 租约导出 CSV，与采集报告（BMC IP/MAC）交叉核对上架清单
-  - 依赖：`dhcp_server.sh`（v1.29.0 已落地）+ `tools/win/scan_ip.ps1` 定位结果
-  - 验收标准：租约表 ↔ 采集 BMC IP 对照，差异高亮
+- [ ] **[P2] CI 语法检查** — GitHub Actions 流水线：push 后对全部 .sh 跑 `bash -n` + shellcheck（若装），防 CRLF/语法回归
+  - 依赖：GitHub Actions（仓库已托管）
+  - 验收标准：每次 push 自动检查，失败即红
 
 ---
 
 ## 已完成（归档）
+
+- v1.31.0 — **ROADMAP 剩余 5 项 P2 全部落地**：`tools/fw_baseline_import.sh` 固件基线自动导入（基准机采集目录/表格 → conf/fw_required.txt，--diff 预览/--apply 写入+自动 .bak）；`tools/power_monitor.sh` 能耗持续采样（后台 DCMI/Redfish → CSV，stop 输出小时/日聚合 + 梯形积分 kWh 核算，补 16_power 单点快照缺口）；`tools/report_server.sh` 报告在线预览（解包 logs/report/ → web/ 缓存 + 索引页 + python3 http.server，零新依赖）；`tools/remote_batch.sh` SSH 批量运维（-H 多机 + -c 命令/--push 推送，逐机 .out 落盘 + summary）；`tools/dhcp_server.sh` 扩展 `leases-export <csv>` 租约导出 + `reconcile <目录...>` 租约↔采集报告 BMC IP/MAC 交叉核对（上架清单差异表，`--lease-file` 自定义租约路径）
 
 - v1.30.0 — **报告基线对比 `--baseline <历史目录>`**（时序差异：BIOS/CPU/内存/GPU数/VBIOS/BMC固件 标量变化 + GPU/盘/网卡 SN 集合新增移除 + 固件版本逐项旧→新变化；JSON/MD/TXT/HTML 同步）；**验收清单扩至 13 项**（新增 固件版本合规：落后=FAIL、无基线判未知=N/A 不误报；OS-BMC 口径一致：不一致=FAIL、仅单侧数据=WARN、**无 BMC 机器判 N/A 不计入数据不足**——IPMI 日志全错误=平台无 BMC 属固有形态，无任何 IPMI 日志=工具缺失如实计入）
 - v1.29.0 — **ROADMAP 全部原待办落地**：采集层新增 `15_firmware` 固件合规模块（对照 conf/fw_required.txt 判 合规/落后/未知，无基线判未知不 WARN）、`16_power` 能耗台账模块（Energy/kWh 累计读数 + DCMI/Redfish 功耗，单点快照核算）；报告层新增固件合规段、能耗台账段、BMC 数据一致性校验段（OS dmidecode/可见内存 vs BMC FRU/Redfish，零新采集，不一致 WARN 并排显示两边值）、压测归档 `--test-dir`（test_common.sh 写 manifest → report.sh 读 manifest 解耦）；新工具 `tools/batch_compare.sh` 多机横向对比（读各机 JSON，差异 ⚠️ 标注）、`tools/remote_collect.sh` SSH 远程采集（tar 暂存模式：流式 bash -s 无法满足多文件 source 结构，改为临时推送→执行→回拉→清理，密码不落盘）、`tools/dhcp_server.sh` dnsmasq 封装（安装/配置/启停/租约查询）
@@ -62,4 +62,4 @@
 
 ---
 
-*最近更新: 2026-08-18 · 版本: v1.30.0*
+*最近更新: 2026-08-18 · 版本: v1.31.0*

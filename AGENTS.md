@@ -84,6 +84,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - 多机横向对比：`tools/batch_compare.sh <dir1> <dir2> ...` 读各机 hwscope_report.json 生成同字段对比表（差异 ⚠️ 标注），批次一致性抽检用
 - 报告基线对比：`bash tools/report.sh <cur> --baseline <prev>` 生成时序差异章节——标量（BIOS/CPU/内存/GPU数/VBIOS/BMC固件）变化 + SN 集合（GPU/盘/网卡）新增移除 + 固件版本逐项变化；**注意**：JSON 单行对象必须用 index() 定位键再取值（贪心 sub 会取行尾字段），含空格 key 必须 while read 逐行（for 会单词拆分）
 - SSH 远程采集：`tools/remote_collect.sh -H user@host [hwscope 参数]`——**tar 暂存模式**（流式 bash -s 无法满足多文件 source 结构，v1.29.0 实测结论）：tar 临时推送项目 → 远端执行 → 结果回拉 → 清理；SSH key 认证，禁 sshpass 明文密码
+- **v1.31.0 新增工具**：`fw_baseline_import.sh` 固件基线自动导入（基准机采集目录/表格 → fw_required.txt，--diff 预览/--apply 写入+自动 .bak 备份）；`power_monitor.sh` 能耗持续采样（后台循环 DCMI/Redfish → CSV，stop 输出小时/日聚合 + 梯形积分 kWh；子进程模式 = `bash $0 __sampler` 重跑本脚本，避免 export -f 依赖）；`report_server.sh` 报告在线预览（解包 logs/report/ 到 web/ + index.html + python3 http.server，零新依赖）；`remote_batch.sh` SSH 批量运维（-H 列表 + -c 命令/--push 推送，逐机 .out 落盘，BatchMode=yes 默认）；`dhcp_server.sh` 扩展 `leases-export <csv>` + `reconcile <目录...>`（租约↔报告 JSON BMC IP/MAC 交叉核对；`--lease-file` 自定义租约路径；**主脚本顶层禁用 local**——非函数上下文报错）
 - 修改 report.sh 后必须用真实采集数据回归验证（桌面有 HGX B200 / B300 两份样例数据）
 
 ## 安全约定
