@@ -24,8 +24,8 @@ ACTION="${1:-help}"; shift 2>/dev/null || true
 INTERVAL=60; DURATION=0; OUT_DIR="${SCRIPT_DIR}/logs/power_monitor"; USE_REDFISH=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --interval) INTERVAL="$2"; shift 2 ;;
-        --duration) DURATION="$2"; shift 2 ;;
+        --interval) INTERVAL="$2"; [[ "$INTERVAL" =~ ^[1-9][0-9]*$ ]] || { echo "[ERROR] --interval 需正整数秒数"; exit 1; }; shift 2 ;;
+        --duration) DURATION="$2"; [[ "$DURATION" =~ ^[0-9]+$ ]] || { echo "[ERROR] --duration 需非负整数秒数（0=持续）"; exit 1; }; shift 2 ;;
         --output) OUT_DIR="$2"; shift 2 ;;
         --redfish) USE_REDFISH=1; shift ;;
         -h|--help) ACTION="help" ;;

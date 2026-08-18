@@ -96,7 +96,8 @@ case "$ACTION" in
             echo -e "\033[1;33m[WARN] 服务已在运行（pid $(cat "$PID_FILE")）；--stop 先停\033[0m"; exit 0
         fi
         build_web
-        nohup python3 -m http.server "$PORT" --directory "$WEB_DIR" > "${WEB_DIR}/server.log" 2>&1 &
+        # 必须 --bind 127.0.0.1：python http.server 默认监听 0.0.0.0，会把含 SN/MAC 的报告无鉴权暴露局域网（v1.33.1 安全修复）
+        nohup python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$WEB_DIR" > "${WEB_DIR}/server.log" 2>&1 &
         echo $! > "$PID_FILE"
         sleep 1
         if kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
