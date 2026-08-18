@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.32.0 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.33.0 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -162,6 +162,7 @@ bash modules/04_gpu.sh /tmp/out
 bash tools/report.sh <output_dir>              # 生成 JSON + Markdown + TXT + HTML 四件套
 bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单
 bash tools/report.sh <output_dir> --test-dir <压测目录>  # 附带压测归档章节
+bash tools/report.sh <output_dir> --bmc-verify          # 开启 OS-BMC 一致性核验（默认关闭；生成独立 hwscope_bmc_verify.md）
 bash tools/report.sh <output_dir> --baseline <历史采集目录>  # 附带基线对比章节（固件/内存/盘/GPU/BIOS 时序差异）
 ```
 
