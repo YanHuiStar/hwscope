@@ -1450,6 +1450,21 @@ fi
 PWR_NOTE=""
 [ -f "${power_energy}" ] && PWR_NOTE=$(grep -m1 -E "累计能耗 [0-9]|BMC 未暴露累计能耗|无能耗/功耗数据" "${power_energy}" 2>/dev/null | sed 's/^[[:space:]]*//')
 
+# ─── BMC 存在性检测（无 BMC 平台处理：IPMI 日志全为错误输出 = 机器无 BMC，
+#      交叉校验与验收按"平台固有形态"判 N/A 不计入数据不足，避免误判 WARN） ───
+BMC_PRESENT=0
+if [ -f "${ipmi_fru_summary}" ] \
+    && grep -qiE "Product (Name|Manufacturer|Serial)|Board Mfg|Chassis Serial" "${ipmi_fru_summary}" 2>/dev/null \
+    && ! grep -qiE "Could not open|Unable to establish|No such (file|device)|Get Device ID command failed|command failed" "${ipmi_fru_summary}" 2>/dev/null; then
+    BMC_PRESENT=1
+fi
+if [ "$BMC_PRESENT" -eq 0 ] && [ -f "${ipmi_mc}" ] && grep -qi "Firmware Revision" "${ipmi_mc}" 2>/dev/null; then
+    BMC_PRESENT=1
+fi
+if [ "$BMC_PRESENT" -eq 0 ] && [ -f "${redfish_system}" ] && grep -qE '"BiosVersion"|"TotalSystemMemoryGiB"|"ProcessorSummary"' "${redfish_system}" 2>/dev/null; then
+    BMC_PRESENT=1
+fi
+
 # ─── BMC 数据一致性校验（OS 层 vs BMC 层；零新采集，只读既有日志） ───
 # 对比项：整机 SN（dmidecode vs IPMI FRU）、BIOS（dmidecode vs Redfish BiosVersion）、
 # 内存容量（OS MemTotal vs Redfish TotalSystemMemoryGiB）、CPU 型号（lscpu vs Redfish ProcessorSummary）
@@ -1461,7 +1476,7 @@ redfish_num() {   # Redfish JSON 数值字段
     grep -m1 -oE "\"${1}\"[[:space:]]*:[[:space:]]*[0-9.]+" "${redfish_system}" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1
 }
 BMC_CONSISTENCY=""
-if [ -f "${ipmi_fru_summary}" ] || { [ -f "${redfish_system}" ] && grep -qE '"BiosVersion"|"TotalSystemMemoryGiB"|"ProcessorSummary"' "${redfish_system}" 2>/dev/null; }; then
+if [ "$BMC_PRESENT" -eq 1 ]; then
     local _os_v _bmc_v _res
     consistency_verdict() {   # $1=OS侧 $2=BMC侧 $3=num(数值容差比较)
         local ov="$1" bv="$2" on bn
@@ -3108,8 +3123,15 @@ gen_acceptance() {
     fi
 
     # 15. OS vs BMC 口径一致（零新采集交叉校验；不一致=FAIL，仅单侧数据=WARN，无数据=N/A）
-    if [ -z "$BMC_CONSISTENCY" ]; then
-        add_item "OS-BMC 口径一致" "N/A" "无 BMC 对比数据（无 IPMI FRU/Redfish 日志）"
+    # 无 BMC 机器（IPMI 日志全错误/无有效 FRU）→ N/A 且不计入"数据不足"——无 BMC 是平台固有形态
+    if [ "${BMC_PRESENT:-0}" -eq 0 ] 2>/dev/null; then
+        if ls "${BMC_DIR}"/ipmi_*.log >/dev/null 2>&1; then
+            add_item "OS-BMC 口径一致" "N/A" "机器无 BMC（IPMI 日志为错误输出，平台固有形态，交叉校验不适用）" 1
+        else
+            add_item "OS-BMC 口径一致" "N/A" "无 IPMI/Redfish 数据（ipmitool 未安装或模块关闭），无法交叉校验"
+        fi
+    elif [ -z "$BMC_CONSISTENCY" ]; then
+        add_item "OS-BMC 口径一致" "N/A" "无 BMC 对比数据（旧采集或采集失败）"
     elif printf '%s\n' "$BMC_CONSISTENCY" | grep -q "⚠️ 不一致"; then
         _bc_bad=$(printf '%s\n' "$BMC_CONSISTENCY" | awk -F'|' '$4 ~ /不一致/{printf "%s, ", $1}')
         add_item "OS-BMC 口径一致" "FAIL" "${_bc_bad%,} 不一致（潜在刷 SN/换件/固件不匹配风险）"
