@@ -25,7 +25,7 @@ if [ ! -f "$HWSCOPE" ]; then
     echo "[ERROR] 找不到 hwscope.sh: ${HWSCOPE}" >&2; exit 1
 fi
 
-VER=$(grep '^HWSCOPE_VERSION=' "$HWSCOPE" | head -1 | sed 's/.*"\(.*\)"/\1/')
+VER=$(grep '^HWSCOPE_VERSION=' "$HWSCOPE" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)   # || true：pipefail 下无匹配静默退出会吞掉下方友好报错（v1.33.3）
 VER_NUM="${VER#v}"
 
 if [ -z "$VER" ] || [ "$VER" = "$VER_NUM" ]; then
@@ -71,7 +71,7 @@ fi
 echo ""
 echo "=== 版本一致性检查 ==="
 echo "hwscope.sh 变量 : ${VER}"
-HEAD_VER=$(grep -m1 "^# Version" "$HWSCOPE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+HEAD_VER=$(grep -m1 "^# Version" "$HWSCOPE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)   # || true：pipefail 兼容（v1.33.3）
 echo "hwscope.sh 注释 : ${HEAD_VER}"
 grep -m1 "Version" "$README" | sed 's/^/README.md      : /'
 
@@ -81,7 +81,8 @@ if [ "$HEAD_VER" != "$VER_NUM" ]; then
     exit 1
 fi
 
-README_VER=$(grep -oP '\*\*Version:\*\* \K[0-9][0-9.]*' "$README" | head -1)
+# 改用 sed 提取（grep -oP 依赖 GNU grep 的 -P/\K，busybox/macOS 不可用——v1.33.3）
+README_VER=$(sed -n 's/.*\*\*Version:\*\* \([0-9][0-9.]*\).*/\1/p' "$README" | head -1)
 if [ "$README_VER" != "$VER_NUM" ]; then
     echo "[ERROR] README 版本不一致: 期望 ${VER_NUM}, 实际 ${README_VER}" >&2
     exit 1

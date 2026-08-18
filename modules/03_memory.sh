@@ -32,13 +32,12 @@ run_memory() {
     # 1b. 内存阵列信息（type 16：总数/最大容量/错误修正；dmidecode 不接受 "memory-array" 关键字，须用数字）
     run_and_log "dmidecode -t 16 2>/dev/null" "${dir}/dmidecode_memory_array.log"
 
-    # 2b. 每槽完整的段落输出（awk 复杂转义，串行执行）
-    run_and_log "dmidecode -t memory 2>/dev/null | awk '/^[[:space:]]*Locator:/{if(seg) print seg; seg=\$0; next} /^[[:space:]]/{seg=seg ORS \$0} END{print seg}'" \
+    # 2b. 每槽完整的段落输出（awk 复杂转义，串行执行；空行结束当前段，防下一 DIMM 块前置行混入）
+    run_and_log "dmidecode -t memory 2>/dev/null | awk '/^[[:space:]]*Locator:/{if(seg) print seg; seg=\$0; next} /^[[:space:]]*\$/{if(seg) print seg; seg=\"\"; next} /^[[:space:]]/{seg=seg ORS \$0} END{if(seg) print seg}'" \
         "${dir}/memory_slot_blocks.log"
 
-    # 3. 内存容量统计
-    run_and_log "echo 'Total Memory Modules:' && dmidecode -t memory 2>/dev/null | grep -c 'Size:' && \
-        echo 'Total Capacity (GB):' && dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module' | awk '{sum+=\$2} END{print sum}'" \
+    # 3. 内存容量统计（先剔除 No Module 空槽再计数；段间用 ; 分隔防 grep 无匹配断链）
+    run_and_log "echo 'Total Memory Modules:'; dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -vc 'No Module'; echo 'Total Capacity (GB):'; dmidecode -t memory 2>/dev/null | grep 'Size:' | grep -v 'No Module' | awk '{sum+=\$2} END{print sum+0}'" \
         "${dir}/memory_capacity.log"
 
     # 4. EDAC 内存错误计数（Linux 内核 EDAC 子系统；只读，无权限时跳过）

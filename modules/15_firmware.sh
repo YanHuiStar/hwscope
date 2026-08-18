@@ -29,8 +29,14 @@ fw_ver_cmp() {
         if [ -z "$x" ]; then echo -1; return; fi    # 段数少 = 版本旧（1.2 < 1.2.1）
         if [ -z "$y" ]; then echo 1; return; fi
         if [[ "$x" =~ ^[0-9]+$ ]] && [[ "$y" =~ ^[0-9]+$ ]]; then
-            if [ "$x" -lt "$y" ] 2>/dev/null; then echo -1; return; fi
-            if [ "$x" -gt "$y" ] 2>/dev/null; then echo 1; return; fi
+            # 超长数字段（>18 位）避免 bash 64 位整数回绕误判相等，走字典序
+            if [ "${#x}" -gt 18 ] || [ "${#y}" -gt 18 ]; then
+                if [ "$x" \< "$y" ]; then echo -1; return; fi
+                if [ "$x" \> "$y" ]; then echo 1; return; fi
+            else
+                if [ "$x" -lt "$y" ] 2>/dev/null; then echo -1; return; fi
+                if [ "$x" -gt "$y" ] 2>/dev/null; then echo 1; return; fi
+            fi
         elif [[ "$x" =~ ^[0-9A-Fa-f]{1,8}$ ]] && [[ "$y" =~ ^[0-9A-Fa-f]{1,8}$ ]]; then
             # 固件版本常含十六进制段（如 VBIOS 92.00.1D.00.11）
             dx=$((16#$x)); dy=$((16#$y))
@@ -52,10 +58,10 @@ fw_base_find() {
     while IFS= read -r line; do
         [ -z "$line" ] && continue
         case "$line" in \#*) continue ;; esac
-        IFS='|' read -r bc bp br bn <<< "$line"
+        IFS='|' read -r bc bp br bn < <(printf '%s\n' "$line")
         [ "$(echo "${bc:-}" | tr '[:lower:]' '[:upper:]')" != "$comp" ] && continue
         pat="${bp:-}"
-        if [ -z "$pat" ] || { [ -n "$model" ] && echo "$model" | grep -qE "$pat"; }; then
+        if [ -z "$pat" ] || { [ -n "$model" ] && echo "$model" | grep -qE "$pat" 2>/dev/null; }; then
             echo "${br:-}|${bn:-}"
             return
         fi
@@ -83,7 +89,7 @@ run_firmware() {
 
     # 网卡固件兜底（无 mlxfwmanager 时）：ethtool -i 逐口读 firmware-version
     if ! check_cmd mlxfwmanager; then
-        local _dev
+        local _dev _name
         for _dev in /sys/class/net/*; do
             [ -d "$_dev" ] || continue
             _name=$(basename "$_dev")
@@ -107,6 +113,7 @@ run_firmware() {
         grep -E "Device Type:|Firmware Version:|PCI Device Name:" "${dir}/nic_fwmanager.log" 2>/dev/null | sed 's/^/  /'
         echo ""
         echo "## NIC (ethtool 兜底)"
+        local _f _n
         for _f in "${dir}"/nic_ethtool_*.log; do
             [ -f "$_f" ] || continue
             _n=$(basename "$_f" | sed 's/nic_ethtool_//; s/\.log//')
@@ -135,7 +142,7 @@ run_firmware() {
         local c="$1" d="$2" v="$3"
         local bb nn
         bb=$(fw_base_find "$c" "$d")
-        IFS='|' read -r base note <<< "$bb"
+        IFS='|' read -r base note < <(printf '%s\n' "$bb")
         [ -z "$base" ] && { st_unknown=$((st_unknown+1)); echo "${c}|${d}|${v}|—|未知|无基线（conf/fw_required.txt 未录入）" >> "$csv"; return; }
         rc=$(fw_ver_cmp "$v" "$base")
         case "$rc" in
@@ -190,8 +197,10 @@ run_firmware() {
     # NVSwitch（nvswitch --version 优先，nvidia-smi nvswitch --version 兜底）
     # 注意：必须先 grep -v '^#' 过滤日志头（"# Command  : nvswitch --version 2>&1" 含
     # "--version"/"2>&1"，直接匹配会误取头部导致版本号错乱，v1.29.0 冒烟实测踩坑）
-    cur=$(grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -m1 -iE "Version|Firmware" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
-    [ -z "$cur" ] && cur=$(grep -v "^#" "${dir}/nvswitch_smi_version.log" 2>/dev/null | grep -m1 -iE "Version|Firmware" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
+    # 优先精确匹配 Firmware 行（防取到 "Library version" 库版本误判落后）
+    cur=$(grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -m1 -iE "Firmware" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
+    [ -z "$cur" ] && cur=$(grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -m1 -iE "Version" | grep -vi "Library" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
+    [ -z "$cur" ] && cur=$(grep -v "^#" "${dir}/nvswitch_smi_version.log" 2>/dev/null | grep -m1 -iE "Firmware|Version" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
     [ -n "$cur" ] && fw_emit "NVSWITCH" "NVSwitch" "$cur"
 
     # ─── 判定汇总（追加到 csv 尾部；供报告段直接引用） ───

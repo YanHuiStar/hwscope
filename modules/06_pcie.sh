@@ -18,6 +18,7 @@ run_pcie() {
     if ! check_cmd lspci; then
         echo -e "${YELLOW}[SKIP] lspci not found, install pciutils${NC}"
         echo "[SKIP] lspci not found (install pciutils) — PCIe 模块跳过" > "${dir}/00_skip_lspci.log"
+        write_manifest "${dir}/manifest.txt" "skip_lspci" "00_skip_lspci.log"
         module_end "$MODULE_NAME"
         return 0
     fi
@@ -39,17 +40,17 @@ run_pcie() {
             run_and_log "lspci -vvv -s '$bus' 2>/dev/null | grep -E 'Region|LnkSta:|LnkCap:|LnkSta2:'" \
                 "${dir}/gpu_pcie_${count}.log"
             ((count++))
-        done <<< "$gpu_buses"
+        done < <(printf '%s\n' "$gpu_buses")
         # 汇总 GPU PCIe 位置（用 cat -n 避免 awk $0 逃脱引号的问题）
         run_and_log "lspci -D 2>/dev/null | grep NVIDIA | grep -v NVSwitch | cat -n" \
             "${dir}/gpu_pcie_bus_map.log"
     fi
 
-    # 7~8. NUMA 拓扑 + IOMMU 分组（独立命令，并行采集）
+    # 7~8. NUMA 拓扑 + IOMMU 分组（独立命令，并行采集；IOMMU 未启用时 glob 不匹配，输出说明而非垃圾行）
     run_and_log_parallel 2 \
-        "for d in /sys/bus/pci/devices/*/numa_node; do echo \"\$(basename \$(dirname \$d)) -> node \$(cat \$d)\"; done 2>/dev/null" \
+        "if [ -d /sys/bus/pci/devices ]; then for d in /sys/bus/pci/devices/*/numa_node; do [ -e \"\$d\" ] || continue; echo \"\$(basename \$(dirname \$d)) -> node \$(cat \$d)\"; done 2>/dev/null; fi" \
             "${dir}/pci_numa_map.log" \
-        "for g in /sys/kernel/iommu_groups/*; do echo \"IOMMU Group \$(basename \$g):\"; for d in \$g/devices/*; do echo \"  \$(basename \$d) - \$(lspci -n -s \$(basename \$d) 2>/dev/null)\"; done; done 2>/dev/null" \
+        "if [ -d /sys/kernel/iommu_groups ]; then for g in /sys/kernel/iommu_groups/*; do echo \"IOMMU Group \$(basename \$g):\"; for d in \$g/devices/*; do echo \"  \$(basename \$d) - \$(lspci -n -s \$(basename \$d) 2>/dev/null)\"; done; done 2>/dev/null; else echo 'IOMMU not enabled (BIOS VT-d off)'; fi" \
             "${dir}/iommu_groups.log"
 
 # NOTE: gpu_pcie_N.log are generated per GPU bus (N=0,1,...)

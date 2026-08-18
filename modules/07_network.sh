@@ -57,7 +57,7 @@ run_network() {
             while IFS= read -r dev; do
                 mlx_jobs+=("mlxlink -d $dev" "${dir}/mlxlink_${dev}.log")
                 [ "${NO_MODULE:-0}" -eq 0 ] && mlx_jobs+=("mlxlink -d $dev -m" "${dir}/mlxlink_${dev}_module.log")
-            done <<< "$mlx_devs"
+            done < <(printf '%s\n' "$mlx_devs")
         fi
         [ "${#mlx_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${mlx_jobs[@]}"
     fi
@@ -77,7 +77,7 @@ run_network() {
             eth_jobs+=("ethtool '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}.log")
             eth_jobs+=("ethtool -i '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_driver.log")
             eth_jobs+=("ethtool -m '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_module.log")
-        done <<< "$eth_devs"
+        done < <(printf '%s\n' "$eth_devs")
         [ "${#eth_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${eth_jobs[@]}"
     fi
 
@@ -89,9 +89,9 @@ run_network() {
     local ip_ret=$?
     [ "$ip_ret" -ne 0 ] && echo -e "${YELLOW}[WARN] 网络 IP/MAC 采集部分失败${NC}" >&2 
 
-    # ─── 网卡一览清单（dev|bdf|mac|sn|pn|fw|speed|width）───
+    # ─── 网卡一览清单（dev|bdf|mac|sn|pn|fw|speed|width|psid|cap_speed|cap_width）───
     {
-        echo "# nic inventory: dev|bdf|mac|serial|part_number|firmware|speed|width"
+        echo "# nic inventory: dev|bdf|mac|serial|part_number|firmware|speed|width|psid|cap_speed|cap_width"
         for ndev in $(ls /sys/class/net/ 2>/dev/null); do
             [ "$ndev" = "lo" ] && continue
             # PCIe 网卡 + USB 网卡都收录：USB 网卡 BDF 是 usb 路径形式（如 2-9.4:1.0），
@@ -183,6 +183,7 @@ run_network() {
             fi
             [ -z "$nspd" ] && nspd="N/A"; [ -z "$nwd" ] && nwd="N/A"
             [ -z "$ncap_spd" ] && ncap_spd="N/A"; [ -z "$ncap_wd" ] && ncap_wd="N/A"
+            [ -z "$nfw" ] && nfw="N/A"
             echo "${ndev}|${nbdf}|${nmac:-N/A}|${nsn}|${npn:-N/A}|${nfw}|${nspd}|${nwd}|${npsid}|${ncap_spd}|${ncap_wd}"
         done
     } > "${dir}/nic_inventory.csv" 2>/dev/null || true
@@ -207,7 +208,7 @@ run_network() {
         "nic_inventory" "nic_inventory.csv" \
         "lstopo_network" "lstopo_network.txt"
 
-    # MST 未启动提示（只读原则不自动 start；SN 为 GUID 兜底时用户可手动补真 SN）
+    # MST 未启动提示（MST_AUTO_START=1 时已自动 mst start 读真 SN；此提示仅在其被禁用/失败时出现，SN 为 GUID 兜底）
     if [ "$MST_NOT_STARTED" -eq 1 ]; then
         echo "⚠️ MST 服务未启动（sudo mst start 可启用）：Mellanox 卡 SN/PSID 未读到，报告以 GUID 兜底" > "${dir}/mst_notice.log"
         write_manifest --append "${dir}/manifest.txt" "mst_notice" "mst_notice.log"

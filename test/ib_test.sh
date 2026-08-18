@@ -85,6 +85,7 @@ test_init "ib"
 start_ts=$(date +%s)
 
 # 逐对打流（PAIRED_DEVS 是成对的：srv cli srv cli...）
+# 注意：perftest 无地址参数即 server 模式——client 端必须传对端 IP，否则两端互等挂起（v1.33.3）
 TEST_INDEX=0
 read -ra PD <<< "$PAIRED_DEVS"
 for ((i=0; i<${#PD[@]}; i+=2)); do
@@ -94,24 +95,33 @@ for ((i=0; i<${#PD[@]}; i+=2)); do
     echo "" | tee -a "$REPORT_LOG"
     echo -e "${CYAN}━━━ 对 ${TEST_INDEX}: ${srv} (S) <-> ${cli} (C) ━━━${NC}" | tee -a "$REPORT_LOG"
 
+    # client 端目标 IP：ibdev2netdev 映射 IB 口 → netdev → IPv4（无 IP 无法打流，SKIP 提示）
+    srv_net=$(ibdev2netdev 2>/dev/null | grep -w "$srv" | awk '{print $NF}' | head -1)
+    srv_ip=""
+    [ -n "$srv_net" ] && srv_ip=$(ip -4 addr show "$srv_net" 2>/dev/null | awk '/inet /{print $2; exit}' | cut -d/ -f1)
+    if [ -z "$srv_ip" ]; then
+        echo -e "${YELLOW}[SKIP] ${srv} 对端 netdev(${srv_net:-?}) 无 IPv4（未配 IP），无法打流${NC}" | tee -a "$REPORT_LOG"
+        continue
+    fi
+
     case "$tsel" in
         1|3)
             LOGFILE="${REPORT_DIR}/ib_write_bw_${srv}_${cli}.log"
-            # server 后台起，等 2 秒，client 连
-            timeout 20 ib_write_bw -d "$srv" -F -s 4194304 > /dev/null 2>&1 &
+            # server 显式 -S；client 传对端 IP 并整体 timeout 防挂起
+            timeout 20 ib_write_bw -S -d "$srv" -F -s 4194304 > /dev/null 2>&1 &
             SRV_PID=$!
             sleep 2
-            run_and_log "ib_write_bw -d '$cli' -F -s 4194304 --report_gbits 2>&1" "$LOGFILE"
+            run_and_log "timeout 20 ib_write_bw -d '$cli' '$srv_ip' -F -s 4194304 --report_gbits 2>&1" "$LOGFILE"
             rc=$?
             kill $SRV_PID 2>/dev/null
             test_record "ib_write_bw_${srv}_${cli}" "$LOGFILE" "$start_ts" "$rc"
             ;;
         2|3)
             LOGFILE="${REPORT_DIR}/ib_read_bw_${srv}_${cli}.log"
-            timeout 20 ib_read_bw -d "$srv" -F -s 4194304 > /dev/null 2>&1 &
+            timeout 20 ib_read_bw -S -d "$srv" -F -s 4194304 > /dev/null 2>&1 &
             SRV_PID=$!
             sleep 2
-            run_and_log "ib_read_bw -d '$cli' -F -s 4194304 --report_gbits 2>&1" "$LOGFILE"
+            run_and_log "timeout 20 ib_read_bw -d '$cli' '$srv_ip' -F -s 4194304 --report_gbits 2>&1" "$LOGFILE"
             rc=$?
             kill $SRV_PID 2>/dev/null
             test_record "ib_read_bw_${srv}_${cli}" "$LOGFILE" "$start_ts" "$rc"

@@ -26,7 +26,8 @@ run_nvswitch() {
         while [ "$ns_idx" -lt 32 ]; do
             local ns_out
             ns_out=$(nvswitch -q -i "$ns_idx" 2>&1)
-            if [ $? -ne 0 ] || echo "$ns_out" | grep -qiE "invalid|not found|failed"; then
+            # 终止判定：退出码非零 或 明确不存在（去掉过宽 'failed'，防降级 switch 的正常输出含 failed 字样提前截断枚举）
+            if [ $? -ne 0 ] || echo "$ns_out" | grep -qiE "invalid|not found"; then
                 break
             fi
             run_and_log "nvswitch -q -i ${ns_idx}" "${dir}/nvswitch_${ns_idx}.log"

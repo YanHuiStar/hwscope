@@ -50,8 +50,8 @@ for sel in "${SELECTED[@]}"; do
                 fi
                 ;;
             ib_write_bw)
-                # 本机回环测试 (自测模式)
-                run_and_log "ib_write_bw -d mlx5_0 2>&1" "$LOGFILE"
+                # 提示改用 ib_test.sh（perftest 无对端地址即 server 模式，这里直跑会挂起等客户端——v1.33.3）
+                echo "[SKIP] IB 打流请用 bash test/ib_test.sh（自动配对 + 双端地址）" | tee -a "$LOGFILE"
                 ;;
             mtr)
                 run_and_log "mtr -rw -c 10 8.8.8.8 2>&1" "$LOGFILE"

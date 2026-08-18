@@ -40,7 +40,8 @@ for sel in "${SELECTED[@]}"; do
                 run_and_log "sysbench cpu --cpu-max-prime=20000 --time=30 run 2>&1" "$LOGFILE"
                 ;;
             mprime)
-                run_and_log "mprime -t -w${REPORT_DIR} 2>&1" "$LOGFILE"
+                # mprime torture 默认无限运行，外层 timeout 300s 限制（与 stress-ng/sysbench 的 30s 上限对齐——v1.33.3）
+                run_and_log "timeout 300 mprime -t -w${REPORT_DIR} 2>&1" "$LOGFILE"
                 ;;
         esac
         test_record "$name" "$LOGFILE" "$start_ts" "$?"

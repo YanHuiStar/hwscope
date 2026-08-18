@@ -42,9 +42,19 @@ trap 'rm -f "$TMP_GEN"' EXIT
 
 # ─── 生成基线条目（组件|型号模式|版本|来源） ───
 if [ -n "$SRC_FILE" ]; then
-    # 表格文件：组件|型号模式|版本|备注（跳过 # 注释与空行）
+    # 表格文件：组件|型号模式|版本|备注（跳过 # 注释与空行；校验字段 ≥3 且版本非空，非法行跳过统计——v1.33.3）
     [ ! -f "$SRC_FILE" ] && { echo -e "\033[0;31m[ERROR] 表格文件不存在: ${SRC_FILE}\033[0m"; exit 1; }
-    grep -vE '^\s*#|^\s*$' "$SRC_FILE" > "$TMP_GEN"
+    _skip=0
+    while IFS='|' read -r _c _p _v _n; do
+        [ -z "$_c" ] && continue
+        if [ -z "$_p" ] || [ -z "$_v" ] || [ "$_v" = "N/A" ]; then
+            echo -e "\033[1;33m  [SKIP] 非法行（型号模式或版本为空）: ${_c}|${_p}|${_v}\033[0m" >&2
+            _skip=$((_skip+1))
+            continue
+        fi
+        echo "$_c|$_p|$_v|${_n:-}"
+    done < <(grep -vE '^\s*#|^\s*$' "$SRC_FILE") > "$TMP_GEN"
+    [ "$_skip" -gt 0 ] && echo -e "\033[1;33m[INFO] $_skip 行非法被忽略\033[0m"
 else
     CSV="${SRC_DIR}/firmware/fw_compliance.csv"
     [ ! -f "$CSV" ] && { echo -e "\033[0;31m[ERROR] 缺少固件合规数据: ${CSV}（请先对基准机跑 15_firmware）\033[0m"; exit 1; }
@@ -56,7 +66,7 @@ else
         [ -z "$cur" ] || [ "$cur" = "N/A" ] && continue
         pat=""
         case "$comp" in
-            GPU_VBIOS) pat=$(echo "$dev" | grep -oE "NVIDIA [A-Za-z0-9]+|RTX [A-Za-z0-9]+|Tesla [A-Za-z0-9]+|Quadro [A-Za-z0-9]+" | head -1) ;;
+            GPU_VBIOS) pat=$(echo "$dev" | grep -oE "RTX [A-Za-z0-9]+|Quadro [A-Za-z0-9]+|Tesla [A-Za-z0-9]+|NVIDIA [A-Za-z0-9]+" | head -1) ;;
             NIC)       pat=$(echo "$dev" | grep -oE "ConnectX-[0-9]+( Lx| Dx)?|BlueField[^ ]*" | head -1) ;;
             BMC|NVSWITCH) pat="" ;;
             *)         pat="" ;;
@@ -112,18 +122,19 @@ if [ "$MODE" = "diff" ]; then
     exit 0
 fi
 
-# ─── 写入（备份原文件） ───
-[ -f "$FW_REQUIRED" ] && cp "$FW_REQUIRED" "${FW_REQUIRED}.bak"
+# ─── 写入（备份带时间戳防覆盖旧备份；tmp+mv 原子写防写盘中断损坏基线——v1.33.3） ───
+_BAK="${FW_REQUIRED}.bak-$(date +%Y%m%d%H%M%S)"
+[ -f "$FW_REQUIRED" ] && cp "$FW_REQUIRED" "$_BAK"
 {
     echo "# ============================================================================="
     echo "# HwScope 固件推荐版本基线（conf/fw_required.txt）— 自动导入生成 $(date '+%Y-%m-%d %H:%M:%S')"
     echo "# 来源: $( [ -n "$SRC_FILE" ] && echo "表格 ${SRC_FILE}" || echo "基准机采集 ${SRC_DIR}" )"
     echo "# 格式: 组件|型号模式|推荐版本|备注（# 注释跳过；型号模式空 = 该组件全部设备）"
-    echo "# 旧基线已备份: ${FW_REQUIRED}.bak"
+    echo "# 旧基线已备份: ${_BAK}"
     echo "# ============================================================================="
     echo ""
     cat "$TMP_GEN"
     echo ""
     echo "# 如需手动补充厂商手册条目，按同样格式追加即可"
-} > "$FW_REQUIRED"
-echo -e "\033[0;32m[OK] 已写入 ${FW_REQUIRED}（${NEW} 新增 / ${CHANGED} 变化；旧文件 → .bak）\033[0m"
+} > "${FW_REQUIRED}.tmp" && mv "${FW_REQUIRED}.tmp" "$FW_REQUIRED"
+echo -e "\033[0;32m[OK] 已写入 ${FW_REQUIRED}（${NEW} 新增 / ${CHANGED} 变化；旧文件 → ${_BAK}）\033[0m"

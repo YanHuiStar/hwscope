@@ -11,12 +11,16 @@ source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 parse_help "$@"
 
 # ─── 检测包管理器 ───
+[ "$(id -u)" -eq 0 ] || { echo -e "${RED}[ERROR] 需要 root 运行: sudo bash $0${NC}"; exit 1; }   # 安装需写系统（v1.33.3）
 if check_cmd apt-get; then PKG_MGR="apt-get"; OS="debian"
 elif check_cmd dnf; then PKG_MGR="dnf"; OS="rhel"
 elif check_cmd yum; then PKG_MGR="yum"; OS="rhel"
 else echo -e "${RED}[ERROR] 不支持的包管理器${NC}"; exit 1; fi
 
 echo -e "${CYAN}[INFO] 包管理器: ${PKG_MGR}${NC}"
+if [ "$OS" = "rhel" ]; then
+    echo -e "${YELLOW}[提示] RHEL/Rocky/Alma 的 stress-ng/sysbench/fio/iperf3 依赖 EPEL 源，装不上请先: sudo dnf install -y epel-release${NC}"
+fi
 
 # ─── 包名映射：Ubuntu apt vs Rocky yum ───
 if [ "$OS" = "debian" ]; then
@@ -60,6 +64,10 @@ for sel in "${SELECTED[@]}"; do
                 read -p "  确认安装? (y/N) " -r confirm
                 [[ ! "$confirm" =~ ^[Yy] ]] && echo "  跳过" && continue
                 ${PKG_MGR} install -y $pkgs 2>&1 | tail -5
+                # 管道退出码是 tail 的——检查真实安装结果（v1.33.3）
+                if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
+                    echo -e "${RED}[ERROR] ${PKG_MGR} 安装失败（${OS} 下部分包依赖 EPEL/额外源）${NC}"
+                fi
                 ;;
             manual)
                 case "$num" in

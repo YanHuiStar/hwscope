@@ -13,6 +13,9 @@ detect_machine_id() {
         [ -z "$mid" ] && mid=$(dmidecode -t baseboard 2>/dev/null | grep -i 'Serial Number' | grep -v 'Not Specified' | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
         [ -z "$mid" ] && mid=$(dmidecode -t system 2>/dev/null | grep -i 'UUID' | head -1 | awk -F': ' '{print $2}' | tr -d ' -')
     fi
+    # 占位 SN 过滤（OEM 默认值）+ 路径安全清洗（仅字母数字与 -_，防流入目录名/tar 包名/sed）
+    [ -z "$mid" ] || echo "$mid" | grep -qiE "To Be Filled|O\.E\.M\.|Default string|System Serial|Not Specified|Unknown|None" && mid=""
+    mid=$(echo "$mid" | tr -cd 'A-Za-z0-9_-')
     [ -z "$mid" ] && mid=$(date '+%Y%m%d%H%M%S')
     echo "$mid"
 }

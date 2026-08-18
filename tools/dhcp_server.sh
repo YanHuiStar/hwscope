@@ -36,7 +36,7 @@ CONF_FILE="/etc/dnsmasq.d/hwscope-dhcp.conf"
 LEASE_DEBIAN="/var/lib/misc/dnsmasq.leases"
 LEASE_RHEL="/var/lib/dnsmasq/dnsmasq.leases"
 
-ACTION="${1:-help}"; shift 2>/dev/null || true
+ACTION="${1:-help}"; shift 2>/dev/null || shift   # 只移动作本身（shift 2 会吞掉动作后第一个选项，如 config --dry-run 的 --dry-run——v1.33.3 修复）
 IFACE="eth0"; SUBNET="192.168.50"; START=100; END=200; GW=1; LEASE="12h"; DRY=0
 LEASE_FILE=""; POSARGS=()
 
@@ -55,6 +55,12 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# 参数校验（防脏输入/区间倒置/非法网段拼进 dnsmasq 配置——v1.33.3）
+[[ "$START" =~ ^[0-9]+$ ]] && [[ "$END" =~ ^[0-9]+$ ]] || { echo -e "\033[0;31m[ERROR] --start/--end 需纯数字\033[0m"; exit 1; }
+[ "$END" -ge "$START" ] || { echo -e "\033[0;31m[ERROR] --end($END) < --start($START)，区间倒置\033[0m"; exit 1; }
+echo "$SUBNET" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){2}$' || { echo -e "\033[0;31m[ERROR] --subnet 需网段前三段（如 192.168.50）\033[0m"; exit 1; }
+echo "$LEASE" | grep -qE '^[0-9]+[smhd]$' || { echo -e "\033[0;31m[ERROR] --lease 需如 12h/30m/3600s\033[0m"; exit 1; }
+
 need_root() {
     [ "$(id -u)" -eq 0 ] || { echo -e "\033[0;31m[ERROR] 需要 root：请用 sudo bash $0\033[0m"; exit 1; }
 }
@@ -71,6 +77,7 @@ gen_conf() {
         fi
         echo "dhcp-authoritative"
         echo "log-dhcp"
+        echo "port=0"   # DHCP-only，禁用 DNS（防与 systemd-resolved 抢 53 端口，多余暴露面关闭）
     }
 }
 
@@ -108,7 +115,9 @@ case "$ACTION" in
         fi
         need_root
         mkdir -p "$(dirname "$CONF_FILE")"
-        gen_conf > "$CONF_FILE"
+        # 原子写 + .bak 备份（防写盘中断留半截配置/旧配置被静默覆盖）
+        [ -f "$CONF_FILE" ] && cp "$CONF_FILE" "${CONF_FILE}.bak"
+        gen_conf > "${CONF_FILE}.tmp" && mv "${CONF_FILE}.tmp" "$CONF_FILE" || { echo -e "\033[0;31m[ERROR] 配置写入失败\033[0m"; rm -f "${CONF_FILE}.tmp"; exit 1; }
         echo -e "\033[0;32m[OK] 配置已写入: ${CONF_FILE}\033[0m"
         cat "$CONF_FILE"
         ;;
@@ -139,7 +148,11 @@ case "$ACTION" in
         LF=$(find_lease_file)
         if [ -f "$LF" ]; then
             echo "到期时间         MAC 地址             IP 地址        主机名"
-            grep -v '^#' "$LF" 2>/dev/null | awk '{printf "%-17s %-20s %-15s %s\n", strftime("%Y-%m-%d %H:%M", $1), $2, $3, $4}'
+            # mawk 无 strftime，逐行用 date 转换（兼容 Ubuntu/Debian 默认 mawk）
+            grep -v '^#' "$LF" 2>/dev/null | while read -r _exp _mac _ip _hn; do
+                [ -z "$_exp" ] && continue
+                printf "%-17s %-20s %-15s %s\n" "$(date -d "@${_exp}" '+%Y-%m-%d %H:%M' 2>/dev/null)" "$_mac" "$_ip" "$_hn"
+            done
             echo ""
             echo "租约总数: $(grep -vc '^#' "$LF" 2>/dev/null)"
         else
@@ -174,15 +187,17 @@ case "$ACTION" in
             [ ! -f "$json" ] && { echo -e "  \033[0;31m[ERROR] 无报告 JSON: ${_dir}\033[0m"; continue; }
             sn=$(basename "${_dir%/}")
             ip=$(grep -m1 -oE '"ip": "[^"]*"' "$json" 2>/dev/null | sed 's/.*"ip": "\([^"]*\)"/\1/')
-            mac=$(grep -m1 -oE '"mac": "[^"]*"' "$json" 2>/dev/null | sed 's/.*"mac": "\([^"]*\)"/\1/')
+            # BMC MAC 限定 bmc 块内提取（network 块的 nics 明细 "mac" 先出现，grep -m1 会取到网卡 MAC——v1.33.3）
+            mac=$(awk '/^[[:space:]]*"bmc": \{/{inb=1} inb && /"mac":/ {v=$0; sub(/.*"mac": "/,"",v); sub(/".*/,"",v); print v; exit}' "$json" 2>/dev/null)
             [ -z "$ip" ] && ip="N/A"; [ -z "$mac" ] && mac="N/A"
             if [ "$ip" = "N/A" ]; then
                 tnodata=$((tnodata+1))
                 echo -e "  \033[0;33m? ${sn}: 采集无 BMC IP（机器无 BMC 或未采集）\033[0m"
                 continue
             fi
-            found=$(echo "$lease_map" | grep -c "^${ip}|" 2>/dev/null || echo 0)
-            [ "${found:-0}" -eq 0 ] && found=$(echo "$lease_map" | grep -ci "|${mac}$" 2>/dev/null || echo 0)
+            # 固定串匹配（IP 点号是正则通配，^10.0.0.1| 可误配 100.0.0.1；grep -c 无匹配已输出 0，无需 || echo 0）
+            found=$(echo "$lease_map" | grep -cF "${ip}|" 2>/dev/null)
+            [ "${found:-0}" -eq 0 ] && found=$(echo "$lease_map" | grep -ciF "|${mac}" 2>/dev/null)
             if [ "${found:-0}" -gt 0 ]; then
                 tmatched=$((tmatched+1))
                 echo -e "  \033[0;32m✓ ${sn}: ${ip} ${mac} — 有租约\033[0m"

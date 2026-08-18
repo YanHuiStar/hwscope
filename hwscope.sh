@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.33.2 (2026-08)
+# Version : 1.33.3 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -84,7 +84,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.33.2"
+HWSCOPE_VERSION="v1.33.3"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -126,9 +126,9 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --modules)  SELECTED_MODULES="$2"; shift 2 ;;
-        --skip)     SKIP_MODULES="$2"; shift 2 ;;
-        --output)   OUTPUT_BASE="$2"; shift 2 ;;
+        --modules)  [ -n "${2:-}" ] || { echo -e "${RED}错误: --modules 需要模块列表（如 gpu,storage）${NC}"; usage; exit 1; }; SELECTED_MODULES="$2"; shift 2 ;;
+        --skip)     [ -n "${2:-}" ] || { echo -e "${RED}错误: --skip 需要模块列表（如 dcgm,nvsm）${NC}"; usage; exit 1; }; SKIP_MODULES="$2"; shift 2 ;;
+        --output)   [ -n "${2:-}" ] || { echo -e "${RED}错误: --output 需要目录路径${NC}"; usage; exit 1; }; OUTPUT_BASE="$2"; shift 2 ;;
         --force)    FORCE_MODE=1; shift ;;
         --parallel) PARALLEL=1; shift ;;
         --serial)   PARALLEL=0; shift ;;
@@ -181,6 +181,9 @@ validate_module_names() {
 }
 [ -n "$SELECTED_MODULES" ] && validate_module_names "$SELECTED_MODULES" "--modules"
 [ -n "$SKIP_MODULES" ] && validate_module_names "$SKIP_MODULES" "--skip"
+# 归一化去空格：校验与执行过滤口径一致（--modules "gpu, storage" 与 "gpu,storage" 等价，防过滤漏采）
+SELECTED_MODULES="$(echo "$SELECTED_MODULES" | tr -d ' ')"
+SKIP_MODULES="$(echo "$SKIP_MODULES" | tr -d ' ')"
 
 # ─── 机器标识 ───
 MACHINE_ID=$(detect_machine_id)
@@ -194,11 +197,18 @@ fi
 
 if [ -d "$OUTPUT_BASE" ]; then
     if [ "$FORCE_MODE" -eq 1 ]; then
-        # rm -rf 护栏：拒绝系统根/一级系统目录及过短路径（防 --output 误敲导致灾难性删除）
+        # rm -rf 护栏：归一化绝对路径后拒绝 系统根/一级目录/家目录/过短路径（防 --output 误敲灾难性删除）
+        _out_parent=$(cd "$(dirname "$OUTPUT_BASE")" 2>/dev/null && pwd 2>/dev/null)
+        [ -n "$_out_parent" ] && OUTPUT_BASE="${_out_parent}/$(basename "$OUTPUT_BASE")"
         case "$OUTPUT_BASE" in
             /|/bin|/boot|/dev|/etc|/home|/lib|/lib64|/media|/mnt|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var)
                 echo -e "${RED}[ERROR] 拒绝删除系统目录: ${OUTPUT_BASE}${NC}"; exit 1 ;;
+            /[a-zA-Z0-9_-]*)
+                echo -e "${RED}[ERROR] 拒绝删除一级目录: ${OUTPUT_BASE}（只允许删除二级及以上目录，请检查 --output 参数）${NC}"; exit 1 ;;
         esac
+        if [ -n "${HOME:-}" ] && { [ "$OUTPUT_BASE" = "$HOME" ] || [ "${OUTPUT_BASE#${HOME}/}" != "$OUTPUT_BASE" ]; }; then
+            echo -e "${RED}[ERROR] 拒绝删除家目录: ${OUTPUT_BASE}${NC}"; exit 1
+        fi
         if [ "${#OUTPUT_BASE}" -lt 6 ]; then
             echo -e "${RED}[ERROR] 输出路径过短，拒绝删除: ${OUTPUT_BASE}（请检查 --output 参数）${NC}"; exit 1
         fi
@@ -232,8 +242,9 @@ SUMMARY_FILE="${OUTPUT_BASE}/summary.txt"
 } > "$SUMMARY_FILE"
 
 # 备份配置但脱敏密码（config_backup.conf 会随归档包外发，禁止明文凭据落盘）
-sed -E 's/^(BMC_PASS|HGX_BMC_PASS)=.*/\1="***REDACTED***"/' "$CONF_FILE" > "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null \
-    || cp "$CONF_FILE" "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null || true
+# 模式兼容 export 前缀/等号空格；sed 失败时写占位符而非原文（防明文凭据外泄）
+sed -E 's/^(export[[:space:]]+)?(BMC_PASS|HGX_BMC_PASS)[[:space:]]*=.*/\2="***REDACTED***"/' "$CONF_FILE" > "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null \
+    || echo "# config backup (BMC password redacted)" > "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null || true
 
 # ─── 模块执行 ───
 echo ""
@@ -251,6 +262,7 @@ export SIM_DELAY   # 模拟模式秒数（conf 读取，--sim 覆盖），子 sh
 export HWSCOPE_VERSION   # 版本号（模块独立进程 source common.sh 时写日志 header，缺失则显示 unknown）
 export MODULE_PARALLEL   # 模块内命令并行开关（--no-parallel 置 0；模块在独立 bash 子进程执行，必须 export 才能继承）
 export QUIET             # 静默模式（--quiet 置 1；模块子进程 run_and_log 需继承以抑制逐命令输出）
+export NO_MODULE         # 跳光模块开关（--no-module 置 1；07_network 子进程需继承才生效，v1.33.3 修复）
 # timeout 兜底：精简容器可能无 timeout（coreutils）——缺失时直接执行（无超时保护，但模块不会因命令缺失而静默失败）
 TIMEOUT_PREFIX="timeout ${MODULE_TIMEOUT:-300}"
 check_cmd timeout || TIMEOUT_PREFIX=""
@@ -259,7 +271,7 @@ if [ "$PARALLEL" -eq 1 ]; then
     # ═══════════════ 并行模式 ═══════════════
     echo -e "${CYAN}[QUEUE]${NC} 并行启动所有模块..."
 
-    PIDS=(); MODULE_INFO=()
+    MODULE_INFO=()
     for mod_info in "${MODULES[@]}"; do
         IFS=':' read -r num id fn desc <<< "$mod_info"
         [ -n "$SELECTED_MODULES" ] && ! echo ",${SELECTED_MODULES}," | grep -qi ",${id}," && continue
@@ -267,7 +279,10 @@ if [ "$PARALLEL" -eq 1 ]; then
         [ "${MODULE_SWITCH[$id]:-1}" -ne 1 ] && continue
 
         MODULE_SCRIPT="${SCRIPT_DIR}/modules/${num}_${id}.sh"
-        [ ! -f "$MODULE_SCRIPT" ] && continue
+        if [ ! -f "$MODULE_SCRIPT" ]; then
+            echo -e "${RED}[ERROR] 模块脚本不存在: ${MODULE_SCRIPT}${NC}" >&2
+            continue
+        fi
         source "$MODULE_SCRIPT"
 
         if declare -F "$fn" >/dev/null 2>&1; then
@@ -294,14 +309,28 @@ if [ "$PARALLEL" -eq 1 ]; then
                 find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l > "${OUTPUT_BASE}/.${id}_files"
                 touch "${OUTPUT_BASE}/.${id}_done"
             ) > "${OUTPUT_BASE}/.${id}_log" 2>&1 &
-            PIDS+=($!); MODULE_INFO+=("${num}|${id}|${desc}")
+            MODULE_INFO+=("${num}|${id}|${desc}")
         fi
     done
 
     # ─── 等待循环：动画 + 模块完成即输出该模块完整日志 ───
     total=${#MODULE_INFO[@]}
     declared=0; chars='/-\|'; i=0
+    # 总 deadline 兜底：模块子 shell 异常死亡（OOM/无 timeout 挂死）时防止无限转圈
+    WAIT_DEADLINE=$(( $(date +%s) + total * ${MODULE_TIMEOUT:-300} + 120 ))
     while [ "$declared" -lt "$total" ]; do
+        # 超时兜底：强制收尾缺失模块（打 WARN，不再等待）
+        if [ "$(date +%s)" -gt "$WAIT_DEADLINE" ]; then
+            for info in "${MODULE_INFO[@]}"; do
+                IFS='|' read -r num id desc <<< "$info"
+                [ -f "${OUTPUT_BASE}/.${id}_done" ] && continue
+                echo -e "${YELLOW}[WARN] 模块 ${id} 未在时限内完成（子进程可能异常退出），跳过等待${NC}" >&2
+                echo "0" > "${OUTPUT_BASE}/.${id}_warn" 2>/dev/null
+                find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l > "${OUTPUT_BASE}/.${id}_files" 2>/dev/null
+                touch "${OUTPUT_BASE}/.${id}_done" "${OUTPUT_BASE}/.${id}_printed"
+            done
+            break
+        fi
         # 动画行（仅 TTY）
         [ -t 1 ] && printf "\r\033[36m%c\033[0m 正在并行采集... %s/%s 模块完成" "${chars:$((i%4)):1}" "$declared" "$total"
         # 新完成模块 → 立即输出该模块日志
@@ -417,7 +446,6 @@ echo -e "${GREEN}采集完成！${NC}"; echo "输出目录: ${OUTPUT_BASE}"; ech
 echo "========================================"
 echo ""
 find "${OUTPUT_BASE}" -type d | sort | while read d; do
-    indent=$(echo "$d" | sed "s|${OUTPUT_BASE}||" | tr '/' ' ')
     level=$(echo "$d" | tr -cd '/' | wc -c); prefix=""
     for ((i=0; i<level-1; i++)); do prefix="${prefix}  "; done
     [ "$level" -gt 0 ] && echo "${prefix}├── $(basename "$d")/"

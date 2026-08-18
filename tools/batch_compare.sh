@@ -29,9 +29,10 @@ while [ $# -gt 0 ]; do
         -h|--help) usage ;;
         --dirs)
             # 空格分隔的目录列表（单参数）
+            [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] --dirs 缺少目录列表\033[0m"; usage; exit 1; }   # v1.33.3
             for _d in $2; do DIRS+=("$_d"); done
             shift 2 ;;
-        -o) OUT_PREFIX="$2"; shift 2 ;;
+        -o) [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] -o 缺少输出前缀\033[0m"; usage; exit 1; }; OUT_PREFIX="$2"; shift 2 ;;
         --*) echo "[WARN] 未知参数: $1"; shift ;;
         *) DIRS+=("$1"); shift ;;
     esac
@@ -105,7 +106,7 @@ TXT="${OUT_PREFIX}_${TS}.txt"
 # 提取一行字段值（$1=文件 $2=entry）
 field_vals() {
     local f="$1" entry="$2" fname fkey fblk
-    IFS='|' read -r fname fkey fblk <<< "$entry"
+    IFS='|' read -r fname fkey fblk < <(printf '%s\n' "$entry")   # 进程替换（函数内 herestring 在 MSYS 空读——v1.33.3）
     json_get "$f" "$fblk" "$fkey"
 }
 

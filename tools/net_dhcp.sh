@@ -33,8 +33,8 @@ for c in netplan ip; do
     command -v "$c" >/dev/null 2>&1 || { echo "[ERROR] 缺少命令: $c"; exit 1; }
 done
 
-# ─── 虚拟接口模式（排除） ───
-VIRT_PAT='^(lo|docker[0-9]*|virbr[0-9]*|veth[0-9a-f]*|veth.*|br-[0-9a-f]*|br[0-9]*|tun[0-9]*|tap[0-9]*|vnet[0-9]*|vxlan[0-9]*|bond[0-9]*|wg[0-9]*|dummy[0-9]*|sit[0-9]*|ip6tnl[0-9]*|nb[0-9]*|nbd[0-9]*|ib[0-9]*)$'
+# ─── 虚拟接口模式（排除；IB/RDMA 口常见预测命名 ibp8s0/ibP260p0s0，[0-9]* 匹配不到 p 会漏进候选——v1.33.3） ───
+VIRT_PAT='^(lo|docker[0-9]*|virbr[0-9]*|veth[0-9a-f]*|veth.*|br-[0-9a-f]*|br[0-9]*|tun[0-9]*|tap[0-9]*|vnet[0-9]*|vxlan[0-9]*|bond[0-9]*|wg[0-9]*|dummy[0-9]*|sit[0-9]*|ip6tnl[0-9]*|nb[0-9]*|nbd[0-9]*|ib.*)$'
 
 # ─── 收集物理网口 ───
 IFACES=()
@@ -110,7 +110,11 @@ else
             i=$((i+1))
         done
         read -rp "选择接口编号: " sel
-        TARGET=$(echo "${IFACES[$((sel-1))]}" 2>/dev/null | cut -d'|' -f1)
+        # 校验输入（负数/非数字会静默取数组末元素或 set -u 崩溃——v1.33.3）
+        if ! [[ "$sel" =~ ^[0-9]+$ ]] || [ "$sel" -lt 1 ] || [ "$sel" -gt "${#IFACES[@]}" ]; then
+            echo "[ERROR] 无效选择: $sel（范围 1-${#IFACES[@]}）"; exit 1
+        fi
+        TARGET=$(echo "${IFACES[$((sel-1))]}" | cut -d'|' -f1)
         if [ -z "$TARGET" ]; then echo "无效选择"; exit 1; fi
     fi
 fi
@@ -151,11 +155,11 @@ network:
 EOF
 echo "[写入] $CFG"
 
-# ─── 校验（失败回滚） ───
-if ! netplan generate 2>&1 | grep -qE "error|Error"; then
-    :
-else
-    echo "[ERROR] netplan generate 失败，恢复备份..."
+# ─── 校验（按退出码判定，失败回滚——文本匹配 "error/Error" 不可靠，如 "Invalid YAML" 不含 error——v1.33.3） ───
+if ! netplan generate > "${BK}/netplan.generate.log" 2>&1; then
+    echo "[ERROR] netplan generate 失败:"
+    tail -5 "${BK}/netplan.generate.log"
+    echo "[回滚] 恢复备份..."
     cp -a "$BK"/*.y*ml /etc/netplan/ 2>/dev/null
     rm -f "$CFG"
     exit 1
@@ -171,7 +175,15 @@ if [ -n "$MYIP" ]; then
     [[ ! "$ans2" =~ ^[Yy] ]] && echo "已取消（配置已写入 $CFG，可稍后手动 netplan apply）" && exit 0
 fi
 
-netplan apply
+# ─── 应用（失败检查 + 回滚——之前 apply 失败无感知仍打印完成） ───
+if ! netplan apply > "${BK}/netplan.apply.log" 2>&1; then
+    echo "[ERROR] netplan apply 失败:"
+    tail -5 "${BK}/netplan.apply.log"
+    echo "[回滚] 恢复备份..."
+    cp -a "$BK"/*.y*ml /etc/netplan/ 2>/dev/null
+    rm -f "$CFG"
+    exit 1
+fi
 echo ""
 echo "[完成] $TARGET 已配置 DHCP。等待获取 IP..."
 sleep 4
