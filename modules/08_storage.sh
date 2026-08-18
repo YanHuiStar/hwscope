@@ -148,9 +148,10 @@ run_storage() {
                 [ -z "$ssn" ] && ssn=$(echo "$sinfo" | grep -iE "^Serial number:" | cut -d: -f2- | xargs)
                 [ -z "$smodel" ] && smodel=$(echo "$sinfo" | grep -iE "^Product:" | cut -d: -f2- | xargs)
                 [ -z "$sfw" ] && sfw=$(echo "$sinfo" | grep -iE "^Revision:" | cut -d: -f2- | xargs)
-                # 类型区分：SATA 盘有 "SATA Version is"；SCSI/SAS 格式（走 Product:/Serial number: 回退或 Transport protocol 含 SAS）判 SAS
+                # 类型区分：SATA 盘有 "SATA Version is"；SAS 盘走 SCSI 格式（Product:/Serial number:）或 Transport protocol 明确为 SAS
+                # （注意：Transport protocol 行对 SATA 盘也输出 "Transport protocol: SATA"，必须值判断，勿无条件判 SAS）
                 if echo "$sinfo" | grep -qi "SATA Version is"; then stype="SATA"
-                elif echo "$sinfo" | grep -qiE "^Product:|^Serial number:|Transport protocol"; then stype="SAS"; fi
+                elif echo "$sinfo" | grep -qiE "^Product:|^Serial number:" || echo "$sinfo" | grep -qi "Transport protocol:.*SAS"; then stype="SAS"; fi
             fi
             [ -z "$smodel" ] && smodel=$(cat "/sys/block/${sname}/device/model" 2>/dev/null | xargs)
             [ -z "$ssn" ] && ssn=$(cat "/sys/block/${sname}/device/serial" 2>/dev/null | xargs)

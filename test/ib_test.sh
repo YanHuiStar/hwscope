@@ -107,8 +107,8 @@ for ((i=0; i<${#PD[@]}; i+=2)); do
     case "$tsel" in
         1|3)
             LOGFILE="${REPORT_DIR}/ib_write_bw_${srv}_${cli}.log"
-            # server 显式 -S；client 传对端 IP 并整体 timeout 防挂起
-            timeout 20 ib_write_bw -S -d "$srv" -F -s 4194304 > /dev/null 2>&1 &
+            # server 无地址即 server 模式（perftest 无 -S 标志，-S 是 --sl 服务等级——勿加）；client 传对端 IP 并整体 timeout 防挂起
+            timeout 20 ib_write_bw -d "$srv" -F -s 4194304 > /dev/null 2>&1 &
             SRV_PID=$!
             sleep 2
             run_and_log "timeout 20 ib_write_bw -d '$cli' '$srv_ip' -F -s 4194304 --report_gbits 2>&1" "$LOGFILE"
@@ -118,7 +118,7 @@ for ((i=0; i<${#PD[@]}; i+=2)); do
             ;;
         2|3)
             LOGFILE="${REPORT_DIR}/ib_read_bw_${srv}_${cli}.log"
-            timeout 20 ib_read_bw -S -d "$srv" -F -s 4194304 > /dev/null 2>&1 &
+            timeout 20 ib_read_bw -d "$srv" -F -s 4194304 > /dev/null 2>&1 &
             SRV_PID=$!
             sleep 2
             run_and_log "timeout 20 ib_read_bw -d '$cli' '$srv_ip' -F -s 4194304 --report_gbits 2>&1" "$LOGFILE"
