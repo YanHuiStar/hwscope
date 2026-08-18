@@ -8,6 +8,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+parse_help "$@"
 
 # ─── 检测包管理器 ───
 if check_cmd apt-get; then PKG_MGR="apt-get"; OS="debian"

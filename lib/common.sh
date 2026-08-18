@@ -13,6 +13,25 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# ─── 脚本帮助（统一 -h/--help：打印脚本头部注释块） ───
+# 提取 $0 的注释头（跳过 shebang 与 ==== 装饰线），作为帮助文本；调用后 exit 0
+show_script_help() {
+    awk '
+        /^#!/ { next }
+        /^# ====+$/ { if (seen) exit; next }
+        /^#/ { seen=1; sub(/^# ?/, ""); print; next }
+        { exit }
+    ' "$0"
+    echo ""
+    exit 0
+}
+# 统一帮助入口：脚本 source common.sh 后调用 `parse_help "$@"` 即可获得 -h/--help 支持
+parse_help() {
+    case "${1:-}" in
+        -h|--help|-help) show_script_help ;;
+    esac
+}
+
 # WSL 下 sudo 会重置 PATH（secure_path 不含 /usr/lib/wsl/lib），导致 nvidia-smi 检测失败
 # 兜底：nvidia-smi 不在 PATH 但存在于 WSL 路径时显式加入（真机 Linux 无此路径，条件不满足，无副作用）
 if ! command -v nvidia-smi >/dev/null 2>&1 && [ -x /usr/lib/wsl/lib/nvidia-smi ]; then

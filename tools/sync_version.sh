@@ -11,6 +11,14 @@
 set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# ─── 帮助 ───
+case "${1:-}" in
+    -h|--help)
+        sed -n '2,/^[^#]/p' "$0" | sed 's/^# \?//' | sed '/^$/d'
+        echo ""
+        exit 0 ;;
+esac
+
 # ─── 从 hwscope.sh 读取版本号（只读）───
 HWSCOPE="${SCRIPT_DIR}/hwscope.sh"
 if [ ! -f "$HWSCOPE" ]; then

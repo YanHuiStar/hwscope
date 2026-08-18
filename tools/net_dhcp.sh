@@ -14,6 +14,15 @@
 # =============================================================================
 set -u
 
+# ─── 帮助 ───
+case "${1:-}" in
+    -h|--help)
+        sed -n '2,/^[^#]/p' "$0" | sed 's/^# \?//' | sed '/^$/d'
+        echo ""
+        echo "用法: sudo bash tools/net_dhcp.sh    # 交互式选择网口配置 DHCP"
+        exit 0 ;;
+esac
+
 # ─── 检查 root ───
 if [ "$(id -u)" -ne 0 ]; then
     echo "[ERROR] 需要 root 运行: sudo bash $0"; exit 1
