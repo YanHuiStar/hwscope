@@ -48,6 +48,8 @@
 
 ## 已完成（归档）
 
+- v1.33.x — OS-BMC 一致性校验默认关闭（v1.33.0：`--bmc-verify` 显式开启，禁用时验收项 N/A 不计入数据不足，独立 hwscope_bmc_verify.md 报告）；时间戳统一连写复核 10 处 + README 示例同步（v1.33.1）；report_server 强制 `--bind 127.0.0.1` 防报告无鉴权暴露局域网 + 16_power 未知能量单位不猜测（Joules 变体 3.6Mx 误差）、remote_collect 回拉按目录名、power_monitor 间隔校验（v1.33.2）；**全量审查修复批次**（v1.33.3：NO_MODULE 导出、--modules/--skip/--output 参数校验、rm-rf 护栏、herestring 残留 8 处、08_storage && 链、RAID vd_count 行锚定、PSU 六字段重建、16_power 单位顺序/十六进制守卫、MEM_SLOTS 锚定、disk 寿命 N/A 不假 PASS、GPU 功耗/温度数值守卫、9× local-in-subshell、dhcp_server shift2/port0/原子写、net_dhcp 退出码回滚、SEL 翻转检测、nvlink_verify 不假绿、cable_map 确认+恢复 trap、install 确认+退出码、perftest 客户端 IP、测试加固）；perftest `-S` 误判回退（实为 --sl 服务等级）+ smartctl Transport protocol 值判定（v1.33.4）；awk 数值守卫先 trim 前导空格（nvidia-smi CSV ` 700.00 W` 全拒回归修复，v1.33.5）
+- v1.32.0 — **全工具与测试脚本统一 `-h/--help`**（common.sh 内置 show_script_help，net_dhcp/sync_version/test_all 独立实现），新增 `tools/README.md` + `test/README.md` 文档（含写操作警告），README 链接同步
 - v1.31.0 — **ROADMAP 剩余 5 项 P2 全部落地**：`tools/fw_baseline_import.sh` 固件基线自动导入（基准机采集目录/表格 → conf/fw_required.txt，--diff 预览/--apply 写入+自动 .bak）；`tools/power_monitor.sh` 能耗持续采样（后台 DCMI/Redfish → CSV，stop 输出小时/日聚合 + 梯形积分 kWh 核算，补 16_power 单点快照缺口）；`tools/report_server.sh` 报告在线预览（解包 logs/report/ → web/ 缓存 + 索引页 + python3 http.server，零新依赖）；`tools/remote_batch.sh` SSH 批量运维（-H 多机 + -c 命令/--push 推送，逐机 .out 落盘 + summary）；`tools/dhcp_server.sh` 扩展 `leases-export <csv>` 租约导出 + `reconcile <目录...>` 租约↔采集报告 BMC IP/MAC 交叉核对（上架清单差异表，`--lease-file` 自定义租约路径）
 
 - v1.30.0 — **报告基线对比 `--baseline <历史目录>`**（时序差异：BIOS/CPU/内存/GPU数/VBIOS/BMC固件 标量变化 + GPU/盘/网卡 SN 集合新增移除 + 固件版本逐项旧→新变化；JSON/MD/TXT/HTML 同步）；**验收清单扩至 13 项**（新增 固件版本合规：落后=FAIL、无基线判未知=N/A 不误报；OS-BMC 口径一致：不一致=FAIL、仅单侧数据=WARN、**无 BMC 机器判 N/A 不计入数据不足**——IPMI 日志全错误=平台无 BMC 属固有形态，无任何 IPMI 日志=工具缺失如实计入）
@@ -63,4 +65,4 @@
 
 ---
 
-*最近更新: 2026-08-18 · 版本: v1.31.7*
+*最近更新: 2026-08-18 · 版本: v1.33.6*
