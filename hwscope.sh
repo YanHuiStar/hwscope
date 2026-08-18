@@ -67,6 +67,8 @@ MODULES=(
     "12:bmc:run_bmc:BMC/IPMI 带外信息"
     "13:nvsm:run_nvsm:NVSM 综合(条件)"
     "14:dcgm:run_dcgm:DCGM 诊断(条件)"
+    "15:firmware:run_firmware:固件合规 (VBIOS/BMC/NIC/NVSwitch)"
+    "16:power:run_power:能耗台账 (累计能耗)"
     "99:os:run_os:OS 基础信息"
 )
 
@@ -79,6 +81,7 @@ MODULE_SWITCH[network]="${MODULE_NETWORK:-1}"; MODULE_SWITCH[storage]="${MODULE_
 MODULE_SWITCH[raid]="${MODULE_RAID:-1}"; MODULE_SWITCH[psu]="${MODULE_PSU:-1}"
 MODULE_SWITCH[fan]="${MODULE_FAN:-1}"; MODULE_SWITCH[bmc]="${MODULE_BMC:-1}"
 MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
+MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
 HWSCOPE_VERSION="v1.28.39"
