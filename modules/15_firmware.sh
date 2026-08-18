@@ -197,7 +197,7 @@ run_firmware() {
     # ─── 判定汇总（追加到 csv 尾部；供报告段直接引用） ───
     {
         echo ""
-        echo "# summary: 合规 ${st_comply} / 落后 ${st_behind} / 较新 ${st_newer} / 未知或无法比较 ${st_unknown}"
+        echo "summary: 合规 ${st_comply} / 落后 ${st_behind} / 较新 ${st_newer} / 未知或无法比较 ${st_unknown}"
     } >> "$csv"
 
     write_manifest "${dir}/manifest.txt" \

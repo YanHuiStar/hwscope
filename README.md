@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.28.39 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.29.0 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -50,6 +50,11 @@ HwScope（Hardware Scope）是面向 AI 基础设施运维与交付场景的服�
 | **SN/PN/固件全覆盖** | 整机/主板/机箱/GPU/VBIOS/内存/盘/网卡/PSU/RAID/HBA 逐件覆盖；网卡真 SN 经 MST 读取，PSID 自 mlxfwmanager 回查，PSU 无 FRU 平台由 SMBIOS type 39 补齐 PN/容量/固件 |
 | **RAID 虚拟盘独立呈现** | 物理盘与 RAID 逻辑盘分表展示（逻辑盘型号/SN(LUN)/容量独立段，不混入物理盘误导） |
 | **基础设施状态监控** | 电源冗余（N+N）、SMART 整体健康、进风/CPU/内存温度概况、IB 端口 Link 状态（Active/Down/未插线缆） |
+| **固件合规判定** | 15_firmware 模块逐组件对照 `conf/fw_required.txt` 推荐版本基线判 合规/落后/较新（无基线判未知不误报） |
+| **能耗台账** | 16_power 模块核算 BMC 累计能耗（kWh）与 DCMI/Redfish 功耗快照，供电核算/机房容量规划用 |
+| **OS vs BMC 一致性校验** | 报告零新采集交叉校验整机 SN/BIOS/内存/CPU（OS dmidecode/lscpu vs BMC FRU/Redfish），不一致 ⚠️ 提示刷 SN/换件风险 |
+| **压测归档** | `--test-dir` 关联压测目录，报告新增压测章节（测试项/结果/耗时/详情文件），test/ 写 manifest 解耦 |
+| **多机横向对比** | `tools/batch_compare.sh` 读各机 JSON 生成同字段对比表，批次差异 ⚠️ 一眼可见 |
 | **交付级验收清单** | 11 项判定（GPU 链路/NVLink/DCGM/VBIOS/内存/线缆/磁盘/SMART/电源冗余/温度/SEL），**有/无 GPU 场景采用差异化通过标准** |
 | **平台自适应** | SXM 四重检测（nvswitch CLI → lspci NVSwitch → fabricmanager 进程 → NVLink 交叉验证）；WSL 虚拟盘自动跳过 SMART |
 | **NVIDIA 专属段条件显示** | NVSwitch/NVLink/DCGM 无数据时整段隐藏，非 NVIDIA 平台报告干净 |
@@ -136,6 +141,7 @@ bash hwscope.sh --output /data/x      # 指定输出目录
 bash hwscope.sh --force               # 覆盖已有目录
 bash hwscope.sh --module-timeout 600  # 单模块超时秒数（默认 300，防止命令卡死）
 bash hwscope.sh --no-module           # 跳过光模块查询（缩短采集时长约 48s）
+bash hwscope.sh --test-dir logs/test/20260818120000  # 关联压测目录，报告生成压测章节
 bash hwscope.sh --sim 5               # 模拟模式（每模块等待 5 秒，演示/测试用）
 bash hwscope.sh --version             # 版本信息
 
@@ -149,6 +155,25 @@ bash modules/04_gpu.sh /tmp/out
 # 采集完成后自动生成；可对任意已有采集目录手动重跑（只读，不重新采集）
 bash tools/report.sh <output_dir>              # 生成 JSON + Markdown + TXT + HTML 四件套
 bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单
+bash tools/report.sh <output_dir> --test-dir <压测目录>  # 附带压测归档章节
+```
+
+### 远程采集与多机对比
+
+```bash
+# SSH 远程采集（运维机执行；SSH key 认证，密码不落盘）
+bash tools/remote_collect.sh -H root@10.0.0.1                 # 全量采集并回拉
+bash tools/remote_collect.sh -H root@10.0.0.1 --modules gpu   # 只采部分
+ssh-copy-id root@10.0.0.1                                     # 首次配置免密
+
+# 多机横向对比（读各机 hwscope_report.json，差异 ⚠️ 标注）
+bash tools/batch_compare.sh output/SN1 output/SN2 output/SN3
+
+# DHCP 服务器（dnsmasq，新上架服务器批量发 IP；默认 192.168.50.0/24 .100-.200）
+sudo bash tools/dhcp_server.sh install    # 安装 dnsmasq
+sudo bash tools/dhcp_server.sh config     # 生成配置（可加 --subnet/--range/--lease 定制）
+sudo bash tools/dhcp_server.sh start      # 启动
+sudo bash tools/dhcp_server.sh leases     # 查看租约表
 ```
 
 ---
@@ -157,7 +182,7 @@ bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单
 
 ### 报告结构
 
-报告按 14 个段落组织（环境/主板/CPU/内存/GPU/NVSwitch/存储/RAID/HBA/网络/BMC/风扇/电源/健康检查），核心信息维度：
+报告按 18 个段落组织（环境/主板/CPU/内存/GPU/NVSwitch/固件合规/存储/RAID/HBA/网络/BMC（含 OS vs BMC 一致性校验）/风扇/电源/能耗台账/健康检查/压测归档/术语），核心信息维度：
 
 - **标称 vs 检测双轨**：GPU 显存、内存容量、PSU 容量/功耗、IB 标称/协商速率、盘标称容量（型号自动提取，Samsung 映射表兜底）——全部标注来源
 - **PCIe 速率语义**：显示协商值（LnkSta），与能力（LnkCap）不一致时标注 `(能力 X)`，表头标注"协商"
@@ -166,6 +191,10 @@ bash tools/report.sh <output_dir> --acceptance # 单独生成验收清单
 - **动态列隐藏**：整列无数据（旧采集/平台不支持）时隐藏该列并附注说明，有任一真实值即显示；JSON 始终保留全字段（程序消费稳定）
 - **表格标题标准化**：内存插槽明细/GPU 每卡明细/PSU 明细统一命名，速率列明确"标称速率/当前速率"
 - **基础设施状态**：电源冗余（N+N）、SMART 整体健康、温度概况（进风/出风/CPU/内存/电源/PCH）、IB Link 状态（Active/Down/未插线缆）
+- **固件合规**：逐组件（GPU VBIOS/BMC/NIC/NVSwitch）对照 `conf/fw_required.txt` 推荐版本基线判 合规/落后/较新/未知，无基线判未知不误报
+- **能耗台账**：BMC 累计能耗（kWh，SDR Energy/Redfish EnergykWh）+ DCMI/Redfish 功耗快照；无累计传感器时注明"需持续采样"不伪造台账
+- **OS vs BMC 一致性校验**：零新采集交叉校验整机 SN/BIOS/内存/CPU（OS dmidecode/lscpu vs BMC FRU/Redfish），一致 ✓ / 不一致 ⚠️ 并排显示两边值
+- **压测归档**：`--test-dir` 关联压测目录，章节列出测试项/结果/耗时/详情文件（test/ 写 manifest 解耦）
 - **NVIDIA 专属段条件显示**：NVSwitch/NVLink/DCGM 无数据时整段隐藏；无 GPU 机头 GPU 段显示 `N/A (未检测到 GPU/无 NVIDIA 驱动)`
 - **GPU 额定显存规格库 + 魔改识别**：内置 60+ 主流 NVIDIA 型号（B/H/A/L/RTX PRO/消费卡）额定显存规格，**检测值交叉验证**（GB/GiB 双口径 3% 容差）自动匹配正确容量；检测与额定不符（如 RTX 2080Ti 魔改 22GB）→ `⚠️ 疑似显存魔改或伪装` 提示
 - **术语表**：报告末尾附 IB 速率/GPU直连/DCGM/SXM 等术语解释，非运维人员亦可读懂
@@ -229,6 +258,8 @@ SXM 四重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanag
 | 12 | bmc | `ipmitool` + Redfish | FRU/SEL/传感器/BMC 网络 |
 | 13 | nvsm | `nvsm` | NVIDIA System Management |
 | 14 | dcgm | `dcgmi` | Level 1 诊断（hostengine 未启动时自动拉起，可配置关闭） |
+| 15 | firmware | `nvidia-smi` + `ipmitool` + `mlxfwmanager` | 固件合规：GPU VBIOS/BMC/NIC/NVSwitch 版本，对照 `conf/fw_required.txt` 判 合规/落后/较新/未知 |
+| 16 | power | `ipmitool` + `curl` | 能耗台账：BMC 累计能耗（SDR Energy/Redfish EnergykWh）+ DCMI/Redfish 功耗快照核算 |
 | 99 | os | `uname/dmesg/systemctl` | 内核/服务/NUMA/AER |
 
 ---
@@ -264,7 +295,10 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `net_dhcp.sh` | 一键配置网口 DHCP 自动获取 IP（识别物理网口/自动选择/写 netplan） | netplan（Ubuntu 24.04） |
 | `install_tool.sh` | 依赖安装（采集/压测/IB/DCGM/MFT），apt/dnf 自动识别 | - |
 | `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
-| `report.sh` | 从采集结果生成 json/md/txt/html 汇总报告（内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/RAID/HBA/风扇/温度明细 + 术语表）；`--acceptance` 生成验收清单交接单 | 采集完成后自动调用 |
+| `report.sh` | 从采集结果生成 json/md/txt/html 汇总报告（内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/RAID/HBA/风扇/温度明细 + 固件合规/能耗台账/BMC一致性/压测归档 + 术语表）；`--acceptance` 生成验收清单交接单；`--test-dir` 关联压测目录 | 采集完成后自动调用 |
+| `batch_compare.sh` | 多机横向对比：读各机 hwscope_report.json 生成同字段对比表，差异 ⚠️ 标注（批次一致性抽检） | - |
+| `remote_collect.sh` | SSH 远程采集：tar 临时推送 → 远端执行 hwscope → 结果回拉 → 清理（SSH key 认证，密码不落盘） | ssh, tar |
+| `dhcp_server.sh` | dnsmasq 封装：安装/生成配置/启停/租约查询，新上架服务器批量发 IP（交付场景） | dnsmasq |
 | `cable_map.sh` | 线缆拓扑图（BDF↔mlx5 映射 + EEPROM serial 线缆配对 + 断口联动验证） | mlxlink |
 | `firmware_check.sh` | 固件版本核对（GPU VBIOS/BMC/CX8/NVSwitch），支持基线保存+对比 | nvidia-smi, ipmitool |
 | `nvlink_verify.sh` | NVLink 完整性校验（全互联验证 + CRC 错误 + 降级链路检测） | nvidia-smi |
