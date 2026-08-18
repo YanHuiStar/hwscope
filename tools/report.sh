@@ -1477,7 +1477,7 @@ redfish_num() {   # Redfish JSON 数值字段
 }
 BMC_CONSISTENCY=""
 if [ "$BMC_PRESENT" -eq 1 ]; then
-    local _os_v _bmc_v _res
+    _os_v=""; _bmc_v=""; _res=""   # 主流程禁止 local（bash 报 local: can only be used in a function）
     consistency_verdict() {   # $1=OS侧 $2=BMC侧 $3=num(数值容差比较)
         local ov="$1" bv="$2" on bn
         if [ -z "$ov" ] || [ "$ov" = "N/A" ] || [ -z "$bv" ] || [ "$bv" = "N/A" ]; then
@@ -3263,3 +3263,4 @@ case "$FORMAT" in
 esac
 
 echo -e "${GREEN}[REPORT] 生成完成${NC}"
+echo ""
