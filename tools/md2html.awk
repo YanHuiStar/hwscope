@@ -83,8 +83,8 @@ BEGIN {
     if (in_table == 0) {
         print "<table><thead><tr>"
         for (i = 1; i <= n; i++) {
-            trim_cell(cells[i])
-            print "<th>" cells[i] "</th>"
+            c = trim_cell(cells[i])
+            print "<th>" inline_md(esc_html(c)) "</th>"
         }
         print "</tr></thead><tbody>"
         in_table = 1
@@ -92,10 +92,10 @@ BEGIN {
     }
     print "<tr>"
     for (i = 1; i <= n; i++) {
-        trim_cell(cells[i])
-        cls = cell_class(cells[i])
-        if (cls != "") print "<td class='" cls "'>" cells[i] "</td>"
-        else print "<td>" cells[i] "</td>"
+        c = trim_cell(cells[i])
+        cls = cell_class(c)
+        if (cls != "") print "<td class='" cls "'>" inline_md(esc_html(c)) "</td>"
+        else print "<td>" inline_md(esc_html(c)) "</td>"
     }
     print "</tr>"
     next
@@ -104,14 +104,14 @@ BEGIN {
 # 引用块（注释/提示）
 /^> / {
     note = substr($0, 3)
-    print "<blockquote>" note "</blockquote>"
+    print "<blockquote>" inline_md(esc_html(note)) "</blockquote>"
     next
 }
 
 # 列表
 /^- / {
     item = substr($0, 3)
-    print "<li>" item "</li>"
+    print "<li>" inline_md(esc_html(item)) "</li>"
     next
 }
 
@@ -125,7 +125,7 @@ BEGIN {
 # 普通段落
 {
     close_table()
-    print "<p>" $0 "</p>"
+    print "<p>" inline_md(esc_html($0)) "</p>"
 }
 
 function close_table() {
@@ -137,11 +137,38 @@ function trim_cell(s) {
     return s
 }
 
+# HTML 转义（先 & 后 < > "，防二次转义）；cell_class 在转义前调用（用原始文本判色）
+function esc_html(s) {
+    gsub(/&/, "\\&amp;", s)
+    gsub(/</, "\\&lt;", s)
+    gsub(/>/, "\\&gt;", s)
+    gsub(/"/, "\\&quot;", s)
+    return s
+}
+
+# 内联 Markdown：`code` → <code>、**bold** → <strong>、[text](url) → <a>
+# 在 esc_html 之后调用（输入已防注入；code 先于 bold，防代码内 ** 误渲染）
+function inline_md(s) {
+    while (match(s, /`[^`]+`/)) {
+        s = substr(s, 1, RSTART-1) "<code>" substr(s, RSTART+1, RLENGTH-2) "</code>" substr(s, RSTART+RLENGTH)
+    }
+    while (match(s, /\*\*[^*]+\*\*/)) {
+        s = substr(s, 1, RSTART-1) "<strong>" substr(s, RSTART+2, RLENGTH-4) "</strong>" substr(s, RSTART+RLENGTH)
+    }
+    while (match(s, /\[[^]]+\]\([^)]+\)/)) {
+        link = substr(s, RSTART, RLENGTH)
+        t = link; sub(/^\[/, "", t); sub(/\]\(.*/, "", t)
+        u = link; sub(/^[^]]*\]\(/, "", u); sub(/\)$/, "", u)
+        s = substr(s, 1, RSTART-1) "<a href='" u "'>" t "</a>" substr(s, RSTART+RLENGTH)
+    }
+    return s
+}
+
 function cell_class(s) {
     if (s ~ /FAIL|不合格|❌/) return "fail"
     if (s ~ /WARN|⚠️/) return "warn"
     if (s ~ /PASS|✅|合格/) return "pass"
-    if (s ~ /^N\/A$|^—$|^无$|数据不足/) return "na"
+    if (s ~ /N\/A$|^—$|^无$|数据不足/) return "na"   # N/A 锚定结尾：匹配 "N/A" 与 "— N/A"，不误伤 "N/A（...）" 说明
     return ""
 }
 

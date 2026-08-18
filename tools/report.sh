@@ -270,71 +270,75 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_MEM_DET_MIB=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f6 | grep -oE "[0-9]+" | head -1)
     GPU_MEM_SPEC=""
     GPU_MEM_SPEC_NOTE=""
-    if [ -n "$GPU_MODEL_LINE" ] && [ -n "$GPU_MEM_DET_MIB" ]; then
-        _cands=""
-        case "$GPU_MODEL_LINE" in
+    # 额定显存候选：型号 → 候选 GB 列表（| 分隔，多版本给列表交叉验证选近者）；空=未知型号
+    # 供第一卡（汇总展示）与逐卡魔改检测（混插/伪装识别）复用
+    gpu_mem_candidates() {
+        case "$1" in
             # ── 精确/长型号优先（防通用模式误配：A2 勿配 A2000、T4 勿配 T400、L4 勿配 L40）──
-            *"RTX PRO 6000"*)        _cands="96" ;;          # Blackwell 96GB GDDR7
-            *"RTX PRO 5000 72GB"*)   _cands="72" ;;
-            *"RTX PRO 5000"*)        _cands="32" ;;
-            *"RTX PRO 4500"*)        _cands="24" ;;
-            *"RTX PRO 4000"*)        _cands="20" ;;
-            *"RTX PRO 2000"*)        _cands="16" ;;
-            *"RTX 6000 Ada"*)        _cands="48" ;;
-            *"RTX 6000D"*)           _cands="48" ;;
-            *"RTX 8000"*)             _cands="48" ;;          # Turing 48GB
-            *"RTX 6000"*)            _cands="24|48" ;;       # Turing 24GB / Ada 48GB 同名不同容量
-            *"RTX 5000 Ada"*)        _cands="32" ;;
-            *"RTX 4500 Ada"*)        _cands="24" ;;
-            *"RTX 4000 SFF Ada"*)    _cands="20" ;;
-            *"RTX 4000 Ada"*)        _cands="20" ;;
-            *"RTX 2000"*)            _cands="16" ;;          # 2000 Ada / 2000E Ada
-            *"RTX A2000"*)           _cands="6|12" ;;
-            *"RTX A1000"*)           _cands="8" ;;
-            *"RTX A400"*)            _cands="4" ;;
-            *"RTX A6000"*)           _cands="48" ;;
-            *"RTX A5000"*)           _cands="24" ;;
-            *"RTX A4000"*)           _cands="16" ;;
-            *T1000*)                 _cands="4" ;;
-            *T600*)                  _cands="4" ;;
-            *T400*)                  _cands="2" ;;
-            *A5000*)                 _cands="24" ;;
-            *A4000*)                 _cands="16" ;;
+            *"RTX PRO 6000"*)        echo "96" ;;          # Blackwell 96GB GDDR7
+            *"RTX PRO 5000 72GB"*)   echo "72" ;;
+            *"RTX PRO 5000"*)        echo "32" ;;
+            *"RTX PRO 4500"*)        echo "24" ;;
+            *"RTX PRO 4000"*)        echo "20" ;;
+            *"RTX PRO 2000"*)        echo "16" ;;
+            *"RTX 6000 Ada"*)        echo "48" ;;
+            *"RTX 6000D"*)           echo "48" ;;
+            *"RTX 8000"*)            echo "48" ;;          # Turing 48GB
+            *"RTX 6000"*)            echo "24|48" ;;       # Turing 24GB / Ada 48GB 同名不同容量
+            *"RTX 5000 Ada"*)        echo "32" ;;
+            *"RTX 4500 Ada"*)        echo "24" ;;
+            *"RTX 4000 SFF Ada"*)    echo "20" ;;
+            *"RTX 4000 Ada"*)        echo "20" ;;
+            *"RTX 2000"*)            echo "16" ;;          # 2000 Ada / 2000E Ada
+            *"RTX A2000"*)           echo "6|12" ;;
+            *A1000*)                 echo "4|8" ;;          # 桌面8G/移动4G；无 RTX 前缀也匹配（防落到 A100 误配触发魔改误报）
+            *"RTX A400"*)            echo "4" ;;
+            *"RTX A6000"*)           echo "48" ;;
+            *"RTX A5000"*)           echo "24" ;;
+            *"RTX A4000"*)           echo "16" ;;
+            *T1000*)                 echo "4" ;;
+            *T600*)                  echo "4" ;;
+            *T400*)                  echo "2" ;;
+            *A5000*)                 echo "24" ;;
+            *A4000*)                 echo "16" ;;
             # ── 数据中心/加速卡（长型号先匹配：GH200 须在 H200 前、L20 须在 L2 前防子串误配）──
-            *B300*|*GB300*)          _cands="288" ;;
-            *B200*|*GB200*)          _cands="192" ;;
-            *GH200*)                 _cands="96" ;;
-            *H200*)                  _cands="141" ;;
-            *H20*)                   _cands="96" ;;
-            *H100*|*H800*)           _cands="80" ;;
-            *AX800*|*A100*|*A800*)   _cands="40|80" ;;
-            *A30*|*A10*)             _cands="24" ;;
-            *A16*)                   _cands="16" ;;
-            *A40*|*L40S*|*L40*|*L20*) _cands="48" ;;
-            *L2*)                    _cands="24" ;;
-            *V100*)                  _cands="16|32" ;;
-            *P100*)                  _cands="12|16" ;;
-            *P40*)                   _cands="24" ;;
-            *P4*)                    _cands="8" ;;
-            *L4*)                    _cands="24" ;;
-            *T4*)                    _cands="16" ;;
+            *B300*|*GB300*)          echo "288" ;;
+            *B200*|*GB200*)          echo "192" ;;
+            *GH200*)                 echo "96" ;;
+            *H200*)                  echo "141" ;;
+            *H20*)                   echo "96" ;;
+            *H100*|*H800*)           echo "80" ;;
+            *AX800*|*A100*|*A800*)   echo "40|80" ;;
+            *A30*|*A10*)             echo "24" ;;
+            *A16*)                   echo "16" ;;
+            *A40*|*L40S*|*L40*|*L20*) echo "48" ;;
+            *L2*)                    echo "24" ;;
+            *V100*)                  echo "16|32" ;;
+            *P100*)                  echo "12|16" ;;
+            *P40*)                   echo "24" ;;
+            *P4*)                    echo "8" ;;
+            *L4*)                    echo "24" ;;
+            *T4*)                    echo "16" ;;
             # ── 消费/游戏卡（魔改重灾区）──
-            *"RTX 4090"*)            _cands="24" ;;
-            *"RTX 4080"*)            _cands="16" ;;
-            *"RTX 4070"*)            _cands="12" ;;
-            *"RTX 4060"*)            _cands="8|16" ;;
-            *"RTX 3090"*)            _cands="24" ;;
-            *"RTX 3080 Ti"*)         _cands="12" ;;
-            *"RTX 3080"*)            _cands="10|12" ;;
-            *"RTX 3070"*)            _cands="8" ;;
-            *"RTX 3060"*)            _cands="12" ;;
-            *"RTX 2080 Ti"*)         _cands="11" ;;
-            *"RTX 2080"*)            _cands="8" ;;
-            *"GTX 1080 Ti"*)         _cands="11" ;;
-            *"GTX 1080"*)            _cands="8" ;;
-            *A2*)                    _cands="16" ;;          # 放最后防误配 A2000/A1000/A400
-            *)                       _cands="" ;;
+            *"RTX 4090"*)            echo "24" ;;
+            *"RTX 4080"*)            echo "16" ;;
+            *"RTX 4070"*)            echo "12" ;;
+            *"RTX 4060"*)            echo "8|16" ;;
+            *"RTX 3090"*)            echo "24" ;;
+            *"RTX 3080 Ti"*)         echo "12" ;;
+            *"RTX 3080"*)            echo "10|12" ;;
+            *"RTX 3070"*)            echo "8" ;;
+            *"RTX 3060"*)            echo "12" ;;
+            *"RTX 2080 Ti"*)         echo "11" ;;
+            *"RTX 2080"*)            echo "8" ;;
+            *"GTX 1080 Ti"*)         echo "11" ;;
+            *"GTX 1080"*)            echo "8" ;;
+            *A2*)                    echo "16" ;;          # 放最后防误配 A2000/A1000/A400
+            *)                       echo "" ;;
         esac
+    }
+    if [ -n "$GPU_MODEL_LINE" ] && [ -n "$GPU_MEM_DET_MIB" ]; then
+        _cands=$(gpu_mem_candidates "$GPU_MODEL_LINE")
         if [ -n "$_cands" ]; then
             # 交叉验证：找与检测 MiB 最接近的候选口径（GB 十进制≈953.674 MiB/GB；GiB=1024 MiB/GiB）
             _best_c="" _best_diff="" _best_mib=""
@@ -413,11 +417,32 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         [ "$ggenmax" != "N/A" ] && [ -n "$ggenmax" ] && gpcie_max="${ggenmax}x${gwidthmax}"
         [ "$gpcie_cur" = "N/A" ] && [ "$gpcie_max" != "N/A" ] && gpcie_cur="?"
         GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}|${gused_f}|${glimit_f}"$'\n'
+        # 魔改/伪装逐卡检测（混插识别：每卡用自身型号匹配规格库，检测显存与额定交叉验证 >3% 即标记）
+        _gdet=${gmem// /}; _gdet=${_gdet%MiB}
+        if [[ "$_gdet" =~ ^[0-9]+$ ]]; then
+            _gcands=$(gpu_mem_candidates "$gname")
+            if [ -n "$_gcands" ]; then
+                _gbc="" _gbd=""
+                for _c in ${_gcands//|/ }; do
+                    for _mib in $(awk -v c="$_c" 'BEGIN{printf "%.0f %.0f", c*1000000000/1048576, c*1024}' < /dev/null); do
+                        _d=$(awk -v d="$_gdet" -v m="$_mib" 'BEGIN{printf "%.4f", (d>m?d-m:m-d)/d}' < /dev/null)
+                        if [ -z "$_gbd" ] || awk -v a="$_d" -v b="$_gbd" 'BEGIN{exit !(a<b)}'; then _gbd="$_d"; _gbc="$_c"; fi
+                    done
+                done
+                if ! awk -v d="$_gbd" 'BEGIN{exit !(d<0.03)}'; then
+                    GPU_MEM_MISMATCH_CARDS="${GPU_MEM_MISMATCH_CARDS}GPU${gidx}($(awk -v d="$_gdet" 'BEGIN{printf "%.0f", d/1024}' < /dev/null)GB vs 额定${_gbc}GB),"
+                fi
+            fi
+        fi
         # PCIe 宽度降级检测（宽度空闲不变，是最可靠信号；gen 低可能是省电不算）
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
         fi
     done <<< "$(grep -v '^#' "$GPU_CSV" | tail -n +2)"
+    # 逐卡魔改检测结果（覆盖仅第一卡的汇总警告：混插/伪装时列出具体卡）
+    if [ -n "${GPU_MEM_MISMATCH_CARDS:-}" ]; then
+        GPU_MEM_SPEC_NOTE="⚠️ ${GPU_MEM_MISMATCH_CARDS%,} 检测显存与额定不符（疑似显存魔改或伪装，需核实）"
+    fi
     GPU_DETAILS=$(printf '%b' "$GPU_DETAILS")
 fi
 # 每卡 VBIOS 固件版本（gpu_N_detail.log 的 VBIOS Version；交付核对固件用，明细表展示）
@@ -1533,6 +1558,7 @@ ${dimms_json}
     "memory_total": "${GPU_MEM:-N/A}",
     "memory_spec": "${GPU_MEM_SPEC:-N/A}",
     "memory_spec_total": "${GPU_MEM_SPEC_TOTAL:-N/A}",
+    "memory_spec_note": "${GPU_MEM_SPEC_NOTE:-}",
     "power_limit": "${GPU_POWER:-N/A}",
     "temp": "${GPU_TEMP:-N/A}",
     "ecc": "${GPU_ECC:-N/A}",
@@ -2215,8 +2241,8 @@ gen_txt() {
     fi
     # 盘明细纯文本
     local disk_details_txt=""
-    # 整列隐藏判定（同 MD）：寿命%/健康 整列无值省略字段（旧采集无 SMART）
-    local disk_has_spare=0 disk_has_health=0
+    # 整列隐藏判定（同 MD）：寿命%/额定/健康 整列无值省略字段（旧采集无 SMART）
+    local disk_has_spare=0 disk_has_spec=0 disk_has_health=0
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
@@ -2678,7 +2704,7 @@ gen_acceptance() {
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
-            if echo "${npn}${nchip}" | grep -qiE "ConnectX|MT[0-9]{4}"; then
+            if echo "${npn}${nchip}" | grep -qiE "ConnectX|MCX[0-9]|MT[0-9]{4}"; then
                 ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
                 [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="${npn:-N/A}"
             else
@@ -2711,8 +2737,17 @@ gen_acceptance() {
         echo "| 准系统 | ${MB_MANUFACTURER:-N/A} ${MB_PRODUCT:-N/A}（机箱 SN: ${CHASSIS_SN:-N/A}，BIOS: ${BIOS_VERSION:-N/A}） | 台 | 1 |"
         echo "| CPU | ${CPU_MODEL:-N/A}（${CPU_CORES:-0} 核/颗，${CPU_MAX_SPEED:-N/A}MHz） | 颗 | ${CPU_SOCKETS:-0} |"
         echo "| 内存 | ${MEM_TYPE:-DDR} ${ACC_MEM_DIMM:-N/A} ECC RDIMM（额定 ${MEM_NOM:-N/A}，实际 ${MEM_SPEED:-N/A}） | 条 | ${MEM_POPULATED:-0} |"
+        # GPU 显存类型（数据中心 HBM / 消费与专业 GDDR；未识别型号不标注，避免误导）
+        ACC_GPU_MEMTYPE=""
         if [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "| GPU模组 | ${GPU_NAMES:-N/A}（${GPU_MEM_SPEC:-N/A} HBM） | 张 | ${GPU_COUNT} |"
+            if echo "$GPU_NAMES" | grep -qiE "B200|B300|H100|H200|H800|A100|A800|A30|A16|V100|P100|GH200|MI[0-9]"; then
+                ACC_GPU_MEMTYPE="HBM"
+            elif echo "$GPU_NAMES" | grep -qiE "GeForce|GTX|RTX|Quadro"; then
+                ACC_GPU_MEMTYPE="GDDR"
+            fi
+        fi
+        if [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| GPU模组 | ${GPU_NAMES:-N/A}（${GPU_MEM_SPEC:-N/A}${ACC_GPU_MEMTYPE:+ ${ACC_GPU_MEMTYPE}}） | 张 | ${GPU_COUNT} |"
         else
             echo "| GPU模组 | 无（${PLATFORM_LABEL:-N/A} 平台） | — | — |"
         fi

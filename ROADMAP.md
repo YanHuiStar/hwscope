@@ -18,21 +18,29 @@
 
 - [ ] **压测归档** — `--test-dir <path>` 指定压测目录（test/ 已落盘到 logs/test/<时间戳>/），报告新增"压测"章节（测试项/结果/耗时/详情文件）
   - 前置：test/test_common.sh 压测目录写 manifest.txt，report 读 manifest 解耦
-- [ ] **健康评分** — 各维度加权打分（GPU 链路/NVLink/SMART/固件/SEL），总分 + 分级（优秀/合格/风险）
-  - 扩展：基于现有 --acceptance 验收清单的判定逻辑
 - [ ] **多机横向对比** — 同批次 N 台机器同字段对比表（固件版本/内存速率/盘型号），一眼看出批次差异
   - 场景：批量交付、批次一致性抽检
+- [ ] **BMC 数据一致性校验** — 有 BMC（IPMI/Redfish）时，OS 层采集 vs BMC 层交叉校验并输出差异表：
+  - 对比项：整机 SN（dmidecode system vs ipmi fru）、BIOS 版本、内存容量（OS 可见 vs BMC 传感器）、GPU 数量、CPU 型号
+  - 实现：report.sh 只读既有日志（零新采集），不一致项 WARN 标注并排显示两边值；一致 ✓ / 不一致 ⚠ 逐项列出
+  - 场景：交付验收前自检，OS 与 BMC 口径不一致 = 潜在刷 SN/换件/固件不匹配风险
 
 ## 工具层（tools/）
 
-- [ ] （暂无规划条目，欢迎提建议）
+- [ ] **SSH 远程采集 `tools/remote_collect.sh`** — 从运维机 SSH 到目标机执行采集（无需登录服务器手动跑）
+  - 方案：内置脚本（零新依赖，系统自带 ssh/scp）；`ssh -t user@host 'bash -s -- <args>' < hwscope.sh` 流式执行（远程零落盘），结果 scp 回拉
+  - 凭据：SSH key/agent，密码不落盘（禁 sshpass 明文密码）
+  - 排除：Ansible（批量管理工具，单机巡检过重）；sshpass（密码明文违规）
+- [ ] **DHCP 服务器工具 `tools/dhcp_server.sh`** — 运维机给新上架服务器批量发 IP（交付场景）
+  - 方案：脚本封装 dnsmasq（开源轻量 DHCP/DNS）；安装 + 一键生成配置（网卡/网段/租约时长）+ 启停 + 租约查询（/var/lib/misc/dnsmasq.leases）
+  - 理由：DHCP 协议复杂度高，纯脚本实现不可行，dnsmasq 为标准轻量方案
 
 ---
 
 ## 已完成（归档）
 
 - v1.27.x — HGX 机头平台分类（x86_64_head：PCIe Gen5 Fabric Switch 检测）、机头报告专属文案（GPU/DCGM/验收 N/A 语义）、Fabric Switch 主板段展示、DCMI/整机功耗独立展示、MD 表格空行修复
-- v1.28.x — GPU 每卡明细 VBIOS 列（去瞬时利用率）、nvidia-smi nvswitch 子命令采集与报告解析（无 CLI 平台兜底）、topo_nic cp 顺序修复、cable_map 中断恢复 trap；验收清单扩至 11 项（VBIOS 一致性/电源冗余/SMART 健康/温度汇总/IB 链路状态）、无 GPU 机头 N/A 不参与数据不足判定、RAID 虚拟盘独立表格、PSU type39 补 PN/容量、Fabric Switch 仅机头显示、动态列隐藏（全占位列隐藏）；JSON nics 空读修复（awk 管道）、ipmitool -E 环境密码、rm -rf 护栏、write_manifest --append、sync_version 同步头注释、MODULE_TIMEOUT 可配置
+- v1.28.x — GPU 每卡明细 VBIOS 列（去瞬时利用率）、nvidia-smi nvswitch 子命令采集与报告解析（无 CLI 平台兜底）、topo_nic cp 顺序修复、cable_map 中断恢复 trap；验收清单扩至 11 项（VBIOS 一致性/电源冗余/SMART 健康/温度汇总/IB 链路状态）、无 GPU 机头 N/A 不参与数据不足判定、RAID 虚拟盘独立表格、PSU type39 补 PN/容量、Fabric Switch 仅机头显示、动态列隐藏（全占位列隐藏）；JSON nics 空读修复（awk 管道）、ipmitool -E 环境密码、rm -rf 护栏、write_manifest --append、sync_version 同步头注释、MODULE_TIMEOUT 可配置；**HTML 报告第四产物**（md2html.awk 专业样式）、GPU 标称内存库+修改卡检测、验收清单 HTML+硬件配置概览、术语 标称→额定、时间戳统一 YYYYMMDDHHMMSS、RAID/HBA 检测修复、Linux mdadm 软 RAID 识别
 - v1.26.x — HBA 直通卡章节、N/A 隐藏、MST/DCGM hostengine 自拉起、模块并行超时保护、ib_test.sh IB 打流、RAID 虚拟盘/HBA SAS 明细、PSU DCMI/PMBus 采集、USB NIC 分类、BlueField DPU 标签、NIC chip 列、dmidecode 补全（cache/TPM/type39）、盘标称容量自动提取、验收清单假阳性防护（SEL/磁盘/内存 N/A）、模块超时 WARN 补记
 - v1.26.0 — **验收清单模式**：`report.sh --acceptance` 生成 8 项 PASS/FAIL/WARN 判定交接单
 - v1.25.x — 报告术语表、GPU直连标记、规格 vs 实测区分、全量采集原则
@@ -41,4 +49,4 @@
 
 ---
 
-*最近更新: 2026-08-17 · 版本: v1.28.19*
+*最近更新: 2026-08-18 · 版本: v1.28.39*
