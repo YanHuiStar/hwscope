@@ -8,8 +8,9 @@
 #   bash tools/remote_batch.sh -H "root@h1 root@h2" -c "bash hwscope.sh --modules gpu"
 # 功能: 对 N 台机器执行同一命令/推送同一文件并收集输出（逐机一个文件 + 汇总）。
 # 场景: 集群巡检、批量运维（配合 remote_collect.sh 单机远程采集）。
-# 凭据: SSH key 认证（默认 BatchMode=yes）；--interactive 允许交互式密码（不落盘）；
-#       禁 sshpass 明文密码。
+# 凭据（安全立场）: 默认交互式密码（每次登录输入，不落盘）——生产环境标准做法；
+#   SSH key 免密仅建议受信内部网络使用（私钥泄露=所有配置了公钥的主机失守，风险扩散）；
+#   禁 sshpass 明文密码。
 # 依赖: ssh/scp（系统自带，零新依赖）
 # 输出: <outdir>/<host>.out（每机输出）+ <outdir>/summary.txt（exit code 汇总）
 # =============================================================================
@@ -25,7 +26,7 @@ usage() {
     echo "  -c 'cmd'          批量执行命令（原样传给远端 shell）"
     echo "  --push 本地 远端   推送文件到各机（scp）"
     echo "  -o <dir>          输出目录（默认 ./batch_output）"
-    echo "  --interactive     允许交互式密码（默认仅 SSH key）"
+    echo "  --interactive     保留兼容（默认已支持交互式密码，无需该参数）"
     echo "  -h, --help        帮助"
     echo ""
     echo "示例:"
@@ -33,14 +34,14 @@ usage() {
     echo "  $0 -H root@10.0.0.1 --push fixcrlf.sh /tmp/fixcrlf.sh"
 }
 
-HOSTS=(); CMD=""; PUSH_LOCAL=""; PUSH_REMOTE=""; OUT_DIR=""; SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10"
+HOSTS=(); CMD=""; PUSH_LOCAL=""; PUSH_REMOTE=""; OUT_DIR=""; SSH_OPTS="-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_batch_%r@%h -o ControlPersist=300"
 while [ $# -gt 0 ]; do
     case "$1" in
         -H) for h in $2; do HOSTS+=("$h"); done; shift 2 ;;
         -c) CMD="$2"; shift 2 ;;
         --push) PUSH_LOCAL="$2"; PUSH_REMOTE="$3"; shift 3 ;;
         -o) OUT_DIR="$2"; shift 2 ;;
-        --interactive) SSH_OPTS="-o ConnectTimeout=10"; shift ;;
+        --interactive) : ;;   # 默认已支持交互式密码（v1.31.5 起），保留参数兼容
         -h|--help) usage; exit 0 ;;
         *) echo "[WARN] 未知参数: $1"; shift ;;
     esac
@@ -86,6 +87,10 @@ done
         echo "  ${host}: 输出文件 $(basename "$outfile")（$( [ "$rc" = "?" ] && echo 无输出 || echo "${rc} 行" )）"
     done
 } > "${OUT_DIR}/summary.txt"
+# 关闭 ControlMaster 复用连接（避免残留）
+for host in "${HOSTS[@]}"; do
+    ssh -O exit -o ControlPath=/tmp/ssh_hwscope_batch_%r@%h "$host" >/dev/null 2>&1
+done
 echo ""
 echo -e "\033[0;32m[OK] 输出目录: ${OUT_DIR}/（每机 .out + summary.txt）\033[0m"
 [ "$fail" -gt 0 ] && exit 1

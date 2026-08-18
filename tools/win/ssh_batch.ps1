@@ -50,4 +50,4 @@ foreach ($r in $results) {
     if ($r.Output) { Write-Host $r.Output -ForegroundColor Gray }
     Write-Host ""
 }
-Write-Host "完成。提示：批量免密建议先配 SSH 密钥（ssh-keygen + ssh-copy-id）" -ForegroundColor Cyan
+Write-Host "完成。注：默认交互式密码（生产标准）；SSH key 免密仅建议受信内部网络（私钥泄露风险扩散）" -ForegroundColor Cyan
