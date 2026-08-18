@@ -160,3 +160,6 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
 - **报告解析**：report.sh 通过 manifest 解耦文件名（模块声明输出，report 读 manifest），但 grep/awk 提取仍依赖工具输出格式（如新版 nvidia-smi 的 `[Deprecated]` 提示、dmidecode 字段顺序），改解析逻辑必回归
+- **perftest 模式判定**：`ib_write_bw/ib_read_bw` **无地址参数 = server 模式，带地址 = client 模式**；`-S` 是 `--sl`（服务等级）不是 server 标志——server 端勿加 `-S`（v1.33.4 教训：第三方工具参数建议必须查 man/help 核验后再采纳）
+- **awk 数值守卫须先 trim**：nvidia-smi CSV 值带前导空格（` 700.00 W`），`^[0-9.]+$` 守卫会全拒 → 功耗/温度全 N/A；须先 `gsub(/^ +| +$/, "", v)` 再校验（v1.33.5 回归修复）
+- **smartctl Transport protocol 值判断**：SATA 盘输出也有 `Transport protocol: SATA` 行，判 SAS 必须匹配值（`Transport protocol:.*SAS`）而非仅匹配行名（v1.33.4 修正）
