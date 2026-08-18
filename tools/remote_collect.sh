@@ -35,13 +35,13 @@ usage() {
     echo "  bash $0 -H root@10.0.0.1 --modules gpu,cpu -o ./out  # 只采部分"
 }
 
-HOST=""; SUDO="sudo"; LOCAL_OUT=""; SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10"
+HOST=""; SUDO="sudo"; LOCAL_OUT=""; SSH_OPTS="-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
 while [ $# -gt 0 ]; do
     case "$1" in
         -H) HOST="$2"; shift 2 ;;
         --no-sudo) SUDO=""; shift ;;
         -o) LOCAL_OUT="$2"; shift 2 ;;
-        --interactive) SSH_OPTS="-o ConnectTimeout=10"; shift ;;
+        --interactive) : ;;   # 默认已支持交互密码（v1.31.4 起），保留参数兼容
         -h|--help) usage; exit 0 ;;
         *) HWARGS="${HWARGS:-} $1"; shift ;;
     esac
@@ -63,15 +63,16 @@ echo -e "\033[0;36m========================================\033[0m"
 cleanup() {
     # 远端清理（临时目录 + 采集输出），中断/失败也执行
     ssh $SSH_OPTS "$HOST" "rm -rf ${REMOTE_DIR}" >/dev/null 2>&1
+    # 关闭 ControlMaster 复用连接（避免残留）
+    ssh -O exit -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h "$HOST" >/dev/null 2>&1
     echo -e "\033[0;33m[INFO] 已清理远端临时目录: ${REMOTE_DIR}\033[0m"
 }
 trap cleanup EXIT INT TERM
 
-# ─── 1. 连通性 + 权限检查 ───
-echo -e "\033[0;33m[INFO] 检查 SSH 连通性（key 认证）...\033[0m"
+# ─── 1. 连通性 + 权限检查（默认交互式：有 key 自动 key 认证，无 key 提示输密码；ControlMaster 复用后续 ssh） ───
+echo -e "\033[0;33m[INFO] 检查 SSH 连通性（无 key 时将提示输入密码）...\033[0m"
 if ! ssh $SSH_OPTS "$HOST" "echo ok" >/dev/null 2>&1; then
-    echo -e "\033[0;31m[ERROR] SSH 连接失败：请先配置 SSH key（ssh-copy-id ${HOST}）\033[0m"
-    echo "        或加 --interactive 允许交互式密码（密码不落盘，但会进入交互提示）"
+    echo -e "\033[0;31m[ERROR] SSH 连接失败：请检查目标机用户名/密码/key 配置或网络可达性\033[0m"
     exit 1
 fi
 
