@@ -1,44 +1,61 @@
 # HwScope 路线图（ROADMAP）
 
-> **活文档**：条目完成或放弃即删除，剩余条目 = 当前待办方向。
+> **活文档**：条目完成或放弃即删除（移入归档段），剩余条目 = 当前待办方向。
 > 规划时按价值排序，落地时遵循 AGENTS.md 版本规则（新模块/新数据维度 = 中版本，修复 = 补丁）。
 > 贡献/讨论见 [GitHub Issues](https://github.com/YanHuiStar/hwscope/issues)。
 
 ---
 
+## 优先级说明
+
+| 级别 | 含义 | 判定标准 |
+|------|------|---------|
+| **P0** | 交付刚需 | 验收/交付场景直接使用，缺了要现场补 |
+| **P1** | 提效增值 | 批量交付/巡检提效，非单机必需 |
+| **P2** | 场景储备 | 特定场景才用，依赖外部工具或数据 |
+
+条目格式：`优先级 · 依赖 · 验收标准`（落地前必须三要素齐全）。
+
+---
+
 ## 采集层（modules/）
 
-- [ ] **固件合规模块 `15_firmware`** — 采集 GPU VBIOS / BMC FW / NIC FW / NVSwitch FW 版本，对照 `conf/fw_required.txt`（厂商推荐清单）逐项判 合规/落后/未知
-  - 依赖：厂商验收手册推荐版本数据（需人工录入 fw_required.txt）
-  - 复用：tools/firmware_check.sh 已有采集+基线逻辑，改造为采集模块
-- [ ] **能耗台账 `16_power`** — BMC 功耗计累计读数（ipmitool sdr / Redfish Power），整机能耗核算
-  - 场景：交付后供电核算、机房容量规划
+- [ ] **[P2] 固件基线自动导入** — 从厂商验收手册/Redfish 自动拉取推荐固件版本写入 `conf/fw_required.txt`，替代人工录入
+  - 依赖：厂商文档结构化来源（PDF/表格）或 BMC Redfish 提供推荐版本
+  - 验收标准：一条命令更新基线，diff 提示变化
+  - 备注：`15_firmware` 已完成（v1.29.0），当前基线为人工维护
+
+- [ ] **[P2] 能耗持续采样** — `tools/power_monitor.sh` 定时采样整机功耗（DCMI/Redfish），生成小时/日能耗曲线与核算报表
+  - 依赖：`16_power` 模块（v1.29.0 已落单点快照）
+  - 验收标准：后台常驻采样 N 小时，输出 CSV + 图表数据，报告可引用
 
 ## 报告层（tools/report.sh）
 
-- [ ] **压测归档** — `--test-dir <path>` 指定压测目录（test/ 已落盘到 logs/test/<时间戳>/），报告新增"压测"章节（测试项/结果/耗时/详情文件）
-  - 前置：test/test_common.sh 压测目录写 manifest.txt，report 读 manifest 解耦
-- [ ] **多机横向对比** — 同批次 N 台机器同字段对比表（固件版本/内存速率/盘型号），一眼看出批次差异
-  - 场景：批量交付、批次一致性抽检
-- [ ] **BMC 数据一致性校验** — 有 BMC（IPMI/Redfish）时，OS 层采集 vs BMC 层交叉校验并输出差异表：
-  - 对比项：整机 SN（dmidecode system vs ipmi fru）、BIOS 版本、内存容量（OS 可见 vs BMC 传感器）、GPU 数量、CPU 型号
-  - 实现：report.sh 只读既有日志（零新采集），不一致项 WARN 标注并排显示两边值；一致 ✓ / 不一致 ⚠ 逐项列出
-  - 场景：交付验收前自检，OS 与 BMC 口径不一致 = 潜在刷 SN/换件/固件不匹配风险
+- [ ] **[P1] 报告基线对比（--baseline）** — 与历史采集（同机或同型号）差异报告：固件版本变化/内存增减/盘更换/GPU 序列号变动
+  - 依赖：各采集目录 `hwscope_report.json`（结构稳定，JSON 全字段保留）
+  - 验收标准：同机两次采集 diff 出变化清单；同型号跨机 diff 出部件差异
+  - 备注：单机时序对比与 `batch_compare.sh`（横向）互补
+
+- [ ] **[P2] 报告在线预览** — `tools/report_server.sh` 本地 HTTP 服务浏览历次报告归档（logs/report/），按 SN/时间筛选
+  - 依赖：Python3 http.server 或 lighttpd；`hwscope_report.html` 四件套已具备
+  - 验收标准：浏览器打开归档列表，点开即见 HTML 报告
 
 ## 工具层（tools/）
 
-- [ ] **SSH 远程采集 `tools/remote_collect.sh`** — 从运维机 SSH 到目标机执行采集（无需登录服务器手动跑）
-  - 方案：内置脚本（零新依赖，系统自带 ssh/scp）；`ssh -t user@host 'bash -s -- <args>' < hwscope.sh` 流式执行（远程零落盘），结果 scp 回拉
-  - 凭据：SSH key/agent，密码不落盘（禁 sshpass 明文密码）
-  - 排除：Ansible（批量管理工具，单机巡检过重）；sshpass（密码明文违规）
-- [ ] **DHCP 服务器工具 `tools/dhcp_server.sh`** — 运维机给新上架服务器批量发 IP（交付场景）
-  - 方案：脚本封装 dnsmasq（开源轻量 DHCP/DNS）；安装 + 一键生成配置（网卡/网段/租约时长）+ 启停 + 租约查询（/var/lib/misc/dnsmasq.leases）
-  - 理由：DHCP 协议复杂度高，纯脚本实现不可行，dnsmasq 为标准轻量方案
+- [ ] **[P2] SSH 批量运维 `tools/remote_batch.sh`** — 对 N 台机器执行同一命令/推送同一文件并收集输出
+  - 依赖：SSH key（同 remote_collect.sh）；已有 Windows 侧 `ssh_batch.ps1` 对应
+  - 验收标准：一行命令对列表内全部机器执行并回显各机结果
+  - 备注：`remote_collect.sh` 单机远程采集已完成（v1.29.0）
+
+- [ ] **[P2] DHCP 租约与 IP 台账联动** — `dhcp_server.sh` 租约导出 CSV，与采集报告（BMC IP/MAC）交叉核对上架清单
+  - 依赖：`dhcp_server.sh`（v1.29.0 已落地）+ `tools/win/scan_ip.ps1` 定位结果
+  - 验收标准：租约表 ↔ 采集 BMC IP 对照，差异高亮
 
 ---
 
 ## 已完成（归档）
 
+- v1.29.0 — **ROADMAP 全部原待办落地**：采集层新增 `15_firmware` 固件合规模块（对照 conf/fw_required.txt 判 合规/落后/未知，无基线判未知不 WARN）、`16_power` 能耗台账模块（Energy/kWh 累计读数 + DCMI/Redfish 功耗，单点快照核算）；报告层新增固件合规段、能耗台账段、BMC 数据一致性校验段（OS dmidecode/可见内存 vs BMC FRU/Redfish，零新采集，不一致 WARN 并排显示两边值）、压测归档 `--test-dir`（test_common.sh 写 manifest → report.sh 读 manifest 解耦）；新工具 `tools/batch_compare.sh` 多机横向对比（读各机 JSON，差异 ⚠️ 标注）、`tools/remote_collect.sh` SSH 远程采集（tar 暂存模式：流式 bash -s 无法满足多文件 source 结构，改为临时推送→执行→回拉→清理，密码不落盘）、`tools/dhcp_server.sh` dnsmasq 封装（安装/配置/启停/租约查询）
 - v1.27.x — HGX 机头平台分类（x86_64_head：PCIe Gen5 Fabric Switch 检测）、机头报告专属文案（GPU/DCGM/验收 N/A 语义）、Fabric Switch 主板段展示、DCMI/整机功耗独立展示、MD 表格空行修复
 - v1.28.x — GPU 每卡明细 VBIOS 列（去瞬时利用率）、nvidia-smi nvswitch 子命令采集与报告解析（无 CLI 平台兜底）、topo_nic cp 顺序修复、cable_map 中断恢复 trap；验收清单扩至 11 项（VBIOS 一致性/电源冗余/SMART 健康/温度汇总/IB 链路状态）、无 GPU 机头 N/A 不参与数据不足判定、RAID 虚拟盘独立表格、PSU type39 补 PN/容量、Fabric Switch 仅机头显示、动态列隐藏（全占位列隐藏）；JSON nics 空读修复（awk 管道）、ipmitool -E 环境密码、rm -rf 护栏、write_manifest --append、sync_version 同步头注释、MODULE_TIMEOUT 可配置；**HTML 报告第四产物**（md2html.awk 专业样式）、GPU 标称内存库+修改卡检测、验收清单 HTML+硬件配置概览、术语 标称→额定、时间戳统一 YYYYMMDDHHMMSS、RAID/HBA 检测修复、Linux mdadm 软 RAID 识别
 - v1.26.x — HBA 直通卡章节、N/A 隐藏、MST/DCGM hostengine 自拉起、模块并行超时保护、ib_test.sh IB 打流、RAID 虚拟盘/HBA SAS 明细、PSU DCMI/PMBus 采集、USB NIC 分类、BlueField DPU 标签、NIC chip 列、dmidecode 补全（cache/TPM/type39）、盘标称容量自动提取、验收清单假阳性防护（SEL/磁盘/内存 N/A）、模块超时 WARN 补记
@@ -49,4 +66,4 @@
 
 ---
 
-*最近更新: 2026-08-18 · 版本: v1.28.39*
+*最近更新: 2026-08-18 · 版本: v1.29.0*
