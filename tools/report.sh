@@ -12,19 +12,17 @@ source "${SCRIPT_DIR}/lib/nvlink.sh" 2>/dev/null || true
 
 # ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>]） ───
 OUT=""; FORMAT=""; TEST_DIR=""
-_i=0
-for _a in "$@"; do
-    _i=$((_i + 1))
-    case "$_a" in
-        --json|--md|--txt|--both|--acceptance) FORMAT="$_a" ;;
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --json|--md|--txt|--both|--acceptance) FORMAT="$1"; shift ;;
         --test-dir)
-            TEST_DIR="${@:_i+1:1}"
+            TEST_DIR="$2"
             if [ -z "$TEST_DIR" ] || [ ! -d "$TEST_DIR" ]; then
                 echo -e "${RED}[ERROR] --test-dir 需要有效压测目录路径（如 logs/test/20260818120000）${NC}"; exit 1
             fi
-            _i=$((_i + 1)) ;;
-        --*) echo -e "${YELLOW}[WARN] 未知参数: $_a${NC}" ;;
-        *)  [ -z "$OUT" ] && OUT="$_a" ;;
+            shift 2 ;;
+        --*) echo -e "${YELLOW}[WARN] 未知参数: $1${NC}"; shift ;;
+        *)  [ -z "$OUT" ] && OUT="$1"; shift ;;
     esac
 done
 if [ -z "$OUT" ]; then
