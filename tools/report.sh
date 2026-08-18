@@ -1493,7 +1493,8 @@ if [ "$BMC_PRESENT" -eq 1 ]; then
         fi
     }
     # 1. 整机 SN（OS dmidecode system vs BMC IPMI FRU Product Serial）
-    _os_v="${MB_SN:-N/A}"; _bmc_v=$(grep -m1 "Product Serial" "${ipmi_fru_summary}" 2>/dev/null | cut -d: -f2- | xargs); [ -z "$_bmc_v" ] && _bmc_v="N/A"
+    # 注意：fru_summary 头部 # Command 注释含 grep 模式文本（"Product Serial"），必须排除注释行再匹配数据行
+    _os_v="${MB_SN:-N/A}"; _bmc_v=$(grep -v "^#" "${ipmi_fru_summary}" 2>/dev/null | grep -m1 "Product Serial" | cut -d: -f2- | xargs); [ -z "$_bmc_v" ] && _bmc_v="N/A"
     _res=$(consistency_verdict "$_os_v" "$_bmc_v" ""); BMC_CONSISTENCY="${BMC_CONSISTENCY}整机SN|${_os_v}|${_bmc_v}|${_res}"$'\n'
     # 2. BIOS 版本（OS dmidecode vs Redfish BiosVersion）
     _os_v="${BIOS_VERSION:-N/A}"; _bmc_v=$(redfish_val "BiosVersion"); [ -z "$_bmc_v" ] && _bmc_v="N/A"
