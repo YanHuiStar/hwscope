@@ -384,12 +384,13 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         fi
     fi
     # 功耗/温度数值守卫：非数值（[N/A]/空）不参与统计，防全部 N/A 输出 "0 W"/"0°C" 或均值被稀释
+    # 注意：CSV 值带前导空格（" 700.00 W"），须先 trim 再校验（v1.33.4 修正）
     GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${power_col:-8}" -F',' '{
-        gsub(/ W/, "", $col)
-        if($col ~ /^[0-9.]+$/) { if($col+0 > max+0) max = $col; n++ }
+        v = $col; gsub(/^ +| +$/, "", v); gsub(/ W/, "", v)
+        if(v ~ /^[0-9.]+$/) { if(v+0 > max+0) max = v; n++ }
     } END{if(n>0) printf "%.0f W", max; else print "N/A"}')
     GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${temp_col:-9}" -F',' '{
-        t = $col
+        t = $col; gsub(/^ +| +$/, "", t)
         if(t ~ /^[0-9.]+$/) { sum += t; if(t+0 > tmax+0) tmax = t; n++ }
     } END{if(n>0) printf "%.0f°C (max %.0f)", sum/n, tmax; else print "N/A"}')
     # 额定总量（单卡额定 × 卡数，如 288GB×8=2304GB）；与可用总量(GPU_MEM)并列显示
