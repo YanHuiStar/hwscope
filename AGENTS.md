@@ -81,6 +81,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **验收清单**：`bash tools/report.sh <out> --acceptance` 生成 `hwscope_acceptance.{md,html}`（硬件概览配置单表 + **13 项**逐项 PASS/FAIL/WARN/N/A + 结论判定），交付时作为交接单；13 项 = GPU PCIe/NVLink/DCGM/VBIOS/内存/线缆/磁盘寿命/SMART/电源冗余/温度/SEL + **固件版本合规**（15_firmware 输出：落后=FAIL、无基线判未知=N/A 不误报、较新不算落后）+ **OS-BMC 口径一致**（零新采集交叉校验：不一致=FAIL、仅单侧数据=WARN；**无 BMC 机器判 N/A 不计入数据不足**——IPMI 日志全错误=平台无 BMC 属固有形态，无任何 IPMI 日志=ipmitool 未装/模块关则如实计入数据不足）；配置单（准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理）自动生成自检测数据，可对照采购配置单核对；判定规则：有 FAIL=不合格、有 WARN=有条件通过、N/A≥4=数据不足；**无 GPU 机头**的 GPU 相关 4 项（PCIe/NVLink/DCGM/VBIOS）判 N/A 且不计入"数据不足"（无 GPU 是平台固有形态，非数据缺失）
 - 报告**只读日志、不重新采集**，可对同一份数据反复生成；日志缺失字段显示 N/A
 - 双压缩包：`logs/<SN>-<ARCHIVE_TS>.tar.gz`（详细分级日志）+ `logs/report/<SN>-<ARCHIVE_TS>-report.tar.gz`（报告四件套），共用同一 `ARCHIVE_TS` 变量（勿各自调 date，时间戳必须一致）
+- **时间戳格式统一约定**：全项目文件名时间戳一律 `date '+%Y%m%d%H%M%S'` **连写、无下划线、14 位纯数字**（如 `20260818001530`），输出目录后缀/归档包/test 目录/运维工具等全部一致（v1.33.1 复核 10 处无例外）。**依赖此格式的解析**：`report_server.sh` 的 SN 提取 `sed 's/-[0-9]\{14\}-report$//'`——若改时间戳格式（加下划线/分隔符），必须同步该正则与 README 输出目录示例（v1.33.1 教训：代码已改连写，README 示例漏同步仍写 `20260730_090000` 带下划线）
 - 多机横向对比：`tools/batch_compare.sh <dir1> <dir2> ...` 读各机 hwscope_report.json 生成同字段对比表（差异 ⚠️ 标注），批次一致性抽检用
 - 报告基线对比：`bash tools/report.sh <cur> --baseline <prev>` 生成时序差异章节——标量（BIOS/CPU/内存/GPU数/VBIOS/BMC固件）变化 + SN 集合（GPU/盘/网卡）新增移除 + 固件版本逐项变化；**注意**：JSON 单行对象必须用 index() 定位键再取值（贪心 sub 会取行尾字段），含空格 key 必须 while read 逐行（for 会单词拆分）
 - SSH 远程采集：`tools/remote_collect.sh -H user@host [hwscope 参数]`——**tar 暂存模式**（流式 bash -s 无法满足多文件 source 结构，v1.29.0 实测结论）：tar 临时推送项目 → 远端执行 → 结果回拉 → 清理；默认交互式密码（不落盘）+ ControlMaster 复用（输一次密码），禁 sshpass 明文密码
@@ -98,6 +99,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
   - push 前复查 `git ls-files`，确认无 `bmc/`、`gpu/`、`memory/` 等采集日志目录混入
   - 误提交已 push：立即在远程删除并重写历史（filter-repo），同时轮换受影响凭据
 - 允许提交**脱敏示例数据**（SN/IP 替换为 FAKE 值，如 `FAKESN123`），禁止真实值
+- **report_server 必须 `--bind 127.0.0.1`**：`python3 -m http.server` 默认监听 `0.0.0.0`，会把含 SN/MAC/BMC IP 的报告无鉴权暴露到局域网（v1.33.1 安全修复）；改动时勿移除 bind 参数，提示 URL 固定 127.0.0.1
 - **模拟/测试环境警示**（防重蹈覆辙）：开发/调试用的 mock 脚本、测试数据、辅助工具**可以用真实数据进行本地测试**，但**必须加入 `.gitignore`，禁止提交到仓库**；如需提交示例数据，必须用 FAKE 值（SN/IP 替换为 `FAKESN123` 等）
 - **真实采集数据目录只读铁律**（v1.26.33 事故教训）：**禁止在真实采集数据目录上重跑采集模块**——`bash modules/07_network.sh <真实目录>` 会把 nic_inventory.csv 等覆盖成**当前环境**的数据（WSL 重跑 = WSL 空网卡覆盖真实 8 卡数据，MAC/SN 永久丢失且日志无备份）。规则：
   1. 验证采集/回退逻辑 → 先 `cp -r` 副本到 `/tmp/`，在副本上跑，**目录名带测试标记**（如 `/tmp/hwtest_<SN>_<用途>`）

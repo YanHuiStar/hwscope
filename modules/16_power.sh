@@ -78,9 +78,9 @@ run_power() {
                 *Joule*|*joule*) en_kwh=$(awk -v j="$en_val" 'BEGIN{printf "%.4f", j/3600000}' < /dev/null) ;;
                 *Wh*|*wh*|*Watt*Hour*) en_kwh=$(awk -v w="$en_val" 'BEGIN{printf "%.4f", w/1000}' < /dev/null) ;;
                 *kWh*|*KWH*) en_kwh=$(awk -v k="$en_val" 'BEGIN{printf "%.4f", k}' < /dev/null) ;;
-                *) en_kwh="" ;;
+                *) en_kwh="" ;;   # 未知单位不猜测（曾兜底按 kWh 换算，Joules 变体差 360 万倍——v1.33.2 修复）
             esac
-            [ -z "$en_kwh" ] && en_kwh=$(awk -v v="$en_val" 'BEGIN{printf "%.4f", v}' < /dev/null)
+            # 未知单位 → en_kwh 保持空，走 Redfish 兜底或"需持续采样"文案，不生成错误台账
         fi
     fi
     if [ -z "$en_kwh" ] && [ -f "${dir}/redfish_power.log" ]; then

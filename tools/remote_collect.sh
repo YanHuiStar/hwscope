@@ -103,8 +103,9 @@ fi
 tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "$LOCAL_OUT"
 rm -f "/tmp/hwscope_pull_${TS}.tgz"
 
-# ─── 5. 本地定位采集目录（SN 目录） ───
-PULLED_DIR=$(ls -dt "${LOCAL_OUT}"/*/ 2>/dev/null | head -1 | sed 's|/$||')
+# ─── 5. 本地定位采集目录（优先回拉目录名 remote_output，避免 ls -dt 误取本地其他新目录；v1.33.2） ───
+PULLED_DIR="${LOCAL_OUT}/${REMOTE_NAME}"
+[ ! -d "$PULLED_DIR" ] && PULLED_DIR=$(ls -dt "${LOCAL_OUT}"/*/ 2>/dev/null | head -1 | sed 's|/$||')
 echo ""
 echo -e "\033[0;32m========================================\033[0m"
 echo -e "\033[0;32m  远程采集完成\033[0m"
