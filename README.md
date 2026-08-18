@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.33.0 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.33.1 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -394,9 +394,9 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 ```text
 output/
 ├── JZ5C4X8/                    # SN（首次）
-├── JZ5C4X8-20260730_090000/    # 二次采集（自动追加时间戳）
+├── JZ5C4X8-20260730090000/     # 二次采集（自动追加时间戳）
 ├── MB-1234567/                 # 主板 SN 兜底
-└── 20260728_120000/            # 时间戳兜底
+└── 20260728120000/             # 时间戳兜底
 ```
 
 单次采集典型结构：
