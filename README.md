@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.31.7 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.32.0 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -293,7 +293,7 @@ SXM 四重检测：`nvswitch -q` → `lspci` NVSwitch 字样 → `nv-fabricmanag
 
 ## 配套工具
 
-除采集与报告外，项目提供两类交互式脚本（自动检测依赖工具，未安装时提示安装命令）。
+除采集与报告外，项目提供两类交互式脚本（自动检测依赖工具，未安装时提示安装命令）。**详细文档**：[工具库 tools/README.md](tools/README.md)（含写入操作类 ⚠️ 标注）· [压测库 test/README.md](test/README.md)；所有脚本支持 `-h`/`--help`。
 
 ### `test/` — 硬件压测（仅只读测试，不修改硬件配置）
 

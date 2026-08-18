@@ -9,6 +9,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+parse_help "$@"
 
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  AI 推理引擎环境安装${NC}"

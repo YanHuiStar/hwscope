@@ -10,6 +10,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+parse_help "$@"
 
 BASE_DIR="${SCRIPT_DIR}/logs/fw_check"
 mkdir -p "$BASE_DIR"

@@ -12,6 +12,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+parse_help "$@"
 
 if ! check_cmd mlxlink; then
     echo -e "${RED}[ERROR] mlxlink 未安装 (需 MFT)${NC}"

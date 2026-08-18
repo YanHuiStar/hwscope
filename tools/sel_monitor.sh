@@ -9,6 +9,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+parse_help "$@"
 
 if ! check_cmd ipmitool; then
     echo -e "${RED}[ERROR] ipmitool 未安装${NC}"

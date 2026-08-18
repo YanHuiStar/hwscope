@@ -9,6 +9,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+parse_help "$@"
 source "${SCRIPT_DIR}/test/test_common.sh" 2>/dev/null || true
 
 TOOLS=(

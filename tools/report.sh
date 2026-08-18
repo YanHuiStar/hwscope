@@ -8,6 +8,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+parse_help "$@"
 source "${SCRIPT_DIR}/lib/nvlink.sh" 2>/dev/null || true
 
 # ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>]） ───
