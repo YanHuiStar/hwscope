@@ -223,6 +223,7 @@ sudo bash tools/dhcp_server.sh leases     # 查看租约表
 
 - **有 GPU 平台**：GPU 相关 4 项（PCIe/NVLink/DCGM/VBIOS）按实际状态判定，关键硬件异常判 FAIL
 - **无 GPU 机头**：GPU 相关 4 项判 `N/A`（无本地 GPU，模组单独采集验收），**不计入"数据不足"判定**——机头无 GPU 属平台固有形态，非数据缺失
+- **无 BMC 机器**：OS-BMC 口径一致判 `N/A`（IPMI 日志全错误 = 平台无 BMC），**不计入"数据不足"判定**；ipmitool 未安装/模块关闭（无任何 IPMI 日志）则如实计入数据不足（需补装核验）
 - **平台规范豁免**：内存满插 2DPC 降速属平台规范判 PASS；DCGM 配置类 Fail（如 Persistence Mode 未开启）判 WARN（非硬件故障）
 - **无数据不假 PASS**：SEL 采集失败、盘无 SMART 数据、N/A 项≥4 时判"数据不足"，禁止假阳性合格
 
