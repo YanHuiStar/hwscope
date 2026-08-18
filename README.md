@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.31.5 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.31.6 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -168,10 +168,10 @@ bash tools/report.sh <output_dir> --baseline <历史采集目录>  # 附带基�
 ### 远程采集与多机对比
 
 ```bash
-# SSH 远程采集（运维机执行；SSH key 认证，密码不落盘）
-bash tools/remote_collect.sh -H root@10.0.0.1                 # 全量采集并回拉
+# SSH 远程采集（运维机执行；默认交互式密码认证，密码不落盘——生产环境标准做法）
+bash tools/remote_collect.sh -H root@10.0.0.1                 # 全量采集并回拉（首次提示输密码）
 bash tools/remote_collect.sh -H root@10.0.0.1 --modules gpu   # 只采部分
-ssh-copy-id root@10.0.0.1                                     # 首次配置免密
+# 注：SSH key 免密仅建议受信内部网络使用（私钥泄露 = 所有配置了公钥的主机失守）
 
 # 多机横向对比（读各机 hwscope_report.json，差异 ⚠️ 标注）
 bash tools/batch_compare.sh output/SN1 output/SN2 output/SN3
@@ -368,7 +368,7 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 .\scan_ip.ps1                 # 2. 扫描定位
 .\nic_switch.ps1 -Action Restore   # 3. 恢复 DHCP
 
-# 集群巡检（SSH 免密后）
+# 集群巡检（SSH 可达即可：交互式密码或受信内网 key）
 .\fetch_report.ps1 -Hosts root@192.168.1.100,root@192.168.1.101
 ```
 
