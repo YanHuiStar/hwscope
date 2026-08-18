@@ -78,10 +78,11 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **HTML 件**：`hwscope_report.html` 由 `tools/md2html.awk`（纯 awk 转换器，内嵌 CSS，零依赖）从 MD 转换生成——卡片分区/状态着色（PASS绿/WARN橙/FAIL红/N/A灰）/斑马纹表格/打印友好；验收清单同理生成 `hwscope_acceptance.html`；改 MD 模板后须回归 HTML 闭合（python HTMLParser 或浏览器验证）
 - **GPU 额定显存规格库**：report.sh 内置 60+ 型号→额定容量映射（检测值交叉验证：GB 十进制/GiB 双口径 3% 容差自动匹配，多版本型号如 A100 40|80 自动选近者）；**匹配顺序=正确性**（长型号优先防子串误配：GH200 在 H200 前、L20 在 L2 前、A2 兜底防配 A2000、T4 兜底防配 T400）；检测与额定不符 → `⚠️ 疑似显存魔改或伪装`；新增型号加映射时注意 case 模式含空格须引号（`*"RTX 6000"*`）
 - **动态列隐藏**：明细表整列全为占位符（—/N/A）时隐藏该列并附注说明（如"寿命%、健康 列因旧采集无 SMART 数据而隐藏"），有任一真实值即显示；JSON 始终保留全字段（程序消费稳定，不受隐藏影响）
-- **验收清单**：`bash tools/report.sh <out> --acceptance` 生成 `hwscope_acceptance.{md,html}`（硬件概览配置单表 + 11 项逐项 PASS/FAIL/WARN/N/A + 结论判定），交付时作为交接单；配置单（准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理）自动生成自检测数据，可对照采购配置单核对；判定规则：有 FAIL=不合格、有 WARN=有条件通过、N/A≥4=数据不足；**无 GPU 机头**的 GPU 相关 4 项（PCIe/NVLink/DCGM/VBIOS）判 N/A 且不计入"数据不足"（无 GPU 是平台固有形态，非数据缺失）
+- **验收清单**：`bash tools/report.sh <out> --acceptance` 生成 `hwscope_acceptance.{md,html}`（硬件概览配置单表 + **13 项**逐项 PASS/FAIL/WARN/N/A + 结论判定），交付时作为交接单；13 项 = GPU PCIe/NVLink/DCGM/VBIOS/内存/线缆/磁盘寿命/SMART/电源冗余/温度/SEL + **固件版本合规**（15_firmware 输出：落后=FAIL、无基线判未知=N/A 不误报、较新不算落后）+ **OS-BMC 口径一致**（零新采集交叉校验：不一致=FAIL、仅单侧数据=WARN）；配置单（准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理）自动生成自检测数据，可对照采购配置单核对；判定规则：有 FAIL=不合格、有 WARN=有条件通过、N/A≥4=数据不足；**无 GPU 机头**的 GPU 相关 4 项（PCIe/NVLink/DCGM/VBIOS）判 N/A 且不计入"数据不足"（无 GPU 是平台固有形态，非数据缺失）
 - 报告**只读日志、不重新采集**，可对同一份数据反复生成；日志缺失字段显示 N/A
 - 双压缩包：`logs/<SN>-<ARCHIVE_TS>.tar.gz`（详细分级日志）+ `logs/report/<SN>-<ARCHIVE_TS>-report.tar.gz`（报告四件套），共用同一 `ARCHIVE_TS` 变量（勿各自调 date，时间戳必须一致）
 - 多机横向对比：`tools/batch_compare.sh <dir1> <dir2> ...` 读各机 hwscope_report.json 生成同字段对比表（差异 ⚠️ 标注），批次一致性抽检用
+- 报告基线对比：`bash tools/report.sh <cur> --baseline <prev>` 生成时序差异章节——标量（BIOS/CPU/内存/GPU数/VBIOS/BMC固件）变化 + SN 集合（GPU/盘/网卡）新增移除 + 固件版本逐项变化；**注意**：JSON 单行对象必须用 index() 定位键再取值（贪心 sub 会取行尾字段），含空格 key 必须 while read 逐行（for 会单词拆分）
 - SSH 远程采集：`tools/remote_collect.sh -H user@host [hwscope 参数]`——**tar 暂存模式**（流式 bash -s 无法满足多文件 source 结构，v1.29.0 实测结论）：tar 临时推送项目 → 远端执行 → 结果回拉 → 清理；SSH key 认证，禁 sshpass 明文密码
 - 修改 report.sh 后必须用真实采集数据回归验证（桌面有 HGX B200 / B300 两份样例数据）
 
