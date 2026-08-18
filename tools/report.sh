@@ -2629,6 +2629,7 @@ gen_txt() {
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
             [ -n "$dspare" ] && [ "$dspare" != "—" ] && [ "$dspare" != "N/A" ] && disk_has_spare=1
+            [ -n "$dspec" ] && [ "$dspec" != "—" ] && [ "$dspec" != "N/A" ] && disk_has_spec=1
             [ -n "$dhealth" ] && [ "$dhealth" != "—" ] && [ "$dhealth" != "N/A" ] && disk_has_health=1
         done < <(printf '%s\n' "$DISK_DETAILS")
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
