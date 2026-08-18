@@ -16,6 +16,8 @@
 #   restart   重启服务
 #   status    服务状态 + 配置 + 租约数
 #   leases    查看当前租约表（expiry MAC IP hostname）
+#   leases-export <csv>   租约导出 CSV（与采集台账联动用）
+#   reconcile <采集目录...>  租约 ↔ 采集报告 BMC IP/MAC 交叉核对（上架清单差异表）
 #
 # 选项:
 #   --interface eth0    监听网卡（默认 eth0）
@@ -36,6 +38,7 @@ LEASE_RHEL="/var/lib/dnsmasq/dnsmasq.leases"
 
 ACTION="${1:-help}"; shift 2>/dev/null || true
 IFACE="eth0"; SUBNET="192.168.50"; START=100; END=200; GW=1; LEASE="12h"; DRY=0
+LEASE_FILE=""; POSARGS=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -45,9 +48,10 @@ while [ $# -gt 0 ]; do
         --end) END="$2"; shift 2 ;;
         --gateway) GW="$2"; shift 2 ;;
         --lease) LEASE="$2"; shift 2 ;;
+        --lease-file) LEASE_FILE="$2"; shift 2 ;;   # 自定义租约文件（非默认路径/测试用）
         --dry-run) DRY=1; shift ;;
         -h|--help) ACTION="help" ;;
-        *) echo "[WARN] 未知参数: $1"; shift ;;
+        *) POSARGS+=("$1"); shift ;;   # 位置参数（leases-export 的 CSV、reconcile 的采集目录）
     esac
 done
 
@@ -71,7 +75,8 @@ gen_conf() {
 }
 
 find_lease_file() {
-    if [ -f "$LEASE_DEBIAN" ]; then echo "$LEASE_DEBIAN"
+    if [ -n "${LEASE_FILE:-}" ]; then echo "$LEASE_FILE"
+    elif [ -f "$LEASE_DEBIAN" ]; then echo "$LEASE_DEBIAN"
     elif [ -f "$LEASE_RHEL" ]; then echo "$LEASE_RHEL"
     else echo "$LEASE_DEBIAN"; fi
 }
@@ -141,8 +146,70 @@ case "$ACTION" in
             echo "无租约文件（$LEASE_DEBIAN / $LEASE_RHEL），可能尚未有客户端或 dnsmasq 未运行"
         fi
         ;;
+    leases-export)
+        # 租约导出 CSV（expiry,mac,ip,hostname）——与采集台账联动（reconcile）用
+        csv="${POSARGS[0]:-${SCRIPT_DIR}/logs/leases.csv}"
+        mkdir -p "$(dirname "$csv")"
+        LF=$(find_lease_file)
+        {
+            echo "# HwScope DHCP 租约导出 $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "expiry,mac,ip,hostname"
+            [ -f "$LF" ] && grep -v '^#' "$LF" 2>/dev/null | awk '{print $1","$2","$3","$4}'
+        } > "$csv"
+        echo -e "\033[0;32m[OK] 租约已导出: ${csv}\033[0m"
+        ;;
+    reconcile)
+        # 租约 ↔ 采集台账交叉核对：各采集目录报告 JSON 的 BMC IP/MAC vs 租约表
+        [ "${#POSARGS[@]}" -eq 0 ] && { echo -e "\033[0;31m[ERROR] reconcile 需要采集目录参数（可多个，如 output/SN1 output/SN2）\033[0m"; exit 1; }
+        LF=$(find_lease_file)
+        [ ! -f "$LF" ] && echo -e "\033[1;33m[WARN] 无租约文件（${LEASE_DEBIAN} / ${LEASE_RHEL}），仅显示采集侧\033[0m"
+        lease_map=""
+        [ -f "$LF" ] && lease_map=$(grep -v '^#' "$LF" 2>/dev/null | awk '{print $3"|"$2}')
+        echo "=== 租约 ↔ 采集台账 交叉核对 ==="
+        echo "租约数: $(echo "$lease_map" | grep -c . )  采集目录: ${#POSARGS[@]} 个"
+        # 注意：主脚本顶层不能用 local（非函数上下文），直接赋值即可
+        tmatched=0; tunmatched=0; tnodata=0; _dir=""; json=""; sn=""; ip=""; mac=""; found=""
+        for _dir in "${POSARGS[@]}"; do
+            json="${_dir%/}/hwscope_report.json"
+            [ ! -f "$json" ] && { echo -e "  \033[0;31m[ERROR] 无报告 JSON: ${_dir}\033[0m"; continue; }
+            sn=$(basename "${_dir%/}")
+            ip=$(grep -m1 -oE '"ip": "[^"]*"' "$json" 2>/dev/null | sed 's/.*"ip": "\([^"]*\)"/\1/')
+            mac=$(grep -m1 -oE '"mac": "[^"]*"' "$json" 2>/dev/null | sed 's/.*"mac": "\([^"]*\)"/\1/')
+            [ -z "$ip" ] && ip="N/A"; [ -z "$mac" ] && mac="N/A"
+            if [ "$ip" = "N/A" ]; then
+                tnodata=$((tnodata+1))
+                echo -e "  \033[0;33m? ${sn}: 采集无 BMC IP（机器无 BMC 或未采集）\033[0m"
+                continue
+            fi
+            found=$(echo "$lease_map" | grep -c "^${ip}|" 2>/dev/null || echo 0)
+            [ "${found:-0}" -eq 0 ] && found=$(echo "$lease_map" | grep -ci "|${mac}$" 2>/dev/null || echo 0)
+            if [ "${found:-0}" -gt 0 ]; then
+                tmatched=$((tmatched+1))
+                echo -e "  \033[0;32m✓ ${sn}: ${ip} ${mac} — 有租约\033[0m"
+            else
+                tunmatched=$((tunmatched+1))
+                echo -e "  \033[0;31m✗ ${sn}: ${ip} ${mac} — 租约中无此 IP/MAC（未上线或未发租约）\033[0m"
+            fi
+        done
+        # 反向：租约有但无对应采集（孤儿）
+        orphan=0; lip=""; matched_any=""
+        if [ -n "$lease_map" ]; then
+            while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                lip=$(echo "$line" | cut -d'|' -f1)
+                matched_any=0
+                for _dir in "${POSARGS[@]}"; do
+                    json="${_dir%/}/hwscope_report.json"
+                    [ -f "$json" ] && grep -q "\"ip\": \"${lip}\"" "$json" 2>/dev/null && matched_any=1 && break
+                done
+                [ "$matched_any" -eq 0 ] && orphan=$((orphan+1))
+            done < <(printf '%s\n' "$lease_map")
+        fi
+        echo ""
+        echo "汇总: 采集 ${#POSARGS[@]} 台 — 有租约 ${tmatched} / 无租约 ${tunmatched} / 无 BMC IP ${tnodata}；租约孤儿（无对应采集）${orphan} 个"
+        ;;
     *)
-        echo "未知动作: $ACTION"; sed -n '1,30p' "$0" | grep -E "^#   (install|config|start|stop|restart|status|leases)" | sed 's/^#   //'
+        echo "未知动作: $ACTION"; sed -n '1,30p' "$0" | grep -E "^#   (install|config|start|stop|restart|status|leases|leases-export|reconcile)" | sed 's/^#   //'
         exit 1
         ;;
 esac
