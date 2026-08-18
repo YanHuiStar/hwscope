@@ -11,11 +11,13 @@ source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 parse_help "$@"
 source "${SCRIPT_DIR}/lib/nvlink.sh" 2>/dev/null || true
 
-# ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>]） ───
+# ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>] [--bmc-verify]） ───
 OUT=""; FORMAT=""; TEST_DIR=""; BASELINE_DIR=""
+BMC_VERIFY=0   # OS-BMC 一致性校验默认关闭（对比项/单侧数据判定仍在完善；需用时 --bmc-verify 开启）
 while [ $# -gt 0 ]; do
     case "$1" in
         --json|--md|--txt|--both|--acceptance) FORMAT="$1"; shift ;;
+        --bmc-verify) BMC_VERIFY=1; shift ;;
         --test-dir)
             TEST_DIR="$2"
             if [ -z "$TEST_DIR" ] || [ ! -d "$TEST_DIR" ]; then
@@ -1470,6 +1472,7 @@ fi
 # 对比项：整机 SN（dmidecode vs IPMI FRU）、BIOS（dmidecode vs Redfish BiosVersion）、
 # 内存容量（OS MemTotal vs Redfish TotalSystemMemoryGiB）、CPU 型号（lscpu vs Redfish ProcessorSummary）
 # 判定：一致 ✓ / 不一致 ⚠️（潜在刷 SN/换件/固件不匹配风险）/ 单侧无数据（信息项，不判错）
+# 注意：默认关闭（--bmc-verify 开启）——对比项与单侧数据判定仍在完善，避免旧采集数据带噪音 WARN
 redfish_val() {   # Redfish JSON 字符串字段
     grep -m1 -oE "\"${1}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "${redfish_system}" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"/\1/'
 }
@@ -1477,7 +1480,7 @@ redfish_num() {   # Redfish JSON 数值字段
     grep -m1 -oE "\"${1}\"[[:space:]]*:[[:space:]]*[0-9.]+" "${redfish_system}" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1
 }
 BMC_CONSISTENCY=""
-if [ "$BMC_PRESENT" -eq 1 ]; then
+if [ "$BMC_VERIFY" -eq 1 ] && [ "$BMC_PRESENT" -eq 1 ]; then
     _os_v=""; _bmc_v=""; _res=""   # 主流程禁止 local（bash 报 local: can only be used in a function）
     consistency_verdict() {   # $1=OS侧 $2=BMC侧 $3=num(数值容差比较)
         local ov="$1" bv="$2" on bn
@@ -3126,8 +3129,10 @@ gen_acceptance() {
     fi
 
     # 15. OS vs BMC 口径一致（零新采集交叉校验；不一致=FAIL，仅单侧数据=WARN，无数据=N/A）
-    # 无 BMC 机器（IPMI 日志全错误/无有效 FRU）→ N/A 且不计入"数据不足"——无 BMC 是平台固有形态
-    if [ "${BMC_PRESENT:-0}" -eq 0 ] 2>/dev/null; then
+    # 默认关闭（--bmc-verify 开启）：未启用时 N/A 且不计入"数据不足"（该校验为可选深度核验，非交付必检项）
+    if [ "$BMC_VERIFY" -eq 0 ]; then
+        add_item "OS-BMC 口径一致" "N/A" "校验未启用（--bmc-verify 开启后执行，独立核验报告）" 1
+    elif [ "${BMC_PRESENT:-0}" -eq 0 ] 2>/dev/null; then
         if ls "${BMC_DIR}"/ipmi_*.log >/dev/null 2>&1; then
             add_item "OS-BMC 口径一致" "N/A" "机器无 BMC（IPMI 日志为错误输出，平台固有形态，交叉校验不适用）" 1
         else
@@ -3255,6 +3260,41 @@ gen_acceptance() {
         echo -e "${GREEN}[REPORT] 验收清单 HTML: ${OUT}/hwscope_acceptance.html${NC}"
 }
 
+# ─── BMC 核验独立报告（--bmc-verify 时生成：对比表 + 结论，交付/自查单独使用） ───
+gen_bmc_verify() {
+    local f="${OUT}/hwscope_bmc_verify.md"
+    {
+        echo "# BMC 数据一致性核验报告"
+        echo ""
+        echo "- 机器: ${MB_MANUFACTURER:-N/A} ${MB_PRODUCT:-N/A}（SN: ${MB_SN:-N/A}）"
+        echo "- 生成: $(date '+%Y-%m-%d %H:%M:%S') · 报告生成器: ${REPORT_VERSION:-unknown}"
+        echo "- 说明: OS 层采集 vs BMC 层（IPMI FRU / Redfish）交叉校验，只读既有日志、零新采集；"
+        echo "  不一致 = 潜在刷 SN/换件/固件不匹配风险"
+        echo ""
+        if [ -n "$BMC_CONSISTENCY" ]; then
+            echo "| 对比项 | OS 侧 | BMC 侧 | 结果 |"
+            echo "|--------|-------|--------|------|"
+            echo "$BMC_CONSISTENCY" | while IFS='|' read -r bitem bos bbmc bres; do
+                [ -z "$bitem" ] && continue
+                echo "| ${bitem} | ${bos} | ${bbmc} | ${bres} |"
+            done
+        else
+            echo "无 BMC 对比数据（机器无 BMC / IPMI 采集失败 / 旧采集）——无法核验"
+        fi
+        echo ""
+        if printf '%s\n' "$BMC_CONSISTENCY" | grep -q "⚠️ 不一致"; then
+            echo "**结论: ⚠️ 存在不一致项，需人工核实（刷 SN/换件/固件不匹配风险）**"
+        elif printf '%s\n' "$BMC_CONSISTENCY" | grep -qE "仅(OS|BMC)侧数据"; then
+            echo "**结论: 部分对比项仅单侧数据，建议补采 Redfish 完整核验**"
+        elif [ -n "$BMC_CONSISTENCY" ]; then
+            echo "**结论: OS 与 BMC 口径一致**"
+        else
+            echo "**结论: 无法核验（无 BMC 数据）**"
+        fi
+    } > "$f"
+    echo -e "${GREEN}[REPORT] BMC 核验报告: ${f}${NC}"
+}
+
 case "$FORMAT" in
     --json) gen_json ;;
     --md)   gen_md; gen_html ;;
@@ -3262,6 +3302,7 @@ case "$FORMAT" in
     --acceptance) gen_acceptance ;;
     *)      gen_json; gen_md; gen_txt; gen_html ;;
 esac
+[ "$BMC_VERIFY" -eq 1 ] && gen_bmc_verify
 
 echo -e "${GREEN}[REPORT] 生成完成${NC}"
 echo ""
