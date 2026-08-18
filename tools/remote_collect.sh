@@ -10,9 +10,10 @@
 #   原方案"ssh 'bash -s' < hwscope.sh 流式执行（远程零落盘）"不可行——hwscope.sh 按
 #   $0 相对路径 source lib/ 与 modules/（多文件结构），bash -s 时 $0="bash" 无法定位。
 #   改为：tar 临时推送项目（排除 output/logs/.git）→ 远端执行 → 结果 tar 回拉 → 清理远端。
-#   同样"零持久占用"（执行后即删），密码不落盘（SSH key/agent，禁 sshpass 明文密码）。
+#   同样"零持久占用"（执行后即删），密码不落盘（交互式密码或 SSH key，禁 sshpass 明文密码）。
 #
-# 凭据: 默认 BatchMode=yes（仅 SSH key/agent）；--interactive 允许交互式密码（不落盘）。
+# 凭据（安全立场）: 默认交互式密码（每次登录输入，不落盘）——生产环境标准做法；
+#   SSH key 免密仅建议受信内部网络使用（私钥泄露=所有配置了公钥的主机失守，风险扩散）。
 # 依赖: ssh/scp/tar（系统自带，零新依赖）
 # =============================================================================
 
@@ -25,7 +26,7 @@ usage() {
     echo "  -H user@host       目标机（SSH 用户@主机）"
     echo "  --no-sudo          目标机以当前用户直接执行（默认 sudo bash hwscope.sh）"
     echo "  -o <目录>          本地回拉目录（默认 ./output）"
-    echo "  --interactive      允许交互式密码输入（默认仅 SSH key）"
+    echo "  --interactive      保留兼容（默认已支持交互式密码，无需该参数）"
     echo "  -h, --help         帮助"
     echo ""
     echo "透传: 其余参数原样传给远端 hwscope.sh（--modules/--serial/--quiet/--skip/--no-module 等）"
