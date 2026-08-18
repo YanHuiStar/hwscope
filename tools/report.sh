@@ -10,15 +10,28 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 source "${SCRIPT_DIR}/lib/nvlink.sh" 2>/dev/null || true
 
-# ─── 定位输出目录 ───
-if [ -n "$1" ] && [ -d "$1" ]; then
-    OUT="$1"
-else
+# ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>]） ───
+OUT=""; FORMAT=""; TEST_DIR=""
+_i=0
+for _a in "$@"; do
+    _i=$((_i + 1))
+    case "$_a" in
+        --json|--md|--txt|--both|--acceptance) FORMAT="$_a" ;;
+        --test-dir)
+            TEST_DIR="${@:_i+1:1}"
+            if [ -z "$TEST_DIR" ] || [ ! -d "$TEST_DIR" ]; then
+                echo -e "${RED}[ERROR] --test-dir 需要有效压测目录路径（如 logs/test/20260818120000）${NC}"; exit 1
+            fi
+            _i=$((_i + 1)) ;;
+        --*) echo -e "${YELLOW}[WARN] 未知参数: $_a${NC}" ;;
+        *)  [ -z "$OUT" ] && OUT="$_a" ;;
+    esac
+done
+if [ -z "$OUT" ]; then
     OUT=$(ls -dt "${SCRIPT_DIR}/output"/*/ 2>/dev/null | head -1 | sed 's|/$||')
 fi
 [ -z "$OUT" ] || [ ! -d "$OUT" ] && echo -e "${RED}[ERROR] 未找到采集目录: $OUT${NC}" && exit 1
-
-FORMAT="${2:-both}"
+[ -z "$FORMAT" ] && FORMAT="both"
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}[REPORT] 开始生成报告...${NC}"
 echo -e "${CYAN}========================================${NC}"
@@ -756,6 +769,7 @@ load_manifest "${BMC_DIR}" ipmi_fru_summary "ipmi_fru_summary.log"
 load_manifest "${BMC_DIR}" ipmi_mc "ipmi_mc.log"
 load_manifest "${BMC_DIR}" ipmi_lan1 "ipmi_lan1.log"
 load_manifest "${BMC_DIR}" ipmi_sel_elist "ipmi_sel_elist.log"
+load_manifest "${BMC_DIR}" redfish_system "redfish_system.log"
 BMC_FRU=$(extract "Product Name|Product Part Number" "${ipmi_fru_summary}" | head -c 80)
 BMC_FW=$(extract "Firmware Revision" "${ipmi_mc}")
 BMC_IP=$(grep "IP Address" "${ipmi_lan1}" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | head -1)
@@ -1401,6 +1415,95 @@ done
 # HBA 硬件存在性（lspci SAS controller，排除 MegaRAID 已计入 RAID_PCI_PRESENT、Intel VMD 与 PCIe Switch 管理端点）
 HBA_PCI_PRESENT=$(grep -iE "SAS controller|Serial Attached SCSI|SAS3008|SAS3108|SAS3508" "${lspci_all}" 2>/dev/null | grep -viE "MegaRAID|VMD|Volume Management|PCIe Switch management endpoint|PEX89|PEX97" | head -1)
 
+# ─── 固件合规（15_firmware 模块输出；无数据段隐藏） ───
+FW_DIR="${OUT}/firmware"
+load_manifest "${FW_DIR}" fw_compliance "fw_compliance.csv"
+FW_COMPLIANCE_DETAILS=""; FW_SUMMARY=""
+if [ -f "${fw_compliance}" ]; then
+    FW_COMPLIANCE_DETAILS=$(grep -v "^#" "${fw_compliance}" 2>/dev/null | grep -v "^$" | grep -v "^summary:" | awk -F'|' '{
+        for(i=1;i<=6;i++){gsub(/^ +| +$/,"",$i)}
+        if($1!="" && $1!="component") printf "%s|%s|%s|%s|%s|%s\n", $1,$2,$3,$4,$5,$6
+    }')
+    FW_SUMMARY=$(grep "^summary:" "${fw_compliance}" 2>/dev/null | sed 's/^summary:[[:space:]]*//')
+fi
+
+# ─── 能耗台账（16_power 模块输出；无数据段隐藏） ───
+PWR_DIR="${OUT}/power"
+load_manifest "${PWR_DIR}" energy_inventory "energy_inventory.csv"
+load_manifest "${PWR_DIR}" power_energy "power_energy.log"
+PWR_CUR=""; PWR_MIN=""; PWR_MAX=""; PWR_AVG=""; PWR_ENERGY=""; PWR_ENERGY_SRC=""
+if [ -f "${energy_inventory}" ]; then
+    while IFS='|' read -r _pm _pv _pu _ps; do
+        case "$_pm" in
+            current_power)      PWR_CUR="${_pv} ${_pu}" ;;
+            power_min)          PWR_MIN="${_pv} ${_pu}" ;;
+            power_max)          PWR_MAX="${_pv} ${_pu}" ;;
+            power_avg)          PWR_AVG="${_pv} ${_pu}" ;;
+            cumulative_energy)  PWR_ENERGY="${_pv} ${_pu}"; PWR_ENERGY_SRC="$_ps" ;;
+        esac
+    done < <(grep -v "^#" "${energy_inventory}" 2>/dev/null | grep -v "^metric|")
+fi
+PWR_NOTE=""
+[ -f "${power_energy}" ] && PWR_NOTE=$(grep -m1 -E "累计能耗 [0-9]|BMC 未暴露累计能耗|无能耗/功耗数据" "${power_energy}" 2>/dev/null | sed 's/^[[:space:]]*//')
+
+# ─── BMC 数据一致性校验（OS 层 vs BMC 层；零新采集，只读既有日志） ───
+# 对比项：整机 SN（dmidecode vs IPMI FRU）、BIOS（dmidecode vs Redfish BiosVersion）、
+# 内存容量（OS MemTotal vs Redfish TotalSystemMemoryGiB）、CPU 型号（lscpu vs Redfish ProcessorSummary）
+# 判定：一致 ✓ / 不一致 ⚠️（潜在刷 SN/换件/固件不匹配风险）/ 单侧无数据（信息项，不判错）
+redfish_val() {   # Redfish JSON 字符串字段
+    grep -m1 -oE "\"${1}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "${redfish_system}" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"/\1/'
+}
+redfish_num() {   # Redfish JSON 数值字段
+    grep -m1 -oE "\"${1}\"[[:space:]]*:[[:space:]]*[0-9.]+" "${redfish_system}" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1
+}
+BMC_CONSISTENCY=""
+if [ -f "${ipmi_fru_summary}" ] || { [ -f "${redfish_system}" ] && grep -qE '"BiosVersion"|"TotalSystemMemoryGiB"|"ProcessorSummary"' "${redfish_system}" 2>/dev/null; }; then
+    local _os_v _bmc_v _res
+    consistency_verdict() {   # $1=OS侧 $2=BMC侧 $3=num(数值容差比较)
+        local ov="$1" bv="$2" on bn
+        if [ -z "$ov" ] || [ "$ov" = "N/A" ] || [ -z "$bv" ] || [ "$bv" = "N/A" ]; then
+            if [ -z "$ov" ] || [ "$ov" = "N/A" ]; then echo "仅BMC侧数据"; else echo "仅OS侧数据"; fi
+            return
+        fi
+        if [ "$3" = "num" ]; then
+            on=$(echo "$ov" | grep -oE "[0-9.]+" | head -1); bn=$(echo "$bv" | grep -oE "[0-9.]+" | head -1)
+            if [ -z "$on" ] || [ -z "$bn" ]; then echo "无法比较"; return; fi
+            if awk -v a="$on" -v b="$bn" 'BEGIN{d=a-b; if(d<0)d=-d; exit !(d<=1)}' < /dev/null; then echo "✓ 一致"; else echo "⚠️ 不一致"; fi
+        else
+            if [ "$ov" = "$bv" ]; then echo "✓ 一致"; else echo "⚠️ 不一致"; fi
+        fi
+    }
+    # 1. 整机 SN（OS dmidecode system vs BMC IPMI FRU Product Serial）
+    _os_v="${MB_SN:-N/A}"; _bmc_v=$(grep -m1 "Product Serial" "${ipmi_fru_summary}" 2>/dev/null | cut -d: -f2- | xargs); [ -z "$_bmc_v" ] && _bmc_v="N/A"
+    _res=$(consistency_verdict "$_os_v" "$_bmc_v" ""); BMC_CONSISTENCY="${BMC_CONSISTENCY}整机SN|${_os_v}|${_bmc_v}|${_res}"$'\n'
+    # 2. BIOS 版本（OS dmidecode vs Redfish BiosVersion）
+    _os_v="${BIOS_VERSION:-N/A}"; _bmc_v=$(redfish_val "BiosVersion"); [ -z "$_bmc_v" ] && _bmc_v="N/A"
+    _res=$(consistency_verdict "$_os_v" "$_bmc_v" ""); BMC_CONSISTENCY="${BMC_CONSISTENCY}BIOS版本|${_os_v}|${_bmc_v}|${_res}"$'\n'
+    # 3. 内存容量（OS MemTotal GiB vs Redfish TotalSystemMemoryGiB，±1 GiB 容差）
+    _os_v="${MEM_TOTAL:-N/A}"; _bmc_v=$(redfish_num "TotalSystemMemoryGiB"); [ -n "$_bmc_v" ] && _bmc_v="${_bmc_v} GiB"; [ -z "$_bmc_v" ] && _bmc_v="N/A"
+    _res=$(consistency_verdict "$_os_v" "$_bmc_v" "num"); BMC_CONSISTENCY="${BMC_CONSISTENCY}内存容量|${_os_v}|${_bmc_v}|${_res}"$'\n'
+    # 4. CPU 型号（OS lscpu vs Redfish ProcessorSummary.Model）
+    _os_v="${CPU_MODEL:-N/A}"; _bmc_v=$(redfish_val "Model"); [ -z "$_bmc_v" ] && _bmc_v="N/A"
+    _res=$(consistency_verdict "$_os_v" "$_bmc_v" ""); BMC_CONSISTENCY="${BMC_CONSISTENCY}CPU型号|${_os_v}|${_bmc_v}|${_res}"$'\n'
+    BMC_CONSISTENCY=$(printf '%b' "$BMC_CONSISTENCY")
+fi
+
+# ─── 压测归档（--test-dir；test/test_common.sh 写 manifest.txt 解耦） ───
+TEST_DETAILS=""; TEST_DIR_LABEL=""
+if [ -n "$TEST_DIR" ] && [ -d "$TEST_DIR" ]; then
+    TEST_DIR_LABEL="$TEST_DIR"
+    _tsum=""
+    [ -f "${TEST_DIR}/manifest.txt" ] && _tsum=$(grep '^summary=' "${TEST_DIR}/manifest.txt" | tail -1 | cut -d= -f2-)
+    [ -z "$_tsum" ] && _tsum=$(basename "$(ls "${TEST_DIR}"/*.log 2>/dev/null | head -1)")
+    _tsum="${TEST_DIR}/${_tsum}"
+    if [ -f "$_tsum" ]; then
+        # test_record 行格式: [HH:MM:SS] <name>: <状态> (<Ns>) — 详情: <file>
+        TEST_DETAILS=$(grep -E "^\[[0-9]{2}:[0-9]{2}:[0-9]{2}\]" "$_tsum" 2>/dev/null \
+            | grep -vE "测试开始|测试结束" \
+            | sed -E 's/^\[[0-9:]+\] //; s/ \(([0-9]+)s\) — 详情: (.*)$/|\1|\2/; s/: /|/')
+    fi
+fi
+
 # ─── 生成 JSON ───
 gen_json() {
     local f="${OUT}/hwscope_report.json"
@@ -1497,6 +1600,33 @@ gen_json() {
             fan_details_json="${fan_details_json}      {\"name\": \"${fname}\", \"rpm\": \"${frpm}\", \"status\": \"${fstatus}\"},"$'\n'
         done < <(printf '%s\n' "$FAN_DETAILS")
         fan_details_json=$(printf '%s' "$fan_details_json" | sed '$ s/,$//')
+    fi
+    # 固件合规 JSON 数组（component|device|current|baseline|status|note）
+    local fw_details_json=""
+    if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
+        fw_details_json=$(printf '%s' "$FW_COMPLIANCE_DETAILS" | awk -F'|' '
+            $1 != "" {
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                printf "      {\"component\": \"%s\", \"device\": \"%s\", \"current\": \"%s\", \"baseline\": \"%s\", \"status\": \"%s\", \"note\": \"%s\"},\n", $1, $2, $3, $4, $5, $6
+            }' | sed '$ s/,$//')
+    fi
+    # BMC 一致性 JSON 数组（item|os_side|bmc_side|result）
+    local bmc_consistency_json=""
+    if [ -n "$BMC_CONSISTENCY" ]; then
+        bmc_consistency_json=$(printf '%s' "$BMC_CONSISTENCY" | awk -F'|' '
+            $1 != "" {
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                printf "      {\"item\": \"%s\", \"os_side\": \"%s\", \"bmc_side\": \"%s\", \"result\": \"%s\"},\n", $1, $2, $3, $4
+            }' | sed '$ s/,$//')
+    fi
+    # 压测归档 JSON 数组（name|status|elapsed_s|detail_file）
+    local test_details_json=""
+    if [ -n "$TEST_DETAILS" ]; then
+        test_details_json=$(printf '%s' "$TEST_DETAILS" | awk -F'|' '
+            $1 != "" {
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                printf "      {\"name\": \"%s\", \"status\": \"%s\", \"elapsed_s\": \"%s\", \"detail_file\": \"%s\"},\n", $1, $2, $3, $4
+            }' | sed '$ s/,$//')
     fi
     cat > "$f" << EOF
 {
@@ -1675,6 +1805,32 @@ $(printf '%s' "$nvs_json")
     "dcgm_diag": "${DCGM_SUMMARY:-N/A}",
     "sel_pcie_errors": "${SEL_PCIE_ERR:-0}",
     "cable_pairs": "${CABLE_PAIRS:-N/A}"
+  },
+  "firmware": {
+    "summary": "${FW_SUMMARY:-N/A}",
+    "items": [
+${fw_details_json}
+    ]
+  },
+  "power_ledger": {
+    "current_power": "${PWR_CUR:-N/A}",
+    "power_min": "${PWR_MIN:-N/A}",
+    "power_max": "${PWR_MAX:-N/A}",
+    "power_avg": "${PWR_AVG:-N/A}",
+    "cumulative_energy": "${PWR_ENERGY:-N/A}",
+    "energy_source": "${PWR_ENERGY_SRC:-N/A}",
+    "note": "${PWR_NOTE:-}"
+  },
+  "bmc_consistency": {
+    "items": [
+${bmc_consistency_json}
+    ]
+  },
+  "test_archive": {
+    "dir": "${TEST_DIR_LABEL:-}",
+    "items": [
+${test_details_json}
+    ]
   }
 }
 EOF
@@ -1959,6 +2115,26 @@ $(if [ -n "$nvs_md" ]; then
     printf '%s' "$nvs_md"
 fi)
 
+$(if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
+    echo ""
+    echo "## 固件合规"
+    echo "> 对照 conf/fw_required.txt（厂商推荐版本基线）逐项判定；无基线条目判未知（仅记录）"
+    echo ""
+    echo "| 组件 | 设备 | 当前版本 | 推荐版本 | 状态 | 说明 |"
+    echo "|------|------|---------|---------|------|------|"
+    echo "$FW_COMPLIANCE_DETAILS" | while IFS='|' read -r fc fd fcur fbase fst fnote; do
+        [ -z "$fc" ] && continue
+        case "$fst" in
+            合规) fst_disp="✅ 合规" ;;
+            落后) fst_disp="⚠️ 落后" ;;
+            *)    fst_disp="$fst" ;;
+        esac
+        echo "| ${fc} | ${fd} | ${fcur} | ${fbase} | ${fst_disp} | ${fnote:-} |"
+    done
+    [ -n "$FW_SUMMARY" ] && echo ""
+    [ -n "$FW_SUMMARY" ] && echo "> ${FW_SUMMARY}"
+fi)
+
 ## 存储
 | 项 | 值 |
 |----|----|
@@ -2099,6 +2275,19 @@ else
     echo "> 告警事件: 无"
 fi)
 
+$(if [ -n "$BMC_CONSISTENCY" ]; then
+    echo ""
+    echo "### BMC 数据一致性校验（OS vs BMC）"
+    echo "> OS 层采集 vs BMC 层交叉校验（只读既有日志，零新采集）；不一致 = 潜在刷 SN/换件/固件不匹配风险"
+    echo ""
+    echo "| 对比项 | OS 侧 | BMC 侧 | 结果 |"
+    echo "|--------|-------|--------|------|"
+    echo "$BMC_CONSISTENCY" | while IFS='|' read -r bitem bos bbmc bres; do
+        [ -z "$bitem" ] && continue
+        echo "| ${bitem} | ${bos} | ${bbmc} | ${bres} |"
+    done
+fi)
+
 ## 风扇
 | 项 | 值 |
 |----|----|
@@ -2143,6 +2332,20 @@ $(
     [ -n "$PSU_PLATFORM_NOTE" ] && echo "> ⚠️ ${PSU_PLATFORM_NOTE}"
 )
 
+$(if [ -n "$PWR_CUR" ] || [ -n "$PWR_ENERGY" ]; then
+    echo ""
+    echo "## 能耗台账"
+    echo "| 项 | 值 |"
+    echo "|----|----|"
+    [ -n "$PWR_CUR" ] && echo "| 当前功耗 | ${PWR_CUR} |"
+    [ -n "$PWR_MIN" ] && echo "| 采样最小 | ${PWR_MIN} |"
+    [ -n "$PWR_MAX" ] && echo "| 采样最大 | ${PWR_MAX} |"
+    [ -n "$PWR_AVG" ] && echo "| 采样平均 | ${PWR_AVG} |"
+    [ -n "$PWR_ENERGY" ] && echo "| 累计能耗 | ${PWR_ENERGY}${PWR_ENERGY_SRC:+（${PWR_ENERGY_SRC}）} |"
+    [ -n "$PWR_NOTE" ] && echo ""
+    [ -n "$PWR_NOTE" ] && echo "> ${PWR_NOTE}"
+fi)
+
 ## 健康检查
 | 项 | 状态 |
 |----|------|
@@ -2170,6 +2373,25 @@ $(
 )
 | SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |
 | 线缆配对 | ${CABLE_PAIRS:-N/A} |
+
+$(if [ -n "$TEST_DETAILS" ]; then
+    echo ""
+    echo "## 压测归档"
+    echo "> 压测目录: ${TEST_DIR_LABEL}（test/ 压测脚本落盘，report 只读解析，不重跑）"
+    echo ""
+    echo "| 测试项 | 结果 | 耗时 | 详情文件 |"
+    echo "|--------|------|------|---------|"
+    echo "$TEST_DETAILS" | while IFS='|' read -r tname tstatus telapsed tfile; do
+        [ -z "$tname" ] && continue
+        case "$tstatus" in
+            通过) tst_disp="✅ 通过" ;;
+            异常*) tst_disp="❌ ${tstatus}" ;;
+            工具缺失) tst_disp="— 工具缺失" ;;
+            *) tst_disp="$tstatus" ;;
+        esac
+        echo "| ${tname} | ${tst_disp} | ${telapsed}s | ${tfile} |"
+    done
+fi)
 
 ---
 ## 术语说明
@@ -2375,7 +2597,18 @@ else
     echo "  ECC    : ${GPU_ECC:-N/A}"
     echo "  退役行 : ${GPU_REMAP:-N/A}"
     echo "  VBIOS  : ${GPU_VBIOS:-N/A}"
-fi)$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)$(if [ "$GPU_COUNT" -gt 0 ]; then printf '%s' "$gpu_details_txt"; fi)$(if [ -n "$nvs_txt" ]; then printf '\n[NVSwitch]\n'; printf '%s' "$nvs_txt"; fi)
+fi)$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)$(if [ "$GPU_COUNT" -gt 0 ]; then printf '%s' "$gpu_details_txt"; fi)$(if [ -n "$nvs_txt" ]; then printf '\n[NVSwitch]\n'; printf '%s' "$nvs_txt"; fi)$(if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
+    printf '\n[固件合规]\n'
+    echo "$FW_COMPLIANCE_DETAILS" | while IFS='|' read -r fc fd fcur fbase fst fnote; do
+        [ -z "$fc" ] && continue
+        case "$fst" in
+            落后) fst="⚠️ $fst" ;;
+            合规) fst="✅ $fst" ;;
+        esac
+        printf '  %-10s %-26s 当前:%s  推荐:%s  %s  %s\n' "$fc" "$fd" "$fcur" "$fbase" "$fst" "$fnote"
+    done
+    [ -n "$FW_SUMMARY" ] && printf '  %s\n' "$FW_SUMMARY"
+fi)
 
 [存储]
   盘数   : ${STORAGE_COUNT:-0}
@@ -2449,6 +2682,13 @@ elif [ -n "$SEL_DETAILS" ]; then
     done
 else
     echo "  告警事件: 无"
+fi)$(if [ -n "$BMC_CONSISTENCY" ]; then
+    printf '\n  BMC 一致性校验（OS vs BMC，零新采集）:\n'
+    echo "$BMC_CONSISTENCY" | while IFS='|' read -r bitem bos bbmc bres; do
+        [ -z "$bitem" ] && continue
+        printf '    %-8s OS:%s  BMC:%s  %s\n' "$bitem" "$bos" "$bbmc" "$bres"
+    done
+    printf '    （不一致 = 潜在刷 SN/换件/固件不匹配风险）\n'
 fi)
 
 [风扇]
@@ -2472,12 +2712,32 @@ $(if [ -n "$PSU_DETAILS" ]; then
         pseq=$((pseq+1))
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
     done < <(printf '%s\n' "$PSU_DETAILS")
-else echo "  N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读）"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)
+else echo "  N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读）"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)$(if [ -n "$PWR_CUR" ] || [ -n "$PWR_ENERGY" ]; then
+    printf '\n[能耗台账]\n'
+    [ -n "$PWR_CUR" ] && printf '  当前功耗 : %s\n' "$PWR_CUR"
+    [ -n "$PWR_MIN" ] && printf '  采样最小 : %s\n' "$PWR_MIN"
+    [ -n "$PWR_MAX" ] && printf '  采样最大 : %s\n' "$PWR_MAX"
+    [ -n "$PWR_AVG" ] && printf '  采样平均 : %s\n' "$PWR_AVG"
+    [ -n "$PWR_ENERGY" ] && printf '  累计能耗 : %s%s\n' "$PWR_ENERGY" "${PWR_ENERGY_SRC:+（${PWR_ENERGY_SRC}）}"
+    [ -n "$PWR_NOTE" ] && printf '  %s\n' "$PWR_NOTE"
+fi)
 
 [健康检查]
 $(printf '%s' "$HEALTH_TXT")
   SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
-  线缆配对 : ${CABLE_PAIRS:-N/A}
+  线缆配对 : ${CABLE_PAIRS:-N/A}$(if [ -n "$TEST_DETAILS" ]; then
+    printf '\n\n[压测归档]  目录: %s\n' "$TEST_DIR_LABEL"
+    echo "$TEST_DETAILS" | while IFS='|' read -r tname tstatus telapsed tfile; do
+        [ -z "$tname" ] && continue
+        case "$tstatus" in
+            通过) tst="✅ 通过" ;;
+            异常*) tst="❌ $tstatus" ;;
+            工具缺失) tst="— 工具缺失" ;;
+            *) tst="$tstatus" ;;
+        esac
+        printf '  %-24s %-16s %5ss  %s\n' "$tname" "$tst" "$telapsed" "$tfile"
+    done
+fi)
 
 [术语说明]
 $(glossary_txt)

@@ -12,6 +12,13 @@ test_init() {
     mkdir -p "$base"
     REPORT_DIR="$base"
     REPORT_LOG="${base}/${test_name}.log"
+    TEST_SEQ=0
+    # manifest.txt：供 tools/report.sh --test-dir 读 manifest 解耦（压测归档章节）
+    {
+        echo "# HwScope test output manifest"
+        echo "# Generated: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "test_name=${test_name}"
+    } > "${base}/manifest.txt"
     {
         echo "============================================================"
         echo "HwScope ${HWSCOPE_VERSION:-unknown} — ${test_name} 测试"
@@ -67,6 +74,9 @@ test_record() {
     fi
     echo "[$(date '+%H:%M:%S')] ${name}: ${status} (${elapsed}s) — 详情: $(basename "$logfile")" >> "$REPORT_LOG"
     echo "  ${status} 耗时: ${elapsed}s" | tee -a "$REPORT_LOG"
+    # manifest 登记详情文件（report --test-dir 读 manifest 解耦；测试名唯一化）
+    TEST_SEQ=$((TEST_SEQ + 1))
+    echo "test$(printf '%02d' "$TEST_SEQ")=$(basename "$logfile")" >> "${REPORT_DIR}/manifest.txt"
 }
 
 # 结束报告
@@ -76,6 +86,8 @@ test_finish() {
         echo ""
         echo "[$(date '+%H:%M:%S')] ${test_name} 测试结束"
     } >> "$REPORT_LOG"
+    # manifest 收尾：声明汇总日志（report --test-dir 解析入口）
+    echo "summary=$(basename "$REPORT_LOG")" >> "${REPORT_DIR}/manifest.txt"
     echo ""
     echo -e "${GREEN}测试完成${NC}"
     echo "日志: $REPORT_LOG"

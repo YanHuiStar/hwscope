@@ -89,6 +89,7 @@ HWSCOPE_VERSION="v1.28.39"
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
 FORCE_MODE="${FORCE:-0}"; QUIET=0; PARALLEL=1; NO_MODULE=0; MODULE_PARALLEL=1
+TEST_DIR=""
 
 usage() {
     echo "用法: $0 [OPTIONS]"
@@ -103,6 +104,7 @@ usage() {
     echo "  --module-timeout N              单模块超时秒数（默认 300）"
     echo "  --sim [N]                       模拟模式：每模块等待 N 秒（默认 5）"
     echo "  --no-module                     跳过光模块查询（缩短采集时长约 48s）"
+    echo "  --test-dir /path/to/test         关联压测目录（logs/test/<时间戳>/），报告生成压测章节"
     echo "  --output /path/to/dir           指定输出目录"
     echo "  --force                         覆盖已有输出目录"
     echo "  -q, --quiet                     静默模式（仅输出异常）"
@@ -137,6 +139,11 @@ while [[ $# -gt 0 ]]; do
             # 模拟模式：每模块等待 N 秒（--sim 或 --sim N，N 默认 5）
             if [[ "${2:-}" =~ ^[0-9]+$ ]]; then SIM_DELAY="$2"; shift 2; else SIM_DELAY=5; shift; fi ;;
         --no-module) NO_MODULE=1; shift ;;
+        --test-dir)
+            if [ -z "${2:-}" ] || [ ! -d "$2" ]; then
+                echo -e "${RED}错误: --test-dir 需要有效压测目录路径（如 logs/test/20260818120000）${NC}"; exit 1
+            fi
+            TEST_DIR="$2"; shift 2 ;;
         -q|--quiet) QUIET=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         -v|--version) echo "HwScope ${HWSCOPE_VERSION} (2026-08) — Hardware Scope"
@@ -422,9 +429,14 @@ echo -e "${CYAN}汇总文件: ${SUMMARY_FILE}${NC}"
 # ─── 生成汇总报告（json + md + txt） ───
 if [ -f "${SCRIPT_DIR}/tools/report.sh" ]; then
     echo ""
-    bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE"
-    # 验收清单默认一并生成（交付交接单；仅 --modules 部分采集时仍生成，缺数据项显示 N/A）
-    bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE" --acceptance
+    # --test-dir 关联压测归档（报告新增"压测"章节；无则普通生成）
+    if [ -n "$TEST_DIR" ]; then
+        bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE" --test-dir "$TEST_DIR"
+        bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE" --acceptance
+    else
+        bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE"
+        bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE" --acceptance
+    fi
 fi
 
 # ─── 打包归档（与 REPORT 阶段分隔，独立排版） ───
