@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.33.4 (2026-08)
+# Version : 1.33.5 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -84,7 +84,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.33.4"
+HWSCOPE_VERSION="v1.33.5"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -262,7 +262,7 @@ export SIM_DELAY   # 模拟模式秒数（conf 读取，--sim 覆盖），子 sh
 export HWSCOPE_VERSION   # 版本号（模块独立进程 source common.sh 时写日志 header，缺失则显示 unknown）
 export MODULE_PARALLEL   # 模块内命令并行开关（--no-parallel 置 0；模块在独立 bash 子进程执行，必须 export 才能继承）
 export QUIET             # 静默模式（--quiet 置 1；模块子进程 run_and_log 需继承以抑制逐命令输出）
-export NO_MODULE         # 跳光模块开关（--no-module 置 1；07_network 子进程需继承才生效，v1.33.4 修复）
+export NO_MODULE         # 跳光模块开关（--no-module 置 1；07_network 子进程需继承才生效，v1.33.5 修复）
 # timeout 兜底：精简容器可能无 timeout（coreutils）——缺失时直接执行（无超时保护，但模块不会因命令缺失而静默失败）
 TIMEOUT_PREFIX="timeout ${MODULE_TIMEOUT:-300}"
 check_cmd timeout || TIMEOUT_PREFIX=""
