@@ -17,8 +17,8 @@ if ! check_cmd mlxlink && ! check_cmd mlxfwmanager; then
     exit 1
 fi
 
-# ─── 设备列表 ───
-DEVS=$(ls /sys/class/infiniband/ 2>/dev/null | grep -E 'mlx5_' | head -8)
+# ─── 设备列表（不截断：>8 个 mlx5 设备也全列出，选择校验基于完整列表——v1.33.3） ───
+DEVS=$(ls /sys/class/infiniband/ 2>/dev/null | grep -E 'mlx5_')
 if [ -z "$DEVS" ]; then
     echo -e "${YELLOW}[WARN] 未发现 mlx5 IB 设备${NC}"
     echo "      非 IB 服务器可跳过本工具"
@@ -48,10 +48,12 @@ echo ""
 read -p "选择操作 (1-7, 逗号分隔): " -r choices
 [ -z "$choices" ] && echo "跳过" && exit 0
 
-# ─── 选择设备 ───
+# ─── 选择设备（校验在列表内，防任意路径经 bash -c 执行——v1.33.3） ───
 read -p "选择设备 (默认 ${DEVS%% *}): " -r dev
 [ -z "$dev" ] && dev="${DEVS%% *}"
-[ ! -d "/sys/class/infiniband/${dev}" ] && echo -e "${RED}[ERROR] 无效设备 ${dev}${NC}" && exit 1
+if ! echo "$DEVS" | grep -qw "$dev"; then
+    echo -e "${RED}[ERROR] 无效设备 ${dev}（可用: ${DEVS//$'\n'/ }）${NC}"; exit 1
+fi
 
 REPORT_DIR="${SCRIPT_DIR}/output/nic_tool_$(date '+%Y%m%d%H%M%S')"
 mkdir -p "$REPORT_DIR"
@@ -105,7 +107,7 @@ switch_port_mode() {
             echo yes | mlxconfig -d "$dev" set "${port}=${target_val}" 2>&1 | tail -3
             changed=1
         fi
-    done <<< "$modes"
+    done < <(printf '%s\n' "$modes")   # 进程替换（函数内 herestring 在 MSYS 空读——v1.33.3）
 
     if [ "$changed" -eq 1 ]; then
         echo ""

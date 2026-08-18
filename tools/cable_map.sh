@@ -79,20 +79,30 @@ fi
 
 # ─── 4. 断口联动验证（serial 读不出的 DAC 场景；借鉴 NVIDIA onediagfield 引擎逻辑） ───
 # 原理: 把一端 link down（mlxlink -a DN），若另一端"联动 down"（Recommendation 变化）→ 物理相连
-# 仅对 serial 不可读且未配对的设备执行（避免打断已确认的配对）；全程自动恢复 UP
+# 仅对 serial 不可读且未配对的设备执行（避免打断已确认的配对）；全程自动恢复
+# 注意：这是对真实物理端口的写操作（逐口 down，生产 IB 网短暂断流），必须显式确认（v1.33.3）
 if [ ${#UNREADABLE[@]} -gt 0 ]; then
     echo ""
     echo -e "${BLUE}── 断口联动验证 (DAC 无 serial 场景) ──${NC}"
-    echo -e "${YELLOW}  将逐口 down 再恢复（每个口约 3-5 秒），确认物理配对${NC}"
+    echo -e "${YELLOW}  将逐口 down 再恢复（每个口约 3-5 秒），生产 IB 网会短暂断流${NC}"
+    read -rp "确认执行联动验证? (y/N) " confirm
+    [[ ! "$confirm" =~ ^[Yy] ]] && { echo -e "  ${YELLOW}跳过联动验证（未配对设备请用拔线法确认）${NC}"; }
+    if [[ "$confirm" =~ ^[Yy] ]]; then
     declare -A LINK_VERIFIED
-    # Ctrl+C/异常中断时恢复所有端口 UP（防止口停留在 DN 导致断网）
-    trap 'for _d in $DEVS; do sudo mlxlink -d "$_d" -p 1 -a UP >/dev/null 2>&1; done; exit 130' INT TERM
+    # 记录各口原始状态，中断时按原状恢复（无条件置 UP 会误拉起运维主动禁用的口——v1.33.3）
+    declare -A ORIG_STATE
+    for _d in $DEVS; do
+        _st=$(sudo mlxlink -d "$_d" -p 1 2>/dev/null | grep -iE "^State|Active|Link" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
+        ORIG_STATE[$_d]="${_st:-UP}"
+    done
+    trap 'for _d in $DEVS; do sudo mlxlink -d "$_d" -p 1 -a "${ORIG_STATE[$_d]:-UP}" >/dev/null 2>&1; done; exit 130' INT TERM
     for dev in $DEVS; do
         # 只验证 serial 不可读 且 未配对 的设备（跳过已通过 serial 配对的）
         if echo "$PAIRED_DEVS" | grep -qw "$dev"; then continue; fi
-        # 检查该口是否可管理（有 mlxlink 权限且状态非 Down）
+        # 检查该口是否可管理（有 mlxlink 权限且状态非 Down/disabled——注释原意，补状态判断）
         cur_state=$(sudo mlxlink -d "$dev" -p 1 2>/dev/null | grep -iE "^State|Active|Link" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
         [ -z "$cur_state" ] && continue
+        echo "$cur_state" | grep -qiE "down|disabled" && continue
         # 记录当前 Recommendation（联动基线）
         base_rec=$(sudo mlxlink -d "$dev" -p 1 2>/dev/null | grep -i "Recommendation" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
         # 对每个其他未配对口做联动测试（只测 serial 不可读的，减少打扰）
@@ -118,6 +128,7 @@ if [ ${#UNREADABLE[@]} -gt 0 ]; then
             echo -e "  ${YELLOW}$dev: 未能验证配对（可能未连线或对端未上电）${NC}"
         fi
     done
+    fi
 fi
 
 echo ""

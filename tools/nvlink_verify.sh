@@ -30,13 +30,20 @@ echo ""
 # ─── 1. 拓扑矩阵 ───
 echo -e "${BLUE}── GPU 互联拓扑 (nvidia-smi topo -m) ──${NC}"
 TOPO=$(nvidia-smi topo -m 2>/dev/null)
-echo "$TOPO" | head -20
+if [ -z "$TOPO" ]; then
+    echo -e "  ${YELLOW}⚠ 无法获取拓扑数据（nvidia-smi topo -m 失败）——不能判定链路健康${NC}"
+else
+    echo "$TOPO" | head -20
+fi
 echo ""
 
 # ─── 2. 降级链路检测 ───
 echo -e "${BLUE}── 链路完整性 ──${NC}"
-NVLINK_DEGRADED=$(nvlink_parse_topo "$TOPO")
-if [ -z "$NVLINK_DEGRADED" ]; then
+NVLINK_DEGRADED=""
+[ -n "$TOPO" ] && NVLINK_DEGRADED=$(nvlink_parse_topo "$TOPO")
+if [ -z "$TOPO" ]; then
+    :   # 已在上方提示
+elif [ -z "$NVLINK_DEGRADED" ]; then
     echo -e "  ${GREEN}✓ 所有 GPU 间均为 NVLink 互联${NC}"
 else
     echo -e "  ${YELLOW}⚠ 检测到非 NVLink 降级链路:${NC}"
@@ -47,8 +54,11 @@ fi
 echo ""
 echo -e "${BLUE}── NVLink CRC 错误 ──${NC}"
 NVSTATUS=$(nvidia-smi nvlink --status 2>/dev/null)
-NVLINK_CRC=$(nvlink_parse_crc "$NVSTATUS")
-if [ -z "$NVLINK_CRC" ]; then
+NVLINK_CRC=""
+[ -n "$NVSTATUS" ] && NVLINK_CRC=$(nvlink_parse_crc "$NVSTATUS")
+if [ -z "$NVSTATUS" ]; then
+    echo -e "  ${YELLOW}⚠ 无法获取 nvlink 状态（命令失败）——不能判定 CRC${NC}"
+elif [ -z "$NVLINK_CRC" ]; then
     echo -e "  ${GREEN}✓ 全部链路 CRC 错误 = 0${NC}"
 else
     echo -e "  ${YELLOW}⚠ 存在 CRC 错误:${NC}"
@@ -56,18 +66,23 @@ else
 fi
 
 # ─── 4. 链路 down 检测 ───
-NVLINK_DOWN=$(nvlink_parse_down "$NVSTATUS")
+NVLINK_DOWN=""
+[ -n "$NVSTATUS" ] && NVLINK_DOWN=$(nvlink_parse_down "$NVSTATUS")
 echo ""
-if [ -n "$NVLINK_DOWN" ]; then
+if [ -z "$NVSTATUS" ]; then
+    echo -e "  ${YELLOW}⚠ 无 nvlink 状态数据——不能判定 down/degraded${NC}"
+elif [ -n "$NVLINK_DOWN" ]; then
     echo -e "${YELLOW}⚠ 检测到异常链路:${NC}"
     echo "$NVLINK_DOWN" | sed 's/^/  /'
 else
     echo -e "${GREEN}✓ 无 down/degraded 链路${NC}"
 fi
 
-# ─── 5. 综合结论 ───
+# ─── 5. 综合结论（数据获取失败 ≠ 健康，必须判"无法判定"防假绿） ───
 echo ""
-if nvlink_is_healthy; then
+if [ -z "$TOPO" ] && [ -z "$NVSTATUS" ]; then
+    echo -e "${YELLOW}结论: 无法判定（拓扑与状态数据均获取失败，请检查 nvidia-smi）${NC}"
+elif nvlink_is_healthy; then
     echo -e "${GREEN}结论: NVLink 健康${NC}"
 else
     echo -e "${YELLOW}结论: NVLink 存在异常，请排查上述链路${NC}"

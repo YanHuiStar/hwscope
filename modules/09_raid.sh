@@ -49,7 +49,8 @@ run_raid() {
             raid_jobs+=("storcli64 /c${c} show all 2>&1 | grep -iE 'Model|Serial|Firmware|BIOS|Boot|Board Type|Ctrl Rate|ROC temperature|Product Name'" "${dir}/ctrl${c}_summary.log")
             raid_jobs+=("storcli64 /c${c} /bbu show all 2>&1" "${dir}/ctrl${c}_bbu.log")
             raid_jobs+=("storcli64 /c${c} show event 2>&1 | tail -100" "${dir}/ctrl${c}_events.log")
-            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -c "^Virtual Drives" || true)
+            # 虚拟盘数：统计 VD 表数据行（段头 "Virtual Drives :" 恒 1 次，按段头计数多 VD 时只采 v0——改按表行统计）
+            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -cE "^[0-9]+/[0-9]+[[:space:]]+" || true)
             if [ "${vd_count:-0}" -gt 0 ]; then
                 raid_jobs+=("storcli64 /c${c} /vx show all 2>&1" "${dir}/ctrl${c}_vd_all.log")
                 for ((v=0; v<vd_count; v++)); do
@@ -59,17 +60,12 @@ run_raid() {
         done
     fi
 
-    # SAS3 HBA
-    if check_cmd sas3ircu; then
-        if [ "$hba_count" -eq 0 ]; then
-            raid_jobs+=("sas3ircu 0 display 2>&1" "${dir}/sas3_hba0.log")
-            raid_jobs+=("sas3ircu 0 status 2>&1" "${dir}/sas3_hba0_status.log")
-        else
-            for ((h=0; h<hba_count; h++)); do
-                raid_jobs+=("sas3ircu ${h} display 2>&1" "${dir}/sas3_hba${h}.log")
-                raid_jobs+=("sas3ircu ${h} status 2>&1" "${dir}/sas3_hba${h}_status.log")
-            done
-        fi
+    # SAS3 HBA（count=0 时无 HBA，不入队 sas3ircu 任务防失败 WARN）
+    if check_cmd sas3ircu && [ "$hba_count" -gt 0 ]; then
+        for ((h=0; h<hba_count; h++)); do
+            raid_jobs+=("sas3ircu ${h} display 2>&1" "${dir}/sas3_hba${h}.log")
+            raid_jobs+=("sas3ircu ${h} status 2>&1" "${dir}/sas3_hba${h}_status.log")
+        done
     fi
 
     # SAS2 HBA
@@ -86,7 +82,7 @@ run_raid() {
         while IFS= read -r bus; do
             raid_jobs+=("lspci -vvv -s '$bus' 2>/dev/null" "${dir}/lspci_raid_${lspci_count}.log")
             ((lspci_count++))
-        done <<< "$raid_buses"
+        done < <(printf '%s\n' "$raid_buses")
     fi
 
     # Linux 软件 RAID（mdadm /proc/mdstat：检测 md 设备，无则空文件）

@@ -35,7 +35,7 @@ run_bmc() {
             "ipmitool bmc guid 2>&1" "${dir}/ipmi_bmc_guid.log" \
             "ipmitool user list 2>&1" "${dir}/ipmi_users.log" \
             "ipmitool fru print 2>&1" "${dir}/ipmi_fru_all.log" \
-            "echo '=== Product (整机) ===' && ipmitool fru print 2>/dev/null | grep -E 'Product Manufacturer|Product Name|Product Part Number|Product Serial|Product Asset' && echo '' && echo '=== Board (主板) ===' && ipmitool fru print 2>/dev/null | grep -E 'Board Mfg|Board Product|Board Serial|Board Part Number' && echo '' && echo '=== Chassis (机箱) ===' && ipmitool fru print 2>/dev/null | grep -E 'Chassis Serial|Chassis Part'" "${dir}/ipmi_fru_summary.log" \
+            "echo '=== Product (整机) ==='; ipmitool fru print 2>/dev/null | grep -E 'Product Manufacturer|Product Name|Product Part Number|Product Serial|Product Asset' || true; echo ''; echo '=== Board (主板) ==='; ipmitool fru print 2>/dev/null | grep -E 'Board Mfg|Board Product|Board Serial|Board Part Number' || true; echo ''; echo '=== Chassis (机箱) ==='; ipmitool fru print 2>/dev/null | grep -E 'Chassis Serial|Chassis Part' || true" "${dir}/ipmi_fru_summary.log" \
             "ipmitool sensor list 2>/dev/null | grep -i temp" "${dir}/ipmi_sensors_temp.log" \
             "ipmitool sensor list 2>/dev/null | grep -i fan" "${dir}/ipmi_sensors_fan.log" \
             "ipmitool sensor list 2>/dev/null | grep -i volt" "${dir}/ipmi_sensors_volt.log" \
@@ -50,8 +50,10 @@ run_bmc() {
     if [ -n "$BMC_IP" ] && check_cmd ipmitool; then
         echo -e "${BLUE}[BMC] Remote BMC: ${BMC_IP}${NC}"
         export IPMI_PASSWORD="${BMC_PASS}"
-        # -E: 从 IPMI_PASSWORD 环境变量读密码（无 -E 会交互式等密码，被 timeout 杀掉）
-        local ipmi_cmd="timeout 8 ipmitool -E -H ${BMC_IP} -U ${BMC_USER} -I ${BMC_INTERFACE}"
+        # -E: 从 IPMI_PASSWORD 环境变量读密码（无 -E 会交互式等密码，被 timeout 杀掉）；timeout 缺失兜底（精简容器）
+        local bmc_timeout="timeout 8"
+        check_cmd timeout || bmc_timeout=""
+        local ipmi_cmd="${bmc_timeout} ipmitool -E -H ${BMC_IP} -U ${BMC_USER} -I ${BMC_INTERFACE}"
 
         run_and_log_parallel 4 \
             "${ipmi_cmd} fru print" "${dir}/remote_bmc_fru.log" \
@@ -67,7 +69,9 @@ run_bmc() {
     if [ -n "$HGX_BMC_IP" ] && check_cmd ipmitool; then
         echo -e "${BLUE}[BMC] HGX Baseboard BMC: ${HGX_BMC_IP}${NC}"
         export IPMI_PASSWORD="${HGX_BMC_PASS}"
-        local hgx_cmd="timeout 8 ipmitool -E -H ${HGX_BMC_IP} -U ${HGX_BMC_USER} -I ${BMC_INTERFACE}"
+        local hgx_timeout="timeout 8"
+        check_cmd timeout || hgx_timeout=""
+        local hgx_cmd="${hgx_timeout} ipmitool -E -H ${HGX_BMC_IP} -U ${HGX_BMC_USER} -I ${BMC_INTERFACE}"
 
         run_and_log_parallel 4 \
             "${hgx_cmd} fru print 2>&1" "${dir}/hgx_bmc_fru.log" \
@@ -81,13 +85,16 @@ run_bmc() {
     if [ -n "$BMC_IP" ] && check_cmd curl; then
         echo -e "${BLUE}[BMC] Redfish API check: ${BMC_IP}${NC}"
         # 临时 netrc（权限 600，用完即删）：curl --netrc-file 读取，命令字符串不含密码
+        # 中断/超时也清理（模块被 timeout 杀时 trap 兜底，防密码文件残留 /tmp）
         NETRC_TMP=$(mktemp)
         chmod 600 "$NETRC_TMP"
+        trap 'rm -f "$NETRC_TMP"' EXIT INT TERM
         printf 'machine %s login %s password %s\n' "$BMC_IP" "$BMC_USER" "$BMC_PASS" > "$NETRC_TMP"
         run_and_log_parallel 4 \
             "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Systems/System.Embedded.1 2>&1 | head -100" "${dir}/redfish_system.log" \
             "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Managers 2>&1 | head -100" "${dir}/redfish_managers.log" 
         rm -f "$NETRC_TMP"
+        trap - EXIT INT TERM
     fi
 
 write_manifest "${dir}/manifest.txt" \

@@ -61,7 +61,7 @@ install_vllm() {
     echo -e "${CYAN}━━━ 安装 vLLM → ${env} ━━━${NC}"
     uv venv --python 3.12 --seed "$env" 2>/dev/null || uv venv --python 3.12 "$env"
     source "${env}/bin/activate"
-    uv pip install vllm --torch-backend=auto
+    uv pip install vllm --torch-backend=auto || { echo -e "${RED}[ERROR] vLLM 安装失败${NC}"; return 1; }
     echo -e "${GREEN}完成! 使用:${NC}"
     echo "  source ${env}/bin/activate"
     echo "  uv run vllm serve /data/models/ModelScope/Qwen/Qwen3-8B-AWQ --served-model-name qwen3-8b-awq --quantization awq --dtype auto --max-model-len 8192 --gpu-memory-utilization 0.85 --host 0.0.0.0 --port 8000 --trust-remote-code"
@@ -84,7 +84,7 @@ install_trtllm() {
         echo -e "${RED}需要 Docker: apt install docker.io && systemctl start docker${NC}"
         return 1
     fi
-    docker pull nvcr.io/nvidia/tensorrt-llm/release:latest
+    docker pull nvcr.io/nvidia/tensorrt-llm/release:latest || { echo -e "${RED}[ERROR] docker pull 失败（检查 docker 运行/登录 nvcr.io）${NC}"; return 1; }
     echo -e "${GREEN}完成! 使用:${NC}"
     echo "  docker run --gpus all -p 8000:8000 -v /data/models:/data/models -it nvcr.io/nvidia/tensorrt-llm/release:latest"
     echo "  # 容器内: trtllm-serve serve /data/models/... --host 0.0.0.0 --port 8000"
@@ -118,6 +118,21 @@ install_llamacpp() {
 }
 
 IFS=',' read -ra SELECTED <<< "$choices"
+# 写操作确认（curl|sh / uv pip install / git clone+cmake / docker pull 均为系统级安装，与 install_tool 的 y/N 模式对齐——v1.33.3）
+echo -e "${YELLOW}以下操作将安装/构建软件到系统（${ENV_ROOT} 及系统环境）：${NC}"
+for sel in "${SELECTED[@]}"; do
+    sel=$(echo "$sel" | tr -d ' ')
+    case "$sel" in
+        1) echo "  - vLLM (uv venv + uv pip install vllm)" ;;
+        2) echo "  - SGLang (uv venv + uv pip install sglang)" ;;
+        3) echo "  - TensorRT-LLM (docker pull nvcr.io)" ;;
+        4) echo "  - Ollama (curl | sh + ollama pull)" ;;
+        5) echo "  - llama.cpp (git clone + cmake 构建)" ;;
+    esac
+done
+read -rp "确认执行安装? (y/N) " confirm
+[[ ! "$confirm" =~ ^[Yy] ]] && { echo -e "${YELLOW}已取消${NC}"; exit 0; }
+
 for sel in "${SELECTED[@]}"; do
     sel=$(echo "$sel" | tr -d ' ')
     case "$sel" in

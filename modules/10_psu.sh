@@ -64,11 +64,13 @@ run_psu() {
     fi
 
     # ─── 4. pmbus / i2c 工具 ───
+    # 只读探测原则：i2cdetect 默认 SMBus quick command 是写探针，会扰动在线 PSU/VRM/EEPROM——
+    # 必须 -r（SMBus read-byte 只读）；i2cget 本身是读，但 -f 强读仅限探测总线（保持只读无害约定）
     if check_cmd i2cdetect; then
         for bus in /dev/i2c-*; do
             [ -e "$bus" ] || continue
             local bus_num=$(echo "$bus" | grep -oE '[0-9]+$')
-            [ -n "$bus_num" ] && run_and_log "i2cdetect -y $bus_num 2>/dev/null" "${dir}/i2c_bus${bus_num}.log"
+            [ -n "$bus_num" ] && run_and_log "i2cdetect -y -r $bus_num 2>/dev/null" "${dir}/i2c_bus${bus_num}.log"
         done
     fi
     # PMBus 直读（i2cget）：扫描常见 PSU 地址读 PMBus 标识寄存器（部分平台 IPMI 无 FRU，型号在 PMBus 芯片里）

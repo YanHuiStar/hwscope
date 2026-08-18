@@ -32,8 +32,8 @@ run_storage() {
         run_and_log_parallel 4 \
             "lsblk -o NAME,MODEL,SERIAL,SIZE,TRAN,ROTA,MOUNTPOINT,FSTYPE,TYPE 2>/dev/null" "${dir}/block_devices_all.log" \
             "lsblk -o NAME,TRAN,SIZE,ROTA,MODEL 2>/dev/null | grep -v 'loop' | grep -v 'rom'" "${dir}/block_devices_summary.log" \
-            "echo '=== SATA ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'sata' && echo '=== SAS ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'sas' && echo '=== NVMe ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'nvme' && echo '=== USB ===' && lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'usb'" "${dir}/block_devices_by_type.log" \
-            "echo '=== ROTA=1 (HDD) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=\$(cat /sys/block/\$n/queue/rotational 2>/dev/null); [ \"\$rota\" = \"1\" ] && echo \"\$n \$m \$s \$t (HDD)\"; done && echo '=== ROTA=0 (SSD/NVMe) ===' && lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=\$(cat /sys/block/\$n/queue/rotational 2>/dev/null); [ \"\$rota\" = \"0\" ] && echo \"\$n \$m \$s \$t (SSD)\"; done" "${dir}/drive_type_ssd_hdd.log"
+            "echo '=== SATA ==='; lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'sata' || true; echo '=== SAS ==='; lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'sas' || true; echo '=== NVMe ==='; lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'nvme' || true; echo '=== USB ==='; lsblk -d -o NAME,MODEL,SERIAL,SIZE,ROTA 2>/dev/null | grep 'usb' || true" "${dir}/block_devices_by_type.log" \
+            "echo '=== ROTA=1 (HDD) ==='; lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=\$(cat /sys/block/\$n/queue/rotational 2>/dev/null); [ \"\$rota\" = \"1\" ] && echo \"\$n \$m \$s \$t (HDD)\"; done; echo '=== ROTA=0 (SSD/NVMe) ==='; lsblk -d -o NAME,MODEL,SIZE,TRAN 2>/dev/null | grep -v 'NAME' | while read n m s t; do rota=\$(cat /sys/block/\$n/queue/rotational 2>/dev/null); [ \"\$rota\" = \"0\" ] && echo \"\$n \$m \$s \$t (SSD)\"; done; true" "${dir}/drive_type_ssd_hdd.log"
     else
         run_and_log "lsblk -o NAME,MODEL,SERIAL,SIZE,TRAN,ROTA,MOUNTPOINT,FSTYPE,TYPE 2>/dev/null" "${dir}/block_devices_all.log"
     fi
@@ -76,7 +76,7 @@ run_storage() {
                         smart_jobs+=("smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log")
                         ;;
                 esac
-            done <<< "$smart_devs"
+            done < <(printf '%s\n' "$smart_devs")
             [ "${#smart_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${smart_jobs[@]}"
         fi
         fi  # IS_WSL
@@ -116,8 +116,11 @@ run_storage() {
                 npo=$(echo "$nsmart" | grep "power_on_hours" | awk '{print $3}')
                 npc=$(echo "$nsmart" | grep "power_cycles" | awk '{print $3}')
                 nspare=$(echo "$nsmart" | grep "percent_used" | awk '{print $3}')
-                # percent_used 是已用百分比，Spare% = 100 - used
-                [ -n "$nspare" ] && nspare=$((100 - nspare))
+                # percent_used 是已用百分比，Spare% = 100 - used（先去 % 再算术，防 "3%" 语法错误）
+                if [ -n "$nspare" ]; then
+                    nspare=$(echo "$nspare" | tr -d '%')
+                    if [[ "$nspare" =~ ^[0-9]+$ ]]; then nspare=$((100 - nspare)); else nspare="N/A"; fi
+                fi
             fi
             [ -z "$npo" ] && npo="0"; [ -z "$npc" ] && npc="0"; [ -z "$nspare" ] && nspare="N/A"
             echo "${nname}|NVMe|${nsize:-N/A}|${nmodel:-N/A}|${nsn:-N/A}|${nfw:-N/A}|${nbdf:-N/A}|${npo}|${npc}|${nspare}%"
@@ -129,9 +132,13 @@ run_storage() {
             # 排除分区（sda1 等）：物理盘在 /sys/block 有直接条目
             [ -d "/sys/block/${sname}" ] || continue
             local sz=$(blockdev --getsize64 "$sdev" 2>/dev/null)
+            # blockdev 缺失时回退 lsblk 字节数（防极简系统/容器静默丢盘）
+            if [ -z "$sz" ] && check_cmd lsblk; then
+                sz=$(lsblk -b -d -n -o SIZE "$sdev" 2>/dev/null | tr -d ' ')
+            fi
             [ -z "$sz" ] || [ "$sz" = "0" ] && continue
             local ssize=$(lsblk -d -n -o SIZE "$sdev" 2>/dev/null | tr -d ' ')
-            local smodel="" ssn="" sfw="" sinter="SATA"
+            local smodel="" ssn="" sfw="" stype="SATA"
             if check_cmd smartctl; then
                 local sinfo=$(smartctl -i "$sdev" 2>/dev/null)
                 ssn=$(echo "$sinfo" | grep "Serial Number:" | awk '{print $3}')
@@ -141,8 +148,9 @@ run_storage() {
                 [ -z "$ssn" ] && ssn=$(echo "$sinfo" | grep -iE "^Serial number:" | cut -d: -f2- | xargs)
                 [ -z "$smodel" ] && smodel=$(echo "$sinfo" | grep -iE "^Product:" | cut -d: -f2- | xargs)
                 [ -z "$sfw" ] && sfw=$(echo "$sinfo" | grep -iE "^Revision:" | cut -d: -f2- | xargs)
-                sinter=$(echo "$sinfo" | grep "SATA Version is" | cut -d':' -f2- | xargs | sed 's/ *(current:.*//')
-                [ -z "$sinter" ] && sinter="SATA"
+                # 类型区分：SATA 盘有 "SATA Version is"；SCSI/SAS 格式（走 Product:/Serial number: 回退或 Transport protocol 含 SAS）判 SAS
+                if echo "$sinfo" | grep -qi "SATA Version is"; then stype="SATA"
+                elif echo "$sinfo" | grep -qiE "^Product:|^Serial number:|Transport protocol"; then stype="SAS"; fi
             fi
             [ -z "$smodel" ] && smodel=$(cat "/sys/block/${sname}/device/model" 2>/dev/null | xargs)
             [ -z "$ssn" ] && ssn=$(cat "/sys/block/${sname}/device/serial" 2>/dev/null | xargs)
@@ -153,7 +161,7 @@ run_storage() {
             if [ -z "$spo" ] || ! echo "$spo" | grep -qE "^[0-9]+$"; then spo="0"; fi
             local spc=$(echo "$sattrs" | grep -i "Power_Cycle" | awk '{print $NF; exit}')
             if [ -z "$spc" ] || ! echo "$spc" | grep -qE "^[0-9]+$"; then spc="0"; fi
-            echo "${sname}|SATA|${ssize:-N/A}|${smodel:-N/A}|${ssn:-N/A}|${sfw:-N/A}|${sinter}|${spo}|${spc}|N/A"
+            echo "${sname}|${stype}|${ssize:-N/A}|${smodel:-N/A}|${ssn:-N/A}|${sfw:-N/A}|N/A|${spo}|${spc}|N/A"
         done
     } > "${dir}/disk_inventory.csv" 2>/dev/null || true
 

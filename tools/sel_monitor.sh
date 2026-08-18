@@ -45,12 +45,21 @@ fi
 # ─── 增量对比：基线 vs 当前 ───
 # SEL 只追加不删除：ID 单调递增，新增 = ID 大于上次最大 ID 的所有行
 # （比整行匹配可靠：事件内容/时间戳不变，只有 ID 会滚动）
+# 注意：SEL 是环形缓冲——被 sel clear 清空或写满翻转后 ID 从 1 重新计数，
+# 全部 ≤ LAST_MAX_ID 会被误判"无新增"（故障巡检最危险的假阴性）——v1.33.3 加翻转检测
 LAST_MAX_ID=$(grep -oE "^[[:space:]]*[0-9]+" "$LAST_SEEN" 2>/dev/null | sort -n | tail -1)
 LAST_MAX_ID=${LAST_MAX_ID:-0}
-NEW_EVENTS=$(awk -v min="$LAST_MAX_ID" '
+CUR_MAX_ID=$(grep -oE "^[[:space:]]*[0-9]+" "$NOW" 2>/dev/null | sort -n | tail -1)
+CUR_MAX_ID=${CUR_MAX_ID:-0}
+WRAPPED=0
+if [ "${CUR_MAX_ID:-0}" -gt 0 ] && [ "${CUR_MAX_ID:-0}" -lt "$LAST_MAX_ID" ]; then
+    WRAPPED=1
+    echo -e "${YELLOW}⚠ SEL 可能已被清空/环形翻转（当前最大 ID ${CUR_MAX_ID} < 上次 ${LAST_MAX_ID}）——以下为当前全部事件，建议 --reset 重建基线${NC}"
+fi
+NEW_EVENTS=$(awk -v min="$LAST_MAX_ID" -v wrap="$WRAPPED" '
     match($0, /^[[:space:]]*[0-9]+/) {
         id = substr($0, RSTART, RLENGTH) + 0
-        if (id > min) print
+        if (wrap || id > min) print
     }' "$NOW")
 NEW_COUNT=$(echo -n "$NEW_EVENTS" | grep -c . || true)
 

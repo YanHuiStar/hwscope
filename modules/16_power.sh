@@ -38,15 +38,18 @@ run_power() {
     if [ -n "$BMC_IP" ] && check_cmd curl; then
         NETRC_TMP=$(mktemp)
         chmod 600 "$NETRC_TMP"
+        trap 'rm -f "$NETRC_TMP"' EXIT INT TERM
         printf 'machine %s login %s password %s\n' "$BMC_IP" "$BMC_USER" "$BMC_PASS" > "$NETRC_TMP"
         # 先取 Chassis 集合，解析首个成员，再取该成员 /Power（含 PowerConsumedWatts/EnergykWh）
+        # 排除集合自身的 @odata.id（顶层响应自带 /redfish/v1/Chassis，拼接 /Power 会 404）
         run_and_log "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Chassis 2>&1 | head -100" "${dir}/redfish_chassis.log"
         local _member
-        _member=$(grep -oE '"@odata\.id"[[:space:]]*:[[:space:]]*"[^"]*"' "${dir}/redfish_chassis.log" 2>/dev/null | head -1 | sed 's/.*"\(.*\)"/\1/')
+        _member=$(grep -oE '"@odata\.id"[[:space:]]*:[[:space:]]*"[^"]*"' "${dir}/redfish_chassis.log" 2>/dev/null | sed 's/.*"\(.*\)"/\1/' | grep -v "^/redfish/v1/Chassis$" | head -1)
         if [ -n "$_member" ]; then
             run_and_log "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}${_member}/Power 2>&1 | head -100" "${dir}/redfish_power.log"
         fi
         rm -f "$NETRC_TMP"
+        trap - EXIT INT TERM
     else
         echo -e "${YELLOW}[SKIP] Redfish Power 未采集（BMC_IP 未配置或无 curl）${NC}"
     fi
@@ -71,21 +74,27 @@ run_power() {
         local _eline
         _eline=$(grep -v "^#" "${dir}/energy_sdr.log" | grep -iE 'energy|kwh|joule' | head -1)
         if [ -n "$_eline" ]; then
-            en_val=$(echo "$_eline" | awk -F'|' '{gsub(/ /,"",$2); print $2}' | grep -oE "[0-9.]+" | head -1)
-            en_unit=$(echo "$_eline" | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}')
+            # SDR 行布局容错：读数可能为 $2 纯数字或 "$2 读数+单位"（如 "12345678 Joules"）、$3 可能是状态列
+            en_val=$(echo "$_eline" | grep -oE "[0-9][0-9.]*" | head -1)
+            en_unit=$(echo "$_eline" | awk -F'|' '{print $2" "$3" "$4}' | grep -oiE "kwh|joule|wh|watt.?hour" | head -1)
             en_src="IPMI SDR"
-            case "$en_unit" in
-                *Joule*|*joule*) en_kwh=$(awk -v j="$en_val" 'BEGIN{printf "%.4f", j/3600000}' < /dev/null) ;;
-                *Wh*|*wh*|*Watt*Hour*) en_kwh=$(awk -v w="$en_val" 'BEGIN{printf "%.4f", w/1000}' < /dev/null) ;;
-                *kWh*|*KWH*) en_kwh=$(awk -v k="$en_val" 'BEGIN{printf "%.4f", k}' < /dev/null) ;;
-                *) en_kwh="" ;;   # 未知单位不猜测（曾兜底按 kWh 换算，Joules 变体差 360 万倍——v1.33.2 修复）
-            esac
-            # 未知单位 → en_kwh 保持空，走 Redfish 兜底或"需持续采样"文案，不生成错误台账
+            # 空值/hex 读数守卫（防 awk 空值当 0 伪造 0.0000 kWh 台账）
+            if [ -z "$en_val" ] || ! [[ "$en_val" =~ ^[0-9.]+$ ]]; then
+                en_val=""; en_kwh=""
+            else
+                case "$en_unit" in
+                    *kWh*|*KWH*) en_kwh=$(awk -v k="$en_val" 'BEGIN{printf "%.4f", k}' < /dev/null) ;;
+                    *Joule*|*joule*) en_kwh=$(awk -v j="$en_val" 'BEGIN{printf "%.4f", j/3600000}' < /dev/null) ;;
+                    *Wh*|*wh*|*Watt*Hour*) en_kwh=$(awk -v w="$en_val" 'BEGIN{printf "%.4f", w/1000}' < /dev/null) ;;
+                    *) en_kwh="" ;;   # 未知单位不猜测（Joules 变体差 360 万倍）
+                esac
+            fi
+            # 未知单位/空值 → en_kwh 保持空，走 Redfish 兜底或"需持续采样"文案，不生成错误台账
         fi
     fi
     if [ -z "$en_kwh" ] && [ -f "${dir}/redfish_power.log" ]; then
         en_val=$(grep -oE '"EnergykWh"[^0-9]*[0-9.]+' "${dir}/redfish_power.log" | grep -oE "[0-9.]+" | head -1)
-        if [ -n "$en_val" ]; then
+        if [ -n "$en_val" ] && [[ "$en_val" =~ ^[0-9.]+$ ]]; then
             en_kwh=$(awk -v k="$en_val" 'BEGIN{printf "%.4f", k}' < /dev/null)
             en_unit="kWh"; en_src="Redfish Power"
         fi

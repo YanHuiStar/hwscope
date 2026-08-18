@@ -45,7 +45,7 @@ run_cpu() {
         "cat /proc/cpuinfo" "${dir}/proc_cpuinfo_full.log" \
         "lscpu -e" "${dir}/lscpu_extended.log" \
         "cat /sys/devices/system/cpu/smt/active 2>/dev/null" "${dir}/smt_status.log" \
-        "awk -F':[ \\\\t]*' '/cpu MHz/{s+=\$2; c++} END{if(c>0) printf \"Average: %.0f MHz, Total CPUs: %d\\n\", s/c, c; else print \"N/A (no cpu MHz in cpuinfo)\"}' /proc/cpuinfo 2>/dev/null" "${dir}/cpu_freq.log" \
+        "awk -F':[ \\t]*' '/cpu MHz/{s+=\$2; c++} END{if(c>0) printf \"Average: %.0f MHz, Total CPUs: %d\\n\", s/c, c; else print \"N/A (no cpu MHz in cpuinfo)\"}' /proc/cpuinfo 2>/dev/null" "${dir}/cpu_freq.log" \
         "LANG=C lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
 
 write_manifest "${dir}/manifest.txt" \

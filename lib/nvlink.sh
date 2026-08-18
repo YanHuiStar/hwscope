@@ -45,9 +45,9 @@ nvlink_parse_crc() {
     echo "$1" | grep -iE "CRC errors" | grep -vE "CRC errors *: *0$"
 }
 
-# 解析 nvlink --status：输出 down/degraded 的链路行
+# 解析 nvlink --status：输出 down/degraded 的链路行（全量不截断，展示截取交报告端）
 nvlink_parse_down() {
-    echo "$1" | grep -iE "is down|degraded" | head -20
+    echo "$1" | grep -iE "is down|degraded"
 }
 
 # 从采集目录加载 NVLink 状态（供 report.sh 调用）

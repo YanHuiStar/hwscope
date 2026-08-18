@@ -48,8 +48,8 @@ run_fan() {
             local dev_name=""
             [ -f "${hwmon}/name" ] && dev_name=$(cat "${hwmon}/name" 2>/dev/null)
 
-            # 只采集含风扇的设备
-            if ls "${hwmon}"/fan*_input 2>/dev/null | head -1 >/dev/null; then
+            # 只采集含风扇的设备（直接判 ls 退出码——管道取 head 退出码恒 0 导致守卫恒真，每个 hwmon 目录都建空目录）
+            if ls "${hwmon}"/fan*_input >/dev/null 2>&1; then
                 local fan_dir="${dir}/hwmon_${hwmon_name}_${dev_name}"
                 mkdir -p "$fan_dir"
 

@@ -28,9 +28,7 @@ BMC_USER="${BMC_USER:-admin}"
 BMC_PASS="${BMC_PASS:-admin}"
 # 密码通过环境变量传给 ipmitool，避免出现在命令行/日志/ps 中
 export IPMI_PASSWORD="${BMC_PASS}"
-LOCAL=""
 if [ -z "$BMC_IP" ]; then
-    LOCAL=1
     echo -e "${CYAN}[INFO] BMC_IP 为空，使用本地 IPMI${NC}"
 else
     echo -e "${CYAN}[INFO] 远程 BMC: ${BMC_USER}@${BMC_IP}${NC}"
@@ -71,9 +69,11 @@ mkdir -p "$REPORT_DIR"
 IFS=',' read -ra SELECTED <<< "$choices"
 for sel in "${SELECTED[@]}"; do
     sel=$(echo "$sel" | tr -d ' ')
+    _found=0
     for op in "${OPS[@]}"; do
         IFS=':' read -r num name cmd warn <<< "$op"
         if [ "$sel" = "$num" ]; then
+            _found=1
             echo -e "${CYAN}━━━ ${name} ━━━${NC}"
             if [ "$warn" = "写入操作" ]; then
                 read -p " ${YELLOW}⚠ 此操作会修改 BMC，确认? (y/N)${NC} " -r confirm
@@ -88,6 +88,8 @@ for sel in "${SELECTED[@]}"; do
             echo ""
         fi
     done
+    # 未知选项提示（输入 9/abc 静默匹配不到无感知——v1.33.3）
+    [ "$_found" -eq 0 ] && echo -e "${YELLOW}[SKIP] 未知选项 ${sel}${NC}"
 done
 
 echo -e "${GREEN}操作完成${NC}"

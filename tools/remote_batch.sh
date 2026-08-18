@@ -34,13 +34,13 @@ usage() {
     echo "  $0 -H root@10.0.0.1 --push fixcrlf.sh /tmp/fixcrlf.sh"
 }
 
-HOSTS=(); CMD=""; PUSH_LOCAL=""; PUSH_REMOTE=""; OUT_DIR=""; SSH_OPTS="-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_batch_%r@%h -o ControlPersist=300"
+HOSTS=(); CMD=""; PUSH_LOCAL=""; PUSH_REMOTE=""; OUT_DIR=""; SSH_OPTS="-o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_batch_%r@%h -o ControlPersist=300"
 while [ $# -gt 0 ]; do
     case "$1" in
-        -H) for h in $2; do HOSTS+=("$h"); done; shift 2 ;;
-        -c) CMD="$2"; shift 2 ;;
-        --push) PUSH_LOCAL="$2"; PUSH_REMOTE="$3"; shift 3 ;;
-        -o) OUT_DIR="$2"; shift 2 ;;
+        -H) [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] -H 缺少主机列表\033[0m"; exit 1; }; for h in $2; do HOSTS+=("$h"); done; shift 2 ;;
+        -c) [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] -c 缺少命令\033[0m"; exit 1; }; CMD="$2"; shift 2 ;;
+        --push) [ $# -ge 3 ] || { echo -e "\033[0;31m[ERROR] --push 需要 本地文件 与 远端路径\033[0m"; exit 1; }; PUSH_LOCAL="$2"; PUSH_REMOTE="$3"; shift 3 ;;
+        -o) [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] -o 缺少目录\033[0m"; exit 1; }; OUT_DIR="$2"; shift 2 ;;
         --interactive) : ;;   # 默认已支持交互式密码（v1.31.5 起），保留参数兼容
         -h|--help) usage; exit 0 ;;
         *) echo "[WARN] 未知参数: $1"; shift ;;
@@ -49,6 +49,7 @@ done
 
 [ "${#HOSTS[@]}" -eq 0 ] && { echo -e "\033[0;31m[ERROR] 缺少 -H 目标机\033[0m"; usage; exit 1; }
 [ -z "$CMD" ] && [ -z "$PUSH_LOCAL" ] && { echo -e "\033[0;31m[ERROR] 需要 -c 命令 或 --push 文件\033[0m"; usage; exit 1; }
+[ -n "$CMD" ] && [ -n "$PUSH_LOCAL" ] && { echo -e "\033[0;31m[ERROR] -c 与 --push 不能同时使用（否则命令被静默忽略）\033[0m"; exit 1; }   # v1.33.3
 command -v ssh >/dev/null 2>&1 || { echo -e "\033[0;31m[ERROR] 未安装 ssh\033[0m"; exit 1; }
 [ -z "$OUT_DIR" ] && OUT_DIR="${SCRIPT_DIR}/batch_output"
 mkdir -p "$OUT_DIR"
@@ -66,6 +67,10 @@ for host in "${HOSTS[@]}"; do
     echo "▶ ${host}"
     if [ -n "$PUSH_LOCAL" ]; then
         [ ! -f "$PUSH_LOCAL" ] && { echo -e "  \033[0;31m[ERROR] 本地文件不存在: ${PUSH_LOCAL}\033[0m"; fail=$((fail+1)); continue; }
+        # 远端路径含空白/通配符会被远端 shell 二次拆分——校验拒绝（v1.33.3）
+        if echo "$PUSH_REMOTE" | grep -q '[[:space:]]'; then
+            echo -e "  \033[0;31m[ERROR] 远端路径不能含空格: ${PUSH_REMOTE}\033[0m"; fail=$((fail+1)); continue
+        fi
         scp $SSH_OPTS "$PUSH_LOCAL" "${host}:${PUSH_REMOTE}" > "$outfile" 2>&1
     else
         ssh $SSH_OPTS "$host" "$CMD" > "$outfile" 2>&1

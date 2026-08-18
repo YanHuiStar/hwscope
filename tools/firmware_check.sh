@@ -65,6 +65,11 @@ echo ""
 # ─── 模式处理 ───
 case "$1" in
     --save-baseline)
+        if [ -f "$BASELINE" ]; then
+            read -p "  ⚠ 已有基线 $BASELINE，覆盖? (y/N) " -r confirm
+            [[ ! "$confirm" =~ ^[Yy] ]] && { echo "  已取消"; exit 0; }
+            cp "$BASELINE" "${BASELINE}.bak-$(date +%Y%m%d%H%M%S)" 2>/dev/null   # 旧基线备份防误覆盖
+        fi
         cp "$NOW" "$BASELINE"
         echo -e "${GREEN}[OK] 已保存为基线: $BASELINE${NC}"
         ;;
