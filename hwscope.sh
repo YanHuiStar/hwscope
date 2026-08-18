@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.31.2 (2026-08)
+# Version : 1.31.3 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -84,7 +84,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.31.2"
+HWSCOPE_VERSION="v1.31.3"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -439,8 +439,7 @@ if [ -f "${SCRIPT_DIR}/tools/report.sh" ]; then
     fi
 fi
 
-# ─── 打包归档（与 REPORT 阶段分隔，独立排版） ───
-echo ""
+# ─── 打包归档（与 REPORT 阶段分隔，独立排版；空行由 report.sh 末尾提供，避免双空行） ───
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}[ARCHIVE] 开始打包归档...${NC}"
 echo -e "${CYAN}========================================${NC}"
