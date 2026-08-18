@@ -10,8 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 source "${SCRIPT_DIR}/lib/nvlink.sh" 2>/dev/null || true
 
-# ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>]） ───
-OUT=""; FORMAT=""; TEST_DIR=""
+# ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>]） ───
+OUT=""; FORMAT=""; TEST_DIR=""; BASELINE_DIR=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --json|--md|--txt|--both|--acceptance) FORMAT="$1"; shift ;;
@@ -19,6 +19,12 @@ while [ $# -gt 0 ]; do
             TEST_DIR="$2"
             if [ -z "$TEST_DIR" ] || [ ! -d "$TEST_DIR" ]; then
                 echo -e "${RED}[ERROR] --test-dir 需要有效压测目录路径（如 logs/test/20260818120000）${NC}"; exit 1
+            fi
+            shift 2 ;;
+        --baseline)
+            BASELINE_DIR="$2"
+            if [ -z "$BASELINE_DIR" ] || [ ! -d "$BASELINE_DIR" ]; then
+                echo -e "${RED}[ERROR] --baseline 需要有效历史采集目录路径${NC}"; exit 1
             fi
             shift 2 ;;
         --*) echo -e "${YELLOW}[WARN] 未知参数: $1${NC}"; shift ;;
@@ -1502,6 +1508,113 @@ if [ -n "$TEST_DIR" ] && [ -d "$TEST_DIR" ]; then
     fi
 fi
 
+# ─── 报告基线对比（--baseline <历史采集目录>；读两侧数据，输出时序差异） ───
+BASELINE_COMPARE=""; BASELINE_DIR_LABEL=""; BASELINE_COMPARE_NOTE=""
+if [ -n "$BASELINE_DIR" ]; then
+    BL_JSON="${BASELINE_DIR}/hwscope_report.json"
+    if [ ! -f "$BL_JSON" ]; then
+        echo -e "${YELLOW}[WARN] 基线目录缺少 hwscope_report.json: ${BASELINE_DIR}，跳过基线对比${NC}"
+    else
+        BASELINE_DIR_LABEL="$BASELINE_DIR"
+        # JSON 块内字段提取（依赖 report.sh 固定缩进格式；零新依赖）
+        # 注意：单行 JSON 对象含多个键值对（如 details 数组行），必须用 index() 定位
+        # 目标键后取其后值；贪心 sub(/.*: *"/) 会误取行内最后一个键的值（v1.30.0 踩坑）
+        bl_get() {   # $1=块 $2=键 → 标量值
+            awk -v blk="$1" -v key="$2" '
+                $0 ~ "^  \"" blk "\": \\{" { inblk=1; next }
+                inblk && /^  \},?$/ { exit }
+                inblk && (idx = index($0, "\"" key "\":")) {
+                    rest = substr($0, idx + length(key) + 3)
+                    if (rest ~ /^[[:space:]]*"/) { sub(/^[[:space:]]*"/, "", rest); sub(/".*/, "", rest) }
+                    else { sub(/^[[:space:]]*/, "", rest); sub(/,.*/, "", rest) }
+                    gsub(/^ +| +$/, "", rest)
+                    if (rest != "") { print rest; exit }
+                }
+            ' "$BL_JSON" 2>/dev/null
+        }
+        bl_list() {  # $1=块 $2=键 → 块内数组对象中该键的全部取值（逐行）
+            awk -v blk="$1" -v key="$2" '
+                $0 ~ "^  \"" blk "\": \\{" { inblk=1; next }
+                inblk && /^  \},?$/ { exit }
+                inblk && (idx = index($0, "\"" key "\":")) {
+                    rest = substr($0, idx + length(key) + 3)
+                    sub(/^[[:space:]]*"/, "", rest); sub(/".*/, "", rest)
+                    gsub(/^ +| +$/, "", rest)
+                    if (rest != "" && rest != "N/A") print rest
+                }
+            ' "$BL_JSON" 2>/dev/null
+        }
+        # 集合差异行：$1=项名 $2=当前列表 $3=基线列表 → 输出 新增/移除/一致 行
+        set_diff_rows() {
+            local item="$1" cur="$2" base="$3" c b added removed
+            c=$(printf '%s\n' $cur | grep -v "^$" | sort -u)
+            b=$(printf '%s\n' $base | grep -v "^$" | sort -u)
+            [ -z "$c" ] && [ -z "$b" ] && return
+            if [ -z "$c" ]; then BASELINE_COMPARE="${BASELINE_COMPARE}${item}|移除|—|$(echo "$b" | tr '\n' ',' | sed 's/,$//')"$'\n'; return; fi
+            if [ -z "$b" ]; then BASELINE_COMPARE="${BASELINE_COMPARE}${item}|新增|$(echo "$c" | tr '\n' ',' | sed 's/,$//')|—"$'\n'; return; fi
+            added=$(comm -23 <(echo "$c") <(echo "$b") | tr '\n' ',' | sed 's/,$//')
+            removed=$(comm -13 <(echo "$c") <(echo "$b") | tr '\n' ',' | sed 's/,$//')
+            [ -n "$added" ] && BASELINE_COMPARE="${BASELINE_COMPARE}${item}|新增|${added}|—"$'\n'
+            [ -n "$removed" ] && BASELINE_COMPARE="${BASELINE_COMPARE}${item}|移除|—|${removed}"$'\n'
+            [ -z "$added" ] && [ -z "$removed" ] && BASELINE_COMPARE="${BASELINE_COMPARE}${item}|一致|—|—"$'\n'
+        }
+        # 标量对比行：$1=项名 $2=当前值 $3=基线值（数值口径先归一：取 "/" 前部分）
+        bl_cmp() {
+            local item="$1" cur_v="${2:-—}" base_v="${3:-—}"
+            [ -z "$cur_v" ] && cur_v="—"; [ -z "$base_v" ] && base_v="—"
+            cur_v="${cur_v%%/*}"; base_v="${base_v%%/*}"
+            [ "$cur_v" = "—" ] && [ "$base_v" = "—" ] && return
+            local st="一致"; [ "$cur_v" != "$base_v" ] && st="变化"
+            BASELINE_COMPARE="${BASELINE_COMPARE}${item}|${st}|${cur_v}|${base_v}"$'\n'
+        }
+        # ── 标量对比 ──
+        bl_cmp "BIOS" "${BIOS_VERSION:-}" "$(bl_get motherboard bios)"
+        bl_cmp "CPU 型号" "${CPU_MODEL:-}" "$(bl_get cpu model)"
+        bl_cmp "内存总量" "${MEM_TOTAL_PHYS:-${MEM_TOTAL:-}}" "$(bl_get memory total)"
+        bl_cmp "内存插槽(已插)" "${MEM_POPULATED:-}" "$(bl_get memory populated)"
+        bl_cmp "GPU 数量" "${GPU_COUNT:-}" "$(bl_get gpu count)"
+        bl_cmp "GPU VBIOS" "${GPU_VBIOS:-}" "$(bl_get gpu vbios)"
+        bl_cmp "BMC 固件" "${BMC_FW:-}" "$(bl_get bmc firmware)"
+        # ── 集合对比（SN 级：新增/移除即部件变更） ──
+        _cur_gpu_sn=$(echo "${GPU_SERIALS:-}" | tr ',' '\n')
+        set_diff_rows "GPU 序列号" "$_cur_gpu_sn" "$(bl_list gpu serial)"
+        _cur_disk_sn=$(echo "$DISK_DETAILS" | awk -F'|' '$1!=""{print $5}')
+        set_diff_rows "磁盘序列号" "$_cur_disk_sn" "$(bl_list storage serial)"
+        _cur_nic_sn=$(echo "$NIC_DETAILS" | awk -F'|' '$1!=""{print $4}')
+        set_diff_rows "网卡序列号" "$_cur_nic_sn" "$(bl_list network serial)"
+        # ── 固件版本逐项对比（component|device → version） ──
+        declare -A _fw_cur _fw_base
+        if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
+            while IFS='|' read -r _fc _fd _fcur _fbase _fst _fnote; do
+                [ -z "$_fc" ] && continue
+                _fw_cur["${_fc}|${_fd}"]="$_fcur"
+            done < <(printf '%s\n' "$FW_COMPLIANCE_DETAILS")
+        fi
+        while IFS= read -r _fl; do
+            _fc=$(echo "$_fl" | sed -n 's/.*"component": "\([^"]*\)".*/\1/p')
+            _fd=$(echo "$_fl" | sed -n 's/.*"device": "\([^"]*\)".*/\1/p')
+            _fv=$(echo "$_fl" | sed -n 's/.*"current": "\([^"]*\)".*/\1/p')
+            [ -n "$_fc" ] && [ -n "$_fd" ] && [ -n "$_fv" ] && _fw_base["${_fc}|${_fd}"]="$_fv"
+        done < <(grep -E '^\s*\{\s*"component"' "$BL_JSON")
+        # 合并 key 列表（注意：key 含空格，必须逐行 read，禁止 for 循环单词拆分）
+        while IFS= read -r _k; do
+            [ -z "$_k" ] && continue
+            _cv="${_fw_cur[$_k]:-}"; _bv="${_fw_base[$_k]:-}"
+            # 显示名去除 key 内分隔符（组件|设备 → "组件 设备"），避免破坏 | 分隔行
+            _kdisp="${_k//|/ }"
+            if [ -z "$_cv" ]; then BASELINE_COMPARE="${BASELINE_COMPARE}固件 ${_kdisp}|移除|—|${_bv}"$'\n'
+            elif [ -z "$_bv" ]; then BASELINE_COMPARE="${BASELINE_COMPARE}固件 ${_kdisp}|新增|${_cv}|—"$'\n'
+            elif [ "$_cv" != "$_bv" ]; then BASELINE_COMPARE="${BASELINE_COMPARE}固件 ${_kdisp}|变化|${_cv}|${_bv}"$'\n'
+            fi
+        done < <(printf '%s\n' "${!_fw_cur[@]}" "${!_fw_base[@]}" | sort -u)
+        BASELINE_COMPARE=$(printf '%b' "$BASELINE_COMPARE")
+        if [ -n "$BASELINE_COMPARE" ]; then
+            _bl_chg=$(printf '%s\n' "$BASELINE_COMPARE" | grep -vc "|一致|")
+            BASELINE_COMPARE_NOTE="与 ${BASELINE_DIR_LABEL} 对比：共 $(printf '%s\n' "$BASELINE_COMPARE" | grep -c .) 项，${_bl_chg} 项有变化（新增/移除/版本变化）"
+        fi
+    fi
+fi
+
 # ─── 生成 JSON ───
 gen_json() {
     local f="${OUT}/hwscope_report.json"
@@ -1624,6 +1737,15 @@ gen_json() {
             $1 != "" {
                 for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
                 printf "      {\"name\": \"%s\", \"status\": \"%s\", \"elapsed_s\": \"%s\", \"detail_file\": \"%s\"},\n", $1, $2, $3, $4
+            }' | sed '$ s/,$//')
+    fi
+    # 基线对比 JSON 数组（item|status|current|baseline）
+    local baseline_compare_json=""
+    if [ -n "$BASELINE_COMPARE" ]; then
+        baseline_compare_json=$(printf '%s' "$BASELINE_COMPARE" | awk -F'|' '
+            $1 != "" {
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                printf "      {\"item\": \"%s\", \"status\": \"%s\", \"current\": \"%s\", \"baseline\": \"%s\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
     fi
     cat > "$f" << EOF
@@ -1828,6 +1950,13 @@ ${bmc_consistency_json}
     "dir": "${TEST_DIR_LABEL:-}",
     "items": [
 ${test_details_json}
+    ]
+  },
+  "baseline_compare": {
+    "baseline_dir": "${BASELINE_DIR_LABEL:-}",
+    "note": "${BASELINE_COMPARE_NOTE:-}",
+    "items": [
+${baseline_compare_json}
     ]
   }
 }
@@ -2391,6 +2520,24 @@ $(if [ -n "$TEST_DETAILS" ]; then
     done
 fi)
 
+$(if [ -n "$BASELINE_COMPARE" ]; then
+    echo ""
+    echo "## 基线对比"
+    echo "> ${BASELINE_COMPARE_NOTE}"
+    echo ""
+    echo "| 项 | 状态 | 当前 | 基线 |"
+    echo "|----|------|------|------|"
+    echo "$BASELINE_COMPARE" | while IFS='|' read -r bitem bst bcur bbase; do
+        [ -z "$bitem" ] && continue
+        case "$bst" in
+            变化|新增) bst_disp="⚠️ ${bst}" ;;
+            移除) bst_disp="❌ ${bst}" ;;
+            *) bst_disp="$bst" ;;
+        esac
+        echo "| ${bitem} | ${bst_disp} | ${bcur} | ${bbase} |"
+    done
+fi)
+
 ---
 ## 术语说明
 
@@ -2735,6 +2882,12 @@ $(printf '%s' "$HEALTH_TXT")
         esac
         printf '  %-24s %-16s %5ss  %s\n' "$tname" "$tst" "$telapsed" "$tfile"
     done
+fi)$(if [ -n "$BASELINE_COMPARE" ]; then
+    printf '\n[基线对比]  %s\n' "$BASELINE_COMPARE_NOTE"
+    echo "$BASELINE_COMPARE" | while IFS='|' read -r bitem bst bcur bbase; do
+        [ -z "$bitem" ] && continue
+        printf '  %-26s %-6s 当前:%s  基线:%s\n' "$bitem" "$bst" "$bcur" "$bbase"
+    done
 fi)
 
 [术语说明]
@@ -2937,6 +3090,33 @@ gen_acceptance() {
         add_item "SEL 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical/PCIe 错误（有历史事件）"
     else
         add_item "SEL 事件" "PASS" "无 SEL 事件"
+    fi
+
+    # 14. 固件版本合规（15_firmware 输出；落后=FAIL，无基线判未知=N/A 不误报——未配置基线是
+    #     验收配置缺口而非硬件问题；全部未知即整体 N/A 提示补录基线）
+    if [ -z "$FW_COMPLIANCE_DETAILS" ]; then
+        add_item "固件版本合规" "N/A" "无固件数据（15_firmware 未采集或旧数据）"
+    elif printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -q "|落后|"; then
+        _fw_behind=$(printf '%s\n' "$FW_COMPLIANCE_DETAILS" | awk -F'|' '$5=="落后"{printf "%s(%s→%s), ", $2, $4, $3}')
+        add_item "固件版本合规" "FAIL" "固件落后于推荐版本: ${_fw_behind%,}"
+    elif printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -q "|无法比较|"; then
+        add_item "固件版本合规" "WARN" "部分固件版本格式非标准，需人工核对"
+    elif printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -q "|未知|"; then
+        add_item "固件版本合规" "N/A" "无基线配置（conf/fw_required.txt 未录入推荐版本），仅记录当前版本"
+    else
+        add_item "固件版本合规" "PASS" "全部固件版本满足推荐基线（较新不判落后）"
+    fi
+
+    # 15. OS vs BMC 口径一致（零新采集交叉校验；不一致=FAIL，仅单侧数据=WARN，无数据=N/A）
+    if [ -z "$BMC_CONSISTENCY" ]; then
+        add_item "OS-BMC 口径一致" "N/A" "无 BMC 对比数据（无 IPMI FRU/Redfish 日志）"
+    elif printf '%s\n' "$BMC_CONSISTENCY" | grep -q "⚠️ 不一致"; then
+        _bc_bad=$(printf '%s\n' "$BMC_CONSISTENCY" | awk -F'|' '$4 ~ /不一致/{printf "%s, ", $1}')
+        add_item "OS-BMC 口径一致" "FAIL" "${_bc_bad%,} 不一致（潜在刷 SN/换件/固件不匹配风险）"
+    elif printf '%s\n' "$BMC_CONSISTENCY" | grep -qE "仅(OS|BMC)侧数据"; then
+        add_item "OS-BMC 口径一致" "WARN" "部分对比项仅单侧数据（建议补采 Redfish 完整核验）"
+    else
+        add_item "OS-BMC 口径一致" "PASS" "OS 与 BMC 口径完全一致"
     fi
 
     # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
