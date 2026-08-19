@@ -46,22 +46,30 @@ Write-Host "  HwScope 远程采集 → $H (Windows)" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
 try {
-    # ─── 1+3. 推送项目 + 远端执行（一次 ssh：stdin 传 tar，远端解包后执行；失败即报错） ───
-    Write-Host "[INFO] 推送项目并远端执行（首次提示输密码）..." -ForegroundColor Yellow
-    $excludes = @("--exclude=output", "--exclude=logs", "--exclude=.git", "--exclude=*.tmp")
+    # ─── 1. 本地打包项目（PowerShell 直调 bsdtar；避免 cmd /c 管道引号地狱——cmd 会剥 ssh 命令引号并把 && 当本地分隔符） ───
+    Write-Host "[INFO] 打包项目（第 1 次密码提示：scp 推送）..." -ForegroundColor Yellow
+    $pushFile = Join-Path $env:TEMP "hwscope_push_$TS.tgz"
     $hwArgs = ""
     if ($Modules) { $hwArgs = " --modules $Modules" }
-    $tarCmd = "tar czf - -C `"$ProjectDir`" $($excludes -join " ") ."
-    $sshCmd = "mkdir -p $RemoteDir && tar xzf - -C $RemoteDir && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
-    & cmd /c "$tarCmd | ssh $SSHOpts $H `"$sshCmd`""
+    & tar czf $pushFile -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp .
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 本地打包失败" -ForegroundColor Red; exit 1 }
+
+    # ─── 2. scp 推送 ───
+    & scp $SSHOpts.Split(" ") $pushFile "${H}:${RemoteDir}.tgz"
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 项目推送失败" -ForegroundColor Red; exit 1 }
+    Remove-Item $pushFile -Force -ErrorAction SilentlyContinue
+
+    # ─── 3. ssh 解包 + 远端执行（PowerShell 直调 ssh，远端命令整串作为单参数，&& 由远端 bash 解析） ───
+    Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs --output $RemoteOut（第 2 次密码）" -ForegroundColor Yellow
+    & ssh $SSHOpts.Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
 
-    # ─── 4. 回拉结果 + 顺带清理远端（一次 ssh：打包 → 本地解包；远端 rm 随命令完成，不再额外要密码） ───
-    Write-Host "[INFO] 回拉采集结果 → $OutDir\" -ForegroundColor Yellow
+    # ─── 4. 回拉结果 + 顺带清理远端（cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析，避免 && 被 cmd 当本地分隔符） ───
+    Write-Host "[INFO] 回拉采集结果 → $OutDir\（第 3 次密码）" -ForegroundColor Yellow
     $pullFile = Join-Path $env:TEMP "hwscope_pull_$TS.tgz"
     $remoteParent = Split-Path -Parent $RemoteOut
     $remoteName = Split-Path -Leaf $RemoteOut
-    & cmd /c "ssh $SSHOpts $H `"$Sudo tar czf - -C $remoteParent $remoteName && rm -rf $RemoteDir`" > `"$pullFile`"" 2>&1 | Out-Null
+    & cmd /c "ssh $SSHOpts $H `"$Sudo tar czf - -C $remoteParent $remoteName; rm -rf $RemoteDir`" > `"$pullFile`""
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 结果回拉失败" -ForegroundColor Red; exit 1 }
     & tar xzf $pullFile -C $OutDir
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
