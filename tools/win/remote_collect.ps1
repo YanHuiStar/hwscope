@@ -29,7 +29,7 @@ foreach ($cmd in @("ssh", "scp", "tar")) {
 }
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectDir = Split-Path -Parent $ScriptRoot        # 项目根（tools\win\..）
+$ProjectDir = Split-Path -Parent (Split-Path -Parent $ScriptRoot)   # tools\win → tools → 项目根（hwscope.sh 所在）
 if ([string]::IsNullOrEmpty($OutDir)) { $OutDir = Join-Path $ProjectDir "output" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
@@ -61,7 +61,7 @@ try {
 
     # ─── 3. ssh 解包 + 远端执行（PowerShell 直调 ssh，远端命令整串作为单参数，&& 由远端 bash 解析） ───
     Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs --output $RemoteOut（第 2 次密码）" -ForegroundColor Yellow
-    & ssh $SSHOpts.Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
+    & ssh $SSHOpts.Split(" ") $H "mkdir -p $RemoteDir && ls -la ${RemoteDir}.tgz && tar xzf ${RemoteDir}.tgz -C $RemoteDir && echo '=== 解包内容 ===' && ls -la $RemoteDir | head -15 && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
 
     # ─── 4. 回拉结果 + 顺带清理远端（cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析，避免 && 被 cmd 当本地分隔符） ───
