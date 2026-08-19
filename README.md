@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.34.0 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.34.1 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -249,7 +249,8 @@ bash tools/report_server.sh --stop
 - **无 GPU 机头**：GPU 相关 4 项判 `N/A`（无本地 GPU，模组单独采集验收），**不计入"数据不足"判定**——机头无 GPU 属平台固有形态，非数据缺失
 - **无 BMC 机器**：OS-BMC 口径一致判 `N/A`（IPMI 日志全错误 = 平台无 BMC），**不计入"数据不足"判定**；ipmitool 未安装/模块关闭（无任何 IPMI 日志）则如实计入数据不足（需补装核验）
 - **平台规范豁免**：内存满插 2DPC 降速属平台规范判 PASS；DCGM 配置类 Fail（如 Persistence Mode 未开启）判 WARN（非硬件故障）
-- **无数据不假 PASS**：SEL 采集失败、盘无 SMART 数据、N/A 项≥4 时判"数据不足"，禁止假阳性合格
+- **条件驱动 N/A 计数**（按"当时条件"判定，非一刀切）：**场景/平台固有 N/A 不计入数据不足**——无 GPU（机头）、无 IB 卡或 IB 链路未接线（交付通常不接）、无数据盘（磁盘寿命/SMART 不适用）、固件无基线（默认不对比）、OS-BMC 未启用/无 BMC；**真缺数据计入**——已接线（链路 Active）但无线缆数据、有盘无 SMART、有基线无固件数据、启用后采集失败
+- **无数据不假 PASS**：SEL 采集失败、盘无 SMART 数据、N/A 计数≥4 时判"数据不足"，禁止假阳性合格
 
 ---
 
@@ -351,6 +352,7 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `wol.ps1` / `.bat` | 远程唤醒 | Wake-on-LAN 魔术包 |
 | `ssh_batch.ps1` / `.bat` | 批量命令 | 对多台服务器执行同一条命令 |
 | `fetch_report.ps1` / `.bat` | 巡检汇总 | 拉取各机报告四件套，按主机名归档 |
+| `remote_collect.ps1` / `.bat` | 远程采集 | Windows 原生远程采集（等价 remote_collect.sh：推送项目→远端执行→回拉，交互式密码 + ControlMaster） |
 | `dhcp_server.ps1` / `.bat` | 直连自动分配 IP | 纯 PowerShell DHCP 服务（零依赖），配合 `net_dhcp.sh` 即插即通 |
 | `unblock_ps.ps1` / `.bat` | 首次使用前 | 解除 .ps1 运行限制 |
 
