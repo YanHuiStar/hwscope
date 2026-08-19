@@ -101,7 +101,7 @@ try {
         $remoteLogsDir = Join-Path $ProjectDir "logs\remote_logs"
         New-Item -ItemType Directory -Force -Path $remoteLogsDir | Out-Null
         Get-ChildItem $outLogs -Force | Move-Item -Destination $remoteLogsDir -Force -ErrorAction SilentlyContinue
-        Remove-Item $outLogs -Force -ErrorAction SilentlyContinue
+        Remove-Item $outLogs -Recurse -Force -ErrorAction SilentlyContinue   # 必须 -Recurse：logs 含 report 子目录，缺了会弹交互确认
     }
     Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
 
