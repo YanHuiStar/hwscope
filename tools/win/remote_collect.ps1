@@ -45,11 +45,13 @@ $Sudo = if ($NoSudo -or $IsRoot) { "" } else { "sudo" }
 $TtyOpt = if ($Sudo) { " -t" } else { "" }
 
 # SSH 认证重试（最多 3 次）：仅对认证/连接类失败重试（输出含 Permission denied/密码错误），其他错误直接返回
-# 注意：输出必须 Tee-Object 透传到控制台（直接 $out = & $Action 会吞掉远端采集过程显示）
+# 注意：ForEach-Object 累积捕获 + Out-Host 强制显示——`$out = @( ... | Tee-Object )` 赋值上下文截获管道，
+#       Tee-Object -Variable 是覆盖非追加（多行只留最后一行）
 function Invoke-SSHRetry {
     param([string]$Desc, [scriptblock]$Action, [int]$MaxTries = 3)
     for ($i = 1; $i -le $MaxTries; $i++) {
-        $out = @(& $Action 2>&1 | Tee-Object -Variable teeOut)
+        $out = @()
+        & $Action 2>&1 | ForEach-Object { $out += $_; $_ } | Out-Host
         $code = $LASTEXITCODE
         if ($code -eq 0) { return 0 }
         $authFail = (($out -join "`n") -match "Permission denied|password.*incorrect|Authentication failed")
