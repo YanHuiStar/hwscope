@@ -82,17 +82,19 @@ try {
     $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs" }
     if ($rc -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red; exit $rc }
 
-    # ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/，对标本地结构）+ 顺带清理远端（cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
-    Write-Host "[INFO] 回拉采集结果 + 归档包 → $OutDir\（第 3 次密码）" -ForegroundColor Yellow
+    # ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/；解包到 output\remote_output\ 固定层）+ 顺带清理远端（cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
+    Write-Host "[INFO] 回拉采集结果 + 归档包 → $OutDir\remote_output\（第 3 次密码）" -ForegroundColor Yellow
     $pullFile = Join-Path $env:TEMP "hwscope_pull_$TS.tgz"
     $rc = Invoke-SSHRetry "回拉" { & cmd /c ("ssh $SSHOpts$TtyOpt $H `"$Sudo tar czf - -C $RemoteDir/output . -C $RemoteDir logs; rm -rf $RemoteDir`" > `"$pullFile`"") }
     if ($rc -ne 0) { Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
-    & tar xzf $pullFile -C $OutDir
+    $remoteOutDir = Join-Path $OutDir "remote_output"
+    New-Item -ItemType Directory -Force -Path $remoteOutDir | Out-Null
+    & tar xzf $pullFile -C $remoteOutDir
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
 
-    # 归档包移到 logs\remote_logs\（与本地采集日志区分；远端 logs/ 解包到了 OutDir\logs）
-    $outLogs = Join-Path $OutDir "logs"
+    # 归档包移到 logs\remote_logs\（与本地采集日志区分；远端 logs/ 解包到了 remote_output\logs）
+    $outLogs = Join-Path $remoteOutDir "logs"
     if (Test-Path $outLogs) {
         $remoteLogsDir = Join-Path $ProjectDir "logs\remote_logs"
         New-Item -ItemType Directory -Force -Path $remoteLogsDir | Out-Null
@@ -101,8 +103,8 @@ try {
     }
     Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
 
-    # ─── 5. 完成信息（回拉解包为 <MACHINE_ID>/，取最新；logs 已移走不干扰） ───
-    $pulled = Get-ChildItem $OutDir -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # ─── 5. 完成信息（remote_output\<MACHINE_ID>\，取最新） ───
+    $pulled = Get-ChildItem $remoteOutDir -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
     Write-Host "  远程采集完成" -ForegroundColor Green

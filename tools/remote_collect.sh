@@ -98,24 +98,24 @@ if [ "$RC" -ne 0 ]; then
     exit $RC
 fi
 
-# ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/，对标本地结构；归档包落 logs/remote_logs/） ───
-echo -e "\033[0;33m[INFO] 回拉采集结果 + 归档包 → ${LOCAL_OUT}/\033[0m"
-mkdir -p "$LOCAL_OUT"
+# ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/；解包到 output/remote_output/ 固定层，对标本地结构；归档包落 logs/remote_logs/） ───
+echo -e "\033[0;33m[INFO] 回拉采集结果 + 归档包 → ${LOCAL_OUT}/remote_output/\033[0m"
+mkdir -p "${LOCAL_OUT}/remote_output"
 if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "${SUDO} tar czf - -C ${REMOTE_DIR}/output . -C ${REMOTE_DIR} logs; rm -rf ${REMOTE_DIR}" > "/tmp/hwscope_pull_${TS}.tgz" 2>/dev/null; then
     echo -e "\033[0;31m[ERROR] 结果回拉失败\033[0m"; exit 1
 fi
-tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "$LOCAL_OUT" || { echo -e "\033[0;31m[ERROR] 回拉数据损坏或为空（远端打包失败？）\033[0m"; exit 1; }
+tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "${LOCAL_OUT}/remote_output" || { echo -e "\033[0;31m[ERROR] 回拉数据损坏或为空（远端打包失败？）\033[0m"; exit 1; }
 rm -f "/tmp/hwscope_pull_${TS}.tgz"
 
-# 归档包移到 logs/remote_logs/（与本地采集日志区分；远端 logs/ 解包到了 LOCAL_OUT/logs）
-if [ -d "${LOCAL_OUT}/logs" ] && [ -n "$(ls -A "${LOCAL_OUT}/logs" 2>/dev/null)" ]; then
+# 归档包移到 logs/remote_logs/（与本地采集日志区分；远端 logs/ 解包到了 LOCAL_OUT/remote_output/logs）
+if [ -d "${LOCAL_OUT}/remote_output/logs" ] && [ -n "$(ls -A "${LOCAL_OUT}/remote_output/logs" 2>/dev/null)" ]; then
     mkdir -p "${SCRIPT_DIR}/logs/remote_logs"
-    mv "${LOCAL_OUT}/logs"/* "${SCRIPT_DIR}/logs/remote_logs/" 2>/dev/null
-    rmdir "${LOCAL_OUT}/logs" 2>/dev/null
+    mv "${LOCAL_OUT}/remote_output/logs"/* "${SCRIPT_DIR}/logs/remote_logs/" 2>/dev/null
+    rmdir "${LOCAL_OUT}/remote_output/logs" 2>/dev/null
 fi
 
-# ─── 5. 本地定位采集目录（回拉解包为 <MACHINE_ID>/，取最新；logs 已移走不干扰） ───
-PULLED_DIR=$(ls -dt "${LOCAL_OUT}"/*/ 2>/dev/null | head -1 | sed 's|/$||')
+# ─── 5. 本地定位采集目录（remote_output/<MACHINE_ID>/，取最新） ───
+PULLED_DIR=$(ls -dt "${LOCAL_OUT}/remote_output"/*/ 2>/dev/null | head -1 | sed 's|/$||')
 echo ""
 echo -e "\033[0;32m========================================\033[0m"
 echo -e "\033[0;32m  远程采集完成\033[0m"
