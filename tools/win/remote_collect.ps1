@@ -36,8 +36,9 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $TS = Get-Date -Format "yyyyMMddHHmmss"
 $RemoteDir = "/tmp/hwscope_remote_$TS"
 $RemoteOut = "$RemoteDir/remote_output"
-# SSH ControlMaster 复用（输一次密码，后续 ssh 复用不重复提示）
-$SSHOpts = "-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_win_%r@%h -o ControlPersist=300"
+# Windows OpenSSH 不支持 ControlMaster multiplexing（ControlPath=/tmp 无效会报 getsockname failed），
+# 故合并 ssh 调用：推送+执行一次、回拉一次（共 2 次密码提示，可接受）
+$SSHOpts = "-o ConnectTimeout=10"
 $Sudo = if ($NoSudo) { "" } else { "sudo" }
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -45,38 +46,26 @@ Write-Host "  HwScope 远程采集 → $H (Windows)" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
 try {
-    # ─── 1. 连通性检查（无 key 时提示输密码） ───
-    Write-Host "[INFO] 检查 SSH 连通性（无 key 时将提示输入密码）..." -ForegroundColor Yellow
-    & ssh $SSHOpts.Split(" ") $H "echo ok" | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[ERROR] SSH 连接失败：请检查用户名/密码/key 或网络可达性" -ForegroundColor Red
-        exit 1
-    }
-
-    # ─── 2. 推送项目（tar → ssh 管道解包；conf 含 BMC 凭据随包到远端，执行后即清理） ───
-    Write-Host "[INFO] 推送项目到远端 $RemoteDir ..." -ForegroundColor Yellow
+    # ─── 1+3. 推送项目 + 远端执行（一次 ssh：stdin 传 tar，远端解包后执行；失败即报错） ───
+    Write-Host "[INFO] 推送项目并远端执行（首次提示输密码）..." -ForegroundColor Yellow
     $excludes = @("--exclude=output", "--exclude=logs", "--exclude=.git", "--exclude=*.tmp")
-    $tarCmd = "tar czf - -C `"$ProjectDir`" $($excludes -join " ") ."
-    $sshCmd = "mkdir -p $RemoteDir && tar xzf - -C $RemoteDir"
-    & cmd /c "$tarCmd | ssh $SSHOpts $H `"$sshCmd`"" 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 项目推送失败" -ForegroundColor Red; exit 1 }
-
-    # ─── 3. 远端执行采集 ───
     $hwArgs = ""
     if ($Modules) { $hwArgs = " --modules $Modules" }
-    Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs --output $RemoteOut" -ForegroundColor Yellow
-    & ssh $SSHOpts.Split(" ") $H "cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
-    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 远端采集失败 (exit=$LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
+    $tarCmd = "tar czf - -C `"$ProjectDir`" $($excludes -join " ") ."
+    $sshCmd = "mkdir -p $RemoteDir && tar xzf - -C $RemoteDir && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
+    & cmd /c "$tarCmd | ssh $SSHOpts $H `"$sshCmd`""
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
 
-    # ─── 4. 回拉结果（远端 sudo tar → 本地解包） ───
+    # ─── 4. 回拉结果 + 顺带清理远端（一次 ssh：打包 → 本地解包；远端 rm 随命令完成，不再额外要密码） ───
     Write-Host "[INFO] 回拉采集结果 → $OutDir\" -ForegroundColor Yellow
     $pullFile = Join-Path $env:TEMP "hwscope_pull_$TS.tgz"
     $remoteParent = Split-Path -Parent $RemoteOut
     $remoteName = Split-Path -Leaf $RemoteOut
-    & cmd /c "ssh $SSHOpts $H `"$Sudo tar czf - -C $remoteParent $remoteName`" > `"$pullFile`"" 2>&1 | Out-Null
+    & cmd /c "ssh $SSHOpts $H `"$Sudo tar czf - -C $remoteParent $remoteName && rm -rf $RemoteDir`" > `"$pullFile`"" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 结果回拉失败" -ForegroundColor Red; exit 1 }
     & tar xzf $pullFile -C $OutDir
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
+    Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
 
     # ─── 5. 完成信息 ───
     $pulled = Get-ChildItem $OutDir -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -89,8 +78,5 @@ try {
     Write-Host "========================================" -ForegroundColor Green
 }
 finally {
-    # ─── 清理：远端临时目录 + ControlMaster 连接 ───
-    & ssh $SSHOpts.Split(" ") $H "rm -rf $RemoteDir" 2>$null | Out-Null
-    & ssh -O exit -o ControlPath=/tmp/ssh_hwscope_win_%r@%h $H 2>$null | Out-Null
-    Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
+    # 远端清理已在回拉命令内完成（rm -rf 随回拉 ssh 执行）；此处无额外 ssh（避免再要密码）
 }
