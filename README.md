@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.34.10 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.34.11 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -173,6 +173,8 @@ bash tools/report.sh <output_dir> --baseline <历史采集目录>  # 附带基�
 bash tools/remote_collect.sh -H root@10.0.0.1                 # 全量采集并回拉（首次提示输密码）
 bash tools/remote_collect.sh -H root@10.0.0.1 --modules gpu   # 只采部分
 # Windows 运维机：tools\win\remote_collect.bat -H root@10.0.0.1（功能等价，ssh/scp/tar 系统自带零依赖）
+# 远程采集结果 → output/remote_output/<机器ID>/（对标本地 output/<SN> 结构）；归档包 → logs/remote_logs/
+# 认证：3 次密码尝试自动重试；root 免 sudo；普通用户 + sudo 自动带 -t（交互输 sudo 密码）
 # 清理采集输出：bash tools/cleanup.sh（输入 yes 确认删除 output/ logs/；Windows: tools\win\cleanup.bat）
 # 注：SSH key 免密仅建议受信内部网络使用（私钥泄露 = 所有配置了公钥的主机失守）
 
@@ -328,7 +330,7 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `install_ai.sh` | AI 推理引擎安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | uv/docker 自动检测 |
 | `report.sh` | 从采集结果生成 json/md/txt/html 汇总报告（内存每槽/GPU每卡/CPU每颗/存储每盘/网络每端口/PSU/RAID/HBA/风扇/温度明细 + 固件合规/能耗台账/BMC一致性/压测归档/基线对比 + 术语表）；`--acceptance` 生成 13 项验收清单；`--test-dir` 关联压测目录；`--baseline` 时序差异对比 | 采集完成后自动调用 |
 | `batch_compare.sh` | 多机横向对比：读各机 hwscope_report.json 生成同字段对比表，差异 ⚠️ 标注（批次一致性抽检） | - |
-| `remote_collect.sh` | SSH 远程采集：tar 临时推送 → 远端执行 hwscope → 结果回拉 → 清理（SSH key 认证，密码不落盘） | ssh, tar |
+| `remote_collect.sh` | SSH 远程采集：tar 临时推送 → 远端执行 hwscope → 回拉 output/remote_output/<SN>/ + 归档 logs/remote_logs/ → 清理（交互式密码 + ControlMaster 复用，密码不落盘） | ssh, tar |
 | `remote_batch.sh` | SSH 批量运维：对 N 台机器执行同一命令/推送同一文件，逐机输出落盘（集群巡检） | ssh, scp |
 | `dhcp_server.sh` | dnsmasq 封装：安装/生成配置/启停/租约查询 + `leases-export` 租约导出 CSV + `reconcile` 租约↔采集台账交叉核对（上架清单） | dnsmasq |
 | `fw_baseline_import.sh` | 固件基线自动导入：从基准机采集目录/表格文件生成 conf/fw_required.txt（--diff 预览 / --apply 写入，自动备份） | - |
@@ -353,7 +355,7 @@ bash test/cpu_test.sh          # 直接执行 CPU 测试
 | `wol.ps1` / `.bat` | 远程唤醒 | Wake-on-LAN 魔术包 |
 | `ssh_batch.ps1` / `.bat` | 批量命令 | 对多台服务器执行同一条命令 |
 | `fetch_report.ps1` / `.bat` | 巡检汇总 | 拉取各机报告四件套，按主机名归档 |
-| `remote_collect.ps1` / `.bat` | 远程采集 | Windows 原生远程采集（等价 remote_collect.sh：推送项目→远端执行→回拉，交互式密码 + ControlMaster） |
+| `remote_collect.ps1` / `.bat` | 远程采集 | Windows 原生远程采集（等价 remote_collect.sh：推送→远端执行→回拉 output\remote_output\<SN>\；3 次密码重试，无 ControlMaster——Windows OpenSSH 不支持） |
 | `dhcp_server.ps1` / `.bat` | 直连自动分配 IP | 纯 PowerShell DHCP 服务（零依赖），配合 `net_dhcp.sh` 即插即通 |
 | `unblock_ps.ps1` / `.bat` | 首次使用前 | 解除 .ps1 运行限制 |
 
