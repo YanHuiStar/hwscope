@@ -5,7 +5,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-blue?logo=github)](https://github.com/YanHuiStar/hwscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-**Author:** YanHui · **Version:** 1.33.8 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.34.0 · **License:** [Apache 2.0](LICENSE)
 
 > ⚠️ **开发测试阶段**：接口与输出格式可能随版本演进调整，请以最新代码为准。
 
@@ -172,6 +172,7 @@ bash tools/report.sh <output_dir> --baseline <历史采集目录>  # 附带基�
 # SSH 远程采集（运维机执行；默认交互式密码认证，密码不落盘——生产环境标准做法）
 bash tools/remote_collect.sh -H root@10.0.0.1                 # 全量采集并回拉（首次提示输密码）
 bash tools/remote_collect.sh -H root@10.0.0.1 --modules gpu   # 只采部分
+# Windows 运维机：tools\win\remote_collect.bat -H root@10.0.0.1（功能等价，ssh/scp/tar 系统自带零依赖）
 # 注：SSH key 免密仅建议受信内部网络使用（私钥泄露 = 所有配置了公钥的主机失守）
 
 # 多机横向对比（读各机 hwscope_report.json，差异 ⚠️ 标注）
