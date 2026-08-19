@@ -61,17 +61,18 @@ try {
 
     # ─── 3. ssh 解包 + 远端执行（PowerShell 直调 ssh，远端命令整串作为单参数，&& 由远端 bash 解析） ───
     Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs --output $RemoteOut（第 2 次密码）" -ForegroundColor Yellow
-    & ssh $SSHOpts.Split(" ") $H "mkdir -p $RemoteDir && ls -la ${RemoteDir}.tgz && tar xzf ${RemoteDir}.tgz -C $RemoteDir && echo '=== 解包内容 ===' && ls -la $RemoteDir | head -15 && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
+    & ssh $SSHOpts.Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
 
-    # ─── 4. 回拉结果 + 顺带清理远端（cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析，避免 && 被 cmd 当本地分隔符） ───
+    # ─── 4. 回拉结果 + 顺带清理远端（cmd /c 仅做二进制重定向；远端路径手工构造——Split-Path 会把 /tmp 转成 \tmp；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
     Write-Host "[INFO] 回拉采集结果 → $OutDir\（第 3 次密码）" -ForegroundColor Yellow
     $pullFile = Join-Path $env:TEMP "hwscope_pull_$TS.tgz"
-    $remoteParent = Split-Path -Parent $RemoteOut
-    $remoteName = Split-Path -Leaf $RemoteOut
+    $remoteParent = $RemoteDir        # 手工构造（Split-Path -Parent 会把 /tmp/... 规范化成 \tmp\...，远端找不到）
+    $remoteName = "remote_output"     # 固定名（Split-Path -Leaf 对无分隔符 OK，但统一手工构造更稳）
     & cmd /c "ssh $SSHOpts $H `"$Sudo tar czf - -C $remoteParent $remoteName; rm -rf $RemoteDir`" > `"$pullFile`""
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 结果回拉失败" -ForegroundColor Red; exit 1 }
     & tar xzf $pullFile -C $OutDir
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
     Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
 
