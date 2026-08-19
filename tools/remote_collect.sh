@@ -89,27 +89,33 @@ tar czf - --exclude=output --exclude=logs --exclude=.git --exclude='*.tmp' -C "$
     | ssh $SSH_OPTS "$HOST" "mkdir -p ${REMOTE_DIR} && tar xzf - -C ${REMOTE_DIR}" \
     || { echo -e "\033[0;31m[ERROR] 项目推送失败\033[0m"; exit 1; }
 
-# ─── 3. 远端执行采集（普通用户 + sudo 时带 -t 供 sudo 交互输密码；ssh 交互式自带 3 次密码尝试） ───
-echo -e "\033[0;33m[INFO] 远端执行: ${SUDO:-} bash hwscope.sh${HWARGS:-} --output ${REMOTE_OUT}\033[0m"
-ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "cd ${REMOTE_DIR} && ${SUDO} bash hwscope.sh${HWARGS:-} --output ${REMOTE_OUT}"
+# ─── 3. 远端执行采集（不传 --output：hwscope.sh 默认输出 <远端>/output/<MACHINE_ID>/，对标本地 output/<SN> 结构；普通用户 + sudo 时带 -t 供 sudo 交互输密码） ───
+echo -e "\033[0;33m[INFO] 远端执行: ${SUDO:-} bash hwscope.sh${HWARGS:-}（默认输出 output/<MACHINE_ID>/）\033[0m"
+ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "cd ${REMOTE_DIR} && ${SUDO} bash hwscope.sh${HWARGS:-}"
 RC=$?
 if [ "$RC" -ne 0 ]; then
     echo -e "\033[0;31m[ERROR] 远端采集失败（exit=$RC）\033[0m"
     exit $RC
 fi
 
-# ─── 4. 回拉结果（remote_output + logs 归档包 → 本地解包；root 归属文件用 sudo tar 读；远端命令用 ; 顺带清理） ───
+# ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/，对标本地结构；归档包落 logs/remote_logs/） ───
 echo -e "\033[0;33m[INFO] 回拉采集结果 + 归档包 → ${LOCAL_OUT}/\033[0m"
 mkdir -p "$LOCAL_OUT"
-if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "${SUDO} tar czf - -C ${REMOTE_DIR} remote_output logs; rm -rf ${REMOTE_DIR}" > "/tmp/hwscope_pull_${TS}.tgz" 2>/dev/null; then
+if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "${SUDO} tar czf - -C ${REMOTE_DIR}/output . -C ${REMOTE_DIR} logs; rm -rf ${REMOTE_DIR}" > "/tmp/hwscope_pull_${TS}.tgz" 2>/dev/null; then
     echo -e "\033[0;31m[ERROR] 结果回拉失败\033[0m"; exit 1
 fi
 tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "$LOCAL_OUT" || { echo -e "\033[0;31m[ERROR] 回拉数据损坏或为空（远端打包失败？）\033[0m"; exit 1; }
 rm -f "/tmp/hwscope_pull_${TS}.tgz"
 
-# ─── 5. 本地定位采集目录（优先回拉目录名 remote_output，避免 ls -dt 误取本地其他新目录；v1.33.2） ───
-PULLED_DIR="${LOCAL_OUT}/remote_output"
-[ ! -d "$PULLED_DIR" ] && PULLED_DIR=$(ls -dt "${LOCAL_OUT}"/*/ 2>/dev/null | head -1 | sed 's|/$||')
+# 归档包移到 logs/remote_logs/（与本地采集日志区分；远端 logs/ 解包到了 LOCAL_OUT/logs）
+if [ -d "${LOCAL_OUT}/logs" ] && [ -n "$(ls -A "${LOCAL_OUT}/logs" 2>/dev/null)" ]; then
+    mkdir -p "${SCRIPT_DIR}/logs/remote_logs"
+    mv "${LOCAL_OUT}/logs"/* "${SCRIPT_DIR}/logs/remote_logs/" 2>/dev/null
+    rmdir "${LOCAL_OUT}/logs" 2>/dev/null
+fi
+
+# ─── 5. 本地定位采集目录（回拉解包为 <MACHINE_ID>/，取最新；logs 已移走不干扰） ───
+PULLED_DIR=$(ls -dt "${LOCAL_OUT}"/*/ 2>/dev/null | head -1 | sed 's|/$||')
 echo ""
 echo -e "\033[0;32m========================================\033[0m"
 echo -e "\033[0;32m  远程采集完成\033[0m"

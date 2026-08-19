@@ -77,24 +77,32 @@ try {
     if ($rc -ne 0) { Write-Host "[ERROR] 项目推送失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
     Remove-Item $pushFile -Force -ErrorAction SilentlyContinue
 
-    # ─── 3. ssh 解包 + 远端执行（PowerShell 直调 ssh，远端命令整串单参数；普通用户 + sudo 时带 -t 供 sudo 交互输密码；认证失败自动重试） ───
-    Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs --output $RemoteOut（第 2 次密码）" -ForegroundColor Yellow
-    $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut" }
+    # ─── 3. ssh 解包 + 远端执行（不传 --output：hwscope.sh 默认输出 <远端>/output/<MACHINE_ID>/，对标本地 output/<SN> 结构；普通用户 + sudo 时带 -t 供 sudo 交互输密码；认证失败自动重试） ───
+    Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs（默认输出 output/<MACHINE_ID>/，第 2 次密码）" -ForegroundColor Yellow
+    $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs" }
     if ($rc -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red; exit $rc }
 
-    # ─── 4. 回拉结果（remote_output + logs 归档包）+ 顺带清理远端（cmd /c 仅做二进制重定向；远端路径手工构造——Split-Path 会把 /tmp 转成 \tmp；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
+    # ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/，对标本地结构）+ 顺带清理远端（cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
     Write-Host "[INFO] 回拉采集结果 + 归档包 → $OutDir\（第 3 次密码）" -ForegroundColor Yellow
     $pullFile = Join-Path $env:TEMP "hwscope_pull_$TS.tgz"
-    $rc = Invoke-SSHRetry "回拉" { & cmd /c ("ssh $SSHOpts$TtyOpt $H `"$Sudo tar czf - -C $RemoteDir remote_output logs; rm -rf $RemoteDir`" > `"$pullFile`"") }
+    $rc = Invoke-SSHRetry "回拉" { & cmd /c ("ssh $SSHOpts$TtyOpt $H `"$Sudo tar czf - -C $RemoteDir/output . -C $RemoteDir logs; rm -rf $RemoteDir`" > `"$pullFile`"") }
     if ($rc -ne 0) { Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
     & tar xzf $pullFile -C $OutDir
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
+
+    # 归档包移到 logs\remote_logs\（与本地采集日志区分；远端 logs/ 解包到了 OutDir\logs）
+    $outLogs = Join-Path $OutDir "logs"
+    if (Test-Path $outLogs) {
+        $remoteLogsDir = Join-Path $ProjectDir "logs\remote_logs"
+        New-Item -ItemType Directory -Force -Path $remoteLogsDir | Out-Null
+        Get-ChildItem $outLogs -Force | Move-Item -Destination $remoteLogsDir -Force -ErrorAction SilentlyContinue
+        Remove-Item $outLogs -Force -ErrorAction SilentlyContinue
+    }
     Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
 
-    # ─── 5. 完成信息（固定定位 remote_output——output 下还有 logs 目录，按时间排序会误取 logs） ───
-    $pulled = Get-Item (Join-Path $OutDir "remote_output") -ErrorAction SilentlyContinue
-    if (-not $pulled) { $pulled = Get-ChildItem $OutDir -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
+    # ─── 5. 完成信息（回拉解包为 <MACHINE_ID>/，取最新；logs 已移走不干扰） ───
+    $pulled = Get-ChildItem $OutDir -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
     Write-Host "  远程采集完成" -ForegroundColor Green
