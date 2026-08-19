@@ -3041,11 +3041,15 @@ gen_acceptance() {
         add_item "内存运行速率" "PASS" "额定速率运行（${MEM_SPEED:-N/A}）"
     fi
 
-    # 7. 线缆配对完整
+    # 7. 线缆配对完整（条件驱动：按实际链路状态判定——无 IB 卡/未接线=场景固有不计数；已接线但无线缆数据=采集缺失计数）
     if [ -n "$CABLE_PAIRS" ]; then
         add_item "IB 线缆配对" "PASS" "${CABLE_PAIRS}"
+    elif [ "${IB_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "IB 线缆配对" "N/A" "IB 链路已 Active（已接线）但无线缆配对数据（采集缺失，需补采）"
+    elif [ "${IB_LINK_DOWN:-0}" -gt 0 ] 2>/dev/null || [ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "IB 线缆配对" "N/A" "IB 链路未连接（交付验收通常不接线，场景固有）" 1
     else
-        add_item "IB 线缆配对" "N/A" "无线缆数据（交付验收通常不接 IB 线缆，场景固有；接线场景需补采）" 1
+        add_item "IB 线缆配对" "N/A" "无 IB 网卡（非 IB 平台，线缆配对不适用）" 1
     fi
 
     # 8. 磁盘寿命充足（spare 第10列；<90% 提示，<50% FAIL；无盘数据或无 spare 数据 → N/A 禁止假阳性 PASS）
