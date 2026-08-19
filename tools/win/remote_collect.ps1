@@ -37,9 +37,26 @@ $TS = Get-Date -Format "yyyyMMddHHmmss"
 $RemoteDir = "/tmp/hwscope_remote_$TS"
 $RemoteOut = "$RemoteDir/remote_output"
 # Windows OpenSSH 不支持 ControlMaster multiplexing（ControlPath=/tmp 无效会报 getsockname failed），
-# 故合并 ssh 调用：推送+执行一次、回拉一次（共 2 次密码提示，可接受）
+# 故合并 ssh 调用：推送一次、执行一次、回拉一次（共 3 次密码提示，每次认证失败自动重试最多 3 次）
 $SSHOpts = "-o ConnectTimeout=10"
-$Sudo = if ($NoSudo) { "" } else { "sudo" }
+# root 用户自动免 sudo（root 登录无需提权）；普通用户 + sudo 步骤需要 tty（-t）才能交互输 sudo 密码
+$IsRoot = $H -like "root@*"
+$Sudo = if ($NoSudo -or $IsRoot) { "" } else { "sudo" }
+$TtyOpt = if ($Sudo) { " -t" } else { "" }
+
+# SSH 认证重试（最多 3 次）：仅对认证/连接类失败重试（输出含 Permission denied/密码错误），其他错误直接返回
+function Invoke-SSHRetry {
+    param([string]$Desc, [scriptblock]$Action, [int]$MaxTries = 3)
+    for ($i = 1; $i -le $MaxTries; $i++) {
+        $out = & $Action 2>&1
+        $code = $LASTEXITCODE
+        if ($code -eq 0) { return 0 }
+        $authFail = (($out -join "`n") -match "Permission denied|password.*incorrect|Authentication failed")
+        if (-not $authFail -or $i -ge $MaxTries) { return $code }
+        Write-Host "[WARN] $Desc 认证失败（密码错误？），重试 $i/$MaxTries ..." -ForegroundColor Yellow
+    }
+    return $code
+}
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  HwScope 远程采集 → $H (Windows)" -ForegroundColor Cyan
@@ -54,23 +71,21 @@ try {
     & tar czf $pushFile -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp .
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 本地打包失败" -ForegroundColor Red; exit 1 }
 
-    # ─── 2. scp 推送 ───
-    & scp $SSHOpts.Split(" ") $pushFile "${H}:${RemoteDir}.tgz"
-    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 项目推送失败" -ForegroundColor Red; exit 1 }
+    # ─── 2. scp 推送（认证失败自动重试） ───
+    $rc = Invoke-SSHRetry "scp 推送" { & scp $SSHOpts.Split(" ") $pushFile "${H}:${RemoteDir}.tgz" }
+    if ($rc -ne 0) { Write-Host "[ERROR] 项目推送失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
     Remove-Item $pushFile -Force -ErrorAction SilentlyContinue
 
-    # ─── 3. ssh 解包 + 远端执行（PowerShell 直调 ssh，远端命令整串作为单参数，&& 由远端 bash 解析） ───
+    # ─── 3. ssh 解包 + 远端执行（PowerShell 直调 ssh，远端命令整串单参数；普通用户 + sudo 时带 -t 供 sudo 交互输密码；认证失败自动重试） ───
     Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs --output $RemoteOut（第 2 次密码）" -ForegroundColor Yellow
-    & ssh $SSHOpts.Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut"
-    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
+    $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs --output $RemoteOut" }
+    if ($rc -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red; exit $rc }
 
-    # ─── 4. 回拉结果 + 顺带清理远端（cmd /c 仅做二进制重定向；远端路径手工构造——Split-Path 会把 /tmp 转成 \tmp；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
-    Write-Host "[INFO] 回拉采集结果 → $OutDir\（第 3 次密码）" -ForegroundColor Yellow
+    # ─── 4. 回拉结果（remote_output + logs 归档包）+ 顺带清理远端（cmd /c 仅做二进制重定向；远端路径手工构造——Split-Path 会把 /tmp 转成 \tmp；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
+    Write-Host "[INFO] 回拉采集结果 + 归档包 → $OutDir\（第 3 次密码）" -ForegroundColor Yellow
     $pullFile = Join-Path $env:TEMP "hwscope_pull_$TS.tgz"
-    $remoteParent = $RemoteDir        # 手工构造（Split-Path -Parent 会把 /tmp/... 规范化成 \tmp\...，远端找不到）
-    $remoteName = "remote_output"     # 固定名（Split-Path -Leaf 对无分隔符 OK，但统一手工构造更稳）
-    & cmd /c "ssh $SSHOpts $H `"$Sudo tar czf - -C $remoteParent $remoteName; rm -rf $RemoteDir`" > `"$pullFile`""
-    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 结果回拉失败" -ForegroundColor Red; exit 1 }
+    $rc = Invoke-SSHRetry "回拉" { & cmd /c ("ssh $SSHOpts$TtyOpt $H `"$Sudo tar czf - -C $RemoteDir remote_output logs; rm -rf $RemoteDir`" > `"$pullFile`"") }
+    if ($rc -ne 0) { Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
     & tar xzf $pullFile -C $OutDir
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
