@@ -3045,7 +3045,7 @@ gen_acceptance() {
     if [ -n "$CABLE_PAIRS" ]; then
         add_item "IB 线缆配对" "PASS" "${CABLE_PAIRS}"
     else
-        add_item "IB 线缆配对" "N/A" "无线缆数据（非 IB 平台或旧采集）"
+        add_item "IB 线缆配对" "N/A" "无线缆数据（交付验收通常不接 IB 线缆，场景固有；接线场景需补采）" 1
     fi
 
     # 8. 磁盘寿命充足（spare 第10列；<90% 提示，<50% FAIL；无盘数据或无 spare 数据 → N/A 禁止假阳性 PASS）
@@ -3065,7 +3065,7 @@ gen_acceptance() {
         done < <(printf '%s\n' "$DISK_DETAILS")
     fi
     if [ -z "$DISK_DETAILS" ]; then
-        add_item "磁盘寿命" "N/A" "无数据盘或盘数据不可用"
+        add_item "磁盘寿命" "N/A" "无数据盘（平台配置形态，磁盘寿命不适用）" 1
     elif [ "$disk_spare_known" -eq 0 ]; then
         add_item "磁盘寿命" "N/A" "无 SMART 剩余寿命数据（旧采集或盘不支持，无法判定）"
     elif [ -n "$disk_fail" ]; then
@@ -3088,7 +3088,9 @@ gen_acceptance() {
             esac
         done < <(printf '%s\n' "$DISK_DETAILS")
     fi
-    if [ "$dhealth_known" -eq 0 ]; then
+    if [ -z "$DISK_DETAILS" ]; then
+        add_item "SMART 健康状态" "N/A" "无数据盘（平台配置形态，SMART 不适用）" 1
+    elif [ "$dhealth_known" -eq 0 ]; then
         add_item "SMART 健康状态" "N/A" "无 SMART 健康数据（旧采集或盘不支持）"
     elif [ -n "$dhealth_fail" ]; then
         add_item "SMART 健康状态" "FAIL" "${dhealth_fail%,}（SMART 健康评估 FAILED）"
@@ -3135,7 +3137,7 @@ gen_acceptance() {
     elif printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -q "|无法比较|"; then
         add_item "固件版本合规" "WARN" "部分固件版本格式非标准，需人工核对"
     elif printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -q "|未知|"; then
-        add_item "固件版本合规" "N/A" "无基线配置（conf/fw_required.txt 未录入推荐版本），仅记录当前版本"
+        add_item "固件版本合规" "N/A" "无基线配置（conf/fw_required.txt 未录入推荐版本，默认不对比；录入后自动启用）" 1
     else
         add_item "固件版本合规" "PASS" "全部固件版本满足推荐基线（较新不判落后）"
     fi
