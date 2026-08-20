@@ -1,4 +1,6 @@
-# 配套工具
+# 配套工具（Linux/WSL）
+
+> Windows 运维机工具见 [WIN_TOOLS.md](WIN_TOOLS.md)。
 
 ## `test/` — 硬件压测（只读测试，不修改硬件配置）
 
@@ -11,40 +13,50 @@
 | `ib_test.sh` | IB 链路 | 带宽 + 丢包（perftest） |
 | `gpu_test.sh` | GPU 压力 | 算力压测（DCGM 监测） |
 | `nccl_test.sh` | 集合通信 | NCCL 多卡测试 |
+| `test_all.sh` | 一键全测 | 聚合入口（按需选测） |
+| `test_common.sh` | 公共库 | 统一落盘 `logs/test/<时间戳>/` |
 
-结果落盘 `logs/test/<时间戳>/`。
+用法：`bash test/cpu_test.sh <时长秒>`（各脚本一致）。结果落盘 `logs/test/<时间戳>/`。
 
-## `tools/` — 运维操作（含写操作，执行前二次确认）
+## `tools/` — 采集与运维
 
-| 脚本 | 场景 | 说明 |
-|------|------|------|
-| `report.sh` | 报告生成 | 四件套 + 验收清单 + 基线对比 + 压测关联 |
-| `batch_compare.sh` | 多机对比 | 读各机 JSON 生成对比表（差异 ⚠️） |
-| `remote_collect.sh` | 远程采集 | tar 推送 → 远端执行 → 回拉（交互式密码） |
-| `remote_batch.sh` | 批量运维 | 多机同命令/推文件 |
-| `dhcp_server.sh` | DHCP | 新上架服务器批量发 IP + 租约核对 |
-| `fw_baseline_import.sh` | 固件基线 | 基准机 → fw_required.txt |
-| `power_monitor.sh` | 能耗采样 | 后台循环 → CSV + kWh 核算 |
-| `report_server.sh` | 报告预览 | 本地 HTTP 预览（127.0.0.1） |
-| `nic_tool.sh` | 网卡运维 | Mellanox 信息/固件 |
-| `cable_map.sh` | 线缆拓扑 | IB 物理连线发现 |
-| `bmc_tool.sh` | BMC 管理 | 凭据/密码 |
-| `install_ai.sh` | AI 引擎安装 | vLLM/SGLang/TRT-LLM/Ollama/llama.cpp |
-| `cleanup.sh` | 清理 | output/logs 删除（yes 确认） |
+### 报告 / 对比
 
-## `tools/win/` — Windows 配套工具
+| 脚本 | 说明 |
+|------|------|
+| `report.sh` | 报告生成：四件套 json/md/txt/html + 验收清单（--acceptance）+ 基线对比（--baseline）+ 压测关联（--test-dir） |
+| `batch_compare.sh` | 多机横向对比：读各机 JSON 生成同字段对比表（差异 ⚠️ 标注） |
+| `nvlink_verify.sh` | NVLink 完整性校验（拓扑比对） |
+| `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前） |
+| `sync_version.sh` | 版本号三处同步（hwscope.sh 注释/变量 + README 徽章） |
 
-| 脚本 | 场景 | 说明 |
-|------|------|------|
-| `remote_collect.ps1/.bat` | 远程采集 | Windows 原生远程采集（等价 remote_collect.sh） |
-| `fetch_report.ps1/.bat` | 巡检汇总 | 拉取各机报告四件套归档 |
-| `ssh_batch.ps1/.bat` | 批量命令 | 多机执行同一命令 |
-| `scan_ip.ps1/.bat` | 未知 IP | 并发 ping + ARP 定位设备 |
-| `detect_bmc.ps1/.bat` | BMC 发现 | MAC 前缀 + 端口评分定位 BMC |
-| `nic_switch.ps1/.bat` | 直连配网 | 自动识别网卡设固定 IP |
-| `ipmi_power.ps1/.bat` | 远程电源 | BMC 开机/关机/重启（密码走环境变量） |
-| `wol.ps1/.bat` | 远程唤醒 | Wake-on-LAN |
-| `dhcp_server.ps1/.bat` | 直连 DHCP | 纯 PowerShell DHCP（零依赖） |
-| `unblock_ps.ps1/.bat` | 首次使用 | 解除 .ps1 运行限制 |
+### 远程 / 批量
 
-> 每个工具配套同名 `.bat` 启动器（chcp 65001 + ExecutionPolicy Bypass + 参数透传）。
+| 脚本 | 说明 |
+|------|------|
+| `remote_collect.sh` | 远程采集：tar 推送 → 远端执行 → 回拉（交互式密码 + ControlMaster） |
+| `remote_batch.sh` | 批量运维：多机同命令 / 推送文件 |
+
+### 运维操作（含写操作，执行前二次确认）
+
+| 脚本 | 说明 |
+|------|------|
+| `dhcp_server.sh` | dnsmasq 封装：安装/启停/租约查询 + `leases-export` 租约 CSV + `reconcile` 租约↔台账交叉核对 |
+| `net_dhcp.sh` | 一键配置网口 DHCP 自动获取 IP（Ubuntu 24.04 netplan） |
+| `fw_baseline_import.sh` | 固件基线自动导入：基准机 → conf/fw_required.txt（--diff 预览 / --apply 写入） |
+| `firmware_check.sh` | 固件版本核对（对照基线快速核对） |
+| `power_monitor.sh` | 能耗持续采样：后台循环 DCMI/Redfish → CSV，stop 输出聚合 + kWh 核算 |
+| `report_server.sh` | 报告在线预览：解包 logs/report/ → 本地 HTTP（绑定 127.0.0.1） |
+| `nic_tool.sh` | 网卡运维：Mellanox 信息/固件管理 |
+| `cable_map.sh` | IB 线缆拓扑：自动发现物理连线关系 |
+| `bmc_tool.sh` | BMC 管理：凭据/密码 |
+| `sel_monitor.sh` | SEL 巡检（见报告/对比） |
+| `install_ai.sh` | AI 推理引擎安装：vLLM / SGLang / TRT-LLM / Ollama / llama.cpp |
+| `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...） |
+| `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认） |
+
+### 内部组件
+
+| 文件 | 说明 |
+|------|------|
+| `md2html.awk` | 纯 awk Markdown→HTML 转换器（报告 HTML 件用，零依赖） |
