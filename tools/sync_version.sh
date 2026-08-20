@@ -55,8 +55,8 @@ fi
 # 备份（防万一可回滚）
 cp "$README" "${README}.bak"
 
-# 替换 Version 徽章（精确匹配 **Version:** 后跟数字）
-if sed "s/\*\*Version:\*\* [0-9][0-9.]*/\*\*Version:\*\* ${VER_NUM}/" "$README" > "${README}.tmp"; then
+# 替换 Version 徽章（精确匹配 **Version:** 后跟数字，兼容 v 前缀——README 写 v1.34.14 格式）
+if sed "s/\*\*Version:\*\* v\?[0-9][0-9.]*/\*\*Version:\*\* ${VER_NUM}/" "$README" > "${README}.tmp"; then
     mv "${README}.tmp" "$README"
     rm -f "${README}.bak" 2>/dev/null || true
     echo "[OK] README.md → ${VER_NUM}"
@@ -81,8 +81,8 @@ if [ "$HEAD_VER" != "$VER_NUM" ]; then
     exit 1
 fi
 
-# 改用 sed 提取（grep -oP 依赖 GNU grep 的 -P/\K，busybox/macOS 不可用——v1.33.3）
-README_VER=$(sed -n 's/.*\*\*Version:\*\* \([0-9][0-9.]*\).*/\1/p' "$README" | head -1)
+# 改用 sed 提取（grep -oP 依赖 GNU grep 的 -P/\K，busybox/macOS 不可用——v1.33.3；v\? 兼容 README 的 v 前缀）
+README_VER=$(sed -n 's/.*\*\*Version:\*\* v\?\([0-9][0-9.]*\).*/\1/p' "$README" | head -1)
 if [ "$README_VER" != "$VER_NUM" ]; then
     echo "[ERROR] README 版本不一致: 期望 ${VER_NUM}, 实际 ${README_VER}" >&2
     exit 1
