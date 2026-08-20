@@ -23,7 +23,8 @@ run_gpu() {
     fi
 
     # Phase 1: 串行获取 GPU 数量（后续命令依赖此值）
-    local gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+    local gpu_count
+    gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
 
     # Phase 2: 构建并行任务数组
     local gpu_jobs=()

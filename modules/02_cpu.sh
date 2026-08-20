@@ -16,7 +16,8 @@ run_cpu() {
     module_start "$MODULE_NAME"
 
     # 检测 CPU 架构（x86_64 vs aarch64 解析逻辑不同）
-    local cpu_arch=$(uname -m 2>/dev/null || echo "unknown")
+    local cpu_arch
+    cpu_arch=$(uname -m 2>/dev/null || echo "unknown")
 
     # 1. CPU FRU 信息（dmidecode，条件执行）
     if check_cmd dmidecode; then

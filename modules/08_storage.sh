@@ -47,7 +47,8 @@ run_storage() {
         run_and_log "smartctl --scan 2>&1" "${dir}/smart_scan.log"
 
         # 找出所有物理盘（非分区、非 dm、非 loop）
-        local smart_devs=$(smartctl --scan 2>/dev/null | grep -vE 'dm-|loop|/dev/disk' | awk '{print $1}' | sort -u)
+        local smart_devs
+        smart_devs=$(smartctl --scan 2>/dev/null | grep -vE 'dm-|loop|/dev/disk' | awk '{print $1}' | sort -u)
         if [ -z "$smart_devs" ]; then
             # 回退：从 lsblk 取物理盘
             smart_devs=$(lsblk -d -o NAME 2>/dev/null | grep -vE 'loop|rom' | grep -v 'NAME' | sed 's|^|/dev/|')
@@ -60,7 +61,8 @@ run_storage() {
                 # smartctl --scan 对 NVMe 输出控制器设备（/dev/nvme0，字符设备），
                 # 对 SATA/SAS 输出块设备（/dev/sda）——两者都要接受，否则 NVMe 全被跳过
                 [ ! -b "$dev" ] && [ ! -c "$dev" ] && continue
-                local dev_short=$(basename "$dev")
+                local dev_short
+                dev_short=$(basename "$dev")
 
                 case "$dev_short" in
                     nvme*)
@@ -103,16 +105,23 @@ run_storage() {
         # NVMe
         for ndev in /dev/nvme*n1; do
             [ -b "$ndev" ] || continue
-            local nname=$(basename "$ndev")
+            local nname
+            nname=$(basename "$ndev")
             local ctrl="${nname%n1}"
-            local nsize=$(lsblk -d -n -o SIZE "$ndev" 2>/dev/null | tr -d ' ')
-            local nmodel=$(cat "/sys/block/${nname}/device/model" 2>/dev/null | xargs)
-            local nsn=$(cat "/sys/block/${nname}/device/serial" 2>/dev/null | xargs)
-            local nfw=$(cat "/sys/block/${nname}/device/firmware_rev" 2>/dev/null | xargs)
-            local nbdf=$(basename "$(readlink -f "/sys/class/nvme/${ctrl}/device" 2>/dev/null)" 2>/dev/null | sed 's/^0000://')
+            local nsize
+            nsize=$(lsblk -d -n -o SIZE "$ndev" 2>/dev/null | tr -d ' ')
+            local nmodel
+            nmodel=$(cat "/sys/block/${nname}/device/model" 2>/dev/null | xargs)
+            local nsn
+            nsn=$(cat "/sys/block/${nname}/device/serial" 2>/dev/null | xargs)
+            local nfw
+            nfw=$(cat "/sys/block/${nname}/device/firmware_rev" 2>/dev/null | xargs)
+            local nbdf
+            nbdf=$(basename "$(readlink -f "/sys/class/nvme/${ctrl}/device" 2>/dev/null)" 2>/dev/null | sed 's/^0000://')
             local npo="" npc="" nspare=""
             if check_cmd nvme; then
-                local nsmart=$(nvme smart-log "$ndev" 2>/dev/null)
+                local nsmart
+                nsmart=$(nvme smart-log "$ndev" 2>/dev/null)
                 npo=$(echo "$nsmart" | grep "power_on_hours" | awk '{print $3}')
                 npc=$(echo "$nsmart" | grep "power_cycles" | awk '{print $3}')
                 nspare=$(echo "$nsmart" | grep "percent_used" | awk '{print $3}')
@@ -128,19 +137,23 @@ run_storage() {
         # SATA/SAS（sd[a-z] + sd[a-z][a-z] 覆盖 >26 盘场景；分区号过滤：仅 /sys/block 下的物理盘）
         for sdev in /dev/sd[a-z] /dev/sd[a-z][a-z]; do
             [ -b "$sdev" ] || continue
-            local sname=$(basename "$sdev")
+            local sname
+            sname=$(basename "$sdev")
             # 排除分区（sda1 等）：物理盘在 /sys/block 有直接条目
             [ -d "/sys/block/${sname}" ] || continue
-            local sz=$(blockdev --getsize64 "$sdev" 2>/dev/null)
+            local sz
+            sz=$(blockdev --getsize64 "$sdev" 2>/dev/null)
             # blockdev 缺失时回退 lsblk 字节数（防极简系统/容器静默丢盘）
             if [ -z "$sz" ] && check_cmd lsblk; then
                 sz=$(lsblk -b -d -n -o SIZE "$sdev" 2>/dev/null | tr -d ' ')
             fi
             [ -z "$sz" ] || [ "$sz" = "0" ] && continue
-            local ssize=$(lsblk -d -n -o SIZE "$sdev" 2>/dev/null | tr -d ' ')
+            local ssize
+            ssize=$(lsblk -d -n -o SIZE "$sdev" 2>/dev/null | tr -d ' ')
             local smodel="" ssn="" sfw="" stype="SATA"
             if check_cmd smartctl; then
-                local sinfo=$(smartctl -i "$sdev" 2>/dev/null)
+                local sinfo
+                sinfo=$(smartctl -i "$sdev" 2>/dev/null)
                 ssn=$(echo "$sinfo" | grep "Serial Number:" | awk '{print $3}')
                 smodel=$(echo "$sinfo" | grep "Device Model:" | cut -d':' -f2- | xargs)
                 sfw=$(echo "$sinfo" | grep "Firmware Version:" | awk '{print $3}')
@@ -158,9 +171,11 @@ run_storage() {
             # SMART 属性只查一次缓存到变量（原实现每盘 4 次 smartctl -A，24 盘阵列显著拖慢）
             local sattrs=""
             check_cmd smartctl && sattrs=$(smartctl -A "$sdev" 2>/dev/null)
-            local spo=$(echo "$sattrs" | grep -i "Power_On_Hours" | awk '{print $NF; exit}')
+            local spo
+            spo=$(echo "$sattrs" | grep -i "Power_On_Hours" | awk '{print $NF; exit}')
             if [ -z "$spo" ] || ! echo "$spo" | grep -qE "^[0-9]+$"; then spo="0"; fi
-            local spc=$(echo "$sattrs" | grep -i "Power_Cycle" | awk '{print $NF; exit}')
+            local spc
+            spc=$(echo "$sattrs" | grep -i "Power_Cycle" | awk '{print $NF; exit}')
             if [ -z "$spc" ] || ! echo "$spc" | grep -qE "^[0-9]+$"; then spc="0"; fi
             echo "${sname}|${stype}|${ssize:-N/A}|${smodel:-N/A}|${ssn:-N/A}|${sfw:-N/A}|N/A|${spo}|${spc}|N/A"
         done

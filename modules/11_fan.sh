@@ -41,7 +41,8 @@ run_fan() {
     # ─── 3. hwmon sysfs ───
     if [ -d /sys/class/hwmon ]; then
         for hwmon in /sys/class/hwmon/hwmon*; do
-            local hwmon_name=$(basename "$hwmon")
+            local hwmon_name
+            hwmon_name=$(basename "$hwmon")
             [ "$hwmon_name" = "hwmon*" ] && continue
 
             # 读取设备名称

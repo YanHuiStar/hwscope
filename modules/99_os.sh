@@ -60,7 +60,8 @@ run_os() {
     run_and_log "cat /sys/devices/system/node/online 2>/dev/null" "${dir}/numa_nodes.log"
     for node in /sys/devices/system/node/node*; do
         if [ -d "$node" ]; then
-            local node_name=$(basename "$node")
+            local node_name
+            node_name=$(basename "$node")
             run_and_log "cat '${node}/cpulist' 2>/dev/null" "${dir}/${node_name}_cpus.log"
         fi
     done
@@ -73,7 +74,8 @@ run_os() {
     # 9. NVIDIA 相关 sysfs（条件执行：需逐目录检查）
     for sysfs_path in /sys/bus/pci/drivers/nvidia /sys/module/nvidia /sys/module/nvidia_uvm /sys/module/nvidia_drm; do
         if [ -d "$sysfs_path" ]; then
-            local safe_name=$(echo "$sysfs_path" | tr '/' '_')
+            local safe_name
+            safe_name=$(echo "$sysfs_path" | tr '/' '_')
             run_and_log "ls -la '$sysfs_path'" "${dir}/sysfs_${safe_name}.log"
         fi
     done
