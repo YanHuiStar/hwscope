@@ -51,7 +51,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - 快速开始保持可复制粘贴，命令必须真实可跑
 - 模块总览表逐项对应 `modules/*.sh`，新增模块必加一行
 - 版本升级时同步更新头部 `**Version:**` 与示例输出
-- README 保持精简（当前 ~230 行），细节留给 AGENTS.md
+- **README 保持精简（~70 行）**：详细内容放 `docs/`（QUICKSTART/USAGE/REPORT/ARCHITECTURE/TOOLS），README 只放简介/特性/快速开始/文档导航；新功能文档优先写入 docs/ 对应文件，README 仅当核心特性变化时更新
 
 ## Git 提交规范
 
