@@ -3,11 +3,13 @@
 > 硬件压力测试脚本：**只测不改**（不修改硬件/系统配置；仅 fio/dd 会在指定盘写测试文件并自动清理）。
 > 所有压测日志统一落盘 `logs/test/<时间戳>/`（test_common.sh 负责），不污染采集目录。
 > 支持 `-h` / `--help` 查看用法；入口：`bash test/test_all.sh`（菜单式选择）。
+> 工具概览索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）。
 
 ## 测试项速查
 
 | 脚本 | 测试内容 | 依赖工具 | 注意 |
 |------|---------|---------|------|
+| `test_all.sh` | 菜单式聚合入口 | — | 推荐入口（选测/全测） |
 | `cpu_test.sh` | CPU 压测（stress-ng / sysbench） | stress-ng, sysbench | — |
 | `memory_test.sh` | 内存压测（stress-ng vm / memtester / sysbench） | stress-ng, memtester, sysbench | — |
 | `disk_test.sh` | 磁盘 IOPS/吞吐（fio / hdparm / dd） | fio, hdparm | ⚠️ 选盘时注意，fio 写测试文件 |

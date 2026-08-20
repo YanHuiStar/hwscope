@@ -2,12 +2,13 @@
 
 > 服务器运维操作脚本。**部分脚本会修改系统配置，使用前请先阅读本节标注的 ⚠️ 写入类**。
 > 所有脚本均支持 `-h` / `--help` 查看详细帮助；工具定位：运维机/服务器侧操作，不参与采集。
+> 工具概览索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）；Windows 配套工具见 [docs/WIN_TOOLS.md](../docs/WIN_TOOLS.md)。
 
 ## 分类速查
 
 | 类别 | 脚本 | 危险度 |
 |------|------|--------|
-| **诊断/只读** | nvlink_verify · firmware_check · sel_monitor · cable_map · report · sync_version · batch_compare · power_monitor · report_server | 🟢 只读 |
+| **诊断/只读** | nvlink_verify · firmware_check · sel_monitor · cable_map · report · sync_version · batch_compare · power_monitor · report_server · cleanup | 🟢 只读（cleanup 删除输出目录，yes 确认） |
 | **写入操作** | bmc_tool · nic_tool · net_dhcp · dhcp_server · install_tool · install_ai · remote_batch · fw_baseline_import | 🔴 会改系统 |
 | **远程采集** | remote_collect | 🟡 仅远程执行采集（只读）|
 
@@ -69,7 +70,7 @@
 | `net_dhcp.sh` | `sudo bash tools/net_dhcp.sh` | 一键配置网口 DHCP（Ubuntu netplan，自动识别插线网口、备份回滚） | /etc/netplan |
 | `dhcp_server.sh` | `sudo bash tools/dhcp_server.sh` | DHCP 服务器（dnsmasq 封装）：安装/配置网段/启停/租约查询导出 | dnsmasq 配置 |
 | `install_tool.sh` | `sudo bash tools/install_tool.sh` | 安装采集/压测/IB 诊断/DCGM/MFT/推理引擎 | 系统软件包 |
-| `install_ai.sh` | `sudo bash tools/install_ai.sh` | AI 推理环境安装（Triton/TensorRT-LLM 容器化） | Docker/系统 |
+| `install_ai.sh` | `sudo bash tools/install_ai.sh` | AI 推理环境安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | Docker/系统 |
 | `remote_batch.sh` | `bash tools/remote_batch.sh` | 多机批量 SSH 运维（命令/采集/回拉）| 远程主机 |
 | `fw_baseline_import.sh` | `bash tools/fw_baseline_import.sh` | 固件基线自动导入（firmware_check 基线管理）| 基线文件 |
 
@@ -78,10 +79,15 @@
 ## 🟡 远程采集
 
 ### `remote_collect.sh` — SSH 远程采集
-- **用法**：`bash tools/remote_collect.sh <user@host> [hwscope 参数...]`
+- **用法**：`bash tools/remote_collect.sh -H user@host [hwscope 参数...]`
 - **功能**：从运维机 SSH 到目标机执行完整采集（tar 推送→执行→结果回拉→清理），无需登录服务器手动跑
-- **凭据**：交互式密码默认（SSH ControlMaster 复用，输一次密码）；SSH key 仅限可信内网。密码不落盘
-- **输出**：本地 `output/`（按目标机 SN 命名）
+- **凭据**：交互式密码默认（SSH ControlMaster 复用，输一次密码）；root 免 sudo，普通用户自动 `-t` 供 sudo 交互；SSH key 仅限可信内网。密码不落盘
+- **输出**：本地 `output/remote_output/<机器ID>/`（对标本地 output/<SN> 结构）；归档包 → `logs/remote_logs/`
+
+### `cleanup.sh` — 清理采集输出
+- **用法**：`bash tools/cleanup.sh`（输入 yes 确认）；`--force` 跳过确认
+- **功能**：删除 `output/` 与 `logs/`（显示各目录大小/文件数后确认），不碰源码
+- **依赖**：无（Windows 版 `tools/win/cleanup.bat`）
 
 ---
 
