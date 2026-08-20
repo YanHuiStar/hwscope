@@ -4,7 +4,7 @@
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
-**Author:** YanHui · **Version:** 1.34.16 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.34.17 · **License:** [Apache 2.0](LICENSE)
 
 ## 核心特性
 
