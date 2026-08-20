@@ -96,17 +96,27 @@ try {
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
 
     # 归档包移到 logs\remote_logs\（与本地采集日志区分；远端 logs/ 解包到了 remote_output\logs）
+    # 合并逻辑：report 子目录目标已存在时逐个移入（Move-Item 目录到非空目录会报错——重复跑场景）
     $outLogs = Join-Path $remoteOutDir "logs"
     if (Test-Path $outLogs) {
         $remoteLogsDir = Join-Path $ProjectDir "logs\remote_logs"
         New-Item -ItemType Directory -Force -Path $remoteLogsDir | Out-Null
-        Get-ChildItem $outLogs -Force | Move-Item -Destination $remoteLogsDir -Force -ErrorAction SilentlyContinue
-        Remove-Item $outLogs -Recurse -Force -ErrorAction SilentlyContinue   # 必须 -Recurse：logs 含 report 子目录，缺了会弹交互确认
+        foreach ($item in Get-ChildItem $outLogs -Force) {
+            $dest = Join-Path $remoteLogsDir $item.Name
+            if ($item.PSIsContainer) {
+                New-Item -ItemType Directory -Force -Path $dest | Out-Null
+                Get-ChildItem $item.FullName -Force | Move-Item -Destination $dest -Force -ErrorAction SilentlyContinue
+            } else {
+                Move-Item $item.FullName -Destination $remoteLogsDir -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Remove-Item $outLogs -Recurse -Force -ErrorAction SilentlyContinue
     }
     Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
 
-    # ─── 5. 完成信息（remote_output\<MACHINE_ID>\，取最新） ───
-    $pulled = Get-ChildItem $remoteOutDir -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # ─── 5. 完成信息（find 报告文件定位——不依赖时间排序，logs 残留不会误选） ───
+    $pulled = Get-ChildItem $remoteOutDir -Recurse -Depth 1 -Filter "hwscope_report.json" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($pulled) { $pulled = $pulled.Directory }   # json 所在目录 = 机器采集目录
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
     Write-Host "  远程采集完成" -ForegroundColor Green

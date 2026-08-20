@@ -108,14 +108,24 @@ tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "${LOCAL_OUT}/remote_output" || { echo 
 rm -f "/tmp/hwscope_pull_${TS}.tgz"
 
 # 归档包移到 logs/remote_logs/（与本地采集日志区分；远端 logs/ 解包到了 LOCAL_OUT/remote_output/logs）
+# 合并逻辑：report 子目录目标已存在时逐个文件移入（mv 目录到非空目录会 Directory not empty 失败——重复跑场景）
 if [ -d "${LOCAL_OUT}/remote_output/logs" ] && [ -n "$(ls -A "${LOCAL_OUT}/remote_output/logs" 2>/dev/null)" ]; then
     mkdir -p "${SCRIPT_DIR}/logs/remote_logs"
-    mv "${LOCAL_OUT}/remote_output/logs"/* "${SCRIPT_DIR}/logs/remote_logs/" 2>/dev/null
+    for _item in "${LOCAL_OUT}/remote_output/logs"/*; do
+        [ -e "$_item" ] || continue
+        _b=$(basename "$_item")
+        if [ -d "$_item" ]; then
+            mkdir -p "${SCRIPT_DIR}/logs/remote_logs/${_b}"
+            mv "$_item"/* "${SCRIPT_DIR}/logs/remote_logs/${_b}/" 2>/dev/null
+        else
+            mv "$_item" "${SCRIPT_DIR}/logs/remote_logs/" 2>/dev/null
+        fi
+    done
     rmdir "${LOCAL_OUT}/remote_output/logs" 2>/dev/null
 fi
 
-# ─── 5. 本地定位采集目录（remote_output/<MACHINE_ID>/，取最新） ───
-PULLED_DIR=$(ls -dt "${LOCAL_OUT}/remote_output"/*/ 2>/dev/null | head -1 | sed 's|/$||')
+# ─── 5. 本地定位采集目录（find 报告文件定位——不依赖时间排序，logs 残留不会误选） ───
+PULLED_DIR=$(find "${LOCAL_OUT}/remote_output" -maxdepth 2 -name hwscope_report.json 2>/dev/null | head -1 | xargs -r dirname)
 echo ""
 echo -e "\033[0;32m========================================\033[0m"
 echo -e "\033[0;32m  远程采集完成\033[0m"
