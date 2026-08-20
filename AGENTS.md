@@ -52,6 +52,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - 模块总览表逐项对应 `modules/*.sh`，新增模块必加一行
 - 版本升级时同步更新头部 `**Version:**` 与示例输出
 - **README 保持精简（~70 行）**：详细内容放 `docs/`（QUICKSTART/USAGE/REPORT/ARCHITECTURE/TOOLS），README 只放简介/特性/快速开始/文档导航；新功能文档优先写入 docs/ 对应文件，README 仅当核心特性变化时更新
+- **工具文档同步铁律（v1.34.20 立规）**：`tools/`、`test/`、`tools/win/` 下**任何工具新增/改名/参数变化/输出变化**，必须同步更新：① 所在目录的详细文档（`tools/README.md` / `test/README.md`）② 概览索引 `docs/TOOLS.md` / `docs/WIN_TOOLS.md` ③ 若影响用法则 `docs/USAGE.md`——三处缺一不可（曾因 remote_collect 输出结构变化漏更 tools/README 致文档与实现不符）
 
 ## Git 提交规范
 
