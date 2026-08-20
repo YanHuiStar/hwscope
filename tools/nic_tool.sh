@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2010  # /sys/class 接口名无空格，ls|grep 过滤安全
 # =============================================================================
 # HwScope — 网卡运维工具
 # tools/nic_tool.sh
@@ -93,8 +94,10 @@ switch_port_mode() {
     # 批量修改（仅改与目标不同的端口）
     local changed=0
     while IFS= read -r line; do
-        local port=$(echo "$line" | awk '{print $1}')
-        local cur=$(echo "$line" | awk '{print $2}' | grep -oE '[0-9]+' | head -1)
+        local port
+        port=$(echo "$line" | awk '{print $1}')
+        local cur
+        cur=$(echo "$line" | awk '{print $2}' | grep -oE '[0-9]+' | head -1)
         [ -z "$port" ] && continue
         if [ -z "$cur" ]; then
             echo -e "${YELLOW}[SKIP] ${port} 无法解析当前值${NC}"

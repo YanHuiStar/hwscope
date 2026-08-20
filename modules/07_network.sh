@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2010  # /sys/class 内核接口名无空格且字母数字，ls|grep 过滤安全（glob 反而复杂）
 # =============================================================================
 # 模块: 07_network.sh — 网络/IB/光模块信息采集
 # 输出目录: <OUTPUT_DIR>/network/
@@ -32,7 +33,8 @@ run_network() {
         ib_jobs+=("mlxconfig query" "${dir}/mlxconfig.log")
         # 每口 LINK_TYPE 模式（IB/ETH/VPI，现场判断网络模式的关键）
         # 动态枚举全部 mlx5 设备（禁止 head 截断：B300 高密度节点 12+ 个）
-        local mlx_cfg_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
+        local mlx_cfg_devs
+        mlx_cfg_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
         for cfg_dev in $mlx_cfg_devs; do
             ib_jobs+=("mlxconfig query -d ${cfg_dev} 2>/dev/null | grep -E 'LINK_TYPE_P[12]'" "${dir}/mlxconfig_${cfg_dev}_linktype.log")
         done
@@ -42,7 +44,8 @@ run_network() {
     # ─── mlxlink：遍历所有 mlx5 设备（并行） ───
     if check_cmd mlxlink; then
         local mlx_jobs=()
-        local mlx_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
+        local mlx_devs
+        mlx_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
         if [ -z "$mlx_devs" ]; then
             # 回退：动态探测设备号（B300 平台最多 12+ 个 mlx5 设备，避免硬编码漏采）
             local dev_num=0
@@ -65,7 +68,8 @@ run_network() {
     # ─── 以太网口（并行） ───
     if check_cmd ethtool; then
         local eth_jobs=()
-        local eth_devs=$(ip -o link show | grep -v 'lo' | awk -F': ' '{print $2}' | sed 's/@.*//')
+        local eth_devs
+        eth_devs=$(ip -o link show | grep -v 'lo' | awk -F': ' '{print $2}' | sed 's/@.*//')
         while IFS= read -r dev; do
             [ -z "$dev" ] && continue
             # 跳过虚拟/IB 接口
@@ -73,7 +77,8 @@ run_network() {
             [[ "$dev" == *bond* ]] && continue
             [[ "$dev" == *docker* ]] && continue
             [[ "$dev" == *veth* ]] && continue
-            local safe_name=$(echo "$dev" | tr '/' '_')
+            local safe_name
+            safe_name=$(echo "$dev" | tr '/' '_')
             eth_jobs+=("ethtool '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}.log")
             eth_jobs+=("ethtool -i '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_driver.log")
             eth_jobs+=("ethtool -m '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_module.log")
@@ -92,27 +97,33 @@ run_network() {
     # ─── 网卡一览清单（dev|bdf|mac|sn|pn|fw|speed|width|psid|cap_speed|cap_width）───
     {
         echo "# nic inventory: dev|bdf|mac|serial|part_number|firmware|speed|width|psid|cap_speed|cap_width"
-        for ndev in $(ls /sys/class/net/ 2>/dev/null); do
+        for ndev_path in /sys/class/net/*/; do
+            [ -e "$ndev_path" ] || continue   # 无匹配时 glob 原样返回，跳过
+            ndev=$(basename "$ndev_path")
             [ "$ndev" = "lo" ] && continue
             # PCIe 网卡 + USB 网卡都收录：USB 网卡 BDF 是 usb 路径形式（如 2-9.4:1.0），
             # 报告端据此分类（PCIe 进主表，USB 单独标注）；虚拟网卡（无 /devices/pci 前缀）排除
-            local ndev_path=$(readlink -f "/sys/class/net/${ndev}/device" 2>/dev/null)
+            ndev_path=$(readlink -f "/sys/class/net/${ndev}/device" 2>/dev/null)
             [[ "$ndev_path" != *"/devices/pci"* ]] && continue
-            local nbdf=$(grep "PCI_SLOT_NAME" "/sys/class/net/${ndev}/device/uevent" 2>/dev/null | cut -d'=' -f2 | sed 's/^0000://')
+            local nbdf
+            nbdf=$(grep "PCI_SLOT_NAME" "/sys/class/net/${ndev}/device/uevent" 2>/dev/null | cut -d'=' -f2 | sed 's/^0000://')
             [ -z "$nbdf" ] && nbdf=$(basename "$ndev_path" | sed 's/^0000://')
-            local nmac=$(cat "/sys/class/net/${ndev}/address" 2>/dev/null)
+            local nmac
+            nmac=$(cat "/sys/class/net/${ndev}/address" 2>/dev/null)
             # IB 长地址取后 6 字节
             if [ "${#nmac}" -gt 17 ]; then
                 nmac=$(echo "$nmac" | awk -F: '{for(i=13;i<=NF;i++) printf "%s%s", $i, (i<NF?":":"")}')
             fi
-            local nsn=$(cat "/sys/class/net/${ndev}/device/serial" 2>/dev/null)
+            local nsn
+            nsn=$(cat "/sys/class/net/${ndev}/device/serial" 2>/dev/null)
             # Mellanox sysfs serial 常为占位值（如 1951526575073，多卡相同）——识别后置空，等 mstflint 读真 SN
             if [ -n "$nsn" ] && echo "$nsn" | grep -qE "^1951526575073$|^[0]+$"; then
                 nsn=""
             fi
             [ -z "$nsn" ] && nsn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Serial Number" | head -1 | awk '{print $NF}')
             [ -z "$nsn" ] && nsn="N/A"
-            local npn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Part Number" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
+            local npn
+            npn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Part Number" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
             [ -z "$npn" ] && npn=$(lspci -s "$nbdf" 2>/dev/null | cut -d' ' -f4-)
             # Mellanox 卡：sysfs serial 常为占位值（多卡相同），用 mstflint q 读 VPD 真 SN + PSID
             local mstdev=""
@@ -137,9 +148,11 @@ run_network() {
                         MSTFLINT_FAILED_COUNT=$((MSTFLINT_FAILED_COUNT + 1))
                         echo -e "${YELLOW}[WARN] mstflint 查询失败: $nbdf${NC}" >&2
                     else
-                        local mq_sn=$(echo "$mq_out" | grep -iE "^Serial Number|^Board Serial" | head -1 | awk '{print $NF}')
+                        local mq_sn
+                        mq_sn=$(echo "$mq_out" | grep -iE "^Serial Number|^Board Serial" | head -1 | awk '{print $NF}')
                         [ -n "$mq_sn" ] && nsn="$mq_sn"
-                        local mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
+                        local mq_psid
+                        mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
                         [ -n "$mq_psid" ] && npsid="$mq_psid"
                     fi
                 else
@@ -151,7 +164,8 @@ run_network() {
             fi
             # PSID 回退：mstflint q 无 PSID 时，从 mlxfwmanager.log 按 BDF 匹配（如 Inventec 平台）
             if [ "$npsid" = "N/A" ] && [ -f "${dir}/mlxfwmanager.log" ]; then
-                local fw_psid=$(awk -v bdf="$nbdf" '
+                local fw_psid
+                fw_psid=$(awk -v bdf="$nbdf" '
                     /PCI Device Name:/ { dev=$NF; sub(/^0000:/, "", dev) }
                     dev==bdf && /PSID:/ { sub(/.*PSID:[[:space:]]*/, ""); print; exit }
                 ' "${dir}/mlxfwmanager.log" 2>/dev/null)
@@ -173,11 +187,13 @@ run_network() {
             fi
             local nspd="N/A" nwd="N/A" ncap_spd="N/A" ncap_wd="N/A"
             if check_cmd lspci; then
-                local lnksta=$(lspci -vv -s "$nbdf" 2>/dev/null | grep "LnkSta:" | head -1)
+                local lnksta
+                lnksta=$(lspci -vv -s "$nbdf" 2>/dev/null | grep "LnkSta:" | head -1)
                 nspd=$(echo "$lnksta" | grep -oE "[0-9]+GT/s" | head -1)
                 nwd=$(echo "$lnksta" | grep -oE "x[0-9]+" | head -1)
                 # LnkCap（能力上限）— 标注检测值 vs 规格，客户可见当前协商与卡能力差异
-                local lnkcap=$(lspci -vv -s "$nbdf" 2>/dev/null | grep "LnkCap:" | head -1)
+                local lnkcap
+                lnkcap=$(lspci -vv -s "$nbdf" 2>/dev/null | grep "LnkCap:" | head -1)
                 ncap_spd=$(echo "$lnkcap" | grep -oE "[0-9]+GT/s" | head -1)
                 ncap_wd=$(echo "$lnkcap" | grep -oE "x[0-9]+" | head -1)
             fi

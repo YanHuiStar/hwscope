@@ -41,7 +41,8 @@ run_psu() {
     # ─── 3. sysfs power_supply ───
     if [ -d /sys/class/power_supply ]; then
         for psu in /sys/class/power_supply/*; do
-            local psu_name=$(basename "$psu")
+            local psu_name
+            psu_name=$(basename "$psu")
             [ "$psu_name" = "*" ] && continue
 
             local psu_dir="${dir}/sysfs_${psu_name}"
@@ -50,7 +51,8 @@ run_psu() {
             # 逐个字段采集
             for field in model_name manufacturer serial_number capacity capacity_level health status online type voltage_now current_now power_now temp temp_ambient temp_max alarm; do
                 if [ -f "${psu}/${field}" ]; then
-                    local val=$(cat "${psu}/${field}" 2>/dev/null)
+                    local val
+                    val=$(cat "${psu}/${field}" 2>/dev/null)
                     echo "${field}: ${val}" >> "${psu_dir}/info.log"
                 fi
             done
@@ -69,7 +71,8 @@ run_psu() {
     if check_cmd i2cdetect; then
         for bus in /dev/i2c-*; do
             [ -e "$bus" ] || continue
-            local bus_num=$(echo "$bus" | grep -oE '[0-9]+$')
+            local bus_num
+            bus_num=$(echo "$bus" | grep -oE '[0-9]+$')
             [ -n "$bus_num" ] && run_and_log "i2cdetect -y -r $bus_num 2>/dev/null" "${dir}/i2c_bus${bus_num}.log"
         done
     fi
@@ -79,7 +82,8 @@ run_psu() {
     if check_cmd i2cget; then
         for bus in /dev/i2c-*; do
             [ -e "$bus" ] || continue
-            local bus_num=$(echo "$bus" | grep -oE '[0-9]+$')
+            local bus_num
+            bus_num=$(echo "$bus" | grep -oE '[0-9]+$')
             [ -z "$bus_num" ] && continue
             for addr in 0x58 0x59 0x5a 0x5b 0x5c 0x5d 0x5e 0x5f 0x20 0x21 0x22 0x23; do
                 # 文件名含 bus 号：多 i2c bus 时同地址不同 bus 的数据互不覆盖

@@ -26,7 +26,8 @@ detect_machine_id() {
 #   机头无本地 GPU，经 Switch 接 HGX 模组；裸机采集稳定判 head。模组接入后 GPU 透传可见 → 按事实判 PCIe
 #   （报告含模组 GPU 数据）；SXM 一体化主机（B300 等主板也带 PEX89）因有 GPU 不受 head 判定影响。
 detect_platform() {
-    local hw_arch=$(uname -m 2>/dev/null || echo "unknown")
+    local hw_arch
+    hw_arch=$(uname -m 2>/dev/null || echo "unknown")
     PLATFORM="${hw_arch}"
     GPU_COUNT=0
 

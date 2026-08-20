@@ -72,7 +72,8 @@ run_and_log() {
     write_header "$logfile" "$cmd"
     echo "# --- output start ---" >> "$logfile"
 
-    local start_ns=$(date +%s%N 2>/dev/null || date +%s)
+    local start_ns
+    start_ns=$(date +%s%N 2>/dev/null || date +%s)
 
     # 模拟模式：每条命令随机延迟 0.2-0.5s（计入耗时，SIM_DELAY>0 时生效）
     if [ "${SIM_DELAY:-0}" -gt 0 ] 2>/dev/null; then
@@ -81,7 +82,8 @@ run_and_log() {
 
     bash -c "$cmd" >> "$logfile" 2>&1
     local ret=$?
-    local end_ns=$(date +%s%N 2>/dev/null || date +%s)
+    local end_ns
+    end_ns=$(date +%s%N 2>/dev/null || date +%s)
 
     # 耗时（GNU date 纳秒 → 秒保留 2 位；fallback 整数秒）
     local elapsed
@@ -107,7 +109,8 @@ run_and_log() {
     else
         fmt_elapsed=$(printf "%d:%02ds" $((esec/60)) $((esec%60)))
     fi
-    local fname=$(basename "${logfile%.*}")
+    local fname
+    fname=$(basename "${logfile%.*}")
     if [ "$QUIET" -eq 1 ]; then
         # 静默模式：只显示 WARN
         if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
@@ -152,7 +155,8 @@ run_and_log_parallel() {
     fi
 
     local _rlp_pids=()
-    local _rlp_tmpdir=$(mktemp -d "${OUTPUT_BASE:-/tmp}/.rlp_XXXXXX" 2>/dev/null || mktemp -d /tmp/.rlp_XXXXXX)
+    local _rlp_tmpdir
+    _rlp_tmpdir=$(mktemp -d "${OUTPUT_BASE:-/tmp}/.rlp_XXXXXX" 2>/dev/null || mktemp -d /tmp/.rlp_XXXXXX)
     local _rlp_idx=0
 
     while [ $# -ge 2 ]; do
@@ -182,7 +186,8 @@ run_and_log_parallel() {
     # 汇总 WARN 计数（从临时文件收集，避免并发写 _MODULE_WARN_COUNT）
     local _rlp_i=0
     while [ "$_rlp_i" -lt "$_rlp_idx" ]; do
-        local _rlp_ret=$(cat "${_rlp_tmpdir}/w_${_rlp_i}" 2>/dev/null || echo 0)
+        local _rlp_ret
+        _rlp_ret=$(cat "${_rlp_tmpdir}/w_${_rlp_i}" 2>/dev/null || echo 0)
         if [ "$_rlp_ret" -ne 0 ] && [ "$_rlp_ret" -ne 1 ] && [ "$_rlp_ret" -ne 127 ]; then
             _MODULE_WARN_COUNT=$((_MODULE_WARN_COUNT + 1))
             _rlp_has_error=1

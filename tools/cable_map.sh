@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2010  # /sys/class 接口名无空格，ls|grep 过滤安全
 # =============================================================================
 # HwScope — 线缆拓扑图（自动发现物理连线关系）
 # tools/cable_map.sh

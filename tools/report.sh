@@ -80,7 +80,8 @@ load_manifest() {
 get_csv_col_index() {
     local csv_file="$1" col_name="$2"
     [ ! -f "$csv_file" ] && echo 0 && return
-    local header=$(filter_log "$csv_file" | head -1)
+    local header
+    header=$(filter_log "$csv_file" | head -1)
     [ -z "$header" ] && echo 0 && return
     echo "$header" | awk -F',' -v target="$col_name" '{
         for(i=1; i<=NF; i++) {
@@ -3057,7 +3058,8 @@ gen_acceptance() {
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
             [ -z "$dname" ] && continue
-            local spare_num=$(echo "$dspare" | tr -dc '0-9')
+            local spare_num
+            spare_num=$(echo "$dspare" | tr -dc '0-9')
             if [ -n "$spare_num" ]; then
                 disk_spare_known=$((disk_spare_known+1))
                 if [ "$spare_num" -lt 50 ] 2>/dev/null; then

@@ -33,7 +33,8 @@ run_pcie() {
             "${dir}/pcie_speed_width.log"
 
     # 6. 按 GPU 提取 PCIe 速率（需先获取 GPU 总线列表，串行执行）
-    local gpu_buses=$(lspci -D 2>/dev/null | grep 'NVIDIA' | grep -v 'NVSwitch' | awk '{print $1}')
+    local gpu_buses
+    gpu_buses=$(lspci -D 2>/dev/null | grep 'NVIDIA' | grep -v 'NVSwitch' | awk '{print $1}')
     if [ -n "$gpu_buses" ]; then
         local count=0
         while IFS= read -r bus; do

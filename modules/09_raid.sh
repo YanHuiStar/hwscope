@@ -50,7 +50,8 @@ run_raid() {
             raid_jobs+=("storcli64 /c${c} /bbu show all 2>&1" "${dir}/ctrl${c}_bbu.log")
             raid_jobs+=("storcli64 /c${c} show event 2>&1 | tail -100" "${dir}/ctrl${c}_events.log")
             # 虚拟盘数：统计 VD 表数据行（段头 "Virtual Drives :" 恒 1 次，按段头计数多 VD 时只采 v0——改按表行统计）
-            local vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -cE "^[0-9]+/[0-9]+[[:space:]]+" || true)
+            local vd_count
+            vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -cE "^[0-9]+/[0-9]+[[:space:]]+" || true)
             if [ "${vd_count:-0}" -gt 0 ]; then
                 raid_jobs+=("storcli64 /c${c} /vx show all 2>&1" "${dir}/ctrl${c}_vd_all.log")
                 for ((v=0; v<vd_count; v++)); do
