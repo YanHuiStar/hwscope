@@ -68,11 +68,10 @@ echo -e "\033[0;36m  HwScope 远程采集 → ${HOST}\033[0m"
 echo -e "\033[0;36m========================================\033[0m"
 
 cleanup() {
-    # 远端清理（临时目录 + 采集输出），中断/失败也执行
+    # 远端清理（回拉命令内已 rm -rf，此处为中断/失败时的兜底幂等清理；打印在横幅前由主流程完成，避免顺序错乱）
     ssh $SSH_OPTS "$HOST" "rm -rf ${REMOTE_DIR}" >/dev/null 2>&1
     # 关闭 ControlMaster 复用连接（避免残留）
     ssh -O exit -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h "$HOST" >/dev/null 2>&1
-    echo -e "\033[0;33m[INFO] 已清理远端临时目录: ${REMOTE_DIR}\033[0m"
 }
 trap cleanup EXIT INT TERM
 
@@ -124,8 +123,9 @@ if [ -d "${LOCAL_OUT}/remote_output/logs" ] && [ -n "$(ls -A "${LOCAL_OUT}/remot
     rmdir "${LOCAL_OUT}/remote_output/logs" 2>/dev/null
 fi
 
-# ─── 5. 本地定位采集目录（find 报告文件定位——不依赖时间排序，logs 残留不会误选） ───
+# ─── 5. 完成信息（find 报告文件定位——不依赖时间排序，logs 残留不会误选；远端已在回拉命令内清理，此处主动提示——与 Windows 版排版一致：清理信息在横幅前） ───
 PULLED_DIR=$(find "${LOCAL_OUT}/remote_output" -maxdepth 2 -name hwscope_report.json 2>/dev/null | head -1 | xargs -r dirname)
+echo -e "\033[0;33m[INFO] 已清理远端临时目录: ${REMOTE_DIR}\033[0m"
 echo ""
 echo -e "\033[0;32m========================================\033[0m"
 echo -e "\033[0;32m  远程采集完成\033[0m"
