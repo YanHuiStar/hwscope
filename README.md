@@ -4,7 +4,7 @@
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
-**Author:** YanHui · **Version:** 1.34.15 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.34.16 · **License:** [Apache 2.0](LICENSE)
 
 ## 核心特性
 
@@ -40,6 +40,7 @@ tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 | [docs/REPORT.md](docs/REPORT.md) | 报告与验收体系：四件套/13 项判定/条件驱动 N/A |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构：目录结构/模块/平台兼容/安全约定 |
 | [docs/TOOLS.md](docs/TOOLS.md) | 配套工具明细（test/tools/tools-win） |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 路线图与版本归档 |
 
 ## 平台支持
 
