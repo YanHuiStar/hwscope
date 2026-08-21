@@ -26,8 +26,8 @@
 # 菜单式入口（推荐）
 bash test/test_all.sh
 
-# 单独跑某测试（以 CPU 为例）
-sudo bash test/cpu_test.sh
+# 单独跑某测试（以 CPU 为例；进入后菜单选择测试项）
+bash test/cpu_test.sh
 ```
 
 ### 各测试要点
@@ -35,7 +35,7 @@ sudo bash test/cpu_test.sh
 - **cpu_test**：stress-ng `--cpu 0 --cpu-method all` 全核 30s + sysbench CPU 基准
 - **memory_test**：stress-ng vm 压测 + memtester（可用内存一半 ×2 轮）+ sysbench 内存带宽
 - **disk_test**：启动时列出 `lsblk` 让用户选盘；fio 随机/顺序 4K + hdparm 缓存读 + dd 顺序读；fio 临时文件自动清理
-- **network_test**：提示输入 iperf3 服务端地址（`--server IP [--port]`），TCP 吞吐 + mtr 路径质量
+- **network_test**：提示输入 iperf3 服务端 IP（如 `192.168.1.100`），TCP 吞吐 + mtr 路径质量
 - **nccl_test**：自动查找 `all_reduce_perf` 等编译产物（`/usr /opt /root ~` 限深扫描 + PATH）
 - **gpu_test**：扫描系统已安装的 GPU 测试程序（bandwidthTest / gpu_burn / nvbandwidth / all_reduce_perf / partnerdiag），列出可选；**不自动安装**
 - **ib_test**：自动配对（mlxlink serial 相同=同一根线）→ 逐对 `ib_write_bw` / `ib_read_bw` 打流（4MB 消息、20s）；需要两根线互联或回环头

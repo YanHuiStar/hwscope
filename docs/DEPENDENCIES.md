@@ -51,7 +51,7 @@
 ```bash
 sudo bash tools/install_tool.sh
 ```
-菜单 6 项（自动识别 apt/dnf/yum）：
+菜单 9 项（自动识别 apt/dnf/yum；7-9 为实验态自动安装）：
 
 | # | 安装项 | 包含 | 方式 |
 |---|--------|------|------|

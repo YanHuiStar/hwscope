@@ -18,7 +18,7 @@ ls /sys/class/infiniband/ 2>/dev/null | sed 's/^/  IB: /' | head -5
 echo ""
 
 # ─── iperf3 需要远端 ───
-echo -e "${YELLOW}提示: iperf3 测试需要服务端，格式: --server 192.168.1.100 [--port 5201]${NC}"
+echo -e "${YELLOW}提示: iperf3 测试需要服务端，直接输入服务端 IP（如 192.168.1.100）${NC}"
 read -p "iperf3 服务端地址 (Enter 跳过): " -r iperf_host
 
 TOOLS=(

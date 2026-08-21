@@ -8,7 +8,7 @@
 sudo bash hwscope.sh                          # 全量采集（双层并行）
 sudo bash hwscope.sh --serial                 # 串行（低负载）
 sudo bash hwscope.sh --modules gpu,cpu        # 只采部分模块
-sudo bash hwscope.sh --no-module gpu,fan      # 跳过指定模块
+sudo bash hwscope.sh --skip gpu,fan          # 跳过指定模块
 sudo bash hwscope.sh --output /data/collect   # 指定输出目录
 bash modules/04_gpu.sh /path/output           # 单模块（调试）
 ```
@@ -105,13 +105,14 @@ bash tools/install_ai.sh vllm          # vLLM / SGLang / TRT-LLM / Ollama / llam
 ## 硬件压测（只读，不修改硬件配置）
 
 ```bash
-bash test/cpu_test.sh <时长秒>      # CPU 稳定性
-bash test/memory_test.sh <时长秒>   # 内存压力
-bash test/disk_test.sh <时长秒>     # 磁盘读写
-bash test/network_test.sh <时长秒>  # 网络吞吐
-bash test/ib_test.sh <时长秒>       # IB 链路
-bash test/gpu_test.sh <时长秒>      # GPU 压力（DCGM 监测）
-bash test/nccl_test.sh <时长秒>     # NCCL 集合通信
+bash test/test_all.sh          # 菜单式入口（推荐，选测/全测）
+bash test/cpu_test.sh          # CPU 稳定性（菜单选择 stress-ng/sysbench/mprime）
+bash test/memory_test.sh       # 内存压力（stress-ng/memtester/sysbench）
+bash test/disk_test.sh         # 磁盘读写（fio/hdparm/dd，选盘后测试）
+bash test/network_test.sh      # 网络吞吐（iperf3，运行时提示输入服务端地址）
+bash test/ib_test.sh           # IB 链路（perftest 自动配对打流）
+bash test/gpu_test.sh          # GPU 压力（自动发现已装测试程序）
+bash test/nccl_test.sh         # NCCL 集合通信
 ```
 
-结果落盘 `logs/test/<时间戳>/`。
+每个脚本进入后按菜单选择测试项；`-h`/`--help` 查看用法。结果落盘 `logs/test/<时间戳>/`。
