@@ -9,9 +9,9 @@
 | `cpu_test.sh` | CPU 稳定性 | 满载压测 |
 | `memory_test.sh` | 内存压力 | 压力 + 校验 |
 | `disk_test.sh` | 磁盘读写 | 吞吐 + 校验 |
-| `network_test.sh` | 网络吞吐 | 单机回环/双机 |
+| `network_test.sh` | 网络吞吐 | 双机吞吐（iperf3，需远端服务端） |
 | `ib_test.sh` | IB 链路 | 带宽 + 丢包（perftest） |
-| `gpu_test.sh` | GPU 压力 | 算力压测（DCGM 监测） |
+| `gpu_test.sh` | GPU 压力 | 自动发现已装测试程序（bandwidthTest/gpu_burn 等） |
 | `nccl_test.sh` | 集合通信 | NCCL 多卡测试 |
 | `test_all.sh` | 一键全测 | 聚合入口（按需选测） |
 | `test_common.sh` | 公共库 | 统一落盘 `logs/test/<时间戳>/` |
@@ -24,7 +24,7 @@
 
 | 脚本 | 说明 |
 |------|------|
-| `report.sh` | 报告生成：四件套 json/md/txt/html + 验收清单（--acceptance）+ 基线对比（--baseline）+ 压测关联（--test-dir） |
+| `report.sh` | 报告生成：四件套 json/md/txt/html + 验收清单（--acceptance）+ 基线对比（--baseline）+ 压测关联（--test-dir）+ OS-BMC 核验（--bmc-verify）；也可单格式 --json/--md/--txt/--both |
 | `batch_compare.sh` | 多机横向对比：读各机 JSON 生成同字段对比表（差异 ⚠️ 标注） |
 | `nvlink_verify.sh` | NVLink 完整性校验（拓扑比对） |
 | `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前） |

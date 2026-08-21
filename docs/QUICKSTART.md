@@ -22,7 +22,7 @@ sudo bash tools/install_tool.sh
 sudo bash hwscope.sh
 ```
 
-输出目录：`output/<机器ID>/`（机器 ID = SN / UUID / 时间戳兜底）。
+输出目录：`output/<机器ID>/`（机器 ID = SN → 主板 SN → UUID → 时间戳兜底）。
 
 ## 生成报告
 

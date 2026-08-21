@@ -1,4 +1,4 @@
-# 依赖环境安装指南（docs/DEPENDENCIES.md）
+# 依赖环境安装指南
 
 > [← 返回 README](../README.md) · 快速开始见 [QUICKSTART.md](QUICKSTART.md)
 >
@@ -22,7 +22,7 @@
 | **07 网络** | `ethtool` | `ethtool` | 必需 |
 | | `ibstat`/`ibstatus` | `infiniband-diags` | IB 机器 |
 | | `ibv_devinfo` | `rdma-core` | IB 机器 |
-| | `ibdev2netdev` | MFT（§3.2）| IB 机器 |
+| | `ibdev2netdev` | `rdma-core` | IB 机器 |
 | | `lstopo` | `hwloc` | 可选（拓扑图）|
 | | `mlxconfig`/`mlxlink`/`mlxfwmanager`/`mst`/`mstflint` | MFT（§3.2）| Mellanox 卡 |
 | **08 存储** | `lsblk` | `util-linux`（系统自带）| 必需 |
@@ -43,6 +43,7 @@
 | | `numactl` | `numactl` | 可选 |
 | **压测 test/** | `stress-ng` `sysbench` `fio` `iperf3` `mtr` | 对应包名 | 压测场景 |
 | | `ib_write_bw`/`ib_read_bw` | `perftest` | IB 压测 |
+| | `all_reduce_perf` 等 | nccl-tests 编译产物（见 test/README.md）| NCCL 压测 |
 
 > `timeout`（coreutils）、`dmesg`、`lsblk`、`systemctl` 等为发行版基础组件，一般已存在，无需单独安装。
 
@@ -88,12 +89,13 @@ sudo yum install -y datacenter-gpu-manager
 
 ```bash
 # 以 Ubuntu 为例（实际文件名以下载页为准）
-sudo dpkg -i mft-<版本>-x86_64-deb.tgz 提供的 .deb 包   # 或 sudo yum install mft-<版本>.rpm
-# 或解压后运行安装脚本
 sudo tar -xzf mft-*.tgz -C /opt && cd /opt/mft-* && sudo ./install.sh
+# 或解压出 .deb 包后逐个安装：
+#   tar -tzf mft-*.tgz | grep '\.deb$'   # 查看包内 .deb 文件名
+#   sudo dpkg -i mft-<版本>.deb
 mst status    # 验证：能列出 Mellanox 设备即成功
 ```
-提供：`mlxlink`、`mlxconfig`、`mlxfwmanager`、`mst`、`mstflint`、`ibdev2netdev`。
+提供：`mlxlink`、`mlxconfig`、`mlxfwmanager`、`mst`、`mstflint`（`ibdev2netdev` 由 rdma-core 提供，见 §1）。
 
 ### 3.3 厂商 RAID/HBA 工具（模块 09）
 

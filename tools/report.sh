@@ -3029,7 +3029,7 @@ gen_acceptance() {
         add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
     fi
 
-    # 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示；无数据 → N/A）
+    # 5. 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示；无数据 → N/A）
     if [ -z "$MEM_SPEED" ] || [ "$MEM_SPEED" = "N/A" ]; then
         add_item "内存运行速率" "N/A" "内存速率数据不可用"
     elif [ -n "$MEM_SPEED_NOTE" ]; then
@@ -3042,7 +3042,7 @@ gen_acceptance() {
         add_item "内存运行速率" "PASS" "额定速率运行（${MEM_SPEED:-N/A}）"
     fi
 
-    # 7. 线缆配对完整（条件驱动：按实际链路状态判定——无 IB 卡/未接线=场景固有不计数；已接线但无线缆数据=采集缺失计数）
+    # 6. 线缆配对完整（条件驱动：按实际链路状态判定——无 IB 卡/未接线=场景固有不计数；已接线但无线缆数据=采集缺失计数）
     if [ -n "$CABLE_PAIRS" ]; then
         add_item "IB 线缆配对" "PASS" "${CABLE_PAIRS}"
     elif [ "${IB_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then
@@ -3053,7 +3053,7 @@ gen_acceptance() {
         add_item "IB 线缆配对" "N/A" "无 IB 网卡（非 IB 平台，线缆配对不适用）" 1
     fi
 
-    # 8. 磁盘寿命充足（spare 第10列；<90% 提示，<50% FAIL；无盘数据或无 spare 数据 → N/A 禁止假阳性 PASS）
+    # 7. 磁盘寿命充足（spare 第10列；<90% 提示，<50% FAIL；无盘数据或无 spare 数据 → N/A 禁止假阳性 PASS）
     local disk_warn="" disk_fail="" disk_spare_known=0
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec; do
@@ -3084,6 +3084,7 @@ gen_acceptance() {
 
     # SMART 整体健康（overall-health PASSED/FAILED，比寿命%更直接的盘可用判定）
     local dhealth_fail="" dhealth_warn="" dhealth_known=0
+    # 8. SMART 健康状态（有盘时必检；无盘=平台形态 N/A 不计数，有盘无数据=真缺数据计数）
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
@@ -3106,21 +3107,21 @@ gen_acceptance() {
         add_item "SMART 健康状态" "PASS" "全部盘 SMART 健康评估通过"
     fi
 
-    # 电源冗余（N+N 冗余是供电可靠性核心；失效=单点故障风险）
+    # 9. 电源冗余（N+N 冗余是供电可靠性核心；失效=单点故障风险）
     case "$PSU_REDUNDANT" in
         N/A) add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据" ;;
         *失效*) add_item "电源冗余（N+N）" "FAIL" "电源冗余失效（单点故障风险）" ;;
         *) add_item "电源冗余（N+N）" "PASS" "${PSU_REDUNDANT}" ;;
     esac
 
-    # 12. 整机温度正常范围（进风/出风/CPU/内存/电源/PCH 传感器均 ok）
+    # 10. 整机温度正常范围（进风/出风/CPU/内存/电源/PCH 传感器均 ok）
     if [ -z "$TEMP_SUMMARY" ]; then
         add_item "整机温度正常" "N/A" "无温度传感器数据"
     else
         add_item "整机温度正常" "PASS" "${TEMP_SUMMARY}"
     fi
 
-    # 13. SEL 事件（合并 Critical + PCIe 错误；采集失败/无数据 → N/A，禁止假阳性 PASS）
+    # 11. SEL 事件（合并 Critical + PCIe 错误；采集失败/无数据 → N/A，禁止假阳性 PASS）
     if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
         add_item "SEL 事件" "N/A" "SEL 数据不可用（ipmitool 采集失败或无权限）"
     elif [ "${SEL_CRIT:-0}" -gt 0 ] 2>/dev/null; then
@@ -3133,7 +3134,7 @@ gen_acceptance() {
         add_item "SEL 事件" "PASS" "无 SEL 事件"
     fi
 
-    # 14. 固件版本合规（15_firmware 输出；落后=FAIL，无基线判未知=N/A 不误报——未配置基线是
+    # 12. 固件版本合规（15_firmware 输出；落后=FAIL，无基线判未知=N/A 不误报——未配置基线是
     #     验收配置缺口而非硬件问题；全部未知即整体 N/A 提示补录基线）
     if [ -z "$FW_COMPLIANCE_DETAILS" ]; then
         add_item "固件版本合规" "N/A" "无固件数据（15_firmware 未采集或旧数据）"
@@ -3148,7 +3149,7 @@ gen_acceptance() {
         add_item "固件版本合规" "PASS" "全部固件版本满足推荐基线（较新不判落后）"
     fi
 
-    # 15. OS vs BMC 口径一致（零新采集交叉校验；不一致=FAIL，仅单侧数据=WARN，无数据=N/A）
+    # 13. OS vs BMC 口径一致（零新采集交叉校验；不一致=FAIL，仅单侧数据=WARN，无数据=N/A）
     # 默认关闭（--bmc-verify 开启）：未启用时 N/A 且不计入"数据不足"（该校验为可选深度核验，非交付必检项）
     if [ "$BMC_VERIFY" -eq 0 ]; then
         add_item "OS-BMC 口径一致" "N/A" "校验未启用（--bmc-verify 开启后执行，独立核验报告）" 1

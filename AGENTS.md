@@ -107,6 +107,11 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
   2. report.sh 是只读生成器（不改原始日志），可以直接在真实目录跑；**采集模块（modules/*.sh）必须副本测试**
   3. 覆盖前 `ls -la` 检查目标文件时间戳/大小，确认是预期目标而非真实数据
   4. 真实数据唯一恢复途径是**真机重采**（MAC/SN 等无日志备份），破坏前先确认有无备份
+- **删除走回收站（防误删）**：删除**未跟踪文件**（测试数据/临时脚本/本地产物）时，优先移入回收站而非直接 `rm`/`Remove-Item`，给恢复留后路：
+  - Windows/pwsh：`Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path,'OnlyErrorDialogs','SendToRecycleBin')`（文件）或 `DeleteDirectory(...,'SendToRecycleBin')`（目录）
+  - Linux/WSL：装 `trash-cli` 用 `trash <路径>`（未装则删除前 `cp -r` 到 `/tmp/` 备份）
+  - **git 托管文件**由版本历史兜底（`git rm` + commit 可恢复），无需走回收站；但删除前仍先 `git status` 确认范围
+  - 例外：采集输出/日志等**已 gitignore 的批量产物**（output/logs）用 `tools/cleanup.sh` 统一清理（有确认环节），不逐文件回收站
 
 ## Windows 配套工具（tools/win/）约定
 
