@@ -1,10 +1,13 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
+![Version](https://img.shields.io/badge/Version-1.34.24-blue.svg)
+![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)
+![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg)
+![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
-**Author:** YanHui · **Version:** 1.34.23 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.34.24 · **License:** [Apache 2.0](LICENSE)
 
 ## 核心特性
 
@@ -30,6 +33,30 @@ bash tools/report.sh output/<机器ID> --acceptance
 bash tools/remote_collect.sh -H root@10.0.0.1
 tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 ```
+
+## 报告长这样
+
+采集完成自动生成四件套（JSON/MD/TXT/HTML）+ 验收清单。以 HGX B300 为例：
+
+```
+## GPU
+| 项 | 值 |
+|----|----|
+| 数量 | 8 |
+| 型号 | NVIDIA B300 SXM6 AC |
+| 显存总量 | 288GB/卡（8×288GB，额定交叉验证 ✓）|
+| VBIOS | 97.10.64.00.0C（8 卡一致）|
+
+## 验收清单（13 项）
+| # | 检查项 | 结果 | 说明 |
+|---|--------|------|------|
+| 1 | GPU PCIe 链路完整 | ✅ PASS | 8 卡全部 x16 |
+| 2 | NVLink 互联 | ✅ PASS | 全互联拓扑 |
+| 11 | SEL 事件 | ⚠️ WARN | 1 条信息级事件 |
+| 13 | OS-BMC 口径一致 | — N/A | 校验未启用（--bmc-verify 开启）|
+```
+
+> 完整示例见 [docs/REPORT.md](docs/REPORT.md) 与 [docs/USAGE.md](docs/USAGE.md)。
 
 ## 文档
 
