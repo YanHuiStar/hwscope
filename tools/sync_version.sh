@@ -55,8 +55,9 @@ fi
 # 备份（防万一可回滚）
 cp "$README" "${README}.bak"
 
-# 替换 Version 徽章（精确匹配 **Version:** 后跟数字，兼容 v 前缀——README 写 v1.34.14 格式）
-if sed "s/\*\*Version:\*\* v\?[0-9][0-9.]*/\*\*Version:\*\* ${VER_NUM}/" "$README" > "${README}.tmp"; then
+# 替换 Version 徽章（**Version:** 行 + shields.io Version badge，兼容 v 前缀）
+if sed -e "s/\*\*Version:\*\* v\?[0-9][0-9.]*/\*\*Version:\*\* ${VER_NUM}/" \
+       -e "s/badge\/Version-[0-9.]*-/badge\/Version-${VER_NUM}-/" "$README" > "${README}.tmp"; then
     mv "${README}.tmp" "$README"
     rm -f "${README}.bak" 2>/dev/null || true
     echo "[OK] README.md → ${VER_NUM}"
