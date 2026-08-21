@@ -3,7 +3,7 @@
 # HwScope — 多机横向对比
 # report/tools/batch_compare.sh
 # 用法: bash report/tools/batch_compare.sh <采集目录1> <采集目录2> [...]
-#       bash tools/batch_compare.sh --dirs "output/SN1 output/SN2" [-o 输出前缀]
+#       bash report/tools/batch_compare.sh --dirs "output/SN1 output/SN2" [-o 输出前缀]
 # 功能: 读取各机 hwscope_report.json（程序消费稳定格式），生成同字段横向对比表，
 #       差异项 ⚠️ 标注，一眼看出批次差异（固件版本/内存速率/盘型号/GPU 型号等）。
 # 场景: 批量交付、批次一致性抽检。

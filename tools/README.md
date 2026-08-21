@@ -3,7 +3,7 @@
 > 服务器运维操作脚本。**部分脚本会修改系统配置，使用前请先阅读本节标注的 ⚠️ 写入类**。
 > 所有脚本均支持 `-h` / `--help` 查看详细帮助；工具定位：运维机/服务器侧操作，不参与采集。
 > 工具概览索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）；Windows 配套工具见 [docs/WIN_TOOLS.md](../docs/WIN_TOOLS.md)。
-> **报告体系已独立为 `report/` 模块**（v1.35.0）：报告生成/验收清单/在线预览/多机对比迁移至 `report/`（详见 [report/README](../report/README.md)）；`tools/` 下保留同名兼容 wrapper（旧命令路径继续可用）。
+> **报告体系已独立为 `report/` 模块**（v1.35.0）：报告生成/验收清单/在线预览/多机对比迁移至 `report/`（详见 [report/README](../report/README.md)）；`tools/` 下不再保留同名文件（v1.35.3 移除兼容 wrapper，统一 `report/` 路径）。
 
 ## 分类速查
 
@@ -18,7 +18,7 @@
 
 ## 🟢 诊断 / 只读类
 
-> 报告生成（report.sh）、多机对比（batch_compare.sh）、在线预览（report_server.sh）已迁至 **`report/` 模块**，详见 [report/README](../report/README.md) 与 [docs/REPORT.md](../docs/REPORT.md)；`tools/report.sh` 等为兼容 wrapper（`exec` 转发到 report/ 对应脚本）。
+> 报告生成（report.sh）、多机对比（batch_compare.sh）、在线预览（report_server.sh）位于 **`report/` 模块**（v1.35.3 起 `tools/` 下无同名文件），详见 [report/README](../report/README.md) 与 [docs/REPORT.md](../docs/REPORT.md)。
 
 ### `nvlink_verify.sh` — NVLink 完整性校验（实时）
 - **用法**：`bash tools/nvlink_verify.sh`

@@ -21,7 +21,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 
 ## 报告生成
 
-> 报告体系为独立 `report/` 模块（v1.35.0）：主入口 `report/report.sh`；旧路径 `tools/report.sh` 为兼容 wrapper。
+> 报告体系为独立 `report/` 模块（v1.35.0）：主入口 `report/report.sh`（v1.35.3 起移除 tools/ 兼容 wrapper，统一新路径）。
 
 ```bash
 bash report/report.sh <采集目录>                          # json/md/txt/html 四件套
@@ -61,7 +61,7 @@ tools\win\remote_collect.ps1 -H root@10.0.0.1 -Modules gpu,cpu -OutDir D:\hwout
 ### 多机对比 / 批量运维
 
 ```bash
-bash report/tools/batch_compare.sh <目录1> <目录2> ...   # 多机横向对比（差异 ⚠️ 标注；输出 logs/batch_compare/，-o 自定义；旧路径 tools/batch_compare.sh 兼容）
+bash report/tools/batch_compare.sh <目录1> <目录2> ...   # 多机横向对比（差异 ⚠️ 标注；输出 logs/batch_compare/，-o 自定义）
 bash tools/remote_batch.sh -H "root@10.0.0.1 root@10.0.0.2" -c 'nvidia-smi -L'  # 批量命令
 ```
 
@@ -85,7 +85,7 @@ bash tools/power_monitor.sh stop                                    # 停止并�
 ### 报告在线预览
 
 ```bash
-bash report/tools/report_server.sh          # 解包 logs/report/ → 本地预览（绑定 127.0.0.1；旧路径 tools/report_server.sh 兼容）
+bash report/tools/report_server.sh          # 解包 logs/report/ → 本地预览（绑定 127.0.0.1）
 ```
 
 ### 网卡 / 线缆 / BMC 运维

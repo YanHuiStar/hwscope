@@ -16,7 +16,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - `lib/platform.sh` — 平台检测：detect_machine_id / detect_platform / ipmi_preheat
 - `lib/nvlink.sh` — NVLink 拓扑解析库（纯解析，不执行命令；供 nvlink_verify.sh / report.sh 调用）
 - `modules/*.sh` — 17 个采集模块（01_motherboard … 16_power，99_os），每个一物理组件
-- `report/` — **报告模块（交付物本体，v1.35.0 自 tools/report.sh 拆分）**：`report.sh` 薄入口 + `lib/`（report_common 解析辅助 / gpu_spec 显存规格库 / md2html.awk）+ `sections/`（数据解析×9，source 顺序=原行序勿乱）+ `gen/`（生成器×7）+ `tools/`（batch_compare 多机对比 / report_server 在线预览）；`tools/` 下三个同名文件为兼容 wrapper
+- `report/` — **报告模块（交付物本体，v1.35.0 自 tools/report.sh 拆分）**：`report.sh` 薄入口 + `lib/`（report_common 解析辅助 / gpu_spec 显存规格库 / md2html.awk）+ `sections/`（数据解析×9，source 顺序=原行序勿乱）+ `gen/`（生成器×7）+ `tools/`（batch_compare 多机对比 / report_server 在线预览）
 - `conf/hwscope.conf` — 模块开关、BMC 凭据、输出目录配置
 - `conf/fw_required.txt` — 固件推荐版本基线（15_firmware 模块判定 合规/落后 用，按厂商验收手册维护；全部注释 = 判未知不误报）
 - `test/` — 硬件压测脚本（cpu/memory/disk/network/ib/nccl），只测不改；`test_common.sh` 统一落盘 `logs/test/<时间戳>/`
@@ -76,7 +76,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 ## 报告与归档
 
-- 采集完成自动调用 `report/report.sh`（报告体系为独立模块，见 `report/` 目录；旧路径 `tools/report.sh` 兼容）：从各模块日志提取关键字段，生成 `hwscope_report.{json,md,txt,html}` 四件套（含明细表：内存每槽/GPU每卡(含VBIOS)/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID(虚拟盘级)/HBA；内存明细含 Rank，PSU 明细含实时输入功率 + DCMI/整机功耗独立行，网卡明细含 GPU直连 标记 + chip 列 + 报告末尾术语表；HBA 直通卡章节有卡才显示；**v1.29.0 新增**：固件合规段（15_firmware 输出，对照 fw_required.txt 判 合规/落后/较新/未知）、能耗台账段（16_power 输出，累计 kWh + 功耗快照）、BMC 数据一致性校验段（OS vs BMC 交叉校验，零新采集，不一致 WARN 并排显示两边值）、压测归档段（--test-dir 关联 test/ 目录，test_common.sh 写 manifest 解耦））
+- 采集完成自动调用 `report/report.sh`（报告体系为独立模块，见 `report/` 目录）：从各模块日志提取关键字段，生成 `hwscope_report.{json,md,txt,html}` 四件套（含明细表：内存每槽/GPU每卡(含VBIOS)/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID(虚拟盘级)/HBA；内存明细含 Rank，PSU 明细含实时输入功率 + DCMI/整机功耗独立行，网卡明细含 GPU直连 标记 + chip 列 + 报告末尾术语表；HBA 直通卡章节有卡才显示；**v1.29.0 新增**：固件合规段（15_firmware 输出，对照 fw_required.txt 判 合规/落后/较新/未知）、能耗台账段（16_power 输出，累计 kWh + 功耗快照）、BMC 数据一致性校验段（OS vs BMC 交叉校验，零新采集，不一致 WARN 并排显示两边值）、压测归档段（--test-dir 关联 test/ 目录，test_common.sh 写 manifest 解耦））
 - **HTML 件**：`hwscope_report.html` 由 `report/lib/md2html.awk`（纯 awk 转换器，内嵌 CSS，零依赖）从 MD 转换生成——卡片分区/状态着色（PASS绿/WARN橙/FAIL红/N/A灰）/斑马纹表格/打印友好；验收清单同理生成 `hwscope_acceptance.html`；改 MD 模板后须回归 HTML 闭合（python HTMLParser 或浏览器验证）
 - **GPU 额定显存规格库**：report.sh 内置 60+ 型号→额定容量映射（检测值交叉验证：GB 十进制/GiB 双口径 3% 容差自动匹配，多版本型号如 A100 40|80 自动选近者）；**匹配顺序=正确性**（长型号优先防子串误配：GH200 在 H200 前、L20 在 L2 前、A2 兜底防配 A2000、T4 兜底防配 T400）；检测与额定不符 → `⚠️ 疑似显存魔改或伪装`；新增型号加映射时注意 case 模式含空格须引号（`*"RTX 6000"*`）
 - **动态列隐藏**：明细表整列全为占位符（—/N/A）时隐藏该列并附注说明（如"寿命%、健康 列因旧采集无 SMART 数据而隐藏"），有任一真实值即显示；JSON 始终保留全字段（程序消费稳定，不受隐藏影响）

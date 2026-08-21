@@ -1,7 +1,7 @@
 # 报告与验收体系
 
 > [← 返回 README](../README.md) · 使用入口见 [QUICKSTART.md](QUICKSTART.md) / [USAGE.md](USAGE.md)
-> 报告为独立 `report/` 模块（v1.35.0）：入口 `report/report.sh`（旧路径 `tools/report.sh` 兼容），结构见 [report/README](../report/README.md)。
+> 报告为独立 `report/` 模块（v1.35.0）：入口 `report/report.sh`，结构见 [report/README](../report/README.md)。
 
 ## 报告四件套
 

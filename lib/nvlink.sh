@@ -3,7 +3,7 @@
 # HwScope — NVLink 解析库
 # lib/nvlink.sh
 # 纯解析逻辑，不执行任何命令；输入为 nvidia-smi 输出文本
-# 调用方: tools/nvlink_verify.sh (实时) / tools/report.sh (读采集日志)
+# 调用方: tools/nvlink_verify.sh (实时) / report/report.sh (读采集日志)
 # =============================================================================
 
 # 解析 topo -m 拓扑矩阵，输出 GPU→GPU 降级链路（非 NVLink 连接）
