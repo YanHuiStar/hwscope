@@ -52,8 +52,8 @@
 - **依赖**：ipmitool（DCMI）/ Redfish
 
 ### `report_server.sh` — 报告 Web 预览
-- **用法**：`bash tools/report_server.sh [端口]`，浏览器打开 `http://<主机>:<端口>`
-- **功能**：本地起 Web 服务浏览各机器报告（交付演示/内部共享）
+- **用法**：`bash tools/report_server.sh [端口]`，浏览器打开 `http://127.0.0.1:<端口>`
+- **功能**：本地起 Web 服务浏览各机器报告（交付演示/内部共享）；**固定绑定 127.0.0.1**（防含 SN/MAC 的报告无鉴权暴露局域网）
 
 ### `sync_version.sh` — 版本号同步
 - **用法**：`bash tools/sync_version.sh`

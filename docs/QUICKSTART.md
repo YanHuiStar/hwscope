@@ -15,8 +15,8 @@ bash fixcrlf.sh
 ## 全量采集
 
 ```bash
-# 安装依赖工具（可选；未装的模块自动跳过）
-sudo bash tools/install_tool.sh dmidecode pciutils smartmontools ipmitool ethtool
+# 安装依赖工具（可选；交互菜单选 1 基础采集工具，未装的模块自动跳过）
+sudo bash tools/install_tool.sh
 
 # 执行全量采集（双层并行 + 完成计数；串行用 --serial）
 sudo bash hwscope.sh

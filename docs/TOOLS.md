@@ -16,7 +16,7 @@
 | `test_all.sh` | 一键全测 | 聚合入口（按需选测） |
 | `test_common.sh` | 公共库 | 统一落盘 `logs/test/<时间戳>/` |
 
-用法：`bash test/cpu_test.sh <时长秒>`（各脚本一致）。结果落盘 `logs/test/<时间戳>/`。
+用法：`bash test/cpu_test.sh`（各脚本一致，进入后菜单选择测试项）。结果落盘 `logs/test/<时间戳>/`。
 
 ## `tools/` — 采集与运维
 
@@ -50,7 +50,6 @@
 | `nic_tool.sh` | 网卡运维：Mellanox 信息/固件管理 |
 | `cable_map.sh` | IB 线缆拓扑：自动发现物理连线关系 |
 | `bmc_tool.sh` | BMC 管理：凭据/密码 |
-| `sel_monitor.sh` | SEL 巡检（见报告/对比） |
 | `install_ai.sh` | AI 推理引擎安装：vLLM / SGLang / TRT-LLM / Ollama / llama.cpp |
 | `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...） |
 | `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认） |
