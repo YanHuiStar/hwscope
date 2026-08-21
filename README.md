@@ -1,12 +1,20 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.34.28-blue.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github)
+![Version](https://img.shields.io/badge/Version-1.34.29-blue.svg) ![Modules](https://img.shields.io/badge/Modules-17-9B59B6.svg) ![Bash](https://img.shields.io/badge/Shell-Bash-4EAA25.svg?logo=gnu-bash&logoColor=white) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Stars](https://img.shields.io/github/stars/YanHuiStar/hwscope.svg?style=social)
 
-面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（H200/B200/B300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
+面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（H200/B200/B300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息，自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
+
+## 工作流
+
+| 阶段 | 命令 | 产出 |
+|------|------|------|
+| 采集 | `sudo bash hwscope.sh` | `output/<机器ID>/` — 17 类模块并行，每命令一个日志，平台自动识别 |
+| 报告 | `bash tools/report.sh <采集目录>` | `hwscope_report.{json,md,txt,html}` — 只读日志生成，可反复重跑 |
+| 验收 | `bash tools/report.sh <采集目录> --acceptance` | `hwscope_acceptance.{md,html}` — 13 项判定 + 自动配置单 |
 
 ## 核心特性
 
-- **组件级采集**：主板/CPU/内存/GPU/NVSwitch/PCIe/网络/存储/RAID/HBA/电源/风扇/BMC/NVSM/DCGM/OS 共 15 类模块，自动识别平台（SXM/PCIe/机头/传统）
+- **组件级采集**：主板/CPU/内存/GPU/NVSwitch/PCIe/网络/存储/RAID/HBA/电源/风扇/BMC/NVSM/DCGM/固件合规/能耗/OS 共 17 类模块，自动识别平台（SXM/PCIe/机头/传统）
 - **报告四件套**：JSON + Markdown + TXT + **HTML**（浏览器交付版，零依赖）
 - **验收清单**：13 项判定（含固件合规/OS-BMC 一致性），条件驱动 N/A 计数，硬件概览自动生成配置单
 - **GPU 魔改识别**：内置 60+ 型号额定显存规格库，检测值交叉验证，魔改/伪装卡自动 `⚠️` 提示

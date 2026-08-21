@@ -1,6 +1,6 @@
 # 配套工具（Linux/WSL）
 
-> Windows 运维机工具见 [WIN_TOOLS.md](WIN_TOOLS.md)。
+> [← 返回 README](../README.md) · Windows 运维机工具见 [WIN_TOOLS.md](WIN_TOOLS.md) · 压测参数见 [USAGE.md](USAGE.md)
 
 ## `test/` — 硬件压测（只读测试，不修改硬件配置）
 

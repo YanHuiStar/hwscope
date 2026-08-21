@@ -1,11 +1,13 @@
 # 架构与目录结构
 
+> [← 返回 README](../README.md) · 依赖安装见 [DEPENDENCIES.md](DEPENDENCIES.md) · 工具清单见 [TOOLS.md](TOOLS.md)
+
 ## 采集流水线
 
 ```
 hwscope.sh ─── 参数解析 / 平台检测（SXM → PCIe → head → none）
      │
-     ├─ 并行执行 15 个采集模块（每模块独立进程、每命令一个日志）
+     ├─ 并行执行 17 个采集模块（每模块独立进程、每命令一个日志）
      │      │  write_manifest 声明输出
      │      ▼
      │   output/<机器ID>/   （各模块子目录 + manifest.txt）

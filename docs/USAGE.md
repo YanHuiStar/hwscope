@@ -1,6 +1,6 @@
 # 使用指南（Usage）
 
-> 快速上手见 [QUICKSTART.md](QUICKSTART.md)；报告与验收体系见 [REPORT.md](REPORT.md)。
+> [← 返回 README](../README.md) · 快速上手见 [QUICKSTART.md](QUICKSTART.md) · 报告与验收体系见 [REPORT.md](REPORT.md)
 
 ## 采集
 
