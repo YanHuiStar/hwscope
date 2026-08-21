@@ -26,7 +26,7 @@
   - 依赖：`power_monitor.sh`（v1.31.0 已产出 CSV/聚合）+ report.sh 解析
   - 验收标准：一份报告同时含单点快照与持续采样曲线数据
 
-## 报告层（tools/report.sh）
+## 报告层（report/ 模块；入口 report/report.sh，旧路径 tools/report.sh 兼容）
 
 - [ ] **[P2] 报告图表化（HTML）** — md2html.awk 输出 HTML 内嵌轻量图表（SVG 能耗曲线/内存占比/温度趋势），零 JS 依赖
   - 依赖：现 HTML 报告四件套 + power_monitor CSV

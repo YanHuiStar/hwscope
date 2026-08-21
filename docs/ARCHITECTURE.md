@@ -16,7 +16,7 @@ hwscope.sh ─── 参数解析 / 平台检测（SXM → PCIe → head → non
      ├─ summary.txt 汇总 → 归档 logs/<SN>-<TS>.tar.gz
      │
      ▼
-tools/report.sh（只读日志，不重新采集）
+report/report.sh（只读日志，不重新采集；报告体系独立模块，见 report/README）
      ├─ 读各模块 manifest 解耦定位日志
      ├─ hwscope_report.{json,md,txt,html}   报告四件套
      ├─ hwscope_acceptance.{md,html}        验收清单（13 项判定）
@@ -35,6 +35,8 @@ hwscope/
 │   ├── platform.sh     # 平台检测：detect_machine_id / detect_platform
 │   └── nvlink.sh       # NVLink 拓扑解析库（纯解析）
 ├── modules/            # 17 个采集模块（01_motherboard … 16_power，99_os），每模块一物理组件
+├── report/             # 报告模块（交付物本体）：report.sh 入口 + lib(解析辅助/显存规格库/md2html)
+│                       #   + sections(数据解析×9) + gen(生成器×7) + tools(多机对比/在线预览)
 ├── conf/
 │   ├── hwscope.conf    # 模块开关、BMC 凭据、输出目录配置
 │   └── fw_required.txt # 固件推荐版本基线（15_firmware 判定用）
@@ -60,7 +62,7 @@ hwscope/
 
 ## 模块架构
 
-- **采集/报告分离**：`modules/*.sh` 只生成数据；`tools/report.sh` 只读生成报告（不重新采集）
+- **采集/报告分离**：`modules/*.sh` 只生成数据；`report/report.sh` 只读生成报告（不重新采集）；采集与报告分属 `modules/`（数据）与 `report/`（交付物）两个平级模块
 - **每命令一个日志**：可审计、可单模块重跑
 - 模块自动跳过：工具未装 / 平台无此硬件（如虚拟机无 BMC）时 `[SKIP]`，不影响整体
 - 依赖按需降级：dmidecode/lspci 缺失时系统汇总仍可用

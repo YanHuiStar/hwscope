@@ -3,24 +3,22 @@
 > 服务器运维操作脚本。**部分脚本会修改系统配置，使用前请先阅读本节标注的 ⚠️ 写入类**。
 > 所有脚本均支持 `-h` / `--help` 查看详细帮助；工具定位：运维机/服务器侧操作，不参与采集。
 > 工具概览索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）；Windows 配套工具见 [docs/WIN_TOOLS.md](../docs/WIN_TOOLS.md)。
+> **报告体系已独立为 `report/` 模块**（v1.35.0）：报告生成/验收清单/在线预览/多机对比迁移至 `report/`（详见 [report/README](../report/README.md)）；`tools/` 下保留同名兼容 wrapper（旧命令路径继续可用）。
 
 ## 分类速查
 
 | 类别 | 脚本 | 危险度 |
 |------|------|--------|
-| **诊断/只读** | nvlink_verify · firmware_check · sel_monitor · cable_map · report · sync_version · batch_compare · power_monitor · report_server · cleanup | 🟢 只读（cleanup 删除输出目录，yes 确认） |
+| **诊断/只读** | nvlink_verify · firmware_check · sel_monitor · cable_map · sync_version · power_monitor · cleanup | 🟢 只读（cleanup 删除输出目录，yes 确认） |
 | **写入操作** | bmc_tool · nic_tool · net_dhcp · dhcp_server · install_tool · install_ai · remote_batch · fw_baseline_import | 🔴 会改系统 |
 | **远程采集** | remote_collect | 🟡 仅远程执行采集（只读）|
+| **报告体系** | → `report/` 模块（report.sh · batch_compare.sh · report_server.sh · md2html.awk） | 🟢 只读 |
 
 ---
 
 ## 🟢 诊断 / 只读类
 
-### `report.sh` — 报告生成器（核心）
-- **用法**：`bash tools/report.sh <output_dir> [--acceptance] [--baseline <历史目录>] [--test-dir <压测目录>]`
-- **功能**：从采集日志生成 4 产物（`hwscope_report.{json,md,txt,html}`）+ 验收清单 `hwscope_acceptance.{md,html}`（13 项判定）；`--baseline` 与历史报告做时序差异对比
-- **原则**：只读日志、不重新采集，可对同一份数据反复生成
-- **依赖**：awk（HTML 转换）、无外部工具
+> 报告生成（report.sh）、多机对比（batch_compare.sh）、在线预览（report_server.sh）已迁至 **`report/` 模块**，详见 [report/README](../report/README.md) 与 [docs/REPORT.md](../docs/REPORT.md)；`tools/report.sh` 等为兼容 wrapper（`exec` 转发到 report/ 对应脚本）。
 
 ### `nvlink_verify.sh` — NVLink 完整性校验（实时）
 - **用法**：`bash tools/nvlink_verify.sh`
@@ -41,18 +39,6 @@
 - **用法**：`sudo bash tools/cable_map.sh`
 - **功能**：BDF↔mlx5↔netdev 映射 + EEPROM serial 配对（serial 相同=同一根线）；DAC 无 serial 时**确认后断口联动验证**（⚠️ 会逐个 down 端口再恢复，约 3-5s/口，Ctrl+C 自动恢复）
 - **依赖**：mlxlink（MFT）
-
-### `batch_compare.sh` — 多机横向对比
-- **用法**：`bash tools/batch_compare.sh <机器A报告目录> <机器B报告目录> ...`
-- **功能**：读各机 `hwscope_report.json`，同字段对比（固件/内存速率/盘型号/GPU 配置），差异 ⚠️ 标注；批量交付一致性抽检
-
-### `power_monitor.sh` — 连续功耗采样
-- **用法**：`bash tools/power_monitor.sh start|stop|status [--interval 60] [--duration 0] [--output <目录>] [--redfish]`
-- **功能**：BMC 功耗连续采样（DCMI 优先，Redfish 兜底），stop 输出聚合 + 累计 kWh 核算；`--redfish` 强制走 Redfish
-
-### `report_server.sh` — 报告 Web 预览
-- **用法**：`bash tools/report_server.sh [--port 8080] [--open] [--stop]`，浏览器打开 `http://127.0.0.1:<端口>`
-- **功能**：本地起 Web 服务浏览各机器报告（交付演示/内部共享）；**固定绑定 127.0.0.1**（防含 SN/MAC 的报告无鉴权暴露局域网）
 
 ### `sync_version.sh` — 版本号同步
 - **用法**：`bash tools/sync_version.sh`
@@ -92,6 +78,6 @@
 
 ## 其他
 
-- `md2html.awk` — Markdown→HTML 转换器（report.sh 内部调用）：`awk -f tools/md2html.awk 报告.md > 报告.html`
+- `md2html.awk` — Markdown→HTML 转换器（报告 HTML 件用，已迁至 `report/lib/md2html.awk`）：`awk -f report/lib/md2html.awk 报告.md > 报告.html`
 - `fixcrlf.sh`（项目根）— Windows→Linux CRLF 换行修复：`bash fixcrlf.sh`
 - Windows 配套工具见 `tools/win/`（PowerShell 运维工具，笔记本侧使用）

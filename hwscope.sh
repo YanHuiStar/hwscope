@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.34.33 (2026-08)
+# Version : 1.35.0 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.34.33"
+HWSCOPE_VERSION="v1.35.0"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -456,15 +456,15 @@ echo -e "${CYAN}日志文件: ${LOG_FILE}${NC}"
 echo -e "${CYAN}汇总文件: ${SUMMARY_FILE}${NC}"
 
 # ─── 生成汇总报告（json + md + txt） ───
-if [ -f "${SCRIPT_DIR}/tools/report.sh" ]; then
+if [ -f "${SCRIPT_DIR}/report/report.sh" ]; then
     echo ""
     # --test-dir 关联压测归档（报告新增"压测"章节；无则普通生成）
     if [ -n "$TEST_DIR" ]; then
-        bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE" --test-dir "$TEST_DIR"
-        bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE" --acceptance
+        bash "${SCRIPT_DIR}/report/report.sh" "$OUTPUT_BASE" --test-dir "$TEST_DIR"
+        bash "${SCRIPT_DIR}/report/report.sh" "$OUTPUT_BASE" --acceptance
     else
-        bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE"
-        bash "${SCRIPT_DIR}/tools/report.sh" "$OUTPUT_BASE" --acceptance
+        bash "${SCRIPT_DIR}/report/report.sh" "$OUTPUT_BASE"
+        bash "${SCRIPT_DIR}/report/report.sh" "$OUTPUT_BASE" --acceptance
     fi
 fi
 
