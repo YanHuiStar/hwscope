@@ -119,7 +119,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - 定位：笔记本/运维机侧 PowerShell 工具（直连找 BMC/配网/DHCP/远程电源/批量运维），不参与服务器采集，改 Linux 侧代码无需动这里
 - **编码（必须遵守，否则中文乱码/解析错）**：
   - `.ps1` 用 UTF-8 **带 BOM**（PowerShell 5.1 无 BOM 会把中文当 ANSI 解析乱码）
-  - `.bat` 用 UTF-8 无 BOM + 首行 `chcp 65001 >nul`（cmd 中文显示正常）
+  - `.bat` 用 UTF-8 无 BOM + `@echo off` 后第二行 `chcp 65001 >nul`（cmd 中文显示正常）
   - 每个 .ps1 在 param 块后加 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`（管道/重定向中文不乱码）
 - 新增/修改 .ps1 后必须 PowerShell 语法校验：
   `powershell -NoProfile -Command "[System.Management.Automation.Language.Parser]::ParseFile('<path>',[ref]$null,[ref]$e) > $null; $e.Count"`（输出 0 = 无错误）

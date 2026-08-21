@@ -76,8 +76,10 @@ run_and_log() {
     start_ns=$(date +%s%N 2>/dev/null || date +%s)
 
     # 模拟模式：每条命令随机延迟 0.2-0.5s（计入耗时，SIM_DELAY>0 时生效）
+    # 用 bash 内置 $RANDOM 生成（0.20-0.50s），零外部依赖——原 awk 方案在精简容器缺 awk 时
+    # sleep 拿到空值直接报错，v1.35.1 改为纯 bash
     if [ "${SIM_DELAY:-0}" -gt 0 ] 2>/dev/null; then
-        sleep "$(awk 'BEGIN{srand(); printf "%.2f", 0.2 + rand() * 0.3}')"
+        sleep "0.$((20 + RANDOM % 31))"
     fi
 
     bash -c "$cmd" >> "$logfile" 2>&1
