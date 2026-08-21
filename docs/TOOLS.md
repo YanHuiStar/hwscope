@@ -20,13 +20,13 @@
 
 ## `tools/` — 采集与运维
 
-> **报告体系已独立为 `report/` 模块**（v1.35.0）：报告生成、验收清单、多机对比、在线预览迁至 `report/`（结构见 [report/README](../report/README.md)），`tools/` 下保留同名兼容 wrapper。详细报告体系见 [REPORT.md](REPORT.md)。
+> **报告体系已独立为 `report/` 模块**（v1.35.0）：报告生成、验收清单、多机对比、在线预览迁至 `report/`（结构见 [report/README](../report/README.md)），`tools/` 下不再保留同名文件（v1.35.3 移除兼容 wrapper，统一 `report/` 路径）。详细报告体系见 [REPORT.md](REPORT.md)。
 
 ### 报告（→ `report/` 模块）
 
 | 脚本 | 说明 |
 |------|------|
-| `report/report.sh` | 报告生成：四件套 json/md/txt/html + 验收清单（--acceptance）+ 基线对比（--baseline）+ 压测关联（--test-dir）+ OS-BMC 核验（--bmc-verify）；也可单格式 --json/--md/--txt/--both（旧路径 tools/report.sh 兼容） |
+| `report/report.sh` | 报告生成：四件套 json/md/txt/html + 验收清单（--acceptance）+ 基线对比（--baseline）+ 压测关联（--test-dir）+ OS-BMC 核验（--bmc-verify）；也可单格式 --json/--md/--txt/--both |
 | `report/tools/batch_compare.sh` | 多机横向对比：读各机 JSON 生成同字段对比表（差异 ⚠️ 标注）；输出 `logs/batch_compare/`（`-o` 自定义） |
 | `report/tools/report_server.sh` | 报告在线预览：解包 logs/report/ → 本地 HTTP（绑定 127.0.0.1） |
 | `report/lib/md2html.awk` | 纯 awk Markdown→HTML 转换器（报告 HTML 件用，零依赖） |

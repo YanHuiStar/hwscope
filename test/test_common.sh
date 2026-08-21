@@ -13,7 +13,7 @@ test_init() {
     REPORT_DIR="$base"
     REPORT_LOG="${base}/${test_name}.log"
     TEST_SEQ=0
-    # manifest.txt：供 tools/report.sh --test-dir 读 manifest 解耦（压测归档章节）
+    # manifest.txt：供 report/report.sh --test-dir 读 manifest 解耦（压测归档章节）
     {
         echo "# HwScope test output manifest"
         echo "# Generated: $(date '+%Y-%m-%d %H:%M:%S')"

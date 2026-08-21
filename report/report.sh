@@ -6,7 +6,7 @@
 # 功能: 从采集日志提取关键信息，生成 .json + .md + .txt + .html 汇总报告与验收清单。
 #       本文件是装配入口：解析参数后 source report/lib（辅助+规格库）+ report/sections
 #       （数据解析）×9 + report/gen（生成器）×7 各部件执行。
-#       v1.35.0 自 tools/report.sh 拆分（行为不变，仅文件组织变化）；tools/report.sh 为兼容 wrapper。
+#       v1.35.0 自 tools/report.sh 拆分（行为不变，仅文件组织变化）；v1.35.3 移除 tools/ 兼容 wrapper，统一本路径。
 # 依赖: lib/common.sh（颜色/帮助）、lib/nvlink.sh（NVLink 解析库）
 # =============================================================================
 

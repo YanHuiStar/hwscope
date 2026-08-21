@@ -28,7 +28,7 @@ done
 PID_FILE="${WEB_DIR}/report_server.pid"
 
 usage() {
-    echo "用法: bash tools/report_server.sh [--port 8080] [--open] [--stop]"
+    echo "用法: bash report/tools/report_server.sh [--port 8080] [--open] [--stop]"
     echo "  --port N    HTTP 端口（默认 8080）"
     echo "  --open      自动打开浏览器"
     echo "  --stop      停止服务"

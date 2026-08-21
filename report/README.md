@@ -53,7 +53,7 @@ bash report/tools/batch_compare.sh <目录1> <目录2> ...   # 多机横向对�
 bash report/tools/report_server.sh [--port 8080]         # 报告在线预览（绑定 127.0.0.1）
 ```
 
-> **兼容**：旧路径 `tools/report.sh` / `tools/batch_compare.sh` / `tools/report_server.sh` 为 wrapper（`exec` 转发到 report/），旧命令继续可用；文档以 `report/` 新路径为准。
+> **路径统一**：报告体系入口与配套工具一律用 `report/` 路径（v1.35.3 已移除 tools/ 下的兼容 wrapper，旧路径不再可用）。
 
 ## 设计说明
 
