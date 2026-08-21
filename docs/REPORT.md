@@ -32,17 +32,14 @@
 - **硬件概览（配置单）**：自动生成自检测数据（准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理），可对照采购配置单核对
 - **13 项判定**：GPU PCIe / NVLink / DCGM / VBIOS / 内存速率 / IB 线缆 / 磁盘寿命 / SMART / 电源冗余 / 温度 / SEL / 固件合规 / OS-BMC 一致性
 
-### 样例（HGX B300）
+### 样例（HGX B300 实际输出）
 
 ```
-| # | 检查项 | 结果 | 说明 |
-|---|--------|------|------|
-| 1 | GPU PCIe 链路完整 | ✅ PASS | 8 卡全部 x16 |
-| 2 | NVLink 互联 | ✅ PASS | 全互联拓扑，无降级 |
-| 3 | DCGM 诊断 | ⚠️ WARN | 配置项 Fail（Persistence Mode 未开，非硬件故障）|
-| 4 | GPU VBIOS 版本一致 | ✅ PASS | 97.10.64.00.0C ×8 |
-| 9 | 电源冗余 | ✅ PASS | 4+4 N+N 冗余 |
-| 11 | SEL 事件 | ✅ PASS | 无 Critical 事件 |
+| 1 | GPU PCIe 链路完整 | ✅ PASS | 全部 GPU 处于最高 PCIe 速率 |
+| 2 | NVLink 互联 | ✅ PASS | 全互联无降级链路 |
+| 3 | DCGM 诊断 | ⚠️ WARN | 配置项 Fail (Persistence Mode 未开启, 非硬件故障) |
+| 4 | GPU VBIOS 版本一致 | ✅ PASS | 97.10.64.00.0C |
+| 5 | 内存运行速率 | ✅ PASS | ⚠️ 降速运行（额定 6400 MT/s）（插满 32/32 槽 2DPC，降速属平台规范正常现象）|
 | 13 | OS-BMC 口径一致 | — N/A | 校验未启用（--bmc-verify 开启）|
 
 判定: 有条件通过（1 项 WARN，建议记录后交付）
