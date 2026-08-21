@@ -21,13 +21,15 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 
 ## 报告生成
 
+> 报告体系为独立 `report/` 模块（v1.35.0）：主入口 `report/report.sh`；旧路径 `tools/report.sh` 为兼容 wrapper。
+
 ```bash
-bash tools/report.sh <采集目录>                          # json/md/txt/html 四件套
-bash tools/report.sh <采集目录> --acceptance             # 验收清单 md/html（13 项判定）
-bash tools/report.sh <采集目录> --baseline <历史目录>     # 时序差异对比
-bash tools/report.sh <采集目录> --test-dir <压测目录>     # 关联压测归档
-bash tools/report.sh <采集目录> --bmc-verify             # 开启 OS-BMC 一致性交叉核验
-bash tools/report.sh <采集目录> --json                   # 仅生成 json（也可 --md/--txt/--both）
+bash report/report.sh <采集目录>                          # json/md/txt/html 四件套
+bash report/report.sh <采集目录> --acceptance             # 验收清单 md/html（13 项判定）
+bash report/report.sh <采集目录> --baseline <历史目录>     # 时序差异对比
+bash report/report.sh <采集目录> --test-dir <压测目录>     # 关联压测归档
+bash report/report.sh <采集目录> --bmc-verify             # 开启 OS-BMC 一致性交叉核验
+bash report/report.sh <采集目录> --json                   # 仅生成 json（也可 --md/--txt/--both）
 ```
 
 报告**只读日志、不重新采集**，可反复生成；日志缺失字段显示 N/A。
@@ -59,7 +61,7 @@ tools\win\remote_collect.ps1 -H root@10.0.0.1 -Modules gpu,cpu -OutDir D:\hwout
 ### 多机对比 / 批量运维
 
 ```bash
-bash tools/batch_compare.sh <目录1> <目录2> ...   # 多机横向对比（差异 ⚠️ 标注）
+bash report/tools/batch_compare.sh <目录1> <目录2> ...   # 多机横向对比（差异 ⚠️ 标注；旧路径 tools/batch_compare.sh 兼容）
 bash tools/remote_batch.sh -H "root@10.0.0.1 root@10.0.0.2" -c 'nvidia-smi -L'  # 批量命令
 ```
 
@@ -83,7 +85,7 @@ bash tools/power_monitor.sh stop                                    # 停止并�
 ### 报告在线预览
 
 ```bash
-bash tools/report_server.sh          # 解包 logs/report/ → 本地预览（绑定 127.0.0.1）
+bash report/tools/report_server.sh          # 解包 logs/report/ → 本地预览（绑定 127.0.0.1；旧路径 tools/report_server.sh 兼容）
 ```
 
 ### 网卡 / 线缆 / BMC 运维

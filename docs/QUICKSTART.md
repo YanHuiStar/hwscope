@@ -29,8 +29,8 @@ sudo bash hwscope.sh
 采集完成后**自动生成**报告；也可对任意已有采集目录手动重跑（只读，不重新采集）：
 
 ```bash
-bash tools/report.sh <采集目录>              # 四件套 json/md/txt/html
-bash tools/report.sh <采集目录> --acceptance  # 验收清单（13 项判定）
+bash report/report.sh <采集目录>              # 四件套 json/md/txt/html（旧路径 tools/report.sh 兼容）
+bash report/report.sh <采集目录> --acceptance  # 验收清单（13 项判定）
 ```
 
 ## 只采部分模块 / 单模块

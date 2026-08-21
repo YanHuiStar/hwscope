@@ -42,7 +42,7 @@ bash test/cpu_test.sh
 
 ### 日志位置
 - 所有测试输出：`logs/test/<时间戳>/`（每个测试项一个 `<测试名>.log` 汇总 + 各工具 detail 日志；`manifest.txt` 记录汇总文件供 report.sh --test-dir 关联）
-- 报告归档：采集后可用 `tools/report.sh <out> --test-dir <压测目录>` 将压测结果并入交付报告
+- 报告归档：采集后可用 `report/report.sh <out> --test-dir <压测目录>` 将压测结果并入交付报告
 
 ## 依赖安装
 

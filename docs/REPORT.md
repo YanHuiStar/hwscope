@@ -1,6 +1,7 @@
 # 报告与验收体系
 
 > [← 返回 README](../README.md) · 使用入口见 [QUICKSTART.md](QUICKSTART.md) / [USAGE.md](USAGE.md)
+> 报告为独立 `report/` 模块（v1.35.0）：入口 `report/report.sh`（旧路径 `tools/report.sh` 兼容），结构见 [report/README](../report/README.md)。
 
 ## 报告四件套
 
@@ -27,7 +28,7 @@
 
 ## 验收清单（Acceptance Checklist）
 
-`bash tools/report.sh <目录> --acceptance` 生成 `hwscope_acceptance.{md,html}`：
+`bash report/report.sh <目录> --acceptance` 生成 `hwscope_acceptance.{md,html}`：
 
 - **硬件概览（配置单）**：自动生成自检测数据（准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理），可对照采购配置单核对
 - **13 项判定**：GPU PCIe / NVLink / DCGM / VBIOS / 内存速率 / IB 线缆 / 磁盘寿命 / SMART / 电源冗余 / 温度 / SEL / 固件合规 / OS-BMC 一致性

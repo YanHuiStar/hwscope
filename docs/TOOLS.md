@@ -20,12 +20,21 @@
 
 ## `tools/` — 采集与运维
 
-### 报告 / 对比
+> **报告体系已独立为 `report/` 模块**（v1.35.0）：报告生成、验收清单、多机对比、在线预览迁至 `report/`（结构见 [report/README](../report/README.md)），`tools/` 下保留同名兼容 wrapper。详细报告体系见 [REPORT.md](REPORT.md)。
+
+### 报告（→ `report/` 模块）
 
 | 脚本 | 说明 |
 |------|------|
-| `report.sh` | 报告生成：四件套 json/md/txt/html + 验收清单（--acceptance）+ 基线对比（--baseline）+ 压测关联（--test-dir）+ OS-BMC 核验（--bmc-verify）；也可单格式 --json/--md/--txt/--both |
-| `batch_compare.sh` | 多机横向对比：读各机 JSON 生成同字段对比表（差异 ⚠️ 标注） |
+| `report/report.sh` | 报告生成：四件套 json/md/txt/html + 验收清单（--acceptance）+ 基线对比（--baseline）+ 压测关联（--test-dir）+ OS-BMC 核验（--bmc-verify）；也可单格式 --json/--md/--txt/--both（旧路径 tools/report.sh 兼容） |
+| `report/tools/batch_compare.sh` | 多机横向对比：读各机 JSON 生成同字段对比表（差异 ⚠️ 标注） |
+| `report/tools/report_server.sh` | 报告在线预览：解包 logs/report/ → 本地 HTTP（绑定 127.0.0.1） |
+| `report/lib/md2html.awk` | 纯 awk Markdown→HTML 转换器（报告 HTML 件用，零依赖） |
+
+### 诊断 / 对比（tools/ 原地）
+
+| 脚本 | 说明 |
+|------|------|
 | `nvlink_verify.sh` | NVLink 完整性校验（拓扑比对） |
 | `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前） |
 | `sync_version.sh` | 版本号三处同步（hwscope.sh 注释/变量 + README 徽章） |
@@ -46,16 +55,9 @@
 | `fw_baseline_import.sh` | 固件基线自动导入：基准机 → conf/fw_required.txt（--diff 预览 / --apply 写入） |
 | `firmware_check.sh` | 固件版本核对（对照基线快速核对） |
 | `power_monitor.sh` | 能耗持续采样：后台循环 DCMI/Redfish → CSV，stop 输出聚合 + kWh 核算 |
-| `report_server.sh` | 报告在线预览：解包 logs/report/ → 本地 HTTP（绑定 127.0.0.1） |
 | `nic_tool.sh` | 网卡运维：Mellanox 信息/固件管理 |
 | `cable_map.sh` | IB 线缆拓扑：自动发现物理连线关系 |
 | `bmc_tool.sh` | BMC 管理：凭据/密码 |
 | `install_ai.sh` | AI 推理引擎安装：vLLM / SGLang / TRT-LLM / Ollama / llama.cpp |
 | `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...） |
 | `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认） |
-
-### 内部组件
-
-| 文件 | 说明 |
-|------|------|
-| `md2html.awk` | 纯 awk Markdown→HTML 转换器（报告 HTML 件用，零依赖） |
