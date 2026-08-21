@@ -1,10 +1,10 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.34.25-blue.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github)
+![Version](https://img.shields.io/badge/Version-1.34.26-blue.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
-**Author:** YanHui · **Version:** 1.34.25 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.34.26 · **License:** [Apache 2.0](LICENSE)
 
 ## 核心特性
 
@@ -31,32 +31,15 @@ bash tools/remote_collect.sh -H root@10.0.0.1
 tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 ```
 
-## 报告长这样
+## 输出位置
 
-采集完成自动生成四件套（JSON/MD/TXT/HTML）+ 验收清单。以下为 HGX B300 实际报告节选：
-
-```
-## GPU
-| 项 | 值 |
-|----|----|
-| 数量 | 8 |
-| 型号 | NVIDIA B300 SXM6 AC |
-| 显存总量 | 2149 GiB/2304GB（检测/额定，288GB/卡）|
-| VBIOS | 97.10.64.00.0C |
-| NVLink | 8卡 全互联 (18条/卡 × 53.125 GB/s) |
+```text
+output/<机器ID>/                     # 采集结果 + 报告四件套（json/md/txt/html + 验收清单）
+logs/<SN>-<时间戳>.tar.gz            # 日志归档包
+logs/report/<SN>-<时间戳>-report.tar.gz   # 报告归档包（交付用，含四件套+验收清单）
 ```
 
-验收清单（`--acceptance`，13 项判定）：
-
-```
-| 1 | GPU PCIe 链路完整 | ✅ PASS | 8 卡全部 x16 |
-| 3 | DCGM 诊断 | ⚠️ WARN | 配置项 Fail（Persistence Mode 未开，非硬件故障）|
-| 13 | OS-BMC 口径一致 | — N/A | 校验未启用（--bmc-verify 开启）|
-
-判定: 有条件通过（1 项 WARN，建议记录后交付）
-```
-
-> 完整示例见 [docs/REPORT.md](docs/REPORT.md) 与 [docs/USAGE.md](docs/USAGE.md)。
+> 报告结构/验收体系详见 [docs/REPORT.md](docs/REPORT.md)。
 
 ## 文档
 
