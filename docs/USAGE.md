@@ -7,8 +7,12 @@
 ```bash
 sudo bash hwscope.sh                          # 全量采集（双层并行）
 sudo bash hwscope.sh --serial                 # 串行（低负载）
+sudo bash hwscope.sh --force                  # 输出目录已存在时强制重采（否则报错退出）
+sudo bash hwscope.sh --quiet                  # 静默模式（不打印模块明细）
+sudo bash hwscope.sh --no-parallel            # 禁模块内并行（低负载）
+sudo bash hwscope.sh --module-timeout 120     # 模块超时秒数（默认 300）
 sudo bash hwscope.sh --modules gpu,cpu        # 只采部分模块
-sudo bash hwscope.sh --skip gpu,fan          # 跳过指定模块
+sudo bash hwscope.sh --skip gpu,fan           # 跳过指定模块
 sudo bash hwscope.sh --output /data/collect   # 指定输出目录
 bash modules/04_gpu.sh /path/output           # 单模块（调试）
 ```
@@ -22,6 +26,8 @@ bash tools/report.sh <采集目录>                          # json/md/txt/html 
 bash tools/report.sh <采集目录> --acceptance             # 验收清单 md/html（13 项判定）
 bash tools/report.sh <采集目录> --baseline <历史目录>     # 时序差异对比
 bash tools/report.sh <采集目录> --test-dir <压测目录>     # 关联压测归档
+bash tools/report.sh <采集目录> --bmc-verify             # 开启 OS-BMC 一致性交叉核验
+bash tools/report.sh <采集目录> --json                   # 仅生成 json（也可 --md/--txt/--both）
 ```
 
 报告**只读日志、不重新采集**，可反复生成；日志缺失字段显示 N/A。
@@ -69,8 +75,9 @@ bash tools/fw_baseline_import.sh <基准机采集目录> --apply  # 写入 conf/
 ### 能耗持续采样
 
 ```bash
-bash tools/power_monitor.sh start    # 后台采样（DCMI/Redfish → CSV）
-bash tools/power_monitor.sh stop     # 停止并输出聚合 + kWh 核算
+bash tools/power_monitor.sh start [--interval 60] [--duration 0]   # 后台采样（DCMI 优先/Redfish 兜底）
+bash tools/power_monitor.sh status                                  # 查看采样状态
+bash tools/power_monitor.sh stop                                    # 停止并输出聚合 + kWh 核算
 ```
 
 ### 报告在线预览
@@ -91,7 +98,8 @@ bash tools/bmc_tool.sh               # BMC 凭据/密码管理
 
 ```bash
 sudo bash tools/dhcp_server.sh install            # 安装 dnsmasq
-sudo bash tools/dhcp_server.sh start              # 启动（192.168.50.0/24 .100-.200）
+sudo bash tools/dhcp_server.sh config             # 配置网段（默认 192.168.50.0/24 .100-.200）
+sudo bash tools/dhcp_server.sh start              # 启动 DHCP 服务（需先 config）
 sudo bash tools/dhcp_server.sh leases-export <csv>  # 租约导出
 sudo bash tools/dhcp_server.sh reconcile <目录...>  # 租约 ↔ 采集台账交叉核对
 ```
@@ -99,7 +107,7 @@ sudo bash tools/dhcp_server.sh reconcile <目录...>  # 租约 ↔ 采集台账�
 ### AI 推理引擎安装
 
 ```bash
-bash tools/install_ai.sh vllm          # vLLM / SGLang / TRT-LLM / Ollama / llama.cpp
+bash tools/install_ai.sh          # 交互菜单选择引擎：vLLM / SGLang / TRT-LLM / Ollama / llama.cpp
 ```
 
 ## 硬件压测（只读，不修改硬件配置）
@@ -108,9 +116,9 @@ bash tools/install_ai.sh vllm          # vLLM / SGLang / TRT-LLM / Ollama / llam
 bash test/test_all.sh          # 菜单式入口（推荐，选测/全测）
 bash test/cpu_test.sh          # CPU 稳定性（菜单选择 stress-ng/sysbench/mprime）
 bash test/memory_test.sh       # 内存压力（stress-ng/memtester/sysbench）
-bash test/disk_test.sh         # 磁盘读写（fio/hdparm/dd，选盘后测试）
+sudo bash test/disk_test.sh    # 磁盘读写（fio/hdparm/dd，选盘后测试，需 sudo）
 bash test/network_test.sh      # 网络吞吐（iperf3，运行时提示输入服务端地址）
-bash test/ib_test.sh           # IB 链路（perftest 自动配对打流）
+sudo bash test/ib_test.sh      # IB 链路（perftest 自动配对打流，需 sudo）
 bash test/gpu_test.sh          # GPU 压力（自动发现已装测试程序）
 bash test/nccl_test.sh         # NCCL 集合通信
 ```

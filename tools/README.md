@@ -24,7 +24,7 @@
 
 ### `nvlink_verify.sh` — NVLink 完整性校验（实时）
 - **用法**：`bash tools/nvlink_verify.sh`
-- **功能**：实时解析 `nvidia-smi topo -m` 找非 NVLink 降级链路 + `nvlink --status` CRC 错误/链路 down 检测，输出健康结论（与报告共用 lib/nvlink.sh 解析逻辑）
+- **功能**：实时解析 `nvidia-smi topo -m` 找非 NVLink 降级链路 + `nvidia-smi nvlink --status` CRC 错误/链路 down 检测，输出健康结论（与报告共用 lib/nvlink.sh 解析逻辑）
 - **依赖**：nvidia-smi
 
 ### `firmware_check.sh` — 固件版本核对
@@ -39,7 +39,7 @@
 
 ### `cable_map.sh` — 线缆拓扑图（对线神器）
 - **用法**：`sudo bash tools/cable_map.sh`
-- **功能**：BDF↔mlx5↔netdev 映射 + EEPROM serial 配对（serial 相同=同一根线）；DAC 无 serial 时自动**断口联动验证**（⚠️ 会逐个 down 端口再恢复，约 3-5s/口，Ctrl+C 自动恢复）
+- **功能**：BDF↔mlx5↔netdev 映射 + EEPROM serial 配对（serial 相同=同一根线）；DAC 无 serial 时**确认后断口联动验证**（⚠️ 会逐个 down 端口再恢复，约 3-5s/口，Ctrl+C 自动恢复）
 - **依赖**：mlxlink（MFT）
 
 ### `batch_compare.sh` — 多机横向对比
@@ -47,12 +47,11 @@
 - **功能**：读各机 `hwscope_report.json`，同字段对比（固件/内存速率/盘型号/GPU 配置），差异 ⚠️ 标注；批量交付一致性抽检
 
 ### `power_monitor.sh` — 连续功耗采样
-- **用法**：`sudo bash tools/power_monitor.sh [采样秒数] [间隔秒]`
-- **功能**：BMC 功耗连续采样（当前/最小/最大/平均）+ 累计 kWh 核算
-- **依赖**：ipmitool（DCMI）/ Redfish
+- **用法**：`bash tools/power_monitor.sh start|stop|status [--interval 60] [--duration 0] [--output <目录>] [--redfish]`
+- **功能**：BMC 功耗连续采样（DCMI 优先，Redfish 兜底），stop 输出聚合 + 累计 kWh 核算；`--redfish` 强制走 Redfish
 
 ### `report_server.sh` — 报告 Web 预览
-- **用法**：`bash tools/report_server.sh [端口]`，浏览器打开 `http://127.0.0.1:<端口>`
+- **用法**：`bash tools/report_server.sh [--port 8080] [--open] [--stop]`，浏览器打开 `http://127.0.0.1:<端口>`
 - **功能**：本地起 Web 服务浏览各机器报告（交付演示/内部共享）；**固定绑定 127.0.0.1**（防含 SN/MAC 的报告无鉴权暴露局域网）
 
 ### `sync_version.sh` — 版本号同步
