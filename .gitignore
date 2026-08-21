@@ -3,6 +3,7 @@ output/
 *.tmp
 *.swp
 *~
+*.bak-*              # fw_baseline_import --apply 的固件基线备份（conf/fw_required.txt.bak-<TS>）
 .DS_Store
 logs/
 

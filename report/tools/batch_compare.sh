@@ -7,7 +7,7 @@
 # 功能: 读取各机 hwscope_report.json（程序消费稳定格式），生成同字段横向对比表，
 #       差异项 ⚠️ 标注，一眼看出批次差异（固件版本/内存速率/盘型号/GPU 型号等）。
 # 场景: 批量交付、批次一致性抽检。
-# 输出: batch_compare_<时间戳>.{md,txt,html}（HTML 经 md2html.awk 转换）
+# 输出: logs/batch_compare/batch_compare_<时间戳>.{md,txt,html}（默认；-o 可自定义前缀/路径；HTML 经 md2html.awk 转换）
 # 依赖: 仅 bash/awk/grep/sed（零新依赖）；各目录需已生成 hwscope_report.json
 # =============================================================================
 
@@ -18,12 +18,12 @@ usage() {
     echo "用法: $0 <dir1> <dir2> [...] [-o 输出前缀]"
     echo "      $0 --dirs \"output/SN1 output/SN2\" [-o 输出前缀]"
     echo "功能: 多机同字段横向对比（读各机 hwscope_report.json），差异 ⚠️ 标注"
-    echo "输出: <前缀>_<时间戳>.{md,txt,html}（默认前缀 batch_compare）"
+    echo "输出: logs/batch_compare/batch_compare_<时间戳>.{md,txt,html}（默认；-o 自定义前缀/路径）"
     exit 0
 }
 
 # ─── 参数解析 ───
-DIRS=(); OUT_PREFIX="batch_compare"
+DIRS=(); OUT_PREFIX="batch_compare"; OUT_CUSTOM=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help) usage ;;
@@ -32,11 +32,17 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] --dirs 缺少目录列表\033[0m"; usage; exit 1; }   # v1.33.3
             for _d in $2; do DIRS+=("$_d"); done
             shift 2 ;;
-        -o) [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] -o 缺少输出前缀\033[0m"; usage; exit 1; }; OUT_PREFIX="$2"; shift 2 ;;
+        -o) [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] -o 缺少输出前缀\033[0m"; usage; exit 1; }; OUT_PREFIX="$2"; OUT_CUSTOM=1; shift 2 ;;
         --*) echo "[WARN] 未知参数: $1"; shift ;;
         *) DIRS+=("$1"); shift ;;
     esac
 done
+
+# 默认输出到 logs/batch_compare/（项目约定产物入 logs/，gitignored 不污染仓库；
+# 原行为输出到当前工作目录会在项目根运行后弄脏 git status——v1.35.2；-o 自定义前缀/路径时按用户指定）
+if [ -z "$OUT_CUSTOM" ]; then
+    OUT_PREFIX="${SCRIPT_DIR}/logs/batch_compare/${OUT_PREFIX}"
+fi
 
 [ "${#DIRS[@]}" -lt 2 ] && { echo -e "\033[0;31m[ERROR] 至少需要 2 个采集目录\033[0m"; usage; }
 
@@ -100,6 +106,8 @@ declare -a FIELDS=(
 )
 
 TS=$(date '+%Y%m%d%H%M%S')
+# 确保输出目录存在（默认 logs/batch_compare/；-o 自定义带目录时也自动创建）
+mkdir -p "$(dirname "${OUT_PREFIX}")" 2>/dev/null || true
 MD="${OUT_PREFIX}_${TS}.md"
 TXT="${OUT_PREFIX}_${TS}.txt"
 
