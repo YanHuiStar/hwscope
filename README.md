@@ -1,10 +1,8 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.34.26-blue.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github)
+![Version](https://img.shields.io/badge/Version-1.34.27-blue.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github)
 
-面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
-
-**Author:** YanHui · **Version:** 1.34.26 · **License:** [Apache 2.0](LICENSE)
+面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（H200/B200/B300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
 ## 核心特性
 
@@ -14,8 +12,7 @@
 - **GPU 魔改识别**：内置 60+ 型号额定显存规格库，检测值交叉验证，魔改/伪装卡自动 `⚠️` 提示
 - **远程采集**：tar 推送执行回拉，Linux/WSL + **Windows 原生**均支持（交互式密码，不落盘）
 - **只读无害**：采集不写硬件、DCGM 仅 Level 1、报告不重新采集
-- **多机对比 / 基线对比**：批次一致性抽检与时序差异追踪
-- **配套运维工具**：能耗采样、固件基线、报告预览、DHCP、批量运维、硬件压测
+- **多机对比 / 配套运维**：批次一致性抽检、时序基线对比、能耗采样、固件基线、DHCP、批量运维、硬件压测
 
 ## 快速开始
 
