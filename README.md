@@ -1,6 +1,6 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.34.27-blue.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github)
+![Version](https://img.shields.io/badge/Version-1.34.28-blue.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（H200/B200/B300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
@@ -27,16 +27,6 @@ bash tools/report.sh output/<机器ID> --acceptance
 bash tools/remote_collect.sh -H root@10.0.0.1
 tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 ```
-
-## 输出位置
-
-```text
-output/<机器ID>/                     # 采集结果 + 报告四件套（json/md/txt/html + 验收清单）
-logs/<SN>-<时间戳>.tar.gz            # 日志归档包
-logs/report/<SN>-<时间戳>-report.tar.gz   # 报告归档包（交付用，含四件套+验收清单）
-```
-
-> 报告结构/验收体系详见 [docs/REPORT.md](docs/REPORT.md)。
 
 ## 文档
 
