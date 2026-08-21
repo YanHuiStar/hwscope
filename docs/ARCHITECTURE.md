@@ -3,24 +3,22 @@
 ## 采集流水线
 
 ```
-  hwscope.sh ──┬─ 参数解析（--modules/--serial/--output/...）
-               ├─ 平台检测（SXM 四重 → PCIe → head → none）   lib/platform.sh
-               ├─ 并行执行 15 个采集模块（每模块独立进程）
-               │    ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-               │    │ 01_motherboard │   │ 04_gpu     │   │ 08_storage  │ ...
-               │    │ dmidecode    │   │ nvidia-smi  │   │ smartctl    │
-               │    └──────┬──────┘   └──────┬──────┘   └──────┬──────┘
-               │           │ write_manifest  │ 每命令一日志     │
-               │           ▼                 ▼                 ▼
-               │     output/<机器ID>/  （各模块子目录 + manifest.txt）
-               └─ 汇总 summary.txt → 归档 logs/<SN>-<TS>.tar.gz
-                                │
-                                ▼
-  tools/report.sh（只读日志，不重新采集）
-      ├─ 读各模块 manifest 解耦定位日志
-      ├─ hwscope_report.{json,md,txt,html}   报告四件套
-      ├─ hwscope_acceptance.{md,html}        验收清单（13 项判定）
-      └─ --baseline / --test-dir / --bmc-verify  时序对比 / 压测归档 / BMC 核验
+hwscope.sh ─── 参数解析 / 平台检测（SXM → PCIe → head → none）
+     │
+     ├─ 并行执行 15 个采集模块（每模块独立进程、每命令一个日志）
+     │      │  write_manifest 声明输出
+     │      ▼
+     │   output/<机器ID>/   （各模块子目录 + manifest.txt）
+     │      │
+     │      ▼
+     ├─ summary.txt 汇总 → 归档 logs/<SN>-<TS>.tar.gz
+     │
+     ▼
+tools/report.sh（只读日志，不重新采集）
+     ├─ 读各模块 manifest 解耦定位日志
+     ├─ hwscope_report.{json,md,txt,html}   报告四件套
+     ├─ hwscope_acceptance.{md,html}        验收清单（13 项判定）
+     └─ --baseline / --test-dir / --bmc-verify
 ```
 
 **数据流**：采集（写日志）→ 报告（读日志）单向流动，模块零耦合、可单独重跑、可审计。
