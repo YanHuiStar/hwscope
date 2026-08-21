@@ -1,6 +1,6 @@
 # 报告与验收体系
 
-> 使用入口见 [QUICKSTART.md](QUICKSTART.md) / [USAGE.md](USAGE.md)。
+> [← 返回 README](../README.md) · 使用入口见 [QUICKSTART.md](QUICKSTART.md) / [USAGE.md](USAGE.md)
 
 ## 报告四件套
 
@@ -51,10 +51,10 @@
 
 | 结果 | 条件 |
 |------|------|
-| 不合格 | 任一 FAIL |
-| 有条件通过 | 有 WARN（无 FAIL） |
-| 数据不足 | N/A 计数 ≥ 4（无 FAIL/WARN） |
-| 基本通过 | 其余 |
+| ❌ 不合格 | 任一 FAIL |
+| ⚠️ 有条件通过 | 有 WARN（无 FAIL） |
+| ⚠️ 数据不足 | N/A 计数 ≥ 4（无 FAIL/WARN） |
+| ✅ 基本通过 | 其余 |
 
 ### 条件驱动 N/A 计数（非一刀切）
 

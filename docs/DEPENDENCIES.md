@@ -1,5 +1,7 @@
 # 依赖环境安装指南（docs/DEPENDENCIES.md）
 
+> [← 返回 README](../README.md) · 快速开始见 [QUICKSTART.md](QUICKSTART.md)
+>
 > HwScope 采用**进程调用**方式使用外部工具：采集时按模块 `check_cmd` 检测，**未安装的工具对应模块自动跳过**（`[SKIP]`），不影响整体采集。
 > 本文档覆盖全部依赖的安装方法：包管理器一键装、install_tool.sh、以及厂商/手动工具（官方地址 + 步骤）。
 > 快速路径：基础环境一条命令 `sudo bash tools/install_tool.sh`（选 1 基础采集工具）即可跑通采集；本文档用于**补齐全部能力**。

@@ -1,5 +1,7 @@
 # Windows 运维机工具（tools/win/）
 
+> [← 返回 README](../README.md) · Linux/WSL 侧工具见 [TOOLS.md](TOOLS.md)
+>
 > 所有工具为 `.ps1` 脚本 + 同名 `.bat` 启动器（chcp 65001 + ExecutionPolicy Bypass + 参数透传），
 > 依赖 Windows 自带 OpenSSH 客户端 / PowerShell（零新依赖）。
 

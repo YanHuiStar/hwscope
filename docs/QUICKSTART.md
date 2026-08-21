@@ -1,6 +1,6 @@
 # 快速开始（Quick Start）
 
-> 完整使用指南见 [USAGE.md](USAGE.md)；报告与验收体系见 [REPORT.md](REPORT.md)。
+> [← 返回 README](../README.md) · 完整使用指南见 [USAGE.md](USAGE.md) · 报告与验收体系见 [REPORT.md](REPORT.md)
 
 ## 环境准备
 
