@@ -69,7 +69,7 @@
 | `nic_tool.sh` | `sudo bash tools/nic_tool.sh` | 网卡运维菜单：状态/光模块/固件查询、端口复位、MTU、**IB↔ETH 模式切换** | 网卡配置 |
 | `net_dhcp.sh` | `sudo bash tools/net_dhcp.sh` | 一键配置网口 DHCP（Ubuntu netplan，自动识别插线网口、备份回滚） | /etc/netplan |
 | `dhcp_server.sh` | `sudo bash tools/dhcp_server.sh` | DHCP 服务器（dnsmasq 封装）：安装/配置网段/启停/租约查询导出 | dnsmasq 配置 |
-| `install_tool.sh` | `sudo bash tools/install_tool.sh` | 安装采集/压测/IB 诊断/DCGM/MFT/推理引擎 | 系统软件包 |
+| `install_tool.sh` | `sudo bash tools/install_tool.sh` | 安装采集/压测/IB 诊断依赖（1-3 真装）、DCGM/MFT/推理指引（4-6）；**7-9 实验自动安装默认注释态**（真机验证后取消注释启用）| 系统软件包 |
 | `install_ai.sh` | `sudo bash tools/install_ai.sh` | AI 推理环境安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | Docker/系统 |
 | `remote_batch.sh` | `bash tools/remote_batch.sh` | 多机批量 SSH 运维（命令/采集/回拉）| 远程主机 |
 | `fw_baseline_import.sh` | `bash tools/fw_baseline_import.sh` | 固件基线自动导入（firmware_check 基线管理）| 基线文件 |
