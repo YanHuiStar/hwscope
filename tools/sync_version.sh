@@ -83,7 +83,9 @@ if [ "$HEAD_VER" != "$VER_NUM" ]; then
 fi
 
 # 改用 sed 提取（grep -oP 依赖 GNU grep 的 -P/\K，busybox/macOS 不可用——v1.33.3；v\? 兼容 README 的 v 前缀）
+# README 版本信息位置：**Version:** 行（历史格式）或 shields.io badge（v1.34.27 起精简版只留 badge）
 README_VER=$(sed -n 's/.*\*\*Version:\*\* v\?\([0-9][0-9.]*\).*/\1/p' "$README" | head -1)
+[ -z "$README_VER" ] && README_VER=$(sed -n 's/.*badge\/Version-\([0-9][0-9.]*\)-.*/\1/p' "$README" | head -1)
 if [ "$README_VER" != "$VER_NUM" ]; then
     echo "[ERROR] README 版本不一致: 期望 ${VER_NUM}, 实际 ${README_VER}" >&2
     exit 1
