@@ -4,7 +4,7 @@
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（B200/B300/GB300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息（15 类模块、每命令一个日志），自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
-**Author:** YanHui · **Version:** 1.34.21 · **License:** [Apache 2.0](LICENSE)
+**Author:** YanHui · **Version:** 1.34.22 · **License:** [Apache 2.0](LICENSE)
 
 ## 核心特性
 
@@ -35,7 +35,8 @@ tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 
 | 文档 | 内容 |
 |------|------|
-| [docs/QUICKSTART.md](docs/QUICKSTART.md) | 快速开始：依赖工具/采集/报告/远程采集 |
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | 快速开始：采集/报告/远程采集 |
+| [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) | 依赖环境安装：全景依赖表/厂商工具/发行版差异 |
 | [docs/USAGE.md](docs/USAGE.md) | 使用指南：全部命令/运维工具/压测 |
 | [docs/REPORT.md](docs/REPORT.md) | 报告与验收体系：四件套/13 项判定/条件驱动 N/A |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构：目录结构/模块/平台兼容/安全约定 |
@@ -57,7 +58,7 @@ tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 | `nvidia-smi` · `nvswitch` | GPU / NVSwitch 采集 | GPU 机器必需 |
 | `smartctl` · `ethtool` · `ibstat` 等 | 存储/网络/光模块增强 | 可选，缺失自动跳过 |
 
-> 全部工具**未安装时对应模块自动跳过**（`[SKIP]`），不影响整体采集；安装见 `tools/install_tool.sh` 与 [docs/QUICKSTART.md](docs/QUICKSTART.md)。
+> 全部工具**未安装时对应模块自动跳过**（`[SKIP]`），不影响整体采集；安装见 [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)（全景依赖表 + 厂商工具步骤）。
 > **合规**：hwscope 以进程调用方式使用上述工具，不修改、不捆绑、不分发；各工具版权归其作者。
 
 [Apache License 2.0](LICENSE)
