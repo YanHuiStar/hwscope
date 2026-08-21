@@ -5,7 +5,7 @@
 ## 环境准备
 
 - Linux x86_64 / aarch64（root 或 sudo 用户）；Windows 仅用于运维机侧工具（`tools/win/`）
-- 依赖工具：`dmidecode`、`lspci`、`nvidia-smi`（GPU 机器）等——**未安装的工具对应模块自动跳过，不影响整体采集**
+- 依赖工具：`dmidecode`、`lspci`、`nvidia-smi`（GPU 机器）等——**未安装的工具对应模块自动跳过，不影响整体采集**；完整依赖清单与厂商工具（DCGM/MFT/storcli）安装步骤见 [docs/DEPENDENCIES.md](DEPENDENCIES.md)
 - Windows 复制进来的文件先修复换行符：
 
 ```bash
