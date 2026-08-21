@@ -59,6 +59,7 @@ sudo bash tools/install_tool.sh
 | 4 | DCGM 诊断 | NVIDIA DCGM | **手动**（打印官方指引）|
 | 5 | MFT 固件工具 | Mellanox Firmware Tools | **手动**（打印官方指引）|
 | 6 | 推理引擎 | Triton / TensorRT-LLM | **手动**（打印官方指引）|
+| 7-9 | DCGM/MFT/厂商 RAID 自动安装 | 自动安装代码 | **实验**（默认注释态，真机验证后取消注释启用）|
 
 > RHEL/Rocky/Alma 的 stress-ng/sysbench/fio/iperf3 依赖 **EPEL 源**，装不上先执行：
 > `sudo dnf install -y epel-release` 再重试。
