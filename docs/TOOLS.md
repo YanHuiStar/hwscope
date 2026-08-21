@@ -27,7 +27,7 @@
 | 脚本 | 说明 |
 |------|------|
 | `report/report.sh` | 报告生成：四件套 json/md/txt/html + 验收清单（--acceptance）+ 基线对比（--baseline）+ 压测关联（--test-dir）+ OS-BMC 核验（--bmc-verify）；也可单格式 --json/--md/--txt/--both（旧路径 tools/report.sh 兼容） |
-| `report/tools/batch_compare.sh` | 多机横向对比：读各机 JSON 生成同字段对比表（差异 ⚠️ 标注） |
+| `report/tools/batch_compare.sh` | 多机横向对比：读各机 JSON 生成同字段对比表（差异 ⚠️ 标注）；输出 `logs/batch_compare/`（`-o` 自定义） |
 | `report/tools/report_server.sh` | 报告在线预览：解包 logs/report/ → 本地 HTTP（绑定 127.0.0.1） |
 | `report/lib/md2html.awk` | 纯 awk Markdown→HTML 转换器（报告 HTML 件用，零依赖） |
 

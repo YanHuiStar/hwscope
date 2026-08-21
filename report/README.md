@@ -47,7 +47,9 @@ bash report/report.sh <output_dir> --bmc-verify        # OS-BMC 一致性交叉�
 bash report/report.sh <output_dir> --json              # 仅 json（也可 --md/--txt/--both）
 
 # 报告配套工具
-bash report/tools/batch_compare.sh <目录1> <目录2> ...   # 多机横向对比
+bash report/tools/batch_compare.sh <目录1> <目录2> ...   # 多机横向对比（差异 ⚠️ 标注）
+                                                          #   默认输出 logs/batch_compare/（gitignored）；
+                                                          #   -o 自定义前缀/路径（v1.35.2）
 bash report/tools/report_server.sh [--port 8080]         # 报告在线预览（绑定 127.0.0.1）
 ```
 
