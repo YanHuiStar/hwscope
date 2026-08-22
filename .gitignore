@@ -14,3 +14,6 @@ scripts/
 # AI agent 工具残留（DeepSeek Harness 会话记忆等）
 .workbuddy/
 workspace/
+
+# Agent 本地协调状态（单机多会话用，勿提交）
+AGENT_STATE.md

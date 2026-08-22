@@ -186,6 +186,16 @@ detect_proxy() {
 
 push_main() {
     local proxy attempt out
+    # 版本单调性检查（v1.37.2）：本地 HWSCOPE_VERSION < 远程 → 拒绝（防凭记忆回退版本；fetch 已在上一步执行）
+    local lver rver
+    lver=$(grep '^HWSCOPE_VERSION=' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | head -1 | sed 's/.*"v\(.*\)".*/\1/')
+    rver=$(git show "${REMOTE}/${BRANCH}:hwscope.sh" 2>/dev/null | grep '^HWSCOPE_VERSION=' | head -1 | sed 's/.*"v\(.*\)".*/\1/')
+    if [ -n "$lver" ] && [ -n "$rver" ] && [ "$lver" != "$rver" ] \
+        && [ "$(printf '%s\n%s\n' "$lver" "$rver" | sort -V 2>/dev/null | head -1)" = "$lver" ]; then
+        fail "版本回退: 本地 v${lver} < 远程 v${rver}，拒绝推送"
+        ai "先 git pull --rebase $REMOTE $BRANCH，在远程 v${rver} 基础上升级版本（tools/sync_version.sh），再重推"
+        return 1
+    fi
     # 直连 3 次（间隔 3-5s，处理 Connection reset 偶发）
     for attempt in 1 2 3; do
         info "推送尝试 ${attempt}/3（直连）..."
