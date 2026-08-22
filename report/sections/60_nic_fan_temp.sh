@@ -268,6 +268,23 @@ if [ -f "${ipmi_fan_sensors}" ]; then
     }')
 fi
 
+# ─── 风扇冗余三态（Fan Redundancy / FAN Cable / Fan PG；Dell/标准服务器 IPMI，v1.36.0） ───
+# FAN_REDUNDANT: 冗余满足 / ⚠️ 冗余失效 / N/A（供报告与验收"风扇冗余"判定）
+# FAN_EXTRA: 三态摘要展示（如 "Fan Redundancy:ok FAN Cable:ok 12V Fan PG:ok"）
+FAN_REDUNDANT="N/A"; FAN_EXTRA=""
+load_manifest "${FAN_DIR}" ipmi_fan_redundancy "ipmi_fan_redundancy.log"
+if [ -f "${ipmi_fan_redundancy}" ]; then
+    FAN_EXTRA=$(grep -v "^#" "${ipmi_fan_redundancy}" 2>/dev/null | grep -iE "Redundancy|Cable|PG" | head -6 \
+        | awk -F'|' '{n=$1; v=$3; gsub(/^ +| +$/,"",n); gsub(/^ +| +$/,"",v); if(n!=""&&v!="") printf "%s:%s ", n, v}' | sed 's/ $//')
+    _fan_red=$(grep -v "^#" "${ipmi_fan_redundancy}" 2>/dev/null | grep -iE "Fan.*Redundancy" | head -1)
+    if [ -n "$_fan_red" ]; then
+        case "$_fan_red" in
+            *"| 0x01"*|*"| 0x1"*|*ok*|*OK*) FAN_REDUNDANT="冗余满足" ;;
+            *) FAN_REDUNDANT="⚠️ 冗余失效" ;;
+        esac
+    fi
+fi
+
 # 温度概况（ipmi_sensors_temp.log：进风/出风/CPU/内存/电源 关键温度聚合 min-max）
 TEMP_SUMMARY=""
 load_manifest "${BMC_DIR}" ipmi_sensors_temp "ipmi_sensors_temp.log"

@@ -101,12 +101,15 @@ for sel in "${SELECTED[@]}"; do
 
         case "$fname" in
             bandwidthTest)
-                # CUDA 带宽测试: 逐卡 + P2P；两条命令分别记录，避免 exit code 互相覆盖
-                run_and_log "${fpath} --device=0 --mode=quick 2>&1" "$LOGFILE"
-                test_record "${fname}_quick" "$LOGFILE" "$start_ts" "$?"
+                # CUDA 带宽测试: 逐卡 quick + P2P；每卡独立 test_record
+                # （报告压测段呈矩阵：测试项×GPU×结果，对标 DGX FLD 逐组件结果表——v1.36.0）
+                for ((gi=0; gi<GPU_COUNT; gi++)); do
+                    run_and_log "${fpath} --device=${gi} --mode=quick 2>&1" "${REPORT_DIR}/bandwidthTest_gpu${gi}.log"
+                    test_record "bandwidthTest_gpu${gi}" "${REPORT_DIR}/bandwidthTest_gpu${gi}.log" "$start_ts" "$?"
+                done
                 if [ "$GPU_COUNT" -ge 2 ]; then
                     run_and_log "${fpath} --device=0 --device=1 --mode=peertopeer 2>&1" "${REPORT_DIR}/bandwidthTest_p2p.log"
-                    test_record "${fname}_p2p" "${REPORT_DIR}/bandwidthTest_p2p.log" "$start_ts" "$?"
+                    test_record "bandwidthTest_p2p" "${REPORT_DIR}/bandwidthTest_p2p.log" "$start_ts" "$?"
                 fi
                 ;;
             gpu_burn)

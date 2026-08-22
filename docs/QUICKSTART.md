@@ -30,7 +30,7 @@ sudo bash hwscope.sh
 
 ```bash
 bash report/report.sh <采集目录>              # 四件套 json/md/txt/html
-bash report/report.sh <采集目录> --acceptance  # 验收清单（13 项判定）
+bash report/report.sh <采集目录> --acceptance  # 验收清单（14 项判定）
 ```
 
 ## 只采部分模块 / 单模块

@@ -226,6 +226,18 @@ gen_acceptance() {
         add_item "OS-BMC 口径一致" "PASS" "OS 与 BMC 口径完全一致"
     fi
 
+    # 14. 风扇冗余（N+N）（11_fan 采集 Fan Redundancy 传感器；无风扇平台=形态 N/A 不计入，
+    #     有风扇但无冗余状态=采集缺失计入——参考电源冗余判定，v1.36.0）
+    if [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+        add_item "风扇冗余（N+N）" "N/A" "无风扇（平台配置形态，冗余不适用）" 1
+    elif [ "$FAN_REDUNDANT" = "N/A" ]; then
+        add_item "风扇冗余（N+N）" "N/A" "无风扇冗余状态数据（ipmitool 未采集到 Fan Redundancy 传感器）"
+    elif [ "$FAN_REDUNDANT" = "冗余满足" ]; then
+        add_item "风扇冗余（N+N）" "PASS" "${FAN_EXTRA:-冗余满足（N+N）}"
+    else
+        add_item "风扇冗余（N+N）" "FAIL" "风扇冗余失效（单点故障风险）"
+    fi
+
     # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
     if [ "$fail" -gt 0 ]; then
         verdict="不合格（${fail} 项 FAIL，需处理后再交付）"

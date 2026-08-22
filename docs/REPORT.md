@@ -31,7 +31,7 @@
 `bash report/report.sh <目录> --acceptance` 生成 `hwscope_acceptance.{md,html}`：
 
 - **硬件概览（配置单）**：自动生成自检测数据（准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理），可对照采购配置单核对
-- **13 项判定**：GPU PCIe / NVLink / DCGM / VBIOS / 内存速率 / IB 线缆 / 磁盘寿命 / SMART / 电源冗余 / 温度 / SEL / 固件合规 / OS-BMC 一致性
+- **14 项判定**：GPU PCIe / NVLink / DCGM / VBIOS / 内存速率 / IB 线缆 / 磁盘寿命 / SMART / 电源冗余 / 温度 / SEL / 风扇冗余（v1.36.0）/ 固件合规 / OS-BMC 一致性
 
 ### 样例（HGX B300 实际输出）
 
