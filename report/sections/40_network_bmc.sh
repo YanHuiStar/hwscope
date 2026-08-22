@@ -98,6 +98,21 @@ if [ -f "${ipmi_sel_elist}" ]; then
     [ -z "$_sel_err" ] && SEL_DATA_VALID=1
 fi
 SEL_TOTAL=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | wc -l)
+
+# ─── BMC 平台可用性（v1.40.7）───
+# 非所有机器都有 BMC（传统服务器/虚拟机/部分平台）。依赖 IPMI 传感器的验收项
+# （电源冗余/整机温度/风扇冗余）在"平台无 BMC"时应判 N/A 且不计入数据不足，
+# 与 GPU 项对无 GPU 机头同语义。判定（对齐 OS-BMC 项）：
+#   有 ipmi_*.log 且非全错误 → BMC 存在（BMC_PRESENT=1）
+#   有 ipmi_*.log 但全错误   → 平台无 BMC（固有形态，不计数）
+#   无任何 ipmi_*.log        → ipmitool 未装/模块关（如实计数）
+BMC_LOG_EXISTS=0; BMC_PRESENT=0
+if ls "${BMC_DIR}"/ipmi_*.log >/dev/null 2>&1; then
+    BMC_LOG_EXISTS=1
+    if ! grep -qiE "Could not open|Unable|No such file|command failed|device at /dev" "${BMC_DIR}"/ipmi_*.log 2>/dev/null; then
+        BMC_PRESENT=1
+    fi
+fi
 SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
 SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -icE "pcie|aer|uncorrectable")
 
