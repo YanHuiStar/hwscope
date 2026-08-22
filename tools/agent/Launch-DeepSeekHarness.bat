@@ -2,7 +2,7 @@
 :: 设置当前 CMD 窗口编码格式为 UTF-8
 chcp 65001 >nul
 
-:: 切换至项目内工作区（<项目根>\workspace，脚本在 <项目根>\tools\win\ 下，上溯两级；不存在则创建）
+:: 切换至项目内工作区（<项目根>\workspace，脚本在 <项目根>\tools\agent\ 下，上溯两级；不存在则创建）
 if not exist "%~dp0..\..\workspace" mkdir "%~dp0..\..\workspace"
 cd /d "%~dp0..\..\workspace"
 

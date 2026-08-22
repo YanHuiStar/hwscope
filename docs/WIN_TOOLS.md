@@ -40,7 +40,7 @@ tools\win\unblock_ps.bat        # 解除 .ps1 运行限制（当前用户，无�
 
 | 工具 | 场景 | 说明 |
 |------|------|------|
-| `Launch-DeepSeekHarness.ps1/.bat` | AI 工具 | DeepSeek Harness Web GUI 一键启动（从工作目录启动保证会话存储路径正确） |
+| `Launch-DeepSeekHarness.ps1/.bat` | AI 工具 | DeepSeek Harness Web GUI 一键启动（从工作目录启动保证会话存储路径正确）——**已移至 `tools/agent/`**（agent 协作工具目录） |
 | `unblock_ps.ps1/.bat` | 首次使用 | 解除 .ps1 运行限制 |
 
 ## 与 Linux 版对应关系

@@ -21,7 +21,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - `conf/fw_required.txt` — 固件推荐版本基线（15_firmware 模块判定 合规/落后 用，按厂商验收手册维护；全部注释 = 判未知不误报）
 - `test/` — 硬件压测脚本（cpu/memory/disk/network/ib/nccl），只测不改；`test_common.sh` 统一落盘 `logs/test/<时间戳>/`
 - `tools/` — 运维操作脚本（BMC/网卡/安装），会修改系统
-- `tools/agent/` — **开发协作工具（agent/开发者用）**：git_push.sh（一键推送）、agent_sync.sh（多 agent 状态同步）；Windows 启动器在 `tools/win/`（git_push.bat 等）
+- `tools/agent/` — **开发协作工具（agent/开发者用）**：git_push.sh/.bat（一键推送）、agent_sync.sh（多 agent 状态同步）、Launch-DeepSeekHarness（Harness 启动器）
 - `tools/win/` — Windows 配套工具（.ps1/.bat）
 - `fixcrlf.sh` — Windows→Linux CRLF 换行符修复
 - `output/` — 采集结果（gitignored），`logs/` — 压缩归档（gitignored）
