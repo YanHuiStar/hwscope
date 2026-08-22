@@ -22,7 +22,7 @@ if not defined BASH (
     exit /b 1
 )
 
-rem cd to project root (tools\win\..\..) and run core script
+rem cd to project root (tools\agent\..\..) and run core script
 cd /d "%~dp0..\.."
 "%BASH%" -lc "bash tools/agent/git_push.sh %*"
 
