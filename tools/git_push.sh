@@ -161,7 +161,7 @@ try_push() {   # $1=proxy(可空)；timeout 30 防 git 网络挂起无响应
 
 # 4.2 代理探测（v2ray/xray/clash 进程 → 监听端口）
 detect_proxy() {
-    local pid="" port=""
+    local pid="" port="" wsl_win=0
     # Windows（tasklist CSV + grep 过滤；MSYS 下 //FI 转义不生效——v1.36.3 教训）
     if [ "$ENV_NAME" = "git-bash" ]; then
         for p in "${PROXY_PROC_NAMES[@]}"; do
@@ -173,7 +173,14 @@ detect_proxy() {
         fi
     else
         # Linux/WSL
-        pid="$(pgrep -f "v2ray|xray|clash" 2>/dev/null | head -1)"
+        # pgrep -f 自匹配陷阱：探测命令自身命令行含 "v2ray" 字符串会被匹配（v1.37.3 实测）
+        # 用 [v]2ray 正则字符类技巧排除自身；WSL 内再尝试 Windows 侧 tasklist（interop）
+        pid="$(pgrep -f "[v]2ray|[x]ray|[c]lash" 2>/dev/null | head -1)"
+        if [ -z "$pid" ] && [ -x /mnt/c/Windows/System32/tasklist.exe ] 2>/dev/null; then
+            # WSL interop：Windows 侧 v2ray.exe 进程（但 NAT 下 127.0.0.1 不可达，仅作提示）
+            pid="$(/mnt/c/Windows/System32/tasklist.exe /FO CSV 2>/dev/null | grep -iE '"v2ray.exe"' | head -1 | cut -d'"' -f4)"
+            wsl_win=1
+        fi
         if [ -n "$pid" ]; then
             port="$(ss -tlnp 2>/dev/null | grep "127.0.0.1:" | grep "pid=$pid" | head -1 | awk '{print $4}' | cut -d: -f2)"
             [ -z "$port" ] && port="$(netstat -tlnp 2>/dev/null | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $4}' | cut -d: -f2)"
@@ -181,6 +188,8 @@ detect_proxy() {
     fi
     if [ -n "$port" ] && [ "$port" != "0" ]; then
         echo "http://127.0.0.1:${port}"
+    elif [ "${wsl_win}" = "1" ]; then
+        echo "WSL_WIN_PROXY_DETECTED"   # Windows 侧有 v2ray 但 NAT 不可达
     fi
 }
 
@@ -208,8 +217,23 @@ push_main() {
     # 代理兜底
     warn "直连 3 次失败，探测本机代理..."
     proxy="$(detect_proxy)"
-    if [ -n "$proxy" ]; then
-        info "发现代理进程监听 ${proxy}，改走代理..."
+    if [ "$proxy" = "WSL_WIN_PROXY_DETECTED" ]; then
+        fail "检测到 Windows 侧有 v2ray 代理，但 WSL NAT 模式下 127.0.0.1 不可达"
+        ai "在 Windows 侧（git-bash）运行本脚本推送；或将 WSL 网络改为镜像模式（.wslconfig networkingMode=mirrored，需重启 WSL）"
+    elif [ -n "$proxy" ]; then
+        info "发现代理进程监听 ${proxy}，验证代理连通性..."
+        if command -v curl >/dev/null 2>&1; then
+            if curl -x "$proxy" -sI --max-time 8 https://github.com -o /dev/null; then
+                info "代理连通 ✓，走代理推送..."
+            else
+                fail "代理端口在监听但连接 github.com 失败（代理未连上节点/未就绪）"
+                ai "在代理客户端界面确认已『连接』节点后重跑: bash tools/git_push.sh -y"
+                status FAIL
+                return 1
+            fi
+        else
+            info "无 curl，跳过连通性预检直接尝试..."
+        fi
         out="$(try_push "$proxy")"
         if [ $? -eq 0 ]; then return 0; fi
         echo "$out" | sed 's/^/    /'
