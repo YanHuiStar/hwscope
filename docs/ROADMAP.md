@@ -52,7 +52,13 @@
 
 > 按版本倒序排列；同一主版本的多轮迭代合并为一条。
 
-- v1.34.x — **Windows 原生远程采集**（tools/win/remote_collect.ps1/.bat）+ 多轮修复；`cleanup.sh/.ps1` 清理工具；**ShellCheck 全量清理**（SC2045/SC2155 等 55 处，0 错误）；**文档大重构**（README 501→70 行精简，详细文档拆分至 docs/：QUICKSTART/USAGE/REPORT/ARCHITECTURE/TOOLS/WIN_TOOLS/ROADMAP）；Linux remote_collect 拉取定位修复；**文档与实现一致性修复批次**（v1.34.30-33：--no-module→--skip、test 菜单式无时长参数、install_tool/install_ai 交互菜单、report_server 绑定 127.0.0.1、依赖归属修正、README 徽标精简、判定规则补"合格"结论等）
+- v1.40.x — **工具目录重组**：agent 协作工具独立 `tools/agent/`（git_push.sh/.bat、agent_sync.sh——agent 流程调用）；Launch-DeepSeekHarness 属用户手动启动归 `tools/win/`；git_push 推送成功自动刷新 AGENT_STATE.md（agent_sync --clear 补版本/提交行刷新）
+- v1.39.x — **git_push WSL 全链路支持**（v1.39.1-4：WSL 下自动用 Windows git.exe 走 Windows 网络栈 + interop 探测 Windows 侧 v2ray 端口；WSL 访问 /mnt 盘项目时自动转交 `tools/agent/git_push.bat` 在 Windows 侧执行，WSLENV 传参 + no-pause）；`gpu_burn_test.sh` 独立脚本 + test_all 菜单第 8 项 + gpu_test 直接工具参数（v1.39.0/3）；gpu_burn 目录修复 + test_record 退出码修复（v1.38.5 并入）
+- v1.38.x — **测试日志自包含机器身份**（test_server_info.sh：test_init 后自动写入 === Server Info === 段——机器 ID/型号/CPU/内存/GPU/OS，对标厂商 FLD 日志）；git_push 网络策略演进（直连优先 3 次 6s 快速失败、代理预检 curl 验证节点真连通、代理仅兜底）
+- v1.37.x — **多机器/多 Agent 协作规则立规**（v1.37.2：agent_sync.sh 开工 fetch 同步 + 版本回退警告 + AGENT_STATE.md 本地状态文件；git_push 版本单调硬检查——本地 < 远程拒绝推送；AGENTS.md 协作规则节）；FLD 诊断日志引用段 `--fld-dir`（v1.37.0）
+- v1.36.x — **风扇冗余采集 + 验收第 14 项**（11_fan 三态：Fan Redundancy/FAN Cable/Fan PG，sdr 主采 + sensor 兜底；无风扇平台 N/A 不计数，与电源冗余同判定模式）；GPU 压测逐卡矩阵（bandwidthTest_gpu0..N）；**git_push.sh 一键推送工具诞生**（v1.36.1：直连重试 → 代理动态端口探测 → [AI-ACTION] 指引，v1.36.2-7 迭代：-y 跳过确认、timeout、bat 启动器纯 ASCII、tasklist 管道过滤、默认 fetch + 逐提交摘要 + PUSH_STATUS 状态行 + 退出码 0/1/2）
+- v1.35.x — **报告模块独立**（v1.35.0 report/ 拆分：薄入口 report.sh + lib/sections/gen/tools；v1.35.3 删 tools/ 兼容 exec 包装统一 report/ 路径）
+- v1.34.x — **Windows 原生远程采集**（tools/win/remote_collect.ps1/.bat）+ 多轮修复；`cleanup.sh/.ps1` 清理工具；**ShellCheck 全量清理**（SC2045/SC2155 等 55 处，0 错误）；**文档大重构**（README 501→70 行精简，详细文档拆分至 docs/）；Linux remote_collect 拉取定位修复；**文档与实现一致性修复批次**（v1.34.30-33：--no-module→--skip、test 菜单式无时长参数、install_tool/install_ai 交互菜单、report_server 绑定 127.0.0.1、依赖归属修正、README 徽标精简等）
 - v1.33.x — OS-BMC 一致性校验默认关闭（v1.33.0：`--bmc-verify` 显式开启，禁用时验收项 N/A 不计入数据不足，独立 hwscope_bmc_verify.md 报告）；时间戳统一连写复核 10 处 + README 示例同步（v1.33.1）；report_server 强制 `--bind 127.0.0.1` 防报告无鉴权暴露局域网 + 16_power 未知能量单位不猜测（Joules 变体 3.6Mx 误差）、remote_collect 回拉按目录名、power_monitor 间隔校验（v1.33.2）；**全量审查修复批次**（v1.33.3：NO_MODULE 导出、--modules/--skip/--output 参数校验、rm-rf 护栏、herestring 残留 8 处、08_storage && 链、RAID vd_count 行锚定、PSU 六字段重建、16_power 单位顺序/十六进制守卫、MEM_SLOTS 锚定、disk 寿命 N/A 不假 PASS、GPU 功耗/温度数值守卫、9× local-in-subshell、dhcp_server shift2/port0/原子写、net_dhcp 退出码回滚、SEL 翻转检测、nvlink_verify 不假绿、cable_map 确认+恢复 trap、install 确认+退出码、perftest 客户端 IP、测试加固）；perftest `-S` 误判回退（实为 --sl 服务等级）+ smartctl Transport protocol 值判定（v1.33.4）；awk 数值守卫先 trim 前导空格（nvidia-smi CSV ` 700.00 W` 全拒回归修复，v1.33.5）；验收 N/A 计数规则细化 + IB 线缆配对条件驱动（有链接无数据=采集缺口计入，未插线=平台形态不计）
 - v1.32.0 — **全工具与测试脚本统一 `-h/--help`**（common.sh 内置 show_script_help，net_dhcp/sync_version/test_all 独立实现），新增 `tools/README.md` + `test/README.md` 文档（含写操作警告），README 链接同步
 - v1.31.0 — **ROADMAP 剩余 5 项 P2 全部落地**：`tools/fw_baseline_import.sh` 固件基线自动导入（基准机采集目录/表格 → conf/fw_required.txt，--diff 预览/--apply 写入+自动 .bak）；`tools/power_monitor.sh` 能耗持续采样（后台 DCMI/Redfish → CSV，stop 输出小时/日聚合 + 梯形积分 kWh 核算，补 16_power 单点快照缺口）；`tools/report_server.sh` 报告在线预览（解包 logs/report/ → web/ 缓存 + 索引页 + python3 http.server，零新依赖）；`tools/remote_batch.sh` SSH 批量运维（-H 多机 + -c 命令/--push 推送，逐机 .out 落盘 + summary）；`tools/dhcp_server.sh` 扩展 `leases-export <csv>` 租约导出 + `reconcile <目录...>` 租约↔采集报告 BMC IP/MAC 交叉核对（上架清单差异表，`--lease-file` 自定义租约路径）
@@ -67,4 +73,4 @@
 
 ---
 
-*最近更新: 2026-08-22 · 版本: v1.34.33*
+*最近更新: 2026-08-23 · 版本: v1.40.2*
