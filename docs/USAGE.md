@@ -71,9 +71,9 @@ bash tools/remote_batch.sh -H "root@10.0.0.1 root@10.0.0.2" -c 'nvidia-smi -L'  
 ### 一键推送更新（开发维护）
 
 ```bash
-bash tools/git_push.sh            # 审查并推送（交互确认）
-bash tools/git_push.sh -y         # 跳过确认直接推
-bash tools/git_push.sh --dry-run  # 只审查不推送
+bash tools/agent/git_push.sh            # 审查并推送（交互确认）
+bash tools/agent/git_push.sh -y         # 跳过确认直接推
+bash tools/agent/git_push.sh --dry-run  # 只审查不推送
 ```
 
 直连失败自动探测本机代理重推；全部失败输出 `[AI-ACTION]` 指引。Windows 双击 `tools/win/git_push.bat`。
@@ -152,10 +152,10 @@ bash test/test_server_info.sh --append <文件>   # 追加到指定日志
 仓库可能被多台机器、多个 Agent 会话（DeepSeek Harness / Hermes 等）先后修改推送。规则：**一切状态以远程 origin/main 为真相**。
 
 ```bash
-bash tools/agent_sync.sh              # 开工第一步：fetch + 远程/本地 HEAD/版本对比 + 未推送状态
-bash tools/agent_sync.sh --mark       # 提交后：标记未推送（本地 AGENT_STATE.md，gitignore）
-bash tools/git_push.sh -y             # 推送（默认 fetch + 落后 rebase + 版本单调检查）
-bash tools/agent_sync.sh --clear      # 推送成功后：清空未推送标记
+bash tools/agent/agent_sync.sh              # 开工第一步：fetch + 远程/本地 HEAD/版本对比 + 未推送状态
+bash tools/agent/agent_sync.sh --mark       # 提交后：标记未推送（本地 AGENT_STATE.md，gitignore）
+bash tools/agent/git_push.sh -y             # 推送（默认 fetch + 落后 rebase + 版本单调检查）
+bash tools/agent/agent_sync.sh --clear      # 推送成功后：清空未推送标记
 ```
 
 - **版本号只升不降**：升版本前看 agent_sync 显示的远程版本，在远程基础上升；git_push 会硬拦截"本地 < 远程"

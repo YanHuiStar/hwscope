@@ -7,10 +7,10 @@
 #       本脚本强制"以远程 origin/main 为真相"同步认知，防止此类问题。
 #
 # 用法:
-#   bash tools/agent_sync.sh            # 开工前：fetch + 展示 远程/本地 HEAD/版本/未推送 + 版本对比；更新本地状态文件
-#   bash tools/agent_sync.sh --mark     # 提交后：标记"未推送提交"到本地状态文件（自动取 HEAD hash/版本）
-#   bash tools/agent_sync.sh --clear    # 推送成功后：清空本地状态文件的未推送标记
-#   bash tools/agent_sync.sh --help
+#   bash tools/agent/agent_sync.sh            # 开工前：fetch + 展示 远程/本地 HEAD/版本/未推送 + 版本对比；更新本地状态文件
+#   bash tools/agent/agent_sync.sh --mark     # 提交后：标记"未推送提交"到本地状态文件（自动取 HEAD hash/版本）
+#   bash tools/agent/agent_sync.sh --clear    # 推送成功后：清空本地状态文件的未推送标记
+#   bash tools/agent/agent_sync.sh --help
 #
 # 设计:
 #   - 跨机器状态以远程为准：fetch 后 origin/main 的 HEAD 与 HWSCOPE_VERSION 即真相
@@ -18,8 +18,8 @@
 #   - 版本号只升不降：本地 < 远程时明确告警（git_push.sh 另有硬拦截）
 # =============================================================================
 set -uo pipefail
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"          # tools/
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"          # 项目根
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"          # tools/agent/
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"       # 项目根（tools/agent/ 上溯两级）
 STATE_FILE="${PROJECT_DIR}/AGENT_STATE.md"
 BRANCH="main"
 REMOTE="origin"
@@ -50,7 +50,7 @@ init_state() {   # 文件不存在时生成基础模板（新机器 clone 后首
 
 > 用途：协调**同一台机器**上多个 Agent 会话的"进行中/未推送"状态（git 看不到的部分）。
 > 跨机器状态以远程为准（`git fetch origin` 后 origin/main 的 HEAD/版本即真相）。
-> 操作统一走 `bash tools/agent_sync.sh`（查看/--mark 提交后标记/--clear 推送成功后清空），勿手改。
+> 操作统一走 `bash tools/agent/agent_sync.sh`（查看/--mark 提交后标记/--clear 推送成功后清空），勿手改。
 
 ## 本机当前状态（每次开工/提交/推送后更新）
 
@@ -126,7 +126,7 @@ info "远程 ${REMOTE}/${BRANCH} : ${R_HASH}${R_VER:+ v${R_VER}}"
 info "本地 HEAD           : ${L_HASH}${L_VER:+ v${L_VER}}"
 info "未推送/落后          : ahead ${AHEAD} · behind ${BEHIND} · 工作区改动 ${DIRTY} 个文件"
 if [ "${AHEAD:-0}" -gt 0 ] || [ "${DIRTY:-0}" -gt 0 ]; then
-    echo -e "${C_YELLOW}  ↳ 有未推送/未提交内容：提交后运行 'bash tools/agent_sync.sh --mark'；推送用 'bash tools/git_push.sh -y'${C_NC}"
+    echo -e "${C_YELLOW}  ↳ 有未推送/未提交内容：提交后运行 'bash tools/agent/agent_sync.sh --mark'；推送用 'bash tools/agent/git_push.sh -y'${C_NC}"
 fi
 if [ "${BEHIND:-0}" -gt 0 ]; then
     warn "本地落后远程 ${BEHIND} 个提交（其他会话/机器已推送）——推送前需 rebase（git_push 会自动处理）"

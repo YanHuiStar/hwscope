@@ -8,12 +8,12 @@
 #       每个失败分支都会输出 [AI-ACTION] 提示，指明下一步该做什么。
 #
 # 用法:
-#   bash tools/git_push.sh              # 审查+推送（默认 fetch + 逐提交改动摘要，交互确认）
-#   bash tools/git_push.sh -y           # 跳过确认直接推（AI agent 场景）
-#   bash tools/git_push.sh --no-fetch   # 跳过推送前 fetch（网络极差时）
-#   bash tools/git_push.sh --dry-run    # 只审查（环境/待推提交/改动摘要/代理探测），不推送
-#   bash tools/git_push.sh --quiet      # 机器可读模式：仅输出状态行与关键信息
-#   bash tools/git_push.sh --help       # 帮助
+#   bash tools/agent/git_push.sh              # 审查+推送（默认 fetch + 逐提交改动摘要，交互确认）
+#   bash tools/agent/git_push.sh -y           # 跳过确认直接推（AI agent 场景）
+#   bash tools/agent/git_push.sh --no-fetch   # 跳过推送前 fetch（网络极差时）
+#   bash tools/agent/git_push.sh --dry-run    # 只审查（环境/待推提交/改动摘要/代理探测），不推送
+#   bash tools/agent/git_push.sh --quiet      # 机器可读模式：仅输出状态行与关键信息
+#   bash tools/agent/git_push.sh --help       # 帮助
 #
 # 退出码: 0=推送成功  1=推送失败（网络/代理）  2=用户取消或前置检查不通过
 # 状态行: 末尾输出 PUSH_STATUS=OK|FAIL|USER_ABORT（AI agent 解析用）
@@ -24,8 +24,8 @@
 set -uo pipefail
 
 # ─── 常量与参数 ───
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"          # tools/
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"          # 项目根
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"          # tools/agent/
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"       # 项目根（tools/agent/ 上溯两级）
 BRANCH="main"
 REMOTE="origin"
 PROXY_PROC_NAMES=("v2ray" "xray" "clash")
@@ -270,7 +270,7 @@ push_main() {
     echo ""
     ai "按顺序处理:"
     ai "  1) 启动本机代理客户端并在界面点击『连接』（进程在跑≠已连节点，须有 v2ray/xray 子进程监听 127.0.0.1 端口）"
-    ai "  2) 连上后重跑: bash tools/git_push.sh -y"
+    ai "  2) 连上后重跑: bash tools/agent/git_push.sh -y"
     ai "  3) 若输出含 rejected/fetch first: 先 git pull --rebase $REMOTE $BRANCH 再重推"
     ai "  4) 仍失败: 手动确认网络（ping github.com / 浏览器访问 github.com）"
     status FAIL
