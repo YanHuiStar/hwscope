@@ -95,6 +95,9 @@ fi
 if [ "$ACTION" = "--clear" ]; then
     init_state
     update_state "- 未推送提交" "（无——推送成功后已清空）"
+    # 同步刷新版本与最新提交（防状态文件版本过期，v1.39.5）
+    update_state "- 最新本地提交" "$(git rev-parse --short HEAD 2>/dev/null || echo '?') $(git log -1 --pretty=%s 2>/dev/null | cut -c1-60)"
+    update_state "- 当前版本" "v$(get_local_ver)"
     ok "已清空未推送标记（确认 ${REMOTE}/${BRANCH} 已更新）"
     exit 0
 fi
