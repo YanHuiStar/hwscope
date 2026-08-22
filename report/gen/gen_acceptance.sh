@@ -165,14 +165,23 @@ gen_acceptance() {
 
     # 9. 电源冗余（N+N 冗余是供电可靠性核心；失效=单点故障风险）
     case "$PSU_REDUNDANT" in
-        N/A) add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据" ;;
+        N/A)
+            if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
+                add_item "电源冗余（N+N）" "N/A" "平台无 BMC（IPMI 传感器不可用，冗余判定不适用）" 1
+            else
+                add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据"
+            fi ;;
         *失效*) add_item "电源冗余（N+N）" "FAIL" "电源冗余失效（单点故障风险）" ;;
         *) add_item "电源冗余（N+N）" "PASS" "${PSU_REDUNDANT}" ;;
     esac
 
     # 10. 整机温度正常范围（进风/出风/CPU/内存/电源/PCH 传感器均 ok）
     if [ -z "$TEMP_SUMMARY" ]; then
-        add_item "整机温度正常" "N/A" "无温度传感器数据"
+        if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
+            add_item "整机温度正常" "N/A" "平台无 BMC（无 IPMI 温度传感器，温度判定不适用）" 1
+        else
+            add_item "整机温度正常" "N/A" "无温度传感器数据"
+        fi
     else
         add_item "整机温度正常" "PASS" "${TEMP_SUMMARY}"
     fi
@@ -231,7 +240,11 @@ gen_acceptance() {
     if [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         add_item "风扇冗余（N+N）" "N/A" "无风扇（平台配置形态，冗余不适用）" 1
     elif [ "$FAN_REDUNDANT" = "N/A" ]; then
-        add_item "风扇冗余（N+N）" "N/A" "无风扇冗余状态数据（ipmitool 未采集到 Fan Redundancy 传感器）"
+        if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
+            add_item "风扇冗余（N+N）" "N/A" "平台无 BMC（无 IPMI 风扇冗余传感器，判定不适用）" 1
+        else
+            add_item "风扇冗余（N+N）" "N/A" "无风扇冗余状态数据（ipmitool 未采集到 Fan Redundancy 传感器）"
+        fi
     elif [ "$FAN_REDUNDANT" = "冗余满足" ]; then
         add_item "风扇冗余（N+N）" "PASS" "${FAN_EXTRA:-冗余满足（N+N）}"
     else
