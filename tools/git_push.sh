@@ -205,12 +205,15 @@ push_main() {
         ai "先 git pull --rebase $REMOTE $BRANCH，在远程 v${rver} 基础上升级版本（tools/sync_version.sh），再重推"
         return 1
     fi
-    # 策略：先快速直连 1 次（connectTimeout 压到 6s）→ 失败再代理（预检+推送）→
-    #       代理不可用/失败再回退直连补 2 次。总耗时 <30s，适配短超时 agent（v1.38.2）
-    info "推送尝试 1/3（直连，connectTimeout=6s）..."
-    out="$(try_push)"
-    if [ $? -eq 0 ]; then return 0; fi
-    echo "$out" | sed 's/^/    /'
+    # 策略：默认直连优先（3 次，connectTimeout=6s 快速失败——直连有时反而能成功，
+    #       不因探测到代理就跳过直连）；3 次全失败才走代理兜底（v1.38.3 用户确认）
+    for attempt in 1 2 3; do
+        info "推送尝试 ${attempt}/3（直连）..."
+        out="$(try_push)"
+        if [ $? -eq 0 ]; then return 0; fi
+        echo "$out" | sed 's/^/    /'
+        [ "$attempt" -lt 3 ] && sleep 2
+    done
 
     proxy="$(detect_proxy)"
     if [ "$proxy" = "WSL_WIN_PROXY_DETECTED" ]; then
@@ -224,9 +227,8 @@ push_main() {
                 out="$(try_push "$proxy")"
                 if [ $? -eq 0 ]; then return 0; fi
                 echo "$out" | sed 's/^/    /'
-                warn "代理推送失败，回退直连..."
             else
-                warn "代理端口在监听但节点未连通（代理未连上节点/协议不匹配），回退直连..."
+                warn "代理端口在监听但节点未连通（代理未连上节点/协议不匹配）"
             fi
         else
             info "无 curl，跳过连通性预检直接尝试..."
@@ -235,17 +237,8 @@ push_main() {
             echo "$out" | sed 's/^/    /'
         fi
     else
-        warn "未探测到本机代理，直连重试..."
+        warn "未探测到本机代理"
     fi
-
-    # 直连补 2 次（间隔 3-5s，处理 Connection reset 偶发）
-    for attempt in 2 3; do
-        info "推送尝试 ${attempt}/3（直连）..."
-        out="$(try_push)"
-        if [ $? -eq 0 ]; then return 0; fi
-        echo "$out" | sed 's/^/    /'
-        [ "$attempt" -lt 3 ] && sleep $((attempt + 2))
-    done
 
     fail "推送失败"
     echo ""
