@@ -137,3 +137,17 @@ bash test/nccl_test.sh         # NCCL 集合通信
 ```
 
 每个脚本进入后按菜单选择测试项；`-h`/`--help` 查看用法。结果落盘 `logs/test/<时间戳>/`。
+
+## 多机器 / 多 Agent 协作（v1.37.2）
+
+仓库可能被多台机器、多个 Agent 会话（DeepSeek Harness / Hermes 等）先后修改推送。规则：**一切状态以远程 origin/main 为真相**。
+
+```bash
+bash tools/agent_sync.sh              # 开工第一步：fetch + 远程/本地 HEAD/版本对比 + 未推送状态
+bash tools/agent_sync.sh --mark       # 提交后：标记未推送（本地 AGENT_STATE.md，gitignore）
+bash tools/git_push.sh -y             # 推送（默认 fetch + 落后 rebase + 版本单调检查）
+bash tools/agent_sync.sh --clear      # 推送成功后：清空未推送标记
+```
+
+- **版本号只升不降**：升版本前看 agent_sync 显示的远程版本，在远程基础上升；git_push 会硬拦截"本地 < 远程"
+- 协作规则全文见 [AGENTS.md](../AGENTS.md)「多机器/多 Agent 协作规则」

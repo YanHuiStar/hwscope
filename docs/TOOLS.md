@@ -39,6 +39,13 @@
 | `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前） |
 | `sync_version.sh` | 版本号三处同步（hwscope.sh 注释/变量 + README 徽章） |
 
+### 开发 / Agent 协作（v1.36.1+）
+
+| 脚本 | 说明 |
+|------|------|
+| `agent_sync.sh` | 多机器/多 Agent 状态同步（v1.37.2）：开工第一步，fetch + 远程/本地 HEAD/版本对比 + 未推送状态，防凭记忆乱改版本；`--mark`/`--clear` 维护本地状态文件 AGENT_STATE.md（gitignore） |
+| `git_push.sh` | 一键推送（v1.36.1+）：默认 fetch + 逐提交摘要 + **版本单调检查**（本地 < 远程拒绝）+ 直连重试 + 代理探测 + `[AI-ACTION]` 指引 |
+
 ### 远程 / 批量
 
 | 脚本 | 说明 |

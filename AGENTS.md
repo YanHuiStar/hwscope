@@ -74,6 +74,18 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - 当前惯例：功能改动与版本升级合并一条 commit，格式 `<type>: <摘要>; release vX.Y.Z`
 - CRLF 等纯换行修复：`refactor` 或并入同主题 commit
 
+## 多机器/多 Agent 协作规则（v1.37.2 立规）
+
+> 同一仓库可能被**多台机器、多个 Agent 会话**（DeepSeek Harness / Hermes 等）先后修改提交推送。
+> 各会话凭记忆操作会导致版本号回退/跳号、推送交叉。规则目标：**一切状态以远程 origin/main 为真相**，杜绝凭记忆。
+
+- **开工前必跑** `bash tools/agent_sync.sh`（fetch + 显示 远程/本地 HEAD、版本、未推送数、版本对比；自动刷新本地状态文件）——每个会话一次，约几十 token
+- **版本号只升不降**：升版本前先看 agent_sync 显示的**远程版本**，在远程版本基础上升（不要凭本地记忆）；`git_push.sh` 会硬拦截"本地版本 < 远程版本"的推送
+- **推送一律走** `bash tools/git_push.sh -y`（默认 fetch + 落后 rebase + 版本单调检查），推送成功后跑 `bash tools/agent_sync.sh --clear`
+- **提交后**跑 `bash tools/agent_sync.sh --mark`（本地状态文件 AGENT_STATE.md 标记未推送提交；该文件 gitignore，仅单机多会话协调用，不承担跨机器——跨机器以 fetch 为准）
+- **多机器提示**：换机器开工同样先 agent_sync（fetch 到该机最新）；禁止"我以为远程是 vX"——以 agent_sync 输出为准
+- 提交前 `git status` 审查只 add 本会话文件（禁 add -A，见安全约定）
+
 ## 报告与归档
 
 - 采集完成自动调用 `report/report.sh`（报告体系为独立模块，见 `report/` 目录）：从各模块日志提取关键字段，生成 `hwscope_report.{json,md,txt,html}` 四件套（含明细表：内存每槽/GPU每卡(含VBIOS)/CPU每颗/存储每盘/网络每端口/PSU/SEL事件/风扇/RAID(虚拟盘级)/HBA；内存明细含 Rank，PSU 明细含实时输入功率 + DCMI/整机功耗独立行，网卡明细含 GPU直连 标记 + chip 列 + 报告末尾术语表；HBA 直通卡章节有卡才显示；**v1.29.0 新增**：固件合规段（15_firmware 输出，对照 fw_required.txt 判 合规/落后/较新/未知）、能耗台账段（16_power 输出，累计 kWh + 功耗快照）、BMC 数据一致性校验段（OS vs BMC 交叉校验，零新采集，不一致 WARN 并排显示两边值）、压测归档段（--test-dir 关联 test/ 目录，test_common.sh 写 manifest 解耦））
