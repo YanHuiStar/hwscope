@@ -29,6 +29,7 @@ TOOLS=(
 
 test_menu TOOLS || exit 0
 test_init "network"
+bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true
 
 IFS=',' read -ra SELECTED <<< "$TEST_CHOICES"
 for sel in "${SELECTED[@]}"; do

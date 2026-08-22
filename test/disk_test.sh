@@ -29,6 +29,7 @@ TOOLS=(
 
 test_menu TOOLS || exit 0
 test_init "disk"
+bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true
 
 # ─── fio 测试文件位置：挂载点或 /tmp ───
 mount_point=$(findmnt -no TARGET "$DISK" 2>/dev/null | head -1)

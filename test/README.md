@@ -17,6 +17,7 @@
 | `nccl_test.sh` | GPU 集合通信（all_reduce 等） | nccl-tests 编译产物 | 需编译安装 nccl-tests |
 | `gpu_test.sh` | GPU 测试（自动发现系统已装测试程序） | 系统已有（bandwidthTest/gpu_burn 等）| 只调用不安装 |
 | `ib_test.sh` | IB 数据面打流（ib_write_bw / ib_read_bw） | perftest, mlxlink | 自动配对 serial 相同端口 |
+| `test_server_info.sh` | 测试前服务器信息（机器 ID/型号/CPU/内存/GPU/OS，~10 行轻量只读） | dmidecode(可选), lscpu, free, nvidia-smi(可选) | 各测试脚本 test_init 后自动调用；可单独执行 |
 | `test_common.sh` | 公共库：菜单/日志落盘/结果记录 | — | 被以上脚本 source，勿直接运行 |
 
 ## 使用说明
@@ -42,6 +43,8 @@ bash test/cpu_test.sh
 
 ### 日志位置
 - 所有测试输出：`logs/test/<时间戳>/`（每个测试项一个 `<测试名>.log` 汇总 + 各工具 detail 日志；`manifest.txt` 记录汇总文件供 report.sh --test-dir 关联）
+- **测试日志自包含机器身份**（v1.38.0）：各测试脚本在 test_init 后自动调用 `test_server_info.sh --append <汇总日志> --out <目录>`，日志头部先写入 `=== Server Info ===` 段（机器 ID/型号/CPU/内存/GPU/OS）——单测一项也知道是哪台机器；`server_info.log` 随目录保存并登记 manifest
+- 单独查看服务器信息：`bash test/test_server_info.sh`（也可 `--append <文件>` / `--out <目录>`）
 - 报告归档：采集后可用 `report/report.sh <out> --test-dir <压测目录>` 将压测结果并入交付报告
 
 ## 依赖安装

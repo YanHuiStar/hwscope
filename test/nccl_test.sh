@@ -85,6 +85,7 @@ read -p "迭代轮数 -n (默认 20): " -r ITERS
 [ -z "$ITERS" ] && ITERS="20"
 
 test_init "nccl"
+bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true
 
 IFS=',' read -ra SELECTED <<< "$choices"
 for sel in "${SELECTED[@]}"; do

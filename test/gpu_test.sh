@@ -87,6 +87,7 @@ read -p "选择 (编号, 多个用逗号; Enter 跳过): " -r choices
 [ -z "$choices" ] && echo "跳过" && exit 0
 
 test_init "gpu"
+bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true
 
 IFS=',' read -ra SELECTED <<< "$choices"
 for sel in "${SELECTED[@]}"; do
