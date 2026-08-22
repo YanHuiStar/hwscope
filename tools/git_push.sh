@@ -149,12 +149,12 @@ fi
 
 # ─── 4. 推送尝试链 ───
 # 4.1 直连（重试 N 次，偶发 Connection reset）
-try_push() {   # $1=proxy(可空)；timeout 30 防 git 网络挂起无响应
+try_push() {   # $1=proxy(可空)；timeout 30 + http.connectTimeout 10 防网络挂起
     local proxy="${1:-}"
     if [ -n "$proxy" ]; then
-        timeout 30 env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" git push "$REMOTE" "$BRANCH" 2>&1 | tail -3
+        timeout 30 env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" git -c http.connectTimeout=10 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
     else
-        timeout 30 git push "$REMOTE" "$BRANCH" 2>&1 | tail -3
+        timeout 30 git -c http.connectTimeout=10 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
     fi
     return "${PIPESTATUS[0]:-1}"
 }
@@ -205,23 +205,16 @@ push_main() {
         ai "先 git pull --rebase $REMOTE $BRANCH，在远程 v${rver} 基础上升级版本（tools/sync_version.sh），再重推"
         return 1
     fi
-    # 直连 3 次（间隔 3-5s，处理 Connection reset 偶发）
-    for attempt in 1 2 3; do
-        info "推送尝试 ${attempt}/3（直连）..."
-        out="$(try_push)"
-        if [ $? -eq 0 ]; then return 0; fi
-        echo "$out" | sed 's/^/    /'
-        [ "$attempt" -lt 3 ] && sleep $((attempt + 2))
-    done
-
-    # 代理兜底
-    warn "直连 3 次失败，探测本机代理..."
+    # 策略：先探测代理——本机有代理且连通时直接走代理（秒级，适配短超时 agent）
+    #       无代理才直连重试（3 次）；代理优先避免 3×21s 直连超时被外部工具砍断（v1.38.1）
     proxy="$(detect_proxy)"
     if [ "$proxy" = "WSL_WIN_PROXY_DETECTED" ]; then
         fail "检测到 Windows 侧有 v2ray 代理，但 WSL NAT 模式下 127.0.0.1 不可达"
         ai "在 Windows 侧（git-bash）运行本脚本推送；或将 WSL 网络改为镜像模式（.wslconfig networkingMode=mirrored，需重启 WSL）"
+        status FAIL
+        return 1
     elif [ -n "$proxy" ]; then
-        info "发现代理进程监听 ${proxy}，验证代理连通性..."
+        info "发现代理 ${proxy}，验证连通性..."
         if command -v curl >/dev/null 2>&1; then
             if curl -x "$proxy" -sI --max-time 8 https://github.com -o /dev/null; then
                 info "代理连通 ✓，走代理推送..."
@@ -237,9 +230,19 @@ push_main() {
         out="$(try_push "$proxy")"
         if [ $? -eq 0 ]; then return 0; fi
         echo "$out" | sed 's/^/    /'
+        warn "代理推送失败，回退直连重试..."
     else
-        fail "未找到代理进程（v2ray/xray/clash）或代理无监听端口"
+        warn "未探测到本机代理，直连重试..."
     fi
+
+    # 直连重试（间隔 3-5s，处理 Connection reset 偶发；git 连接超时压到 10s 防挂起）
+    for attempt in 1 2 3; do
+        info "推送尝试 ${attempt}/3（直连）..."
+        out="$(try_push)"
+        if [ $? -eq 0 ]; then return 0; fi
+        echo "$out" | sed 's/^/    /'
+        [ "$attempt" -lt 3 ] && sleep $((attempt + 2))
+    done
 
     fail "推送失败"
     echo ""
