@@ -1,6 +1,6 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.35.3-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
+![Version](https://img.shields.io/badge/Version-1.36.0-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（H200/B200/B300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息，自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
@@ -8,7 +8,7 @@
 
 - **组件级采集**：主板/CPU/内存/GPU/NVSwitch/PCIe/网络/存储/RAID/HBA/电源/风扇/BMC/NVSM/DCGM/固件合规/能耗/OS 共 17 类模块，自动识别平台（SXM/PCIe/机头/传统）
 - **报告四件套**：JSON + Markdown + TXT + **HTML**（浏览器交付版，零依赖）
-- **验收清单**：13 项判定（含固件合规/OS-BMC 一致性），条件驱动 N/A 计数，硬件概览自动生成配置单
+- **验收清单**：14 项判定（含固件合规/OS-BMC 一致性/风扇冗余），条件驱动 N/A 计数，硬件概览自动生成配置单
 - **GPU 魔改识别**：内置 60+ 型号额定显存规格库，检测值交叉验证，魔改/伪装卡自动 `⚠️` 提示
 - **远程采集**：tar 推送执行回拉，Linux/WSL + **Windows 原生**均支持（交互式密码，不落盘）
 - **只读无害**：采集不写硬件、DCGM 仅 Level 1、报告不重新采集
@@ -39,7 +39,7 @@ tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | 快速开始：采集/报告/远程采集 |
 | [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) | 依赖环境安装：全景依赖表/厂商工具/发行版差异 |
 | [docs/USAGE.md](docs/USAGE.md) | 使用指南：全部命令/运维工具/压测 |
-| [docs/REPORT.md](docs/REPORT.md) | 报告与验收体系：四件套/13 项判定/条件驱动 N/A |
+| [docs/REPORT.md](docs/REPORT.md) | 报告与验收体系：四件套/14 项判定/条件驱动 N/A |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构：目录结构/模块/平台兼容/安全约定 |
 | [docs/TOOLS.md](docs/TOOLS.md) | 配套工具（test/ + tools/，Linux/WSL） |
 | [docs/WIN_TOOLS.md](docs/WIN_TOOLS.md) | Windows 运维机工具（tools/win/，12 个） |

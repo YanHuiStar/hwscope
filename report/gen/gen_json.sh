@@ -261,6 +261,8 @@ fi)
   "fan": {
     "count": "${FAN_COUNT:-0}",
     "speed": "${FAN_SPEED:-N/A}",
+    "redundancy": "${FAN_REDUNDANT:-N/A}",
+    "redundancy_extra": "${FAN_EXTRA:-}",
     "details": [
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do

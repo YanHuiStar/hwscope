@@ -19,7 +19,7 @@ hwscope.sh ─── 参数解析 / 平台检测（SXM → PCIe → head → non
 report/report.sh（只读日志，不重新采集；报告体系独立模块，见 report/README）
      ├─ 读各模块 manifest 解耦定位日志
      ├─ hwscope_report.{json,md,txt,html}   报告四件套
-     ├─ hwscope_acceptance.{md,html}        验收清单（13 项判定）
+     ├─ hwscope_acceptance.{md,html}        验收清单（14 项判定）
      └─ --baseline / --test-dir / --bmc-verify
 ```
 

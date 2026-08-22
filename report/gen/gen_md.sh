@@ -404,6 +404,7 @@ fi)
 |----|----|
 | 数量 | ${FAN_COUNT:-0} |
 | 转速 | ${FAN_SPEED:-N/A} |
+| 冗余 | ${FAN_REDUNDANT:-N/A}$(if [ -n "$FAN_EXTRA" ]; then echo "（${FAN_EXTRA}）"; fi) |
 | 温度 | ${TEMP_SUMMARY:-N/A} |
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "### 散热风扇明细"

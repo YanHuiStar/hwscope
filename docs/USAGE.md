@@ -25,7 +25,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 
 ```bash
 bash report/report.sh <采集目录>                          # json/md/txt/html 四件套
-bash report/report.sh <采集目录> --acceptance             # 验收清单 md/html（13 项判定）
+bash report/report.sh <采集目录> --acceptance             # 验收清单 md/html（14 项判定）
 bash report/report.sh <采集目录> --baseline <历史目录>     # 时序差异对比
 bash report/report.sh <采集目录> --test-dir <压测目录>     # 关联压测归档
 bash report/report.sh <采集目录> --bmc-verify             # 开启 OS-BMC 一致性交叉核验

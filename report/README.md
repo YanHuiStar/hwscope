@@ -1,7 +1,7 @@
 # HwScope 报告模块（report/）
 
 > 报告是 HwScope 的**交付物本体**（四件套 + 验收清单），v1.35.0 起独立为与 `modules/`（采集）、`tools/`（运维）平级的项目模块。
-> 职责：**只读解析采集日志**（不重新采集），生成 JSON/MD/TXT/HTML 报告、13 项验收清单、时序基线对比、BMC 一致性核验、报告在线预览、多机横向对比。
+> 职责：**只读解析采集日志**（不重新采集），生成 JSON/MD/TXT/HTML 报告、14 项验收清单、时序基线对比、BMC 一致性核验、报告在线预览、多机横向对比。
 
 ## 目录结构
 
@@ -28,7 +28,7 @@ report/
 │   ├── gen_md.sh             # Markdown 报告
 │   ├── gen_txt.sh            # TXT 报告
 │   ├── gen_html.sh           # HTML 报告（md2html.awk 转换）
-│   ├── gen_acceptance.sh     # 验收清单（13 项判定 + 硬件概览配置单）
+│   ├── gen_acceptance.sh     # 验收清单（14 项判定 + 硬件概览配置单）
 │   └── gen_bmc_verify.sh     # BMC 一致性核验独立报告（--bmc-verify）
 └── tools/
     ├── batch_compare.sh      # 多机横向对比（读各机 hwscope_report.json，差异 ⚠️ 标注）
@@ -40,7 +40,7 @@ report/
 ```bash
 # 报告主入口（采集完成自动调用；也可对任意采集目录手动重跑）
 bash report/report.sh <output_dir>                     # 四件套 json/md/txt/html
-bash report/report.sh <output_dir> --acceptance        # 验收清单 md/html（13 项判定）
+bash report/report.sh <output_dir> --acceptance        # 验收清单 md/html（14 项判定）
 bash report/report.sh <output_dir> --baseline <历史目录> # 时序差异对比
 bash report/report.sh <output_dir> --test-dir <压测目录> # 关联压测归档
 bash report/report.sh <output_dir> --bmc-verify        # OS-BMC 一致性交叉核验
@@ -60,4 +60,4 @@ bash report/tools/report_server.sh [--port 8080]         # 报告在线预览（
 - **行为零变化重构**（v1.35.0）：原 `tools/report.sh`（3329 行单文件）按区段拆分为 lib/sections/gen，代码逐字节搬移（仅 md2html.awk 路径适配）；输出四件套与验收清单经样例数据回归验证一致
 - **source 顺序敏感**：`sections/` 编号即原文件行序（GPU_DIR → GPU_CSV → gpu_mem_candidates → GPU_DETAILS 依赖链），新增 section 时保持顺序
 - **报告只读**：不重新采集；日志缺失字段显示 N/A；可对同一份数据反复生成
-- **详细报告体系**：见 [docs/REPORT.md](../docs/REPORT.md)（四件套/13 项判定/条件驱动 N/A/HTML 回归）
+- **详细报告体系**：见 [docs/REPORT.md](../docs/REPORT.md)（四件套/14 项判定/条件驱动 N/A/HTML 回归）

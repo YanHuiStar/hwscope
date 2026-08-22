@@ -24,7 +24,12 @@ run_fan() {
     if check_cmd ipmitool; then
         run_and_log_parallel 4 \
             "ipmitool sensor list 2>/dev/null | grep -iE 'FAN|RPM|PWM|Duty'" "${dir}/ipmi_fan_sensors.log" \
-            "ipmitool sensor list 2>/dev/null | grep -iE 'FAN.*Status|FAN.*Mode'" "${dir}/ipmi_fan_status.log"
+            "ipmitool sensor list 2>/dev/null | grep -iE 'FAN.*Status|FAN.*Mode'" "${dir}/ipmi_fan_status.log" \
+            "ipmitool sdr list 2>/dev/null | grep -iE 'Fan.*Redundancy|FAN.*Cable|Fan.*PG|Redundancy'" "${dir}/ipmi_fan_redundancy.log"
+        # 冗余三态兜底：sdr 无匹配时从 sensor list 再抓（Dell/标准服务器传感器名变体，v1.36.0）
+        if [ ! -s "${dir}/ipmi_fan_redundancy.log" ]; then
+            run_and_log "ipmitool sensor list 2>/dev/null | grep -iE 'Fan.*Redundancy|FAN.*Cable|Fan.*PG'" "${dir}/ipmi_fan_redundancy.log"
+        fi
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi
@@ -70,6 +75,7 @@ run_fan() {
     write_manifest "${dir}/manifest.txt" \
         "ipmi_fan_sensors" "ipmi_fan_sensors.log" \
         "ipmi_fan_status" "ipmi_fan_status.log" \
+        "ipmi_fan_redundancy" "ipmi_fan_redundancy.log" \
         "sensors_all" "sensors_all.log" \
         "sensors_fan" "sensors_fan.log" \
         "acpi_fan" "acpi_fan.log"
