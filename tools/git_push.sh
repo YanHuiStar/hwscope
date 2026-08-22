@@ -79,7 +79,7 @@ if [ -n "$DIRTY" ]; then
     echo "$DIRTY" | head -15 | sed 's/^/    /'
     echo ""
     ai "先提交工作区改动（显式 git add <文件>，禁 git add -A），或本机 stash 后再推送；或确认无需提交（如 output/logs 产物）"
-    if [ "$DRY_RUN" -eq 0 ]; then
+    if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_CONFIRM" -eq 0 ]; then
         echo -n "  仍要继续推送吗？[y/N] "
         read -r ans
         case "$ans" in y|Y) ;; *) echo "已取消"; exit 0 ;; esac
@@ -131,12 +131,12 @@ fi
 
 # ─── 4. 推送尝试链 ───
 # 4.1 直连（重试 N 次，偶发 Connection reset）
-try_push() {   # $1=proxy(可空)
+try_push() {   # $1=proxy(可空)；timeout 30 防 git 网络挂起无响应
     local proxy="${1:-}"
     if [ -n "$proxy" ]; then
-        env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" git push "$REMOTE" "$BRANCH" 2>&1 | tail -3
+        timeout 30 env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" git push "$REMOTE" "$BRANCH" 2>&1 | tail -3
     else
-        git push "$REMOTE" "$BRANCH" 2>&1 | tail -3
+        timeout 30 git push "$REMOTE" "$BRANCH" 2>&1 | tail -3
     fi
     return "${PIPESTATUS[0]:-1}"
 }
