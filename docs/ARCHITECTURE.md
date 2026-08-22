@@ -20,7 +20,7 @@ report/report.sh（只读日志，不重新采集；报告体系独立模块，�
      ├─ 读各模块 manifest 解耦定位日志
      ├─ hwscope_report.{json,md,txt,html}   报告四件套
      ├─ hwscope_acceptance.{md,html}        验收清单（14 项判定）
-     └─ --baseline / --test-dir / --bmc-verify
+     └─ --baseline / --test-dir / --fld-dir / --bmc-verify
 ```
 
 **数据流**：采集（写日志）→ 报告（读日志）单向流动，模块零耦合、可单独重跑、可审计。
@@ -42,6 +42,7 @@ hwscope/
 │   └── fw_required.txt # 固件推荐版本基线（15_firmware 判定用）
 ├── test/               # 硬件压测脚本（cpu/memory/disk/network/ib/nccl），只测不改
 ├── tools/              # 运维操作脚本（Linux/WSL 侧）
+├── tools/agent/        # 开发协作工具（agent/开发者用）：git_push.sh/.bat、agent_sync.sh（多 agent 状态同步）
 ├── tools/win/          # Windows 配套工具（.ps1/.bat）
 ├── docs/               # 详细文档（本目录）
 ├── output/             # 采集结果（gitignored）
