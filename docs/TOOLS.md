@@ -11,8 +11,8 @@
 | `disk_test.sh` | 磁盘读写 | 吞吐 + 校验 |
 | `network_test.sh` | 网络吞吐 | 双机吞吐（iperf3，需远端服务端） |
 | `ib_test.sh` | IB 链路 | 带宽 + 丢包（perftest） |
-| `gpu_test.sh` | GPU 压力 | 自动发现已装测试程序（bandwidthTest/gpu_burn 等） |
-| `gpu_burn_test.sh` | GPU 长时满载（v1.39.0） | gpu-burn 官方参数，默认 `-tc 1800`（张量核心 30 分钟）；`bash test/gpu_burn_test.sh [时长秒]` |
+| `gpu_test.sh` | GPU 压力 | 自动发现已装测试程序（bandwidthTest/gpu_burn 等）；v1.39.3 起可直接指定：`bash test/gpu_test.sh gpu_burn 1800` |
+| `gpu_burn_test.sh` | GPU 长时满载（v1.39.0） | 薄封装→`gpu_test.sh gpu_burn`；默认 `-tc 1800`（张量核心 30 分钟） |
 | `nccl_test.sh` | 集合通信 | NCCL 多卡测试 |
 | `test_all.sh` | 一键全测 | 聚合入口（按需选测） |
 | `test_server_info.sh` | 测试前服务器信息（v1.38.0） | 机器 ID/型号/CPU/内存/GPU/OS ~10 行轻量只读；各测试脚本 test_init 后自动调用，测试日志自包含机器身份；可单独执行 `bash test/test_server_info.sh` |
