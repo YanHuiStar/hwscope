@@ -3,7 +3,7 @@
 # git_push.sh — HwScope 一键推送更新（审查 → 直连重试 → 代理兜底 → AI/用户提示）
 #
 # 背景: GitHub 直连偶发失败（Connection reset / Could not connect），本机代理
-#       （GreenHub/v2rayN 的 v2ray/xray 子进程）监听端口每次启动动态变化。
+#       客户端的 v2ray/xray 子进程监听端口每次启动动态变化。
 #       本脚本封装完整推送链，供人类与 AI agent（DeepSeek Harness 等）共用：
 #       每个失败分支都会输出 [AI-ACTION] 提示，指明下一步该做什么。
 #
@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"          # tools/
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"          # 项目根
 BRANCH="main"
 REMOTE="origin"
-PROXY_PROC_NAMES=("v2ray" "xray" "clash" "greenhub")
+PROXY_PROC_NAMES=("v2ray" "xray" "clash")
 FETCH_FIRST=0
 SKIP_CONFIRM=0
 DRY_RUN=0
@@ -141,7 +141,7 @@ try_push() {   # $1=proxy(可空)；timeout 30 防 git 网络挂起无响应
     return "${PIPESTATUS[0]:-1}"
 }
 
-# 4.2 代理探测（v2ray/xray/clash/greenhub 进程 → 监听端口）
+# 4.2 代理探测（v2ray/xray/clash 进程 → 监听端口）
 detect_proxy() {
     local pid="" port=""
     # Windows（tasklist CSV + grep 过滤；MSYS 下 //FI 转义不生效——v1.36.3 教训）
@@ -192,7 +192,7 @@ push_main() {
     fail "推送失败"
     echo ""
     ai "按顺序处理:"
-    ai "  1) 本机启动 GreenHub/v2rayN 并在界面点击『连接』（进程在跑≠已连节点，须有 v2ray 子进程监听 127.0.0.1 端口）"
+    ai "  1) 启动本机代理客户端并在界面点击『连接』（进程在跑≠已连节点，须有 v2ray/xray 子进程监听 127.0.0.1 端口）"
     ai "  2) 连上后重跑: bash tools/git_push.sh -y"
     ai "  3) 若输出含 rejected/fetch first: 先 git pull --rebase $REMOTE $BRANCH 再重推"
     ai "  4) 仍失败: 手动确认网络（ping github.com / 浏览器访问 github.com）"
