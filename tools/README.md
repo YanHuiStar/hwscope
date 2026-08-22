@@ -69,6 +69,11 @@
 - **凭据**：交互式密码默认（SSH ControlMaster 复用，输一次密码）；root 免 sudo，普通用户自动 `-t` 供 sudo 交互；SSH key 仅限可信内网。密码不落盘
 - **输出**：本地 `output/remote_output/<机器ID>/`（对标本地 output/<SN> 结构）；归档包 → `logs/remote_logs/`
 
+### `git_push.sh` — 一键推送更新（开发维护工具）
+- **用法**：`bash tools/git_push.sh`（审查+推送，交互确认）；`-y` 跳过确认；`--fetch` 先检测落后；`--dry-run` 只审查
+- **功能**：直连重试 3 次 → 自动探测本机代理（v2ray/xray/clash → 监听端口一次性走代理）→ 失败输出 `[AI-ACTION]` 指引（供 AI agent 与人类共用）
+- **依赖**：git + 可选代理（GreenHub/v2rayN）；Windows 版启动器 `tools/win/git_push.bat`（双击可用）
+
 ### `cleanup.sh` — 清理采集输出
 - **用法**：`bash tools/cleanup.sh`（输入 yes 确认）；`--force` 跳过确认
 - **功能**：删除 `output/` 与 `logs/`（显示各目录大小/文件数后确认），不碰源码

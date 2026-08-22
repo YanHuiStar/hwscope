@@ -61,3 +61,4 @@
 | `install_ai.sh` | AI 推理引擎安装：vLLM / SGLang / TRT-LLM / Ollama / llama.cpp |
 | `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...） |
 | `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认） |
+| `git_push.sh` | 一键推送更新：直连重试 → 代理探测 → `[AI-ACTION]` 指引（开发维护用；Win 启动器 tools/win/git_push.bat） |
