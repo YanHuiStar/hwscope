@@ -71,6 +71,50 @@ detect_env() {
 ENV_NAME="$(detect_env)"
 info "环境: ${ENV_NAME} | 项目: ${PROJECT_DIR}"
 
+# 代理探测（v2ray/xray/clash 进程 → 监听端口）——须在 fetch 前定义（bash 函数先定义后调用）
+detect_proxy() {
+    local pid="" port=""
+    # Windows（tasklist CSV + grep 过滤；MSYS 下 //FI 转义不生效——v1.36.3 教训）
+    if [ "$ENV_NAME" = "git-bash" ]; then
+        for p in "${PROXY_PROC_NAMES[@]}"; do
+            pid="$(tasklist /FO CSV 2>/dev/null | grep -iE "\"${p}\.exe\"" | head -1 | cut -d'"' -f4)"
+            [ -n "$pid" ] && [ "$pid" != "0" ] && break
+        done
+        if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+            port="$(netstat -ano 2>/dev/null | grep "LISTENING" | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $2}' | cut -d: -f2)"
+        fi
+    else
+        # Linux/WSL
+        # pgrep -f 自匹配陷阱：探测命令自身命令行含 "v2ray" 字符串会被匹配（v1.37.3 实测）
+        # 用 [v]2ray 正则字符类技巧排除自身；WSL 内再尝试 Windows 侧 tasklist（interop）
+        pid="$(pgrep -f "[v]2ray|[x]ray|[c]lash" 2>/dev/null | head -1)"
+        if [ -z "$pid" ] && [ -x /mnt/c/Windows/System32/tasklist.exe ] 2>/dev/null; then
+            # WSL interop：Windows 侧 v2ray.exe 进程 + 端口（用 Windows netstat.exe 取监听端口）
+            pid="$(/mnt/c/Windows/System32/tasklist.exe /FO CSV 2>/dev/null | grep -iE '"v2ray.exe"' | head -1 | cut -d'"' -f4)"
+            if [ -n "$pid" ]; then
+                port="$(/mnt/c/Windows/System32/netstat.exe -ano 2>/dev/null | grep "LISTENING" | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $2}' | cut -d: -f2)"
+            fi
+        fi
+        if [ -n "$pid" ] && [ -z "$port" ]; then
+            port="$(ss -tlnp 2>/dev/null | grep "127.0.0.1:" | grep "pid=$pid" | head -1 | awk '{print $4}' | cut -d: -f2)"
+            [ -z "$port" ] && port="$(netstat -tlnp 2>/dev/null | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $4}' | cut -d: -f2)"
+        fi
+    fi
+    if [ -n "$port" ] && [ "$port" != "0" ]; then
+        echo "http://127.0.0.1:${port}"
+    fi
+}
+
+# 选择 git 命令：WSL 环境用 Windows 的 git.exe（走 Windows 网络栈——127.0.0.1 指向 Windows 自身，
+# 可访问 Windows 侧 v2ray 代理；直连也走 Windows 网络栈，成功率高）（v1.38.5 实测）
+pick_git() {
+    if [ "$ENV_NAME" = "wsl" ] && command -v git.exe >/dev/null 2>&1; then
+        echo "git.exe"
+    else
+        echo "git"
+    fi
+}
+
 # ─── 2. 前置检查 ───
 cd "$PROJECT_DIR" || { fail "无法进入项目目录 ${PROJECT_DIR}"; exit 1; }
 
@@ -100,8 +144,12 @@ fi
 # ─── 3. fetch 与落后检测 ───
 if [ "$FETCH_FIRST" -eq 1 ]; then
     info "fetch 远程（${REMOTE}）..."
-    if ! git fetch "$REMOTE" 2>&1 | tail -2; then
-        warn "fetch 失败（网络问题），继续尝试推送（若被拒会提示 pull）"
+    fproxy="$(detect_proxy)"
+    if ! "$(pick_git)" fetch "$REMOTE" 2>&1 | tail -2; then
+        if [ -n "$fproxy" ]; then
+            warn "直连 fetch 失败，走代理 ${fproxy} 重试..."
+            HTTPS_PROXY="$fproxy" HTTP_PROXY="$fproxy" "$(pick_git)" fetch "$REMOTE" 2>&1 | tail -2
+        fi
     fi
 fi
 
@@ -120,7 +168,7 @@ if [ "${BEHIND:-0}" -gt 0 ]; then
         echo -n "  自动执行 git pull --rebase ？[y/N] "
         read -r ans
         case "$ans" in y|Y)
-            git pull --rebase "$REMOTE" "$BRANCH" 2>&1 | tail -3 || { fail "rebase 失败（可能冲突）"; status FAIL; exit 1; }
+            "$(pick_git)" pull --rebase "$REMOTE" "$BRANCH" 2>&1 | tail -3 || { fail "rebase 失败（可能冲突）"; status FAIL; exit 1; }
             ;;
         *) echo "已取消"; status USER_ABORT; exit 2 ;;
         esac
@@ -149,49 +197,18 @@ fi
 
 # ─── 4. 推送尝试链 ───
 # 4.1 直连（重试 N 次，偶发 Connection reset）
-try_push() {   # $1=proxy(可空)；timeout 30 + http.connectTimeout 6 防网络挂起
-    local proxy="${1:-}"
+try_push() {   # $1=proxy(可空)；WSL 用 Windows git.exe（127.0.0.1 可达 Windows 代理）；timeout+connectTimeout 防挂起
+    local proxy="${1:-}" gcmd
+    gcmd="$(pick_git)"
     if [ -n "$proxy" ]; then
-        timeout 30 env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" git -c http.connectTimeout=6 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
+        timeout 30 env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" "$gcmd" -c http.connectTimeout=6 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
     else
-        timeout 30 git -c http.connectTimeout=6 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
+        timeout 30 "$gcmd" -c http.connectTimeout=6 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
     fi
     return "${PIPESTATUS[0]:-1}"
 }
 
-# 4.2 代理探测（v2ray/xray/clash 进程 → 监听端口）
-detect_proxy() {
-    local pid="" port="" wsl_win=0
-    # Windows（tasklist CSV + grep 过滤；MSYS 下 //FI 转义不生效——v1.36.3 教训）
-    if [ "$ENV_NAME" = "git-bash" ]; then
-        for p in "${PROXY_PROC_NAMES[@]}"; do
-            pid="$(tasklist /FO CSV 2>/dev/null | grep -iE "\"${p}\.exe\"" | head -1 | cut -d'"' -f4)"
-            [ -n "$pid" ] && [ "$pid" != "0" ] && break
-        done
-        if [ -n "$pid" ] && [ "$pid" != "0" ]; then
-            port="$(netstat -ano 2>/dev/null | grep "LISTENING" | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $2}' | cut -d: -f2)"
-        fi
-    else
-        # Linux/WSL
-        # pgrep -f 自匹配陷阱：探测命令自身命令行含 "v2ray" 字符串会被匹配（v1.37.3 实测）
-        # 用 [v]2ray 正则字符类技巧排除自身；WSL 内再尝试 Windows 侧 tasklist（interop）
-        pid="$(pgrep -f "[v]2ray|[x]ray|[c]lash" 2>/dev/null | head -1)"
-        if [ -z "$pid" ] && [ -x /mnt/c/Windows/System32/tasklist.exe ] 2>/dev/null; then
-            # WSL interop：Windows 侧 v2ray.exe 进程（但 NAT 下 127.0.0.1 不可达，仅作提示）
-            pid="$(/mnt/c/Windows/System32/tasklist.exe /FO CSV 2>/dev/null | grep -iE '"v2ray.exe"' | head -1 | cut -d'"' -f4)"
-            wsl_win=1
-        fi
-        if [ -n "$pid" ]; then
-            port="$(ss -tlnp 2>/dev/null | grep "127.0.0.1:" | grep "pid=$pid" | head -1 | awk '{print $4}' | cut -d: -f2)"
-            [ -z "$port" ] && port="$(netstat -tlnp 2>/dev/null | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $4}' | cut -d: -f2)"
-        fi
-    fi
-    if [ -n "$port" ] && [ "$port" != "0" ]; then
-        echo "http://127.0.0.1:${port}"
-    elif [ "${wsl_win}" = "1" ]; then
-        echo "WSL_WIN_PROXY_DETECTED"   # Windows 侧有 v2ray 但 NAT 不可达
-    fi
-}
+# （detect_proxy/pick_git 已上移至文件前部——fetch 前定义，v1.38.5）
 
 push_main() {
     local proxy attempt out
@@ -216,10 +233,7 @@ push_main() {
     done
 
     proxy="$(detect_proxy)"
-    if [ "$proxy" = "WSL_WIN_PROXY_DETECTED" ]; then
-        fail "检测到 Windows 侧有 v2ray 代理，但 WSL NAT 模式下 127.0.0.1 不可达"
-        ai "在 Windows 侧（git-bash）运行本脚本推送；或将 WSL 网络改为镜像模式（.wslconfig networkingMode=mirrored，需重启 WSL）"
-    elif [ -n "$proxy" ]; then
+    if [ -n "$proxy" ]; then
         info "发现代理 ${proxy}，验证连通性..."
         if command -v curl >/dev/null 2>&1; then
             if curl -x "$proxy" -sI --max-time 6 https://github.com -o /dev/null; then
