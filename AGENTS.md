@@ -21,6 +21,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - `conf/fw_required.txt` — 固件推荐版本基线（15_firmware 模块判定 合规/落后 用，按厂商验收手册维护；全部注释 = 判未知不误报）
 - `test/` — 硬件压测脚本（cpu/memory/disk/network/ib/nccl），只测不改；`test_common.sh` 统一落盘 `logs/test/<时间戳>/`
 - `tools/` — 运维操作脚本（BMC/网卡/安装），会修改系统
+- `tools/agent/` — **开发协作工具（agent/开发者用）**：git_push.sh（一键推送）、agent_sync.sh（多 agent 状态同步）；Windows 启动器在 `tools/win/`（git_push.bat 等）
 - `tools/win/` — Windows 配套工具（.ps1/.bat）
 - `fixcrlf.sh` — Windows→Linux CRLF 换行符修复
 - `output/` — 采集结果（gitignored），`logs/` — 压缩归档（gitignored）
@@ -79,10 +80,10 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 > 同一仓库可能被**多台机器、多个 Agent 会话**（DeepSeek Harness / Hermes 等）先后修改提交推送。
 > 各会话凭记忆操作会导致版本号回退/跳号、推送交叉。规则目标：**一切状态以远程 origin/main 为真相**，杜绝凭记忆。
 
-- **开工前必跑** `bash tools/agent_sync.sh`（fetch + 显示 远程/本地 HEAD、版本、未推送数、版本对比；自动刷新本地状态文件）——每个会话一次，约几十 token
+- **开工前必跑** `bash tools/agent/agent_sync.sh`（fetch + 显示 远程/本地 HEAD、版本、未推送数、版本对比；自动刷新本地状态文件）——每个会话一次，约几十 token
 - **版本号只升不降**：升版本前先看 agent_sync 显示的**远程版本**，在远程版本基础上升（不要凭本地记忆）；`git_push.sh` 会硬拦截"本地版本 < 远程版本"的推送
-- **推送一律走** `bash tools/git_push.sh -y`（默认 fetch + 落后 rebase + 版本单调检查），推送成功后跑 `bash tools/agent_sync.sh --clear`
-- **提交后**跑 `bash tools/agent_sync.sh --mark`（本地状态文件 AGENT_STATE.md 标记未推送提交；该文件 gitignore，仅单机多会话协调用，不承担跨机器——跨机器以 fetch 为准）
+- **推送一律走** `bash tools/agent/git_push.sh -y`（默认 fetch + 落后 rebase + 版本单调检查），推送成功后跑 `bash tools/agent/agent_sync.sh --clear`
+- **提交后**跑 `bash tools/agent/agent_sync.sh --mark`（本地状态文件 AGENT_STATE.md 标记未推送提交；该文件 gitignore，仅单机多会话协调用，不承担跨机器——跨机器以 fetch 为准）
 - **多机器提示**：换机器开工同样先 agent_sync（fetch 到该机最新）；禁止"我以为远程是 vX"——以 agent_sync 输出为准
 - 提交前 `git status` 审查只 add 本会话文件（禁 add -A，见安全约定）
 
