@@ -67,6 +67,16 @@ bash tools/remote_batch.sh -H "root@10.0.0.1 root@10.0.0.2" -c 'nvidia-smi -L'  
 
 ## 运维工具
 
+### 一键推送更新（开发维护）
+
+```bash
+bash tools/git_push.sh            # 审查并推送（交互确认）
+bash tools/git_push.sh -y         # 跳过确认直接推
+bash tools/git_push.sh --dry-run  # 只审查不推送
+```
+
+直连失败自动探测本机代理重推；全部失败输出 `[AI-ACTION]` 指引。Windows 双击 `tools/win/git_push.bat`。
+
 ### 固件基线管理
 
 ```bash
