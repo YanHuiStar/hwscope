@@ -72,7 +72,7 @@
 ### `git_push.sh` — 一键推送更新（开发维护工具）
 - **用法**：`bash tools/git_push.sh`（审查+推送，交互确认）；`-y` 跳过确认；`--fetch` 先检测落后；`--dry-run` 只审查
 - **功能**：直连重试 3 次 → 自动探测本机代理（v2ray/xray/clash → 监听端口一次性走代理）→ 失败输出 `[AI-ACTION]` 指引（供 AI agent 与人类共用）
-- **依赖**：git + 可选代理（GreenHub/v2rayN）；Windows 版启动器 `tools/win/git_push.bat`（双击可用）
+- **依赖**：git + 可选代理（本机代理客户端，端口自动探测）；Windows 版启动器 `tools/win/git_push.bat`（双击可用）
 
 ### `cleanup.sh` — 清理采集输出
 - **用法**：`bash tools/cleanup.sh`（输入 yes 确认）；`--force` 跳过确认
