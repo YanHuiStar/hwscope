@@ -16,8 +16,8 @@ source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 parse_help "$@"
 source "${SCRIPT_DIR}/lib/nvlink.sh" 2>/dev/null || true
 
-# ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>] [--bmc-verify]） ───
-OUT=""; FORMAT=""; TEST_DIR=""; BASELINE_DIR=""
+# ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>] [--bmc-verify] [--fld-dir <dir>]） ───
+OUT=""; FORMAT=""; TEST_DIR=""; BASELINE_DIR=""; FLD_DIR=""
 BMC_VERIFY=0   # OS-BMC 一致性校验默认关闭（对比项/单侧数据判定仍在完善；需用时 --bmc-verify 开启）
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -33,6 +33,13 @@ while [ $# -gt 0 ]; do
             BASELINE_DIR="$2"
             if [ -z "$BASELINE_DIR" ] || [ ! -d "$BASELINE_DIR" ]; then
                 echo -e "${RED}[ERROR] --baseline 需要有效历史采集目录路径${NC}"; exit 1
+            fi
+            shift 2 ;;
+        --fld-dir)
+            # DGX FLD 诊断日志目录（NVIDIA Field Diagnostic logs-<TS>/，run.log + summary.csv；v1.37.0）
+            FLD_DIR="$2"
+            if [ -z "$FLD_DIR" ] || [ ! -d "$FLD_DIR" ]; then
+                echo -e "${RED}[ERROR] --fld-dir 需要有效 FLD 诊断日志目录（如 logs-20251026-145655）${NC}"; exit 1
             fi
             shift 2 ;;
         --*) echo -e "${YELLOW}[WARN] 未知参数: $1${NC}"; shift ;;

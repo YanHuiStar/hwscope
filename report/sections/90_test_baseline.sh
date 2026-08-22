@@ -20,6 +20,43 @@ if [ -n "$TEST_DIR" ] && [ -d "$TEST_DIR" ]; then
     fi
 fi
 
+# ─── FLD 诊断日志（--fld-dir；NVIDIA DGX Field Diagnostic 日志目录 logs-<TS>/，v1.37.0） ───
+# 数据源: run.log（进度行 "Testing <test> OK/SKIPPED [耗时]" + 矩阵行 "MODS-... | test | ... | component | OK"）
+# summary.csv 列5 含逗号（"GPU, PCIE, Nvlink, I2C"）无法可靠逗号解析，仅作兜底；unified_summary.json 兜底 finalResult
+FLD_SUMMARY=""; FLD_RESULT=""; FLD_DETAILS=""; FLD_DIR_LABEL=""
+if [ -n "$FLD_DIR" ] && [ -d "$FLD_DIR" ]; then
+    FLD_DIR_LABEL="$FLD_DIR"
+    _fld_run="${FLD_DIR}/run.log"
+    # ── run.log 头信息 ──
+    _fld_ver=$(grep -m1 '^Version' "$_fld_run" 2>/dev/null | awk '{print $2}')
+    _fld_base=$(grep -m1 '^Base diag' "$_fld_run" 2>/dev/null | awk '{print $3}')
+    _fld_prod=$(grep -m1 '^Product' "$_fld_run" 2>/dev/null | sed 's/^Product[[:space:]]*//')
+    _fld_sn=$(grep -m1 '^Serial Number' "$_fld_run" 2>/dev/null | awk '{print $3}')
+    _fld_total=$(grep -m1 '^End time' "$_fld_run" 2>/dev/null | grep -oE '\[ [0-9:]+s elapsed \]' | head -1)
+    FLD_RESULT=$(grep -m1 '^Final Result:' "$_fld_run" 2>/dev/null | awk '{print $3}')
+    if [ -z "$FLD_RESULT" ] && [ -f "${FLD_DIR}/unified_summary.json" ]; then
+        FLD_RESULT=$(grep -oE '"finalResult": *"[A-Za-z]+"' "${FLD_DIR}/unified_summary.json" 2>/dev/null | head -1 | sed 's/.*"\([A-Za-z]*\)"$/\1/')
+    fi
+    # ── 组件级明细：run.log 矩阵行（MODS-/DGX- 前缀，| 分隔无歧义） ──
+    if [ -f "$_fld_run" ]; then
+        FLD_DETAILS=$(grep -E '^(MODS-[0-9]+|DGX-[0-9]+) +\|' "$_fld_run" 2>/dev/null | awk -F'|' '{
+            vid=$2; gsub(/^ +| +$/,"",vid)
+            comp=$5; gsub(/^ +| +$/,"",comp)
+            cid=$6; gsub(/^ +| +$/,"",cid)
+            res=$7; gsub(/^ +| +$/,"",res)
+            if (vid != "") printf "%s|%s%s|%s|\n", vid, comp, (cid!=""?" "cid:""), res
+        }')
+        # 兜底：矩阵行为空（部分版本无矩阵输出）→ 进度行 "Testing <test> OK/SKIPPED [耗时]" 作测试级结果
+        if [ -z "$FLD_DETAILS" ]; then
+            FLD_DETAILS=$(grep -E '^Testing ' "$_fld_run" 2>/dev/null | sed -E 's/^Testing ([^ ]+) +(OK|SKIPPED|FAIL|ERROR|PASS).*/|\1||\2|/' | grep -E '^\|[^|]+\|\|')
+        fi
+    fi
+    # ── 概览行（缺字段容忍，全缺 = 目录非 FLD 日志） ──
+    if [ -n "$_fld_ver" ] || [ -n "$FLD_DETAILS" ]; then
+        FLD_SUMMARY="诊断 ${_fld_ver:-N/A}${_fld_base:+（base ${_fld_base}）}· ${_fld_prod:-N/A} · SN ${_fld_sn:-N/A}${_fld_total:+ · 耗时 ${_fld_total}}"
+    fi
+fi
+
 # ─── 报告基线对比（--baseline <历史采集目录>；读两侧数据，输出时序差异） ───
 BASELINE_COMPARE=""; BASELINE_DIR_LABEL=""; BASELINE_COMPARE_NOTE=""
 if [ -n "$BASELINE_DIR" ]; then

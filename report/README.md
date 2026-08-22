@@ -43,6 +43,7 @@ bash report/report.sh <output_dir>                     # 四件套 json/md/txt/h
 bash report/report.sh <output_dir> --acceptance        # 验收清单 md/html（14 项判定）
 bash report/report.sh <output_dir> --baseline <历史目录> # 时序差异对比
 bash report/report.sh <output_dir> --test-dir <压测目录> # 关联压测归档
+bash report/report.sh <output_dir> --fld-dir <FLD日志目录> # 关联 DGX FLD 诊断日志（logs-<TS>/；解析 run.log 生成"FLD 诊断参考"段：版本/产品/最终结果 + 测试×组件结果矩阵，v1.37.0）
 bash report/report.sh <output_dir> --bmc-verify        # OS-BMC 一致性交叉核验
 bash report/report.sh <output_dir> --json              # 仅 json（也可 --md/--txt/--both）
 
