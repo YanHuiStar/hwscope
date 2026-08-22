@@ -505,6 +505,53 @@ $(if [ -n "$TEST_DETAILS" ]; then
     done
 fi)
 
+$(if [ -n "$FLD_SUMMARY" ]; then
+    echo ""
+    echo "## FLD 诊断参考"
+    echo "> 目录: ${FLD_DIR_LABEL} · ${FLD_SUMMARY}"
+    _fld_res=""
+    case "$FLD_RESULT" in
+        PASS) _fld_res="✅ PASS" ;;
+        FAIL) _fld_res="❌ FAIL" ;;
+        *)    _fld_res="${FLD_RESULT:-N/A}" ;;
+    esac
+    echo "> **最终结果: ${_fld_res}**"
+    echo ""
+    echo "| 测试项 | 结果 | 组件数 |"
+    echo "|--------|------|--------|"
+    printf '%s\n' "$FLD_DETAILS" | awk -F'|' '{
+        cnt[$1]++
+        if ($3 ~ /^OK/) ok[$1]++
+        else if ($4 ~ /skip/ || $3 ~ /skip/) sk[$1]++
+        else { fail[$1]++; failc[$1] = failc[$1] ($2 != "" ? $2 : "-") "," }
+    } END {
+        for (v in cnt) {
+            st = "✅ PASS"
+            if (fail[v] > 0) st = "❌ FAIL (" failc[v] ")"
+            else if (sk[v] > 0) st = "— 跳过 (" sk[v] ")"
+            printf "%s|%s|%d\n", v, st, cnt[v]
+        }
+    }' | sort | while IFS='|' read -r fvid fst fcnt; do
+        echo "| ${fvid} | ${fst} | ${fcnt} |"
+    done
+    # 非 OK 明细（FAIL/跳过 逐组件列出，PASS 行不展开）
+    if printf '%s\n' "$FLD_DETAILS" | grep -vqE '\|OK'; then
+        echo ""
+        echo "### 非通过项明细"
+        echo "| 测试项 | 组件 | 结果 | 说明 |"
+        echo "|--------|------|------|------|"
+        printf '%s\n' "$FLD_DETAILS" | while IFS='|' read -r fvid fcomp fres fnote; do
+            [ -z "$fvid" ] && continue
+            case "$fres" in
+                OK*) continue ;;
+                *skip*) fdisp="— 跳过" ;;
+                *) fdisp="❌ ${fres}" ;;
+            esac
+            echo "| ${fvid} | ${fcomp} | ${fdisp} | ${fnote} |"
+        done
+    fi
+fi)
+
 $(if [ -n "$BASELINE_COMPARE" ]; then
     echo ""
     echo "## 基线对比"

@@ -127,6 +127,25 @@ gen_json() {
                 printf "      {\"name\": \"%s\", \"status\": \"%s\", \"elapsed_s\": \"%s\", \"detail_file\": \"%s\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
     fi
+    # FLD 诊断 JSON（test|component|result|note 明细 + 按测试聚合）
+    local fld_details_json="" fld_agg_json=""
+    if [ -n "$FLD_DETAILS" ]; then
+        fld_details_json=$(printf '%s' "$FLD_DETAILS" | awk -F'|' '
+            $1 != "" {
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                printf "      {\"test\": \"%s\", \"component\": \"%s\", \"result\": \"%s\", \"note\": \"%s\"},\n", $1, $2, $3, $4
+            }' | sed '$ s/,$//')
+        fld_agg_json=$(printf '%s\n' "$FLD_DETAILS" | awk -F'|' '
+            { cnt[$1]++; if ($3 ~ /^OK/) ok[$1]++; else if ($4 ~ /skip/ || $3 ~ /skip/) sk[$1]++; else fail[$1]++ }
+            END {
+                for (v in cnt) {
+                    st = "PASS"
+                    if (fail[v] > 0) st = "FAIL"
+                    else if (sk[v] > 0) st = "SKIPPED"
+                    printf "      {\"test\": \"%s\", \"result\": \"%s\", \"components\": %d},\n", v, st, cnt[v]
+                }
+            }' | sort | sed '$ s/,$//')
+    fi
     # 基线对比 JSON 数组（item|status|current|baseline）
     local baseline_compare_json=""
     if [ -n "$BASELINE_COMPARE" ]; then
@@ -340,6 +359,17 @@ ${bmc_consistency_json}
     "dir": "${TEST_DIR_LABEL:-}",
     "items": [
 ${test_details_json}
+    ]
+  },
+  "fld": {
+    "dir": "${FLD_DIR_LABEL:-}",
+    "summary": "${FLD_SUMMARY:-}",
+    "result": "${FLD_RESULT:-}",
+    "tests": [
+${fld_agg_json}
+    ],
+    "details": [
+${fld_details_json}
     ]
   },
   "baseline_compare": {

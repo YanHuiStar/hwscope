@@ -74,6 +74,19 @@
 | OS-BMC 未启用 / 无 BMC | 不计 |
 | **启用后采集失败** | **计（真缺数据）** |
 
+## FLD 诊断参考（--fld-dir，v1.37.0）
+
+关联 NVIDIA DGX Field Diagnostic 日志目录（`logs-<TS>/`），报告新增"FLD 诊断参考"段：
+
+- **概览**：诊断版本/基础版本/产品/SN/总耗时 + 最终结果（PASS/FAIL）
+- **测试矩阵**：逐测试项 PASS/跳过/FAIL + 组件数（解析 run.log 的 `Testing <test> OK/SKIPPED` 进度行 + `MODS-... | test | ... | component | OK` 矩阵行，纯文本解析零新依赖）
+- **非通过项明细**：FAIL/跳过逐组件列出
+- 适用：HGX/Dell 交付场景的 FLD 出厂诊断结果直接并入 HwScope 报告，与自有采集交叉引用
+
+```bash
+bash report/report.sh <采集目录> --fld-dir /path/to/logs-20251026-145655
+```
+
 ## 归档
 
 双压缩包（同一 14 位时间戳）：

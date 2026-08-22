@@ -321,6 +321,42 @@ $(printf '%s' "$HEALTH_TXT")
         esac
         printf '  %-24s %-16s %5ss  %s\n' "$tname" "$tst" "$telapsed" "$tfile"
     done
+fi)$(if [ -n "$FLD_SUMMARY" ]; then
+    printf '\n\n[FLD 诊断参考]  %s\n' "$FLD_SUMMARY"
+    printf '最终结果: '
+    case "$FLD_RESULT" in
+        PASS) echo "✅ PASS" ;;
+        FAIL) echo "❌ FAIL" ;;
+        *)    echo "${FLD_RESULT:-N/A}" ;;
+    esac
+    printf '%-24s %s\n' "测试项" "结果"
+    printf '%s\n' "$FLD_DETAILS" | awk -F'|' '{
+        cnt[$1]++
+        if ($3 ~ /^OK/) ok[$1]++
+        else if ($4 ~ /skip/ || $3 ~ /skip/) sk[$1]++
+        else { fail[$1]++; failc[$1] = failc[$1] ($2 != "" ? $2 : "-") "," }
+    } END {
+        for (v in cnt) {
+            st = "✅ PASS"
+            if (fail[v] > 0) st = "❌ FAIL (" failc[v] ")"
+            else if (sk[v] > 0) st = "— 跳过 (" sk[v] ")"
+            printf "%s|%s|%d\n", v, st, cnt[v]
+        }
+    }' | sort | while IFS='|' read -r fvid fst fcnt; do
+        printf '  %-22s %s\n' "$fvid" "$fst"
+    done
+    if printf '%s\n' "$FLD_DETAILS" | grep -vqE '\|OK'; then
+        echo "非通过项明细:"
+        printf '%s\n' "$FLD_DETAILS" | while IFS='|' read -r fvid fcomp fres fnote; do
+            [ -z "$fvid" ] && continue
+            case "$fres" in
+                OK*) continue ;;
+                *skip*) fdisp="— 跳过" ;;
+                *) fdisp="❌ ${fres}" ;;
+            esac
+            printf '  %-22s %-12s %s  %s\n' "$fvid" "$fcomp" "$fdisp" "$fnote"
+        done
+    fi
 fi)$(if [ -n "$BASELINE_COMPARE" ]; then
     printf '\n[基线对比]  %s\n' "$BASELINE_COMPARE_NOTE"
     echo "$BASELINE_COMPARE" | while IFS='|' read -r bitem bst bcur bbase; do
