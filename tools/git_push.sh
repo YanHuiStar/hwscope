@@ -8,11 +8,15 @@
 #       每个失败分支都会输出 [AI-ACTION] 提示，指明下一步该做什么。
 #
 # 用法:
-#   bash tools/git_push.sh              # 审查并推送（默认交互确认）
-#   bash tools/git_push.sh -y           # 跳过确认直接推
-#   bash tools/git_push.sh --fetch      # 推送前先 fetch 并检测本地是否落后
-#   bash tools/git_push.sh --dry-run    # 只审查（环境/待推提交/代理探测），不推送
+#   bash tools/git_push.sh              # 审查+推送（默认 fetch + 逐提交改动摘要，交互确认）
+#   bash tools/git_push.sh -y           # 跳过确认直接推（AI agent 场景）
+#   bash tools/git_push.sh --no-fetch   # 跳过推送前 fetch（网络极差时）
+#   bash tools/git_push.sh --dry-run    # 只审查（环境/待推提交/改动摘要/代理探测），不推送
+#   bash tools/git_push.sh --quiet      # 机器可读模式：仅输出状态行与关键信息
 #   bash tools/git_push.sh --help       # 帮助
+#
+# 退出码: 0=推送成功  1=推送失败（网络/代理）  2=用户取消或前置检查不通过
+# 状态行: 末尾输出 PUSH_STATUS=OK|FAIL|USER_ABORT（AI agent 解析用）
 #
 # 环境自适应: git-bash(MSYS)/WSL/原生 Linux 自动识别；Windows 用 tasklist+netstat，
 #             Linux 用 pgrep+ss/netstat 探测代理进程与监听端口。
@@ -25,28 +29,31 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"          # 项目根
 BRANCH="main"
 REMOTE="origin"
 PROXY_PROC_NAMES=("v2ray" "xray" "clash")
-FETCH_FIRST=0
+FETCH_FIRST=1          # 默认推送前 fetch（防推旧：其他 agent 可能已推送）
 SKIP_CONFIRM=0
 DRY_RUN=0
+QUIET=0
 
 for arg in "$@"; do
     case "$arg" in
-        --fetch) FETCH_FIRST=1 ;;
+        --no-fetch) FETCH_FIRST=0 ;;
         -y|--yes) SKIP_CONFIRM=1 ;;
         --dry-run) DRY_RUN=1 ;;
+        -q|--quiet) QUIET=1 ;;
         -h|--help)
-            sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) echo -e "\033[0;33m[WARN] 忽略未知参数: $arg\033[0m" ;;
     esac
 done
 
 C_GREEN='\033[0;32m'; C_YELLOW='\033[0;33m'; C_RED='\033[0;31m'; C_CYAN='\033[0;36m'; C_NC='\033[0m'
-info()  { echo -e "${C_CYAN}[INFO]${C_NC} $*"; }
-ok()    { echo -e "${C_GREEN}[OK]${C_NC} $*"; }
-warn()  { echo -e "${C_YELLOW}[WARN]${C_NC} $*"; }
+info()  { [ "$QUIET" -eq 1 ] || echo -e "${C_CYAN}[INFO]${C_NC} $*"; }
+ok()    { [ "$QUIET" -eq 1 ] || echo -e "${C_GREEN}[OK]${C_NC} $*"; }
+warn()  { [ "$QUIET" -eq 1 ] || echo -e "${C_YELLOW}[WARN]${C_NC} $*"; }
 fail()  { echo -e "${C_RED}[FAIL]${C_NC} $*"; }
-ai()    { echo -e "${C_YELLOW}[AI-ACTION]${C_NC} $*"; }   # 给 AI agent 的明确指令
+ai()    { [ "$QUIET" -eq 1 ] || echo -e "${C_YELLOW}[AI-ACTION]${C_NC} $*"; }   # 给 AI agent 的明确指令
+status() { echo "PUSH_STATUS=$1"; }   # 机器可读状态行（--quiet 也输出）
 
 # ─── 1. 环境检测 ───
 detect_env() {
@@ -70,6 +77,7 @@ cd "$PROJECT_DIR" || { fail "无法进入项目目录 ${PROJECT_DIR}"; exit 1; }
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
     fail "不是 git 仓库: ${PROJECT_DIR}"
     ai "在正确的项目目录下运行（应为 hwscope 仓库根）"
+    status FAIL
     exit 1
 fi
 
@@ -82,7 +90,10 @@ if [ -n "$DIRTY" ]; then
     if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_CONFIRM" -eq 0 ]; then
         echo -n "  仍要继续推送吗？[y/N] "
         read -r ans
-        case "$ans" in y|Y) ;; *) echo "已取消"; exit 0 ;; esac
+        case "$ans" in y|Y) ;; *) echo "已取消"; status USER_ABORT; exit 2 ;; esac
+    fi
+    if [ "$SKIP_CONFIRM" -eq 1 ] && [ -n "$DIRTY" ]; then
+        ai "工作区存在未提交改动（可能为其他 agent 在途工作）——推送仅包含已提交内容，改动仍留在本地"
     fi
 fi
 
@@ -98,6 +109,7 @@ AHEAD="$(git rev-list --count "$REMOTE/$BRANCH"..HEAD 2>/dev/null || echo 0)"
 BEHIND="$(git rev-list --count HEAD.."$REMOTE/$BRANCH" 2>/dev/null || echo 0)"
 if [ "${AHEAD:-0}" -eq 0 ] && [ "${BEHIND:-0}" -eq 0 ]; then
     ok "本地与远程一致（$REMOTE/$BRANCH），无待推送提交"
+    status NOOP
     exit 0
 fi
 info "待推送: ${AHEAD} 个提交领先远程${BEHIND:+，${BEHIND} 个落后}"
@@ -108,24 +120,30 @@ if [ "${BEHIND:-0}" -gt 0 ]; then
         echo -n "  自动执行 git pull --rebase ？[y/N] "
         read -r ans
         case "$ans" in y|Y)
-            git pull --rebase "$REMOTE" "$BRANCH" 2>&1 | tail -3 || { fail "rebase 失败（可能冲突）"; exit 1; }
+            git pull --rebase "$REMOTE" "$BRANCH" 2>&1 | tail -3 || { fail "rebase 失败（可能冲突）"; status FAIL; exit 1; }
             ;;
-        *) echo "已取消"; exit 0 ;;
+        *) echo "已取消"; status USER_ABORT; exit 2 ;;
         esac
     else
-        exit 0
+        status USER_ABORT
+        exit 2
     fi
 fi
 
 if [ "$DRY_RUN" -eq 0 ]; then
     echo ""
-    echo "────── 待推送提交 ──────"
-    git log --oneline "$REMOTE/$BRANCH"..HEAD | cat
-    echo "───────────────────────"
+    echo "────── 待推送提交与改动摘要（审查） ──────"
+    for c in $(git rev-list "$REMOTE/$BRANCH"..HEAD); do
+        echo ""
+        git log -1 --format="%h %s" "$c" | cat
+        git show --stat --format="" "$c" | head -20 | sed 's/^/    /'
+    done
+    echo ""
+    echo "────────────────────────────────────────"
     if [ "$SKIP_CONFIRM" -eq 0 ]; then
-        echo -n "确认推送以上提交？[y/N] "
+        echo -n "审查以上提交后确认推送？[y/N] "
         read -r ans
-        case "$ans" in y|Y) ;; *) echo "已取消"; exit 0 ;; esac
+        case "$ans" in y|Y) ;; *) echo "已取消"; status USER_ABORT; exit 2 ;; esac
     fi
 fi
 
@@ -196,6 +214,7 @@ push_main() {
     ai "  2) 连上后重跑: bash tools/git_push.sh -y"
     ai "  3) 若输出含 rejected/fetch first: 先 git pull --rebase $REMOTE $BRANCH 再重推"
     ai "  4) 仍失败: 手动确认网络（ping github.com / 浏览器访问 github.com）"
+    status FAIL
     return 1
 }
 
@@ -204,6 +223,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
     info "DRY-RUN: 不执行推送。将执行: git push $REMOTE $BRANCH"
     proxy="$(detect_proxy)"
     [ -n "$proxy" ] && info "当前可用的代理探测结果: ${proxy}" || warn "当前未探测到代理进程（直连可用时不必要）"
+    status DRY_RUN
     exit 0
 fi
 
@@ -211,6 +231,8 @@ if push_main; then
     echo ""
     ok "推送成功: $REMOTE/$BRANCH 已更新（$(git rev-parse --short HEAD)）"
     git log --oneline -1 | cat
+    status OK
+    exit 0
 else
     exit 1
 fi
