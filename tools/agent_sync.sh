@@ -23,6 +23,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"          # 项目根
 STATE_FILE="${PROJECT_DIR}/AGENT_STATE.md"
 BRANCH="main"
 REMOTE="origin"
+# MSYS/git-bash 下 git -C <msys路径> 会 chdir 失败（v1.37.2 实测），统一 cd 后再跑 git
+cd "$PROJECT_DIR" || { echo "[SYNC] 无法进入项目目录 ${PROJECT_DIR}" >&2; exit 1; }
 
 C_GREEN='\033[0;32m'; C_YELLOW='\033[1;33m'; C_RED='\033[0;31m'; C_CYAN='\033[0;36m'; C_NC='\033[0m'
 info() { echo -e "${C_CYAN}[SYNC]${C_NC} $*"; }
@@ -41,10 +43,34 @@ ver_lt() {   # $1 < $2 → 0
 get_local_ver() { grep '^HWSCOPE_VERSION=' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | head -1 | sed 's/.*"v\(.*\)".*/\1/'; }
 
 # ─── 更新状态文件某一行（key 前缀替换，保留文件其余） ───
+init_state() {   # 文件不存在时生成基础模板（新机器 clone 后首次运行）
+    if [ ! -f "$STATE_FILE" ]; then
+        cat > "$STATE_FILE" <<'EOF'
+# Agent 状态文件（本地协调用，已 gitignore，勿提交到 git）
+
+> 用途：协调**同一台机器**上多个 Agent 会话的"进行中/未推送"状态（git 看不到的部分）。
+> 跨机器状态以远程为准（`git fetch origin` 后 origin/main 的 HEAD/版本即真相）。
+> 操作统一走 `bash tools/agent_sync.sh`（查看/--mark 提交后标记/--clear 推送成功后清空），勿手改。
+
+## 本机当前状态（每次开工/提交/推送后更新）
+
+- 最新本地提交: （未初始化）
+- 当前版本: v?
+- 未推送提交: （无）
+
+## 操作记录（滚动保留最近 10 条，旧行可删）
+
+| 时间 | 动作 | 提交 | 版本 | 备注 |
+|------|------|------|------|------|
+EOF
+        ok "已初始化本地状态文件（AGENT_STATE.md）"
+    fi
+}
+
 update_state() {   # $1=行前缀 $2=新值
     local key="$1" val="$2"
     [ -f "$STATE_FILE" ] || return 0
-    sed -i "s|^\(${key}:\).*|\1 ${val}|" "$STATE_FILE" 2>/dev/null || true
+    sed -i "s|^\\(${key}:\\).*|\\1 ${val}|" "$STATE_FILE" 2>/dev/null || true
 }
 
 case "$ACTION" in
@@ -55,8 +81,9 @@ esac
 
 # ─── 提交后标记：取 HEAD hash/版本，写状态文件 ───
 if [ "$ACTION" = "--mark" ]; then
-    HASH=$(git -C "$PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || echo "?")
-    SUBJ=$(git -C "$PROJECT_DIR" log -1 --pretty=%s 2>/dev/null | cut -c1-60)
+    init_state
+    HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "?")
+    SUBJ=$(git log -1 --pretty=%s 2>/dev/null | cut -c1-60)
     VER=$(get_local_ver)
     update_state "- 未推送提交" "${HASH} ${SUBJ}（版本 v${VER:-?}）"
     update_state "- 最新本地提交" "${HASH} ${SUBJ}"
@@ -66,6 +93,7 @@ fi
 
 # ─── 推送成功后清空 ───
 if [ "$ACTION" = "--clear" ]; then
+    init_state
     update_state "- 未推送提交" "（无——推送成功后已清空）"
     ok "已清空未推送标记（确认 ${REMOTE}/${BRANCH} 已更新）"
     exit 0
@@ -78,17 +106,17 @@ if [ "$ACTION" != "show" ]; then
 fi
 
 info "fetch ${REMOTE}（以远程为真相）..."
-git -C "$PROJECT_DIR" fetch "$REMOTE" "$BRANCH" 2>&1 | tail -1
+git fetch "$REMOTE" "$BRANCH" 2>&1 | tail -1
 
 # 远程状态
-R_HASH=$(git -C "$PROJECT_DIR" rev-parse --short "${REMOTE}/${BRANCH}" 2>/dev/null || echo "?")
-R_VER=$(git -C "$PROJECT_DIR" show "${REMOTE}/${BRANCH}:hwscope.sh" 2>/dev/null | grep '^HWSCOPE_VERSION=' | head -1 | sed 's/.*"v\(.*\)".*/\1/')
+R_HASH=$(git rev-parse --short "${REMOTE}/${BRANCH}" 2>/dev/null || echo "?")
+R_VER=$(git show "${REMOTE}/${BRANCH}:hwscope.sh" 2>/dev/null | grep '^HWSCOPE_VERSION=' | head -1 | sed 's/.*"v\(.*\)".*/\1/')
 # 本地状态
-L_HASH=$(git -C "$PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || echo "?")
+L_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "?")
 L_VER=$(get_local_ver)
-AHEAD=$(git -C "$PROJECT_DIR" rev-list --count "${REMOTE}/${BRANCH}"..HEAD 2>/dev/null || echo 0)
-BEHIND=$(git -C "$PROJECT_DIR" rev-list --count HEAD.."${REMOTE}/${BRANCH}" 2>/dev/null || echo 0)
-DIRTY=$(git -C "$PROJECT_DIR" status --short 2>/dev/null | wc -l)
+AHEAD=$(git rev-list --count "${REMOTE}/${BRANCH}"..HEAD 2>/dev/null || echo 0)
+BEHIND=$(git rev-list --count HEAD.."${REMOTE}/${BRANCH}" 2>/dev/null || echo 0)
+DIRTY=$(git status --short 2>/dev/null | wc -l)
 
 echo ""
 info "远程 ${REMOTE}/${BRANCH} : ${R_HASH}${R_VER:+ v${R_VER}}"
@@ -114,7 +142,8 @@ else
 fi
 
 # 更新状态文件（未推送标记由 --mark/--clear 维护，此处只刷新最新提交/版本）
-update_state "- 最新本地提交" "${L_HASH} $(git -C "$PROJECT_DIR" log -1 --pretty=%s 2>/dev/null | cut -c1-60)"
+init_state
+update_state "- 最新本地提交" "${L_HASH} $(git log -1 --pretty=%s 2>/dev/null | cut -c1-60)"
 update_state "- 当前版本" "v${L_VER:-?}"
 if [ "${AHEAD:-0}" -eq 0 ]; then
     update_state "- 未推送提交" "（无）"
