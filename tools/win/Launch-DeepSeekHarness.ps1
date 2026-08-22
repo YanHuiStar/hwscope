@@ -24,7 +24,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # DeepSeek Harness 会话工作目录（会话 JSONL 按此目录归档；项目内 workspace/，已加入 .gitignore 不入库）
-# 相对定位：脚本在 <项目根>\tools\agent\ 下，上溯两级即项目根，不依赖本机绝对路径
+# 相对定位：脚本在 <项目根>\tools\win\ 下，上溯两级即项目根，不依赖本机绝对路径
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $Workspace = Join-Path $RepoRoot 'workspace'
 if (-not (Test-Path $Workspace)) {
