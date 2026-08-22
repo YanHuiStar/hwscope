@@ -290,6 +290,10 @@ if push_main; then
     echo ""
     ok "推送成功: $REMOTE/$BRANCH 已更新（$(git rev-parse --short HEAD)）"
     git log --oneline -1 | cat
+    # 同步协作状态文件（防 AGENT_STATE.md 版本过期——推送成功自动刷新，v1.39.5）
+    if [ -f "$SCRIPT_DIR/agent_sync.sh" ]; then
+        bash "$SCRIPT_DIR/agent_sync.sh" --clear >/dev/null 2>&1 || true
+    fi
     status OK
     exit 0
 else
