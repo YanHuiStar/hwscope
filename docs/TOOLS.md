@@ -14,6 +14,7 @@
 | `gpu_test.sh` | GPU 压力 | 自动发现已装测试程序（bandwidthTest/gpu_burn 等） |
 | `nccl_test.sh` | 集合通信 | NCCL 多卡测试 |
 | `test_all.sh` | 一键全测 | 聚合入口（按需选测） |
+| `test_server_info.sh` | 测试前服务器信息（v1.38.0） | 机器 ID/型号/CPU/内存/GPU/OS ~10 行轻量只读；各测试脚本 test_init 后自动调用，测试日志自包含机器身份；可单独执行 `bash test/test_server_info.sh` |
 | `test_common.sh` | 公共库 | 统一落盘 `logs/test/<时间戳>/` |
 
 用法：`bash test/cpu_test.sh`（各脚本一致，进入后菜单选择测试项）。结果落盘 `logs/test/<时间戳>/`。

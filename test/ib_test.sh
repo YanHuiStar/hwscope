@@ -82,6 +82,7 @@ read -p "选择 (1-3, 默认 3): " -r tsel
 [ -z "$tsel" ] && tsel=3
 
 test_init "ib"
+bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true
 start_ts=$(date +%s)
 
 # 逐对打流（PAIRED_DEVS 是成对的：srv cli srv cli...）

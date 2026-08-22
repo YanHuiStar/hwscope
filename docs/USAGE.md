@@ -138,6 +138,13 @@ bash test/nccl_test.sh         # NCCL 集合通信
 
 每个脚本进入后按菜单选择测试项；`-h`/`--help` 查看用法。结果落盘 `logs/test/<时间戳>/`。
 
+**测试日志自包含机器身份**（v1.38.0）：各测试脚本在 test_init 后自动写入 `=== Server Info ===` 段（机器 ID/型号/CPU/内存/GPU/OS）到汇总日志 + `server_info.log`——单测一项也知道是哪台机器（参考厂商 FLD 日志做法）。单独查看：
+
+```bash
+bash test/test_server_info.sh          # 打印服务器信息（独立执行）
+bash test/test_server_info.sh --append <文件>   # 追加到指定日志
+```
+
 ## 多机器 / 多 Agent 协作（v1.37.2）
 
 仓库可能被多台机器、多个 Agent 会话（DeepSeek Harness / Hermes 等）先后修改推送。规则：**一切状态以远程 origin/main 为真相**。

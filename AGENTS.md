@@ -148,6 +148,10 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 6. 工具不存在用 `check_cmd` 检测后 `[SKIP]`，不中断
 7. 版本号：主=输出不兼容，中=新模块/新功能，补=修复/文档
 
+**新增 test/ 测试脚本规范（v1.38.0）**：`test_init "<名称>"` 后必须紧跟一行
+`bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true`
+（保证测试日志自包含服务器身份——机器 ID/型号/CPU/内存/GPU/OS，参考厂商 FLD 日志做法）
+
 ## 设计约束（勿违反）
 
 - 只读无害：采集命令不写硬件、不改配置；DCGM 仅 Level 1 纯获取，无 GPU 压测负载
