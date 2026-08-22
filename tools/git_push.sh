@@ -144,10 +144,10 @@ try_push() {   # $1=proxy(可空)；timeout 30 防 git 网络挂起无响应
 # 4.2 代理探测（v2ray/xray/clash/greenhub 进程 → 监听端口）
 detect_proxy() {
     local pid="" port=""
-    # Windows（tasklist 输出 CSV: "v2ray.exe","PID","Console",...）
+    # Windows（tasklist CSV + grep 过滤；MSYS 下 //FI 转义不生效——v1.36.3 教训）
     if [ "$ENV_NAME" = "git-bash" ]; then
         for p in "${PROXY_PROC_NAMES[@]}"; do
-            pid="$(tasklist //FI "IMAGENAME eq ${p}.exe" /FO CSV 2>/dev/null | tail -1 | cut -d'"' -f4)"
+            pid="$(tasklist /FO CSV 2>/dev/null | grep -iE "\"${p}\.exe\"" | head -1 | cut -d'"' -f4)"
             [ -n "$pid" ] && [ "$pid" != "0" ] && break
         done
         if [ -n "$pid" ] && [ "$pid" != "0" ]; then
