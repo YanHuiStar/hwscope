@@ -99,6 +99,10 @@ for sel in "${SELECTED[@]}"; do
         echo -e "${CYAN}━━━ ${fname} (${fpath}) ━━━${NC}" | tee -a "$REPORT_LOG"
         start_ts=$(date +%s)
         LOGFILE="${REPORT_DIR}/${fname}_detail.log"
+        # run_and_log 退出码暂存（末尾 test_record 用；bandwidthTest 分支已自行记录）
+        # 注意：不能直接取 case 后的 $?——"[ fname = bandwidthTest ] ||" 会覆盖为 [ 的退出码（恒 1），
+        # 导致非 bandwidthTest 分支全部误报"异常 (exit=1)"（v1.38.5 实测修复）
+        last_rc=0
 
         case "$fname" in
             bandwidthTest)
@@ -116,10 +120,15 @@ for sel in "${SELECTED[@]}"; do
             gpu_burn)
                 read -p "  压测时长(秒, 默认 60): " -r btime
                 [ -z "$btime" ] && btime=60
-                run_and_log "${fpath} ${btime} 2>&1" "$LOGFILE"
+                # cd 到 gpu_burn 所在目录执行：compare.ptx 与二进制同目录，从其他目录绝对路径调用时
+                # 当前目录无 compare.ptx 会报 "couldn't find compare kernel"（v1.38.5 实测修复）
+                gb_dir=$(dirname "$fpath")
+                run_and_log "cd '${gb_dir}' && ./gpu_burn ${btime} 2>&1" "$LOGFILE"
+                last_rc=$?
                 ;;
             nvbandwidth)
                 run_and_log "${fpath} 2>&1" "$LOGFILE"
+                last_rc=$?
                 ;;
             all_reduce_perf)
                 read -p "  消息大小 -b/-e (默认 1G/4G): " -r msgb
@@ -127,18 +136,21 @@ for sel in "${SELECTED[@]}"; do
                 read -p "  GPU 数 -g (默认全部 ${GPU_COUNT}): " -r gpn
                 [ -z "$gpn" ] && gpn="$GPU_COUNT"
                 run_and_log "${fpath} -b ${msgb} -e 4G -f 2 -g ${gpn} -n 20 -w 5 2>&1" "$LOGFILE"
+                last_rc=$?
                 ;;
             partnerdiag)
                 read -p "  参数 (默认 --field --level1 --run_on_error --no_bmc): " -r pdiag_args
                 [ -z "$pdiag_args" ] && pdiag_args="--field --level1 --run_on_error --no_bmc"
                 run_and_log "sudo ${fpath} ${pdiag_args} 2>&1" "$LOGFILE"
+                last_rc=$?
                 ;;
             *)
                 run_and_log "${fpath} 2>&1" "$LOGFILE"
+                last_rc=$?
                 ;;
         esac
         # 已单独记录的（bandwidthTest 分支）跳过通用记录，避免重复
-        [ "$fname" = "bandwidthTest" ] || test_record "$fname" "$LOGFILE" "$start_ts" "$?"
+        [ "$fname" = "bandwidthTest" ] || test_record "$fname" "$LOGFILE" "$start_ts" "$last_rc"
     done
 done
 
