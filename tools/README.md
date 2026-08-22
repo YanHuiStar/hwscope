@@ -73,6 +73,7 @@
 ### `git_push.sh` — 一键推送更新（开发维护工具，AI agent 可用）
 - **用法**：`bash tools/git_push.sh`（默认 fetch + 逐提交改动摘要审查，交互确认）；`-y` 跳过确认；`--no-fetch` 跳过前置 fetch；`--dry-run` 只审查；`-q/--quiet` 机器可读模式
 - **功能**：默认先 fetch 检测其他 agent 是否已推送（防推旧）→ 展示每个待推提交的改动摘要 → **版本单调检查**（本地版本 < 远程版本拒绝推送，防凭记忆回退版本号，v1.37.2）→ 直连重试 3 次 → 自动探测本机代理（v2ray/xray/clash 进程动态端口，一次性走代理）→ 失败输出 `[AI-ACTION]` 指引
+- **WSL 支持（v1.39.1）**：WSL 下自动改用 Windows 的 `git.exe`（走 Windows 网络栈，`127.0.0.1` 可达 Windows 侧代理）+ interop（tasklist/netstat）探测 Windows 代理真实端口——解决 WSL2 NAT 下"WSL 内 127.0.0.1 访问不到 Windows 代理"的问题
 - **AI 接口**：末尾输出 `PUSH_STATUS=OK|FAIL|USER_ABORT|NOOP|DRY_RUN` 状态行；退出码 0=成功 1=失败 2=用户取消
 - **依赖**：git + 可选代理（本机代理客户端，端口自动探测）；Windows 版启动器 `tools/win/git_push.bat`（双击可用）
 

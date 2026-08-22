@@ -77,6 +77,7 @@ bash tools/git_push.sh --dry-run  # 只审查不推送
 ```
 
 直连失败自动探测本机代理重推；全部失败输出 `[AI-ACTION]` 指引。Windows 双击 `tools/win/git_push.bat`。
+**WSL 提示（v1.39.1）**：WSL 下 git_push 自动改用 Windows 的 `git.exe` + interop 探测 Windows 侧代理端口（v2ray 等），无需手动配代理；若输出"WSL NAT 不可达"类提示，说明 Windows 侧代理未连接，先启动代理客户端并点"连接"。
 
 ### 固件基线管理
 
