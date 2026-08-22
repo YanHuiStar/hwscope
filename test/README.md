@@ -9,13 +9,14 @@
 
 | 脚本 | 测试内容 | 依赖工具 | 注意 |
 |------|---------|---------|------|
-| `test_all.sh` | 菜单式聚合入口 | — | 推荐入口（选测/全测） |
+| `test_all.sh` | 菜单式聚合入口 | — | 推荐入口（选测/全测，1-8 项） |
 | `cpu_test.sh` | CPU 压测（stress-ng / sysbench / mprime） | stress-ng, sysbench, mprime | — |
 | `memory_test.sh` | 内存压测（stress-ng vm / memtester / sysbench） | stress-ng, memtester, sysbench | — |
 | `disk_test.sh` | 磁盘 IOPS/吞吐（fio / hdparm / dd） | fio, hdparm | ⚠️ 选盘时注意，fio 写测试文件 |
 | `network_test.sh` | 网络吞吐（iperf3 / mtr） | iperf3, mtr | 需要远端服务端 |
 | `nccl_test.sh` | GPU 集合通信（all_reduce 等） | nccl-tests 编译产物 | 需编译安装 nccl-tests |
 | `gpu_test.sh` | GPU 测试（自动发现系统已装测试程序） | 系统已有（bandwidthTest/gpu_burn 等）| 只调用不安装 |
+| `gpu_burn_test.sh` | GPU 长时满载压测（gpu-burn，v1.39.0） | gpu_burn + nvidia-smi | 默认 `-tc 1800`（张量核心 30 分钟）；`bash test/gpu_burn_test.sh [时长秒]` |
 | `ib_test.sh` | IB 数据面打流（ib_write_bw / ib_read_bw） | perftest, mlxlink | 自动配对 serial 相同端口 |
 | `test_server_info.sh` | 测试前服务器信息（机器 ID/型号/CPU/内存/GPU/OS，~10 行轻量只读） | dmidecode(可选), lscpu, free, nvidia-smi(可选) | 各测试脚本 test_init 后自动调用；可单独执行 |
 | `test_common.sh` | 公共库：菜单/日志落盘/结果记录 | — | 被以上脚本 source，勿直接运行 |
@@ -39,6 +40,7 @@ bash test/cpu_test.sh
 - **network_test**：提示输入 iperf3 服务端 IP（如 `192.168.1.100`），TCP 吞吐 + mtr 路径质量
 - **nccl_test**：自动查找 `all_reduce_perf` 等编译产物（`/usr /opt /root ~` 限深扫描 + PATH）
 - **gpu_test**：扫描系统已安装的 GPU 测试程序（bandwidthTest / gpu_burn / nvbandwidth / all_reduce_perf / partnerdiag），列出可选；**不自动安装**
+- **gpu_burn_test**：gpu-burn 官方参数 `gpu-burn [OPTIONS] [TIME]`——时长是位置参数、`-tc` = Tensor cores；本脚本默认 `gpu_burn -tc 1800`（张量核心 30 分钟长压测），可 `bash test/gpu_burn_test.sh 3600` 指定时长；自动定位 `/opt/gpu-burn/gpu_burn` 或 PATH（安装：`git clone https://github.com/wilicc/gpu-burn && cd gpu-burn && make`）
 - **ib_test**：自动配对（mlxlink serial 相同=同一根线）→ 逐对 `ib_write_bw` / `ib_read_bw` 打流（4MB 消息、20s）；需要两根线互联或回环头
 
 ### 日志位置

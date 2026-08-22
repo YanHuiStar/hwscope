@@ -133,6 +133,7 @@ sudo bash test/disk_test.sh    # 磁盘读写（fio/hdparm/dd，选盘后测试�
 bash test/network_test.sh      # 网络吞吐（iperf3，运行时提示输入服务端地址）
 sudo bash test/ib_test.sh      # IB 链路（perftest 自动配对打流，需 sudo）
 bash test/gpu_test.sh          # GPU 压力（自动发现已装测试程序）
+bash test/gpu_burn_test.sh 1800 # GPU 长时满载（gpu-burn -tc 张量核心，默认 30 分钟）
 bash test/nccl_test.sh         # NCCL 集合通信
 ```
 
