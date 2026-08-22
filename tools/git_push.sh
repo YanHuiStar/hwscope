@@ -71,6 +71,18 @@ detect_env() {
 ENV_NAME="$(detect_env)"
 info "环境: ${ENV_NAME} | 项目: ${PROJECT_DIR}"
 
+# WSL 且项目在 Windows 盘（/mnt/...）→ 转交 Windows 侧 git_push.bat：
+# WSL 网络栈（NAT 出口 + 够不着 Windows 代理）远不如 Windows 侧；bat → git-bash
+# 环境 → tasklist/netstat/直连/代理全走 Windows（v1.39.2）
+if [ "$ENV_NAME" = "wsl" ] && [ "${PROJECT_DIR#/mnt/}" != "$PROJECT_DIR" ]; then
+    win_path="$(wslpath -w "$PROJECT_DIR" 2>/dev/null || echo "$PROJECT_DIR")"
+    bat_path="${win_path}\\tools\\win\\git_push.bat"
+    info "WSL 访问 Windows 盘项目，转交 Windows 侧推送: ${bat_path}"
+    # WSLENV 声明后环境变量才传给 Windows 进程（WSL interop 默认只传 WSLENV 白名单）
+    WSLENV=GIT_PUSH_NO_PAUSE GIT_PUSH_NO_PAUSE=1 /mnt/c/Windows/System32/cmd.exe /c "${bat_path}" "$@" 2>&1
+    exit $?
+fi
+
 # 代理探测（v2ray/xray/clash 进程 → 监听端口）——须在 fetch 前定义（bash 函数先定义后调用）
 detect_proxy() {
     local pid="" port=""

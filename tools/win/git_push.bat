@@ -26,5 +26,9 @@ rem cd to project root (tools\win\..\..) and run core script
 cd /d "%~dp0..\.."
 "%BASH%" -lc "bash tools/git_push.sh %*"
 
+rem skip pause when invoked by agent/WSL (GIT_PUSH_NO_PAUSE=1) or stdin not interactive
+if "%GIT_PUSH_NO_PAUSE%"=="1" goto :done
 echo.
 pause
+:done
+exit /b %ERRORLEVEL%
