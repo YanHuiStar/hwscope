@@ -37,19 +37,20 @@ run_os() {
     # 3~4. 系统负载（独立于上面的并行批次，串行执行）
     run_and_log "cat /proc/loadavg" "${dir}/loadavg.log"
 
-    # 5. 系统日志中的硬件相关（条件执行：需 dmesg）
+    # 5. 系统日志中的硬件相关（条件执行：需 dmesg；v1.41.0 全量原则：全量落盘 + grep 专项提取）
     if check_cmd dmesg; then
-        run_and_log_parallel 3 \
-            "dmesg | grep -iE 'nvidia|nvswitch|mlx5|pcie|error|fail|temp|throttle' | tail -200" \
+        run_and_log_parallel 4 \
+            "dmesg" "${dir}/dmesg_full.log" \
+            "dmesg | grep -iE 'nvidia|nvswitch|mlx5|pcie|error|fail|temp|throttle'" \
                 "${dir}/dmesg_hardware.log" \
-            "dmesg | grep -i nvidia | tail -100" "${dir}/dmesg_nvidia.log" \
-            "dmesg | grep -iE 'nvswitch|fabric' | tail -100" "${dir}/dmesg_nvswitch.log"
+            "dmesg | grep -i nvidia" "${dir}/dmesg_nvidia.log" \
+            "dmesg | grep -iE 'nvswitch|fabric'" "${dir}/dmesg_nvswitch.log"
     fi
 
-    # 6. 服务状态（条件执行：需 systemctl）
+    # 6. 服务状态（条件执行：需 systemctl；v1.41.0 全量原则：status 全量落盘不截断）
     if check_cmd systemctl; then
         for svc in nvidia-fabricmanager nvsmd nvidia-persistenced; do
-            run_and_log "systemctl status $svc 2>&1 | head -30" "${dir}/service_${svc}.log"
+            run_and_log "systemctl status $svc 2>&1" "${dir}/service_${svc}.log"
         done
     fi
 
@@ -92,6 +93,7 @@ run_os() {
         "lsusb" "lsusb.log" \
         "loadavg" "loadavg.log" \
         "dmesg_hardware" "dmesg_hardware.log" \
+        "dmesg_full" "dmesg_full.log" \
         "dmesg_nvidia" "dmesg_nvidia.log" \
         "dmesg_nvswitch" "dmesg_nvswitch.log" \
         "numa_hardware" "numa_hardware.log" \
