@@ -21,6 +21,52 @@ FABRIC_SW=""
 if [ -f "${lspci_all}" ]; then
     FABRIC_SW=$(grep -v "^#" "${lspci_all}" 2>/dev/null | grep -oiE "PEX89[0-9xX]*|PEX97[0-9xX]*|Switchtec [A-Za-z0-9]+" | sort -u | tr '\n' ',' | sed 's/,$//')
 fi
+
+# ─── PCIe 拓扑与链路（v1.41.0：交付验收看 PEX 枚举 + 关键链路满速/降速）───
+load_manifest "${PCIE_DIR}" pcie_full "pcie_full.log"
+load_manifest "${PCIE_DIR}" pcie_speed_width "pcie_speed_width.log"
+# PEX Fabric Switch 汇总（型号 × 数量——lspci 每个 switch 端口都是独立 bridge 设备，
+# 明细行会爆炸；交付核对看"有哪些 switch、共多少端口"）
+PCIE_PEX_DETAILS=""
+if [ -f "${lspci_all}" ]; then
+    PCIE_PEX_DETAILS=$(grep -v "^#" "${lspci_all}" 2>/dev/null | grep -oiE "PEX89[0-9xX]*|PEX97[0-9xX]*|Switchtec [A-Za-z0-9]+" | sort | uniq -c | awk '{printf "%s ×%d; ", $2, $1}' | sed 's/; $//')
+fi
+# 降速/降宽检测（pcie_full.log 按设备块解析 LnkCap vs LnkSta；排除空闲 Gen1 x16——PEX 下行未接模组/板卡的特征）
+PCIE_SLOW_LINKS=""
+PCIE_LINKS_TOTAL=0
+if [ -f "${pcie_full}" ]; then
+    PCIE_LINK_DATA=$(awk '
+        /^[0-9a-f]{2}:/ { if (b != "") check(); b=$1; d=substr($0,index($0,$2)); c=""; s="" }
+        /LnkCap:/ { c=$0 }
+        /LnkSta:/ { s=$0 }
+        END { if (b != "") check() }
+        function spd(x,   t) { t=x; sub(/.*Speed /,"",t); sub(/GT\/s.*/,"",t); gsub(/ /,"",t); return t+0 }
+        function wdt(x,   t) { t=x; sub(/.*Width /,"",t); sub(/,.*/,"",t); gsub(/[^0-9]/,"",t); return t+0 }
+        function check(   csp,cwd,ssp,swd) {
+            if (c == "" || s == "") return
+            csp=spd(c); cwd=wdt(c); ssp=spd(s); swd=wdt(s)
+            if (swd == 0) return            # x0 = 端口未连接（PEX 下行空置）
+            if (ssp == 5 && swd == 16) return   # 空闲 Gen1 x16 = PEX 下行未接模组/板卡
+            total++
+            if (ssp < csp || swd < cwd) {
+                print b, d, "| cap " cwd "x" csp ", sta " swd "x" ssp
+            }
+        }
+    ' "${pcie_full}" 2>/dev/null)
+    PCIE_LINKS_TOTAL=$(awk '/^[0-9a-f]{2}:/{n++} END{print n+0}' "${pcie_full}" 2>/dev/null)
+    [ -z "$PCIE_LINKS_TOTAL" ] && PCIE_LINKS_TOTAL=0
+# 旧采集无 pcie_full：pcie_speed_width.log 是 grep 行流（缺 LnkCap 的设备导致 cap/sta 错配，
+# 未连接端口 x0），配对不可靠——不判降速，验收项判 N/A 不计数（v1.41.0 实测教训）
+else
+    PCIE_LINK_DATA=""
+    PCIE_LINKS_TOTAL=0
+fi
+if [ -n "$PCIE_LINK_DATA" ]; then
+    PCIE_SLOW_LINKS=$(printf '%s\n' "$PCIE_LINK_DATA" | grep -v "^$")
+else
+    PCIE_SLOW_LINKS=""
+fi
+if [ -n "$PCIE_SLOW_LINKS" ]; then PCIE_LINKS_OK=0; else PCIE_LINKS_OK=1; fi
 GPU_DRIVER=$(grep -m1 "Driver Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 GPU_CUDA=$(grep -m1 "CUDA Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 

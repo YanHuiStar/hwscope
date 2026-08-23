@@ -137,6 +137,25 @@ gen_md() {
 | BIOS | ${BIOS_VERSION:-N/A} |
 | 机箱 SN | ${CHASSIS_SN:-N/A} |
 $(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（HGX 模组互联通道） |"; fi)
+## PCIe 拓扑与链路
+$(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
+    if [ -n "$PCIE_PEX_DETAILS" ]; then
+        echo "| Fabric Switch | ${PCIE_PEX_DETAILS} |"
+        echo ""
+    fi
+    if [ -n "$PCIE_SLOW_LINKS" ]; then
+        echo "### ⚠️ 降速/降宽链路（LnkSta < LnkCap）"
+        echo ""
+        printf '%s\n' "$PCIE_SLOW_LINKS" | while IFS= read -r line; do
+            echo "- \`$line\`"
+        done
+        echo ""
+    elif [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
+        echo "| 链路状态 | ✅ 全部 ${PCIE_LINKS_TOTAL} 个设备链路满速（无降速/降宽） |"
+    fi
+else
+    echo "| 链路数据 | N/A（旧采集无 pcie_full 全量日志，链路检测需重新采集） |"
+fi)
 ## CPU
 | 项 | 值 |
 |----|----|
