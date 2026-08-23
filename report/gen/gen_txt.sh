@@ -138,6 +138,18 @@ HwScope 硬件巡检报告
   BIOS   : ${BIOS_VERSION:-N/A}
   机箱SN : ${CHASSIS_SN:-N/A}$(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then printf '\n  PCIe Fabric Switch: %s（HGX 模组互联通道）' "$FABRIC_SW"; fi)
 
+-- PCIe 拓扑与链路 --$(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
+    if [ -n "$PCIE_PEX_DETAILS" ]; then printf '\n  Fabric Switch : %s' "$PCIE_PEX_DETAILS"; fi
+    if [ -n "$PCIE_SLOW_LINKS" ]; then
+        printf '\n  ⚠️ 降速/降宽链路:'
+        printf '%s\n' "$PCIE_SLOW_LINKS" | while IFS= read -r line; do printf '\n    - %s' "$line"; done
+    elif [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
+        printf '\n  链路状态     : ✅ 全部 %s 个设备链路满速（无降速/降宽）' "$PCIE_LINKS_TOTAL"
+    fi
+else
+    printf '\n  链路数据     : N/A（旧采集无 pcie_full 全量日志，链路检测需重新采集）'
+fi)
+
 [CPU]
   型号   : ${CPU_MODEL:-N/A}
   核心数 : ${CPU_CORES:-N/A}/颗 × ${CPU_SOCKETS:-N/A} 路 = ${CPU_TOTAL_CORES:-N/A} 总核

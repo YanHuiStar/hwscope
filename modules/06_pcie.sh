@@ -23,14 +23,15 @@ run_pcie() {
         return 0
     fi
 
-    # 1~5. 基础 PCIe 信息（独立命令，并行采集；串行模式自动降级）
-    run_and_log_parallel 5 \
+    # 1~6. 基础 PCIe 信息（独立命令，并行采集；串行模式自动降级）
+    run_and_log_parallel 6 \
         "lspci" "${dir}/lspci_all.log" \
         "lspci -t -vv" "${dir}/lspci_tree.log" \
         "lspci -v | grep -A 30 'NVIDIA'" "${dir}/lspci_nvidia.log" \
         "lspci | grep -E 'PCI bridge|Host Bridge|PCIe'" "${dir}/pcie_bridge.log" \
         "lspci -vvv 2>/dev/null | grep -E 'LnkSta:|LnkCap:'" \
-            "${dir}/pcie_speed_width.log"
+            "${dir}/pcie_speed_width.log" \
+        "lspci -vvv" "${dir}/pcie_full.log"
 
     # 6. 按 GPU 提取 PCIe 速率（需先获取 GPU 总线列表，串行执行）
     local gpu_buses
@@ -62,6 +63,7 @@ run_pcie() {
         "lspci_nvidia" "lspci_nvidia.log" \
         "pcie_bridge" "pcie_bridge.log" \
         "pcie_speed_width" "pcie_speed_width.log" \
+        "pcie_full" "pcie_full.log" \
         "gpu_pcie_bus_map" "gpu_pcie_bus_map.log" \
         "pci_numa_map" "pci_numa_map.log" \
         "iommu_groups" "iommu_groups.log"

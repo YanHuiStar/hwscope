@@ -251,6 +251,20 @@ gen_acceptance() {
         add_item "风扇冗余（N+N）" "FAIL" "风扇冗余失效（单点故障风险）"
     fi
 
+    # 15. PCIe 链路完整（v1.41.0：PEX Fabric Switch 枚举 + 关键链路 LnkSta 满速/降速；
+    #     交付验收看扩展板卡通路与模组接口链路——超微 H200 机头场景客户核对点）
+    if [ -n "$PCIE_SLOW_LINKS" ]; then
+        add_item "PCIe 链路完整" "WARN" "检测到降速/降宽链路: $(printf '%s\n' "$PCIE_SLOW_LINKS" | head -1 | cut -c1-60)..."
+    elif [ "${PCIE_LINKS_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
+        if [ -n "$PCIE_PEX_DETAILS" ]; then
+            add_item "PCIe 链路完整" "PASS" "PEX Fabric Switch 已枚举（${PCIE_PEX_DETAILS}），${PCIE_LINKS_TOTAL} 个设备链路满速"
+        else
+            add_item "PCIe 链路完整" "PASS" "${PCIE_LINKS_TOTAL} 个设备链路满速（无降速/降宽）"
+        fi
+    else
+        add_item "PCIe 链路完整" "N/A" "无链路数据（旧采集无 pcie_full 全量日志，链路检测需重新采集）" 1
+    fi
+
     # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
     if [ "$fail" -gt 0 ]; then
         verdict="不合格（${fail} 项 FAIL，需处理后再交付）"

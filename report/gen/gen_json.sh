@@ -184,6 +184,14 @@ gen_json() {
     "chassis_sn": "${CHASSIS_SN:-N/A}",
     "fabric_switch": "${FABRIC_SW:-}"
   },
+  "pcie": {
+    "pex_switches": "${PCIE_PEX_DETAILS:-}",
+    "links_total": ${PCIE_LINKS_TOTAL:-0},
+    "links_ok": ${PCIE_LINKS_OK:-1},
+    "slow_links": [
+      $(if [ -n "${PCIE_SLOW_LINKS:-}" ]; then printf '%s\n' "${PCIE_SLOW_LINKS}" | awk '{printf "      \"%s\",\n", $0}' | sed '$ s/,$//'; fi)
+    ]
+  },
   "cpu": {
     "model": "${CPU_MODEL:-N/A}",
     "cores": "${CPU_CORES:-N/A}",
