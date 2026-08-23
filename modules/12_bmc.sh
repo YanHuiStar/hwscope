@@ -91,8 +91,8 @@ run_bmc() {
         trap 'rm -f "$NETRC_TMP"' EXIT INT TERM
         printf 'machine %s login %s password %s\n' "$BMC_IP" "$BMC_USER" "$BMC_PASS" > "$NETRC_TMP"
         run_and_log_parallel 4 \
-            "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Systems/System.Embedded.1 2>&1 | head -100" "${dir}/redfish_system.log" \
-            "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Managers 2>&1 | head -100" "${dir}/redfish_managers.log" 
+            "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Systems/System.Embedded.1 2>&1" "${dir}/redfish_system.log" \
+            "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Managers 2>&1" "${dir}/redfish_managers.log" 
         rm -f "$NETRC_TMP"
         trap - EXIT INT TERM
     fi

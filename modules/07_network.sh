@@ -95,6 +95,7 @@ run_network() {
     [ "$ip_ret" -ne 0 ] && echo -e "${YELLOW}[WARN] 网络 IP/MAC 采集部分失败${NC}" >&2 
 
     # ─── 网卡一览清单（dev|bdf|mac|sn|pn|fw|speed|width|psid|cap_speed|cap_width）───
+    local nic_pcie_jobs=()
     {
         echo "# nic inventory: dev|bdf|mac|serial|part_number|firmware|speed|width|psid|cap_speed|cap_width"
         for ndev_path in /sys/class/net/*/; do
@@ -108,6 +109,8 @@ run_network() {
             local nbdf
             nbdf=$(grep "PCI_SLOT_NAME" "/sys/class/net/${ndev}/device/uevent" 2>/dev/null | cut -d'=' -f2 | sed 's/^0000://')
             [ -z "$nbdf" ] && nbdf=$(basename "$ndev_path" | sed 's/^0000://')
+            # 每网卡 lspci -vv 全量（v1.41.0 全量原则，循环后统一并行落盘）
+            nic_pcie_jobs+=("lspci -vv -s ${nbdf} 2>&1" "nic_${ndev}_pcie.log")
             local nmac
             nmac=$(cat "/sys/class/net/${ndev}/address" 2>/dev/null)
             # IB 长地址取后 6 字节
@@ -209,8 +212,15 @@ run_network() {
         run_and_log "lstopo --no-io --output-format txt" "${dir}/lstopo_network.txt"
     fi
 
+    # ─── 每网卡 lspci -vv 全量落盘（v1.41.0 全量原则：nic_inventory.csv 只含提取字段，
+    #      网卡 PCIe 链路/能力全量日志模块自包含，不依赖 06_pcie）───
+    if [ "${#nic_pcie_jobs[@]}" -gt 0 ]; then
+        run_and_log_parallel 8 "${nic_pcie_jobs[@]}"
+    fi
+
 # NOTE: mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log,
-    #       ethtool_*.log, ethtool_*_driver.log, ethtool_*_module.log are generated per device
+    #       ethtool_*.log, ethtool_*_driver.log, ethtool_*_module.log, nic_*_pcie.log
+    #       are generated per device
     write_manifest "${dir}/manifest.txt" \
         "ibstat" "ibstat.log" \
         "ibstatus" "ibstatus.log" \

@@ -42,11 +42,11 @@ run_power() {
         printf 'machine %s login %s password %s\n' "$BMC_IP" "$BMC_USER" "$BMC_PASS" > "$NETRC_TMP"
         # 先取 Chassis 集合，解析首个成员，再取该成员 /Power（含 PowerConsumedWatts/EnergykWh）
         # 排除集合自身的 @odata.id（顶层响应自带 /redfish/v1/Chassis，拼接 /Power 会 404）
-        run_and_log "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Chassis 2>&1 | head -100" "${dir}/redfish_chassis.log"
+        run_and_log "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Chassis 2>&1" "${dir}/redfish_chassis.log"
         local _member
         _member=$(grep -oE '"@odata\.id"[[:space:]]*:[[:space:]]*"[^"]*"' "${dir}/redfish_chassis.log" 2>/dev/null | sed 's/.*"\(.*\)"/\1/' | grep -v "^/redfish/v1/Chassis$" | head -1)
         if [ -n "$_member" ]; then
-            run_and_log "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}${_member}/Power 2>&1 | head -100" "${dir}/redfish_power.log"
+            run_and_log "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}${_member}/Power 2>&1" "${dir}/redfish_power.log"
         fi
         rm -f "$NETRC_TMP"
         trap - EXIT INT TERM
