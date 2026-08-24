@@ -2,13 +2,27 @@
 # =============================================================================
 # HwScope — 环境安装工具
 # tools/install_tool.sh
-# 用法: sudo bash tools/install_tool.sh
+# 用法: sudo bash tools/install_tool.sh               # 交互菜单
+#       sudo bash tools/install_tool.sh -c 1,2 -y     # 非交互安装（远程自动安装用）
 # 功能: 安装 DCGM / MFT / 压测工具 / 推理引擎
+# 选项:
+#   -c <1,2,...>  直接指定安装项（跳过菜单选择，逗号分隔）
+#   -y            跳过每项确认（配合 -c 用于 remote_collect --install 远程自动安装）
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 parse_help "$@"
+
+# ─── 非交互参数解析（-c/-y；parse_help 只处理 -h，其余参数静默放行） ───
+CHOICES=""; AUTO_YES=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -c) CHOICES="$2"; shift 2 ;;
+        -y) AUTO_YES=1; shift ;;
+        *) shift ;;
+    esac
+done
 
 # ─── 检测包管理器 ───
 [ "$(id -u)" -eq 0 ] || { echo -e "${RED}[ERROR] 需要 root 运行: sudo bash $0${NC}"; exit 1; }   # 安装需写系统（v1.33.3）
@@ -43,16 +57,31 @@ OPS=(
     "9:厂商 RAID 工具(实验):storcli/sas3ircu:auto"
 )
 
+# ─── 非交互模式：校验 -c 值（1-9 数字逗号分隔，非法项快速失败，远程自动安装防打错） ───
+if [ -n "$CHOICES" ]; then
+    for _c in ${CHOICES//,/ }; do
+        case "$_c" in
+            [1-9]) ;;
+            *) echo -e "${RED}[ERROR] 非法的安装项: ${_c}（应为 1-9，逗号分隔）${NC}"; exit 1 ;;
+        esac
+    done
+fi
+
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  环境安装工具${NC}"
 echo -e "${CYAN}========================================${NC}"
-for op in "${OPS[@]}"; do
-    IFS=':' read -r num name pkgs how <<< "$op"
-    echo -e "  ${GREEN}[${num}]${NC} ${name}  ${YELLOW}(${how})${NC}"
-done
-echo ""
-read -p "选择安装项 (1-9, 逗号分隔): " -r choices
-[ -z "$choices" ] && echo "跳过" && exit 0
+if [ -z "$CHOICES" ]; then
+    for op in "${OPS[@]}"; do
+        IFS=':' read -r num name pkgs how <<< "$op"
+        echo -e "  ${GREEN}[${num}]${NC} ${name}  ${YELLOW}(${how})${NC}"
+    done
+    echo ""
+    read -p "选择安装项 (1-9, 逗号分隔): " -r choices
+    [ -z "$choices" ] && echo "跳过" && exit 0
+else
+    choices="$CHOICES"
+    echo -e "${CYAN}[INFO] 非交互模式: 安装项 ${choices}${NC}"
+fi
 
 IFS=',' read -ra SELECTED <<< "$choices"
 for sel in "${SELECTED[@]}"; do
@@ -65,7 +94,11 @@ for sel in "${SELECTED[@]}"; do
         case "$how" in
             "${PKG_MGR}")
                 echo -e "${YELLOW}  执行: ${PKG_MGR} install -y ${pkgs}${NC}"
-                read -p "  确认安装? (y/N) " -r confirm
+                if [ "$AUTO_YES" -eq 1 ]; then
+                    confirm="y"    # 非交互：跳过确认
+                else
+                    read -p "  确认安装? (y/N) " -r confirm
+                fi
                 [[ ! "$confirm" =~ ^[Yy] ]] && echo "  跳过" && continue
                 ${PKG_MGR} install -y $pkgs 2>&1 | tail -5
                 # 管道退出码是 tail 的——检查真实安装结果（v1.33.3）

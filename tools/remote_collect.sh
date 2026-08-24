@@ -5,6 +5,7 @@
 # 用法: bash tools/remote_collect.sh -H root@10.0.0.1 [hwscope 参数...]
 #       bash tools/remote_collect.sh -H user@host --no-sudo --modules gpu,cpu -o ./out
 # 功能: 从运维机 SSH 到目标机执行 hwscope 采集（无需登录服务器手动跑），结果回拉本地。
+#       --install <1,2,...> 可先远端非交互安装依赖（install_tool -c/-y）再采集——远程冷启动一条龙（v1.42.0）。
 #
 # 实现说明（v1.29.0 设计修正）：
 #   原方案"ssh 'bash -s' < hwscope.sh 流式执行（远程零落盘）"不可行——hwscope.sh 按
@@ -25,6 +26,7 @@ usage() {
     echo "选项:"
     echo "  -H user@host       目标机（SSH 用户@主机）"
     echo "  --no-sudo          目标机以当前用户直接执行（默认 sudo bash hwscope.sh）"
+    echo "  --install <1,2,...> 推送后先远端安装依赖（install_tool -c/-y 非交互）再采集——冷启动装基础环境"
     echo "  -o <目录>          本地回拉目录（默认 ./output）"
     echo "  --interactive      保留兼容（默认已支持交互式密码，无需该参数）"
     echo "  -h, --help         帮助"
@@ -34,14 +36,16 @@ usage() {
     echo "示例:"
     echo "  bash $0 -H root@10.0.0.1                      # 全量采集并回拉"
     echo "  bash $0 -H root@10.0.0.1 --modules gpu,cpu -o ./out  # 只采部分"
+    echo "  bash $0 -H root@10.0.0.1 --install 1,2         # 先装基础+压测依赖再采集"
 }
 
-HOST=""; SUDO="sudo"; LOCAL_OUT=""; SSH_OPTS="-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
+HOST=""; SUDO="sudo"; LOCAL_OUT=""; INSTALL_ITEMS=""; SSH_OPTS="-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
 while [ $# -gt 0 ]; do
     case "$1" in
         -H) HOST="$2"; shift 2 ;;
         --no-sudo) SUDO=""; shift ;;
         -o) LOCAL_OUT="$2"; shift 2 ;;
+        --install) INSTALL_ITEMS="$2"; shift 2 ;;   # 注意：必须在 *) 透传之前匹配，否则会被当 hwscope 参数
         --interactive) : ;;   # 默认已支持交互密码（v1.31.4 起），保留参数兼容
         -h|--help) usage; exit 0 ;;
         *) HWARGS="${HWARGS:-} $1"; shift ;;
@@ -88,12 +92,26 @@ tar czf - --exclude=output --exclude=logs --exclude=.git --exclude='*.tmp' -C "$
     | ssh $SSH_OPTS "$HOST" "mkdir -p ${REMOTE_DIR} && tar xzf - -C ${REMOTE_DIR}" \
     || { echo -e "\033[0;31m[ERROR] 项目推送失败\033[0m"; exit 1; }
 
-# ─── 3. 远端执行采集（不传 --output：hwscope.sh 默认输出 <远端>/output/<MACHINE_ID>/，对标本地 output/<SN> 结构；普通用户 + sudo 时带 -t 供 sudo 交互输密码） ───
-echo -e "\033[0;33m[INFO] 远端执行: ${SUDO:-} bash hwscope.sh${HWARGS:-}（默认输出 output/<MACHINE_ID>/）\033[0m"
-ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "cd ${REMOTE_DIR} && ${SUDO} bash hwscope.sh${HWARGS:-}"
+# ─── 3. 远端安装依赖（--install 时）+ 执行采集 ───
+# --install：推送后先跑 install_tool -c/-y 非交互装依赖，再采集。
+# 普通用户 + sudo 时把安装+采集合并为一条 -t 命令（同一 tty 内 sudo 密码缓存，只输一次）；
+# root 免 sudo 直接执行。安装失败（&& 短路）→ 采集不跑，退出码非零报错。
+if [ -n "$INSTALL_ITEMS" ]; then
+    echo -e "\033[0;33m[INFO] 远端安装依赖: install_tool -c ${INSTALL_ITEMS} -y（非交互）→ 采集 hwscope.sh${HWARGS:-}\033[0m"
+    # ${SUDO:+${SUDO} }：root 免 sudo 时为空（命令干净），普通用户时补 "sudo "（同一 -t 会话 sudo 密码只输一次）
+    REMOTE_CMD="cd ${REMOTE_DIR} && ${SUDO:+${SUDO} }bash tools/install_tool.sh -c ${INSTALL_ITEMS} -y && ${SUDO:+${SUDO} }bash hwscope.sh${HWARGS:-}"
+else
+    echo -e "\033[0;33m[INFO] 远端执行: ${SUDO:+${SUDO} }bash hwscope.sh${HWARGS:-}（默认输出 output/<MACHINE_ID>/）\033[0m"
+    REMOTE_CMD="cd ${REMOTE_DIR} && ${SUDO:+${SUDO} }bash hwscope.sh${HWARGS:-}"
+fi
+ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "$REMOTE_CMD"
 RC=$?
 if [ "$RC" -ne 0 ]; then
-    echo -e "\033[0;31m[ERROR] 远端采集失败（exit=$RC）\033[0m"
+    if [ -n "$INSTALL_ITEMS" ]; then
+        echo -e "\033[0;31m[ERROR] 远端安装/采集失败（exit=$RC；安装失败请检查目标机包源网络可达性）\033[0m"
+    else
+        echo -e "\033[0;31m[ERROR] 远端采集失败（exit=$RC）\033[0m"
+    fi
     exit $RC
 fi
 
