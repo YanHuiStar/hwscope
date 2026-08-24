@@ -56,10 +56,12 @@ bash tools/remote_collect.sh -H root@10.0.0.1 --install 1,2   # 先远端装基�
 ```powershell
 tools\win\remote_collect.bat -H root@10.0.0.1
 tools\win\remote_collect.ps1 -H root@10.0.0.1 -Modules gpu,cpu -OutDir D:\hwout
+tools\win\remote_collect.bat -H root@10.0.0.1 -InstallItems 1,2   # 先远端装基础+压测依赖再采集（v1.42.1）
 ```
 
 - 依赖：Windows 自带 OpenSSH 客户端 + tar（零新依赖）
 - 认证：交互式密码，每步失败自动重试 3 次（Windows OpenSSH 不支持 ControlMaster，共 3 次密码输入）
+- `-InstallItems <1,2,...>`：远端先跑 `install_tool.sh -c <列表> -y` 非交互装依赖再采集（安装+采集合并一条 ssh 命令）
 
 ### 多机对比 / 批量运维
 
