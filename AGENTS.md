@@ -187,3 +187,4 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **perftest 模式判定**：`ib_write_bw/ib_read_bw` **无地址参数 = server 模式，带地址 = client 模式**；`-S` 是 `--sl`（服务等级）不是 server 标志——server 端勿加 `-S`（v1.33.4 教训：第三方工具参数建议必须查 man/help 核验后再采纳）
 - **awk 数值守卫须先 trim**：nvidia-smi CSV 值带前导空格（` 700.00 W`），`^[0-9.]+$` 守卫会全拒 → 功耗/温度全 N/A；须先 `gsub(/^ +| +$/, "", v)` 再校验（v1.33.5 回归修复）
 - **smartctl Transport protocol 值判断**：SATA 盘输出也有 `Transport protocol: SATA` 行，判 SAS 必须匹配值（`Transport protocol:.*SAS`）而非仅匹配行名（v1.33.4 修正）
+- **ps1/bat 编辑陷阱（v1.43.1 教训，真机测试暴露）**：write/edit 工具重写会**剥掉 .ps1 的 UTF-8 BOM**（PowerShell 5.1 按 ANSI 读中文乱码致语法解析崩）且把 .bat 写成 **LF 行尾**（cmd 解析含中文的 LF 批处理崩溃）；改完必须：① ps1 补 BOM（`[System.Text.UTF8Encoding]::new($true)` 重写）② 用 **`powershell`（5.1）** 而非 pwsh7 做 ParseFile 校验（pwsh7 默认 UTF-8 查不出 BOM 问题）③ bat 转 CRLF（`-replace "`n","`r`n"`）；仓库侧 git autocrlf 提交时 .bat 归一为 LF、.ps1 保留 BOM 字节

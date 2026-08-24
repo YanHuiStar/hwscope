@@ -52,6 +52,7 @@
 
 > 按版本倒序排列；同一主版本的多轮迭代合并为一条。
 
+- v1.43.1 — **Windows 工具编码修复**（真机测试暴露）：remote_run.ps1 补 UTF-8 BOM（write 工具重写剥 BOM，PS5.1 按 ANSI 读中文致语法崩）、remote_run.bat 转 CRLF（LF 行尾 cmd 解析含中文批处理崩溃）；AGENTS.md 记录 ps1/bat 编辑陷阱（改后必须 PS5.1 校验 + 补 BOM + bat 转 CRLF）
 - v1.43.0 — **远程执行工具改名 + 扩展**：`tools/remote_batch.sh` → **`tools/remote_run.sh`**（批量运维 → 远程执行）；新增 `--script <本地脚本>`（推送+执行，化解 --push/-c 互斥）与 `--pull-logs <远端路径>`（tar-over-ssh 回拉过程日志到 `<outdir>/<host>_logs/`，复用 remote_collect 回拉范式）；输出目录默认 `run_output/`；Windows 对应 `tools/win/ssh_batch.ps1/.bat` → `remote_run.ps1/.bat`（去掉 BatchMode=yes 对齐交互密码立场；--script/--pull-logs Windows 二期）；全仓引用同步
 - v1.42.0 — **远程采集 --install 扩展**（远程冷启动一条龙）：`remote_collect.sh --install <1,2,...>` 推送后先远端非交互装依赖（`install_tool.sh -c <列表> -y` 新增非交互参数，跳过菜单/确认）再采集；普通用户时安装+采集合并一条 `-t` 命令（同 tty sudo 密码只输一次），安装失败 `&&` 短路中止；`-c` 非法项快速失败；Windows `remote_collect.ps1 -InstallItems`（v1.42.1）
 - v1.41.0 — **PCIe 拓扑与链路检查**（交付验收新维度，超微 H200 机头客户核对场景）：06_pcie 采 `lspci -vvv` 全量 pcie_full.log；报告新增「PCIe 拓扑与链路」段（PEX Fabric Switch 型号×数量枚举 + LnkCap/LnkSta 满速/降速检测）；验收扩至 **15 项**（PCIe 链路完整：PASS/WARN，空闲 Gen1 x16 与 x0 未连接端口不算降速；旧采集无 pcie_full 判 N/A 不计数）；**实测教训**：pcie_speed_width.log 是 grep 行流（缺 LnkCap 设备致 cap/sta 错配、x0 未连接端口），配对不可靠不可用于降速判定——全量 pcie_full 按设备块解析才可靠
@@ -76,4 +77,4 @@
 
 ---
 
-*最近更新: 2026-08-24 · 版本: v1.43.0*
+*最近更新: 2026-08-24 · 版本: v1.43.1*

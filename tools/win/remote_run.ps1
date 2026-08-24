@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   远程执行 — 对多台服务器执行同一命令（Windows 版；Linux 对应 tools/remote_run.sh）
 .DESCRIPTION
