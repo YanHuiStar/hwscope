@@ -62,7 +62,7 @@
 | 脚本 | 说明 |
 |------|------|
 | `remote_collect.sh` | 远程采集：tar 推送 → 远端执行 → 回拉（交互式密码 + ControlMaster）；`--install <1,2,...>` 先远端非交互装依赖再采集（v1.42.0） |
-| `remote_batch.sh` | 批量运维：多机同命令 / 推送文件 |
+| `remote_run.sh` | 远程执行：多机命令 / 推送文件 / 推送执行脚本（--script）+ 日志回拉（--pull-logs）；v1.43.0 由 remote_batch.sh 改名 |
 
 ### 运维操作（含写操作，执行前二次确认）
 

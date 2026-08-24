@@ -17,7 +17,7 @@ tools\win\unblock_ps.bat        # 解除 .ps1 运行限制（当前用户，无�
 |------|------|------|
 | `remote_collect.ps1/.bat` | 远程采集 | Windows 原生远程采集（等价 remote_collect.sh：推送→远端执行→回拉 `output\remote_output\<机器ID>\`）；`-InstallItems 1,2` 先远端非交互装依赖再采集（v1.42.1，等价 Linux `--install`）；交互式密码，每步认证失败自动重试 3 次（Windows OpenSSH 无 ControlMaster，共 3 次密码输入） |
 | `fetch_report.ps1/.bat` | 巡检汇总 | 拉取各机报告三件套（json/md/txt），按主机名归档 |
-| `ssh_batch.ps1/.bat` | 批量命令 | 对多台服务器执行同一命令 |
+| `remote_run.ps1/.bat` | 远程执行 | 对多台服务器执行同一命令（v1.43.0 由 ssh_batch 改名；Linux 对应 remote_run.sh；--script/--pull-logs Windows 二期） |
 
 ## 网络 / BMC 运维
 
@@ -50,6 +50,6 @@ tools\win\unblock_ps.bat        # 解除 .ps1 运行限制（当前用户，无�
 | `remote_collect.ps1` | `remote_collect.sh` |
 | `cleanup.ps1` | `cleanup.sh` |
 | `dhcp_server.ps1` | `dhcp_server.sh` |
-| `ssh_batch.ps1` | `remote_batch.sh` |
+| `remote_run.ps1` | `remote_run.sh` |
 | `fetch_report.ps1` | （无直接对应，批量拉取报告） |
 | `scan_ip/detect_bmc/nic_switch/ipmi_power/wol` | （Windows 侧独有，网络/电源运维） |

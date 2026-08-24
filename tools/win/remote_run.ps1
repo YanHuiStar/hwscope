@@ -1,10 +1,12 @@
-﻿<#
+<#
 .SYNOPSIS
-  批量 SSH 命令 — 对多台服务器执行同一条命令
+  远程执行 — 对多台服务器执行同一命令（Windows 版；Linux 对应 tools/remote_run.sh）
 .DESCRIPTION
   通过 OpenSSH 对多台服务器批量执行命令（如启动 hwscope 采集、查状态）。
   并发执行，每台输出带主机名前缀。
-  认证：优先 SSH 密钥（免密）；无密钥时提示逐个输入密码（交互式）。
+  认证：默认交互式密码（每次登录输入，不落盘）——生产环境标准做法；SSH key 免密仅建议受信内部网络
+  （私钥泄露=所有配置了公钥的主机失守，风险扩散）。
+  v1.43.0 由 ssh_batch.ps1 改名；Linux 版 --script/--pull-logs（脚本执行/日志回拉）Windows 侧为二期。
 .PARAMETER Hosts
   目标，逗号分隔（支持 user@ip 格式，如 root@192.168.1.100）
 .PARAMETER Command
@@ -12,8 +14,8 @@
 .PARAMETER Timeout
   单台超时秒数（默认 15）
 .EXAMPLE
-  .\ssh_batch.ps1 -Hosts root@192.168.1.100,root@192.168.1.101 -Command "uptime"
-  .\ssh_batch.ps1 -Hosts root@192.168.1.100 -Command "bash /opt/hwscope/hwscope.sh --parallel"
+  .\remote_run.ps1 -Hosts root@192.168.1.100,root@192.168.1.101 -Command "uptime"
+  .\remote_run.ps1 -Hosts root@192.168.1.100 -Command "bash /opt/hwscope/hwscope.sh --parallel"
 #>
 param(
     [Parameter(Mandatory)][string]$Hosts,
@@ -30,14 +32,14 @@ if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
 }
 
 $targets = $Hosts -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-Write-Host "批量执行 $($targets.Count) 台: $Command" -ForegroundColor Cyan
+Write-Host "远程执行 $($targets.Count) 台: $Command" -ForegroundColor Cyan
 
-# 并发执行（每台独立进程，避免串行等待）
+# 并发执行（每台独立进程，避免串行等待）；无 BatchMode——默认交互式密码，有 key 自动走 key 认证
 $jobs = @()
 foreach ($t in $targets) {
     $jobs += Start-Job -ScriptBlock {
         param($hostStr, $cmd, $timeout)
-        $out = & ssh -o ConnectTimeout=$timeout -o BatchMode=yes -o StrictHostKeyChecking=no $hostStr $cmd 2>&1
+        $out = & ssh -o ConnectTimeout=$timeout -o StrictHostKeyChecking=no $hostStr $cmd 2>&1
         [PSCustomObject]@{ Host = $hostStr; Exit = $LASTEXITCODE; Output = ($out -join "`n") }
     } -ArgumentList $t, $Command, $Timeout
 }
