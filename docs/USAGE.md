@@ -67,7 +67,8 @@ tools\win\remote_collect.bat -H root@10.0.0.1 -InstallItems 1,2   # 先远端装
 
 ```bash
 bash report/tools/batch_compare.sh <目录1> <目录2> ...   # 多机横向对比（差异 ⚠️ 标注；输出 logs/batch_compare/，-o 自定义）
-bash tools/remote_batch.sh -H "root@10.0.0.1 root@10.0.0.2" -c 'nvidia-smi -L'  # 批量命令
+bash tools/remote_run.sh -H "root@10.0.0.1 root@10.0.0.2" -c 'nvidia-smi -L'   # 多机命令（v1.43.0 由 remote_batch.sh 改名）
+bash tools/remote_run.sh -H root@10.0.0.1 --script ./diag.sh --pull-logs /tmp/diag  # 推送执行脚本 + 回拉过程日志
 ```
 
 ## 运维工具

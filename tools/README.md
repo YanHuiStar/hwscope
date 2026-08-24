@@ -10,7 +10,7 @@
 | 类别 | 脚本 | 危险度 |
 |------|------|--------|
 | **诊断/只读** | nvlink_verify · firmware_check · sel_monitor · cable_map · sync_version · power_monitor · cleanup | 🟢 只读（cleanup 删除输出目录，yes 确认） |
-| **写入操作** | bmc_tool · nic_tool · net_dhcp · dhcp_server · install_tool · install_ai · remote_batch · fw_baseline_import | 🔴 会改系统 |
+| **写入操作** | bmc_tool · nic_tool · net_dhcp · dhcp_server · install_tool · install_ai · remote_run · fw_baseline_import | 🔴 会改系统 |
 | **远程采集** | remote_collect | 🟡 仅远程执行采集（只读）|
 | **Agent 协作** | agent_sync · git_push | 🟢 只读（git_push 仅推送） |
 | **报告体系** | → `report/` 模块（report.sh · batch_compare.sh · report_server.sh · md2html.awk） | 🟢 只读 |
@@ -57,7 +57,7 @@
 | `dhcp_server.sh` | `sudo bash tools/dhcp_server.sh` | DHCP 服务器（dnsmasq 封装）：安装/配置网段/启停/租约查询导出 | dnsmasq 配置 |
 | `install_tool.sh` | `sudo bash tools/install_tool.sh` | 安装采集/压测/IB 诊断依赖（1-3 真装）、DCGM/MFT/推理指引（4-6）；**7-9 实验自动安装默认注释态**（真机验证后取消注释启用）；**`-c <1,2,...> -y` 非交互安装**（远程自动安装用，v1.42.0）| 系统软件包 |
 | `install_ai.sh` | `sudo bash tools/install_ai.sh` | AI 推理环境安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | Docker/系统 |
-| `remote_batch.sh` | `bash tools/remote_batch.sh` | 多机批量 SSH 运维（命令/采集/回拉）| 远程主机 |
+| `remote_run.sh` | `bash tools/remote_run.sh` | 多机远程执行（命令/推送/脚本执行 + 日志回拉；v1.43.0 由 remote_batch.sh 改名）| 远程主机 |
 | `fw_baseline_import.sh` | `bash tools/fw_baseline_import.sh` | 固件基线自动导入（firmware_check 基线管理）| 基线文件 |
 
 ---
