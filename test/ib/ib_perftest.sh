@@ -9,10 +9,10 @@
 # 注意: 需要 perftest 包（ib_write_bw/ib_read_bw）；IB 模式需 SM（NVSwitch 自带）
 # =============================================================================
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 parse_help "$@"
-source "${SCRIPT_DIR}/test/test_common.sh" 2>/dev/null || true
+source "${SCRIPT_DIR}/test/lib/test_common.sh" 2>/dev/null || true
 
 if ! check_cmd ib_write_bw; then
     echo -e "${RED}[ERROR] perftest 未安装 (ib_write_bw)${NC}"
