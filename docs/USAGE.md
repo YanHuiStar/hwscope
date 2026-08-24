@@ -43,10 +43,12 @@ bash report/report.sh <采集目录> --json                   # 仅生成 json�
 bash tools/remote_collect.sh -H root@10.0.0.1                 # 全量采集并回拉
 bash tools/remote_collect.sh -H root@10.0.0.1 --modules gpu   # 只采部分
 bash tools/remote_collect.sh -H user@host --no-sudo           # 普通用户直接执行
+bash tools/remote_collect.sh -H root@10.0.0.1 --install 1,2   # 先远端装基础+压测依赖再采集（v1.42.0）
 ```
 
 - 流程：tar 临时推送项目 → 远端执行 hwscope → 回拉 → 清理（远端零持久占用）
 - 认证：默认交互式密码（不落盘）+ ControlMaster 复用（输一次密码）；root 免 sudo，普通用户自动 `-t` 供 sudo 交互
+- `--install <1,2,...>`：远端先跑 `install_tool.sh -c <列表> -y` 非交互装依赖再采集（远程冷启动）；安装失败中止
 - 结果：`output/remote_output/<机器ID>/`；归档包 → `logs/remote_logs/`
 
 ### 远程采集（Windows 运维机）

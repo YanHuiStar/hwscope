@@ -61,7 +61,7 @@
 
 | 脚本 | 说明 |
 |------|------|
-| `remote_collect.sh` | 远程采集：tar 推送 → 远端执行 → 回拉（交互式密码 + ControlMaster） |
+| `remote_collect.sh` | 远程采集：tar 推送 → 远端执行 → 回拉（交互式密码 + ControlMaster）；`--install <1,2,...>` 先远端非交互装依赖再采集（v1.42.0） |
 | `remote_batch.sh` | 批量运维：多机同命令 / 推送文件 |
 
 ### 运维操作（含写操作，执行前二次确认）
@@ -77,5 +77,5 @@
 | `cable_map.sh` | IB 线缆拓扑：自动发现物理连线关系 |
 | `bmc_tool.sh` | BMC 管理：凭据/密码 |
 | `install_ai.sh` | AI 推理引擎安装：vLLM / SGLang / TRT-LLM / Ollama / llama.cpp |
-| `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...） |
+| `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...）；`-c <1,2,...> -y` 非交互安装（远程自动安装用，v1.42.0） |
 | `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认） |

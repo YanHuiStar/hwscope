@@ -1,6 +1,6 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.41.5-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
+![Version](https://img.shields.io/badge/Version-1.42.0-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（H200/B200/B300）、PCIe GPU 服务器及无 GPU 机头，以组件级粒度采集硬件信息，自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
@@ -29,6 +29,7 @@ bash report/report.sh output/<机器ID> --acceptance
 
 # 远程采集（无需在目标机安装）
 bash tools/remote_collect.sh -H root@10.0.0.1
+bash tools/remote_collect.sh -H root@10.0.0.1 --install 1,2   # 先远端装基础+压测依赖再采集（冷启动）
 tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 ```
 

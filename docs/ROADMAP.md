@@ -52,6 +52,7 @@
 
 > 按版本倒序排列；同一主版本的多轮迭代合并为一条。
 
+- v1.42.0 — **远程采集 --install 扩展**（远程冷启动一条龙）：`remote_collect.sh --install <1,2,...>` 推送后先远端非交互装依赖（`install_tool.sh -c <列表> -y` 新增非交互参数，跳过菜单/确认）再采集；普通用户时安装+采集合并一条 `-t` 命令（同 tty sudo 密码只输一次），安装失败 `&&` 短路中止；`-c` 非法项快速失败
 - v1.41.0 — **PCIe 拓扑与链路检查**（交付验收新维度，超微 H200 机头客户核对场景）：06_pcie 采 `lspci -vvv` 全量 pcie_full.log；报告新增「PCIe 拓扑与链路」段（PEX Fabric Switch 型号×数量枚举 + LnkCap/LnkSta 满速/降速检测）；验收扩至 **15 项**（PCIe 链路完整：PASS/WARN，空闲 Gen1 x16 与 x0 未连接端口不算降速；旧采集无 pcie_full 判 N/A 不计数）；**实测教训**：pcie_speed_width.log 是 grep 行流（缺 LnkCap 设备致 cap/sta 错配、x0 未连接端口），配对不可靠不可用于降速判定——全量 pcie_full 按设备块解析才可靠
 - v1.40.x — **工具目录重组**：agent 协作工具独立 `tools/agent/`（git_push.sh/.bat、agent_sync.sh——agent 流程调用）；Launch-DeepSeekHarness 属用户手动启动归 `tools/win/`；git_push 推送成功自动刷新 AGENT_STATE.md（agent_sync --clear 补版本/提交行刷新）
 - v1.39.x — **git_push WSL 全链路支持**（v1.39.1-4：WSL 下自动用 Windows git.exe 走 Windows 网络栈 + interop 探测 Windows 侧 v2ray 端口；WSL 访问 /mnt 盘项目时自动转交 `tools/agent/git_push.bat` 在 Windows 侧执行，WSLENV 传参 + no-pause）；`gpu_burn_test.sh` 独立脚本 + test_all 菜单第 8 项 + gpu_test 直接工具参数（v1.39.0/3）；gpu_burn 目录修复 + test_record 退出码修复（v1.38.5 并入）
@@ -74,4 +75,4 @@
 
 ---
 
-*最近更新: 2026-08-23 · 版本: v1.40.5*
+*最近更新: 2026-08-24 · 版本: v1.42.0*

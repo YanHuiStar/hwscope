@@ -55,7 +55,7 @@
 | `nic_tool.sh` | `sudo bash tools/nic_tool.sh` | 网卡运维菜单：状态/光模块/固件查询、端口复位、MTU、**IB↔ETH 模式切换** | 网卡配置 |
 | `net_dhcp.sh` | `sudo bash tools/net_dhcp.sh` | 一键配置网口 DHCP（Ubuntu netplan，自动识别插线网口、备份回滚） | /etc/netplan |
 | `dhcp_server.sh` | `sudo bash tools/dhcp_server.sh` | DHCP 服务器（dnsmasq 封装）：安装/配置网段/启停/租约查询导出 | dnsmasq 配置 |
-| `install_tool.sh` | `sudo bash tools/install_tool.sh` | 安装采集/压测/IB 诊断依赖（1-3 真装）、DCGM/MFT/推理指引（4-6）；**7-9 实验自动安装默认注释态**（真机验证后取消注释启用）| 系统软件包 |
+| `install_tool.sh` | `sudo bash tools/install_tool.sh` | 安装采集/压测/IB 诊断依赖（1-3 真装）、DCGM/MFT/推理指引（4-6）；**7-9 实验自动安装默认注释态**（真机验证后取消注释启用）；**`-c <1,2,...> -y` 非交互安装**（远程自动安装用，v1.42.0）| 系统软件包 |
 | `install_ai.sh` | `sudo bash tools/install_ai.sh` | AI 推理环境安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | Docker/系统 |
 | `remote_batch.sh` | `bash tools/remote_batch.sh` | 多机批量 SSH 运维（命令/采集/回拉）| 远程主机 |
 | `fw_baseline_import.sh` | `bash tools/fw_baseline_import.sh` | 固件基线自动导入（firmware_check 基线管理）| 基线文件 |
@@ -67,6 +67,7 @@
 ### `remote_collect.sh` — SSH 远程采集
 - **用法**：`bash tools/remote_collect.sh -H user@host [hwscope 参数...]`
 - **功能**：从运维机 SSH 到目标机执行完整采集（tar 推送→执行→结果回拉→清理），无需登录服务器手动跑
+- **`--install <1,2,...>`**（v1.42.0）：推送后先远端非交互装依赖（`install_tool.sh -c <列表> -y`）再采集——远程冷启动一条龙；普通用户时安装+采集合并一条 `-t` 命令（sudo 密码只输一次），安装失败中止不采集
 - **凭据**：交互式密码默认（SSH ControlMaster 复用，输一次密码）；root 免 sudo，普通用户自动 `-t` 供 sudo 交互；SSH key 仅限可信内网。密码不落盘
 - **输出**：本地 `output/remote_output/<机器ID>/`（对标本地 output/<SN> 结构）；归档包 → `logs/remote_logs/`
 
