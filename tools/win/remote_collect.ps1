@@ -9,12 +9,14 @@
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -Modules gpu,cpu
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -OutDir D:\hwout
+#   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -InstallItems 1,2   # 先远端装基础+压测依赖再采集（v1.42.1，等价 Linux --install）
 # =============================================================================
 param(
     [Parameter(Mandatory = $true)][string]$H,          # SSH 目标 user@host
     [string]$Modules = "",                             # 可选: gpu,cpu 只采部分
     [string]$OutDir = "",                              # 本地回拉目录（默认脚本同级的 output\）
-    [switch]$NoSudo = $false                           # 远端以当前用户执行（默认 sudo）
+    [switch]$NoSudo = $false,                          # 远端以当前用户执行（默认 sudo）
+    [string]$InstallItems = ""                         # 可选: 1,2 推送后先远端非交互装依赖（install_tool -c/-y）再采集
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -80,9 +82,22 @@ try {
     Remove-Item $pushFile -Force -ErrorAction SilentlyContinue
 
     # ─── 3. ssh 解包 + 远端执行（不传 --output：hwscope.sh 默认输出 <远端>/output/<MACHINE_ID>/，对标本地 output/<SN> 结构；普通用户 + sudo 时带 -t 供 sudo 交互输密码；认证失败自动重试） ───
-    Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs（默认输出 output/<MACHINE_ID>/，第 2 次密码）" -ForegroundColor Yellow
-    $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $Sudo bash hwscope.sh$hwArgs" }
-    if ($rc -ne 0) { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red; exit $rc }
+    # --InstallItems：远端先非交互装依赖（install_tool -c/-y）再采集——安装+采集合并一条 ssh 命令，
+    #   同 tty 内 sudo 密码缓存只输一次；安装失败 && 短路中止不采集（Windows OpenSSH 无 ControlMaster，每步独立密码）
+    $installCmd = ""
+    if ($InstallItems) {
+        $sudoPre = if ($Sudo) { "sudo " } else { "" }
+        $installCmd = "${sudoPre}bash tools/install_tool.sh -c $InstallItems -y && "
+        Write-Host "[INFO] 远端安装依赖: install_tool -c $InstallItems -y（非交互）→ 采集 hwscope.sh$hwArgs（第 2 次密码）" -ForegroundColor Yellow
+    } else {
+        Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs（默认输出 output/<MACHINE_ID>/，第 2 次密码）" -ForegroundColor Yellow
+    }
+    $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs" }
+    if ($rc -ne 0) {
+        if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源网络可达性)" -ForegroundColor Red }
+        else { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red }
+        exit $rc
+    }
 
     # ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/；解包到 output\remote_output\ 固定层）+ 顺带清理远端（cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
     Write-Host "[INFO] 回拉采集结果 + 归档包 → $OutDir\remote_output\（第 3 次密码）" -ForegroundColor Yellow
