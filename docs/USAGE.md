@@ -126,19 +126,23 @@ bash tools/install_ai.sh          # 交互菜单选择引擎：vLLM / SGLang / T
 
 ## 硬件压测（只读，不修改硬件配置）
 
+> 聚合与实现解耦（v1.34.21）：`test_all.sh` 纯聚合入口；单工具脚本在 `test/<组件>/` 子目录，可独立执行。
+
 ```bash
-bash test/test_all.sh          # 菜单式入口（推荐，选测/全测）
-bash test/cpu_test.sh          # CPU 稳定性（菜单选择 stress-ng/sysbench/mprime）
-bash test/memory_test.sh       # 内存压力（stress-ng/memtester/sysbench）
-sudo bash test/disk_test.sh    # 磁盘读写（fio/hdparm/dd，选盘后测试，需 sudo）
-bash test/network_test.sh      # 网络吞吐（iperf3，运行时提示输入服务端地址）
-sudo bash test/ib_test.sh      # IB 链路（perftest 自动配对打流，需 sudo）
-bash test/gpu_test.sh          # GPU 压力（自动发现已装测试程序）
-bash test/gpu_burn_test.sh 1800 # GPU 长时满载（gpu-burn -tc 张量核心，默认 30 分钟）
-bash test/nccl_test.sh         # NCCL 集合通信
+bash test/test_all.sh                    # 菜单式入口（推荐，选测/全测）
+bash test/test_all.sh --all              # 全部单脚本顺序执行
+bash test/cpu/cpu_stress_ng.sh 60        # 单脚本独立执行（CPU 满载 60s）
+bash test/cpu/cpu_sysbench.sh            # CPU 基准
+bash test/memory/mem_stress_ng.sh        # 内存压力
+sudo bash test/disk/disk_fio.sh          # 磁盘 IOPS（选盘交互，需 sudo）
+bash test/network/net_iperf3.sh          # 网络吞吐（提示输入服务端地址）
+sudo bash test/ib/ib_perftest.sh         # IB 链路（自动配对打流，需 sudo）
+bash test/gpu/gpu_bandwidth.sh           # GPU 带宽（bandwidthTest 逐卡+P2P）
+bash test/gpu/gpu_burn_test.sh 1800      # GPU 长时满载（gpu-burn -tc，默认 30 分钟）
+bash test/nccl/nccl_test.sh              # NCCL 集合通信
 ```
 
-每个脚本进入后按菜单选择测试项；`-h`/`--help` 查看用法。结果落盘 `logs/test/<时间戳>/`。
+单脚本支持 `[时长秒]` 参数与 `-h`/`--help`。结果落盘 `logs/test/<时间戳>/`。
 
 **测试日志自包含机器身份**（v1.38.0）：各测试脚本在 test_init 后自动写入 `=== Server Info ===` 段（机器 ID/型号/CPU/内存/GPU/OS）到汇总日志 + `server_info.log`——单测一项也知道是哪台机器（参考厂商 FLD 日志做法）。单独查看：
 

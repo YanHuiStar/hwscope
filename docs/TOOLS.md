@@ -4,21 +4,30 @@
 
 ## `test/` — 硬件压测（只读测试，不修改硬件配置）
 
-| 脚本 | 场景 | 说明 |
-|------|------|------|
-| `cpu_test.sh` | CPU 稳定性 | 满载压测 |
-| `memory_test.sh` | 内存压力 | 压力 + 校验 |
-| `disk_test.sh` | 磁盘读写 | 吞吐 + 校验 |
-| `network_test.sh` | 网络吞吐 | 双机吞吐（iperf3，需远端服务端） |
-| `ib_test.sh` | IB 链路 | 带宽 + 丢包（perftest） |
-| `gpu_test.sh` | GPU 压力 | 自动发现已装测试程序（bandwidthTest/gpu_burn 等）；v1.39.3 起可直接指定：`bash test/gpu_test.sh gpu_burn 1800` |
-| `gpu_burn_test.sh` | GPU 长时满载（v1.39.0） | 薄封装→`gpu_test.sh gpu_burn`；默认 `-tc 1800`（张量核心 30 分钟） |
-| `nccl_test.sh` | 集合通信 | NCCL 多卡测试 |
-| `test_all.sh` | 一键全测 | 聚合入口（按需选测） |
-| `test_server_info.sh` | 测试前服务器信息（v1.38.0） | 机器 ID/型号/CPU/内存/GPU/OS ~10 行轻量只读；各测试脚本 test_init 后自动调用，测试日志自包含机器身份；可单独执行 `bash test/test_server_info.sh` |
-| `test_common.sh` | 公共库 | 统一落盘 `logs/test/<时间戳>/` |
+> 架构：聚合与实现解耦（v1.34.21）——`test_all.sh` 纯聚合入口（菜单/--all），单工具脚本在 `test/<组件>/` 子目录（可独立执行），公共库 `test/lib/test_common.sh`。
 
-用法：`bash test/cpu_test.sh`（各脚本一致，进入后菜单选择测试项）。结果落盘 `logs/test/<时间戳>/`。
+| 单脚本 | 测试内容 | 说明 |
+|--------|---------|------|
+| `cpu/cpu_stress_ng.sh` | CPU 满载 | stress-ng 全核，默认 30s |
+| `cpu/cpu_sysbench.sh` | CPU 基准 | sysbench |
+| `cpu/cpu_mprime.sh` | 散热验证 | mprime（300s 上限） |
+| `memory/mem_stress_ng.sh` | 内存压力 | stress-ng vm 80% |
+| `memory/mem_memtester.sh` | 位翻转 | memtester |
+| `memory/mem_sysbench.sh` | 内存带宽 | sysbench |
+| `disk/disk_fio.sh` | IOPS/延迟 | fio（选盘交互） |
+| `disk/disk_hdparm.sh` | 缓存读 | hdparm |
+| `disk/disk_dd.sh` | 顺序读 | dd |
+| `network/net_iperf3.sh` | TCP 吞吐 | iperf3 |
+| `network/net_mtr.sh` | 路径质量 | mtr |
+| `ib/ib_perftest.sh` | IB 打流 | 自动配对 serial |
+| `gpu/gpu_bandwidth.sh` | GPU 带宽 | bandwidthTest 逐卡+P2P |
+| `gpu/gpu_burn_test.sh` | GPU 长压测 | gpu-burn（默认 1800s，-tc 张量核心） |
+| `gpu/gpu_nvbandwidth.sh` | 带宽基准 | nvbandwidth |
+| `gpu/gpu_partnerdiag.sh` | 出厂诊断 | partnerdiag（FLD 包） |
+| `nccl/nccl_test.sh` | 集合通信 | nccl-tests |
+| `test_server_info.sh` | 测试前服务器信息（v1.38.0） | 机器 ID/型号/CPU/内存/GPU/OS ~10 行轻量只读；各单脚本 test_init 后自动调用；可单独执行 |
+
+用法：`bash test/test_all.sh`（菜单）/ `--all`（全部顺序）/ 单脚本直接 `bash test/<组件>/<工具>.sh [时长]`。结果落盘 `logs/test/<时间戳>/`。
 
 ## `tools/` — 采集与运维
 
