@@ -32,8 +32,16 @@ IB_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" |
 #                bit5=EDR(100G) bit6=HDR(200G) bit7=NDR(400G) bit8=XDR(800G) bit9=GDR(1600G)
 IB_NOMINAL="N/A"
 _NOMINAL_SPEEDS=()
+# 只统计 IB HCA 口（ibdev2netdev 映射 hca → ibp* 接口；CX5 以太的 mlxlink Enabled Link Speed 宣传 NDR 位，
+# 混入会误判 400G NDR——v1.43.10 实测：mlx5_2/3=CX5 以太 0xf8f1f0d3 vs IB CX6 0x75）
+_IB_HCAS=""
+if [ -f "${NET_DIR}/ibdev2netdev.log" ]; then
+    _IB_HCAS=$(grep -E "port 1.*==> ib" "${NET_DIR}/ibdev2netdev.log" 2>/dev/null | awk '{print $1}')
+fi
 for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do
     [ -f "$f" ] || continue
+    _dev=$(basename "$f" | sed 's/mlxlink_//; s/\.log//')
+    if [ -n "$_IB_HCAS" ] && ! echo "$_IB_HCAS" | grep -qw "$_dev"; then continue; fi
     _hex=$(grep -m1 "Enabled Link Speed" "$f" 2>/dev/null | grep -oE "0x[0-9a-fA-F]+" | head -1)
     [ -z "$_hex" ] && continue
     # 纯 bash 十六进制解码（兼容 mawk/gawk）
