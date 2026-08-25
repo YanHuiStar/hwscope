@@ -41,6 +41,23 @@ run_dcgm() {
         fi
     fi
 
+    # nvidia-persistenced 临时开关（v1.44.2，用户方案）：DCGM 诊断依赖 persistence mode 稳定性——
+    # 原状态已开启则不动；原状态关闭则临时开启（nvidia-smi -pm 1），DCGM 采集后恢复原状（只读无害，不留状态变更）
+    PERSIST_WAS_OFF=0
+    if check_cmd nvidia-smi; then
+        _pm=$(nvidia-smi --query-gpu=persistence_mode --format=csv,noheader 2>/dev/null | grep -viE "N/A|unknown" | head -1)
+        if [ "$_pm" = "Disabled" ]; then
+            PERSIST_WAS_OFF=1
+            if nvidia-smi -pm 1 >/dev/null 2>&1; then
+                echo "[INFO] nvidia-persistenced 临时开启（DCGM 采集后恢复原状）"
+            else
+                echo -e "${YELLOW}[WARN] nvidia-smi -pm 1 失败（无权限或平台不支持），DCGM 在无 persistence 下运行${NC}" >&2
+                PERSIST_WAS_OFF=0   # 没开成功就不需要恢复
+            fi
+            sleep 1
+        fi
+    fi
+
     # 1~5. DCGM 诊断信息（并行采集；串行模式自动降级）
     run_and_log_parallel 5 \
         "dcgmi discovery -l 2>&1" "${dir}/dcgmi_discovery.log" \
@@ -48,6 +65,15 @@ run_dcgm() {
         "dcgmi config --list 2>&1" "${dir}/dcgmi_config.log" \
         "dcgmi diag -r 1 2>&1" "${dir}/dcgmi_diag_level1.log" \
         "dcgmi --version 2>&1" "${dir}/dcgmi_version.log"
+
+    # 恢复 nvidia-persistenced 原状态（v1.44.2：原本关闭则采集后关闭，不留状态变更）
+    if [ "$PERSIST_WAS_OFF" -eq 1 ]; then
+        if nvidia-smi -pm 0 >/dev/null 2>&1; then
+            echo "[INFO] 已恢复 nvidia-persistenced 原状态（关闭）"
+        else
+            echo -e "${YELLOW}[WARN] 恢复 persistence 失败（手动执行 nvidia-smi -pm 0）${NC}" >&2
+        fi
+    fi
 
 write_manifest "${dir}/manifest.txt" \
         "dcgmi_discovery" "dcgmi_discovery.log" \

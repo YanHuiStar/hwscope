@@ -48,16 +48,21 @@ if [ -f "${pcie_full}" ]; then
         function wdt(x,   t) { t=x; sub(/.*Width /,"",t); sub(/,.*/,"",t); gsub(/[^0-9]/,"",t); return t+0 }
         function gname(x) { if (x >= 31.9) return "Gen5"; if (x >= 15.9) return "Gen4"; if (x >= 7.9) return "Gen3"; if (x >= 4.9) return "Gen2"; return "Gen1" }
         function fmt(w, s) { return "x" w " " gname(s) }
-        function check(   csp,cwd,ssp,swd,mgmt,verdict) {
+        function check(   csp,cwd,ssp,swd,mgmt,verdict,isbridge) {
             if (c == "" || s == "") return
             csp=spd(c); cwd=wdt(c); ssp=spd(s); swd=wdt(s)
             if (swd == 0) return            # x0 = 端口未连接（PEX 下行空置）
-            if (ssp == 5 && swd == 16) return   # 空闲 Gen1 x16 = PEX 下行未接模组/板卡
+            isbridge = (d ~ /PCI bridge|PCIe bridge|Host bridge/) ? 1 : 0
+            if (isbridge && ssp <= 5 && swd == 16) return  # bridge 端口空闲（Gen1/2 全宽未训练 = 下行未接）
             total++
             mgmt = (d ~ /ASPEED|AST[0-9]+|Matrox|VGA compatible|Display controller/) ? 1 : 0
             if (mgmt) {
                 verdict = "管理芯片固有"
-            } else if (ssp < csp || swd < cwd) {
+            # bridge 端口（switch 下行/PCIe 根端口）：LnkSta 反映下游设备能力——x16 口接 x8 卡、
+            # Gen4 口接 Gen3 卡均属正常协商（超微 AS-4124GO-NART 实证：PEX880xx 下行挂 Gen3 设备，
+            # v1.44.2）。真问题（线缆/接触/插槽）会体现在下游端点自身 LnkCap vs LnkSta——端点判定已覆盖。
+            # 故 bridge 一律不判异常（仅附录展示）；端点设备（NIC/GPU/RAID 卡）速率+宽度降均判异常
+            } else if (!isbridge && (ssp < csp || swd < cwd)) {
                 verdict = (swd < cwd && ssp < csp) ? "⚠️ 降宽+降速" : ((swd < cwd) ? "⚠️ 降宽" : "⚠️ 降速")
             } else {
                 verdict = "✓ 满速"
