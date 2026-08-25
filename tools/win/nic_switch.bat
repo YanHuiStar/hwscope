@@ -1,15 +1,15 @@
 @echo off
 chcp 65001 >nul
 rem ============================================
-rem  网卡 IP 一键切换 — 设固定 IP / 恢复 DHCP
-rem  用法: nic_switch.bat set    设 192.168.1.100/24
-rem        nic_switch.bat restore 恢复原配置
+rem  NIC IP one-key switch - set static IP / restore DHCP
+rem  Usage: nic_switch.bat set        set 192.168.1.100/24
+rem         nic_switch.bat restore    restore original config
 rem ============================================
-title 网卡 IP 切换
+title NIC IP Switch
 cd /d "%~dp0"
 net session >nul 2>&1
 if errorlevel 1 (
-    echo 需要管理员权限，正在提升...
+    echo Admin rights required, elevating...
     powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c \"%~f0\" %*' -Verb RunAs"
     exit /b
 )
