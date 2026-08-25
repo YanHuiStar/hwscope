@@ -141,6 +141,7 @@ if [ -d "${LOCAL_OUT}/remote_output/logs" ] && [ -n "$(ls -A "${LOCAL_OUT}/remot
         if [ -d "$_item" ]; then
             mkdir -p "${SCRIPT_DIR}/logs/remote_logs/${_b}"
             mv "$_item"/* "${SCRIPT_DIR}/logs/remote_logs/${_b}/" 2>/dev/null
+            rmdir "$_item" 2>/dev/null   # 删源空目录（缺此行会残留空壳，外层 rmdir logs 因 report 存在而失败——v1.43.6 实测）
         else
             mv "$_item" "${SCRIPT_DIR}/logs/remote_logs/" 2>/dev/null
         fi
