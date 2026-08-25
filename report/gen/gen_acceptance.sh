@@ -164,12 +164,17 @@ gen_acceptance() {
     fi
 
     # 9. 电源冗余（N+N 冗余是供电可靠性核心；失效=单点故障风险）
+    # v1.43.9 条件区分：无 BMC（不计数）/ 平台无冗余等级传感器（SDR 有供电传感器，不计数）/ PSU≥2 但 IPMI 无冗余数据（计数）/ 采集缺失（计数）
     case "$PSU_REDUNDANT" in
         N/A)
             if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
                 add_item "电源冗余（N+N）" "N/A" "平台无 BMC（IPMI 传感器不可用，冗余判定不适用）" 1
+            elif [ "${PSU_SENSOR_PRESENT:-0}" -eq 1 ]; then
+                add_item "电源冗余（N+N）" "N/A" "平台无 PSU 冗余等级传感器（供电传感器正常，无冗余等级读数；平台固有不计数）" 1
+            elif [ "${PSU_COUNT_DMI:-0}" -ge 2 ] 2>/dev/null; then
+                add_item "电源冗余（N+N）" "N/A" "PSU ${PSU_COUNT_DMI} 个（dmidecode），IPMI 无冗余等级数据（采集缺失，建议人工核对）"
             else
-                add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据"
+                add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据（IPMI 采集缺失，需补采）"
             fi ;;
         *失效*) add_item "电源冗余（N+N）" "FAIL" "电源冗余失效（单点故障风险）" ;;
         *) add_item "电源冗余（N+N）" "PASS" "${PSU_REDUNDANT}" ;;
@@ -242,8 +247,10 @@ gen_acceptance() {
     elif [ "$FAN_REDUNDANT" = "N/A" ]; then
         if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
             add_item "风扇冗余（N+N）" "N/A" "平台无 BMC（无 IPMI 风扇冗余传感器，判定不适用）" 1
+        elif [ "${FAN_SENSOR_PRESENT:-0}" -eq 1 ]; then
+            add_item "风扇冗余（N+N）" "N/A" "平台无风扇冗余等级传感器（风扇转速正常，无冗余等级读数；平台固有不计数）" 1
         else
-            add_item "风扇冗余（N+N）" "N/A" "无风扇冗余状态数据（ipmitool 未采集到 Fan Redundancy 传感器）"
+            add_item "风扇冗余（N+N）" "N/A" "无风扇冗余状态数据（ipmitool 未采集到 Fan Redundancy 传感器，需补采）"
         fi
     elif [ "$FAN_REDUNDANT" = "冗余满足" ]; then
         add_item "风扇冗余（N+N）" "PASS" "${FAN_EXTRA:-冗余满足（N+N）}"
