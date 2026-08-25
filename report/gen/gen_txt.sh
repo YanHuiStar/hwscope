@@ -149,11 +149,19 @@ HwScope 硬件巡检报告
 -- PCIe 拓扑与链路 --$(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
     if [ -n "$PCIE_PEX_DETAILS" ]; then printf '\n  Fabric Switch : %s' "$PCIE_PEX_DETAILS"; fi
     if [ "$PCIE_LINKS_TOTAL" -gt 0 ] && [ -n "$PCIE_LINK_TABLE" ]; then
-        printf '\n  链路明细     : %s 条 · 满速 %s · 降速/降宽 %s · 管理芯片 %s' "$PCIE_LINKS_TOTAL" "$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT))" "$PCIE_SLOW_COUNT" "$PCIE_MGMT_COUNT"
-        printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
-            [ -z "$lbdf" ] && continue
-            printf '\n    %-9s %-42s %-9s %-9s %s' "$lbdf" "$(printf '%.40s' "$ldesc")" "$lcap" "$lsta" "$lverdict"
-        done
+        printf '\n  链路统计     : %s 条 · 满速 %s · 降速/降宽 %s · 管理芯片 %s' "$PCIE_LINKS_TOTAL" "$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT))" "$PCIE_SLOW_COUNT" "$PCIE_MGMT_COUNT"
+        if [ "$PCIE_SLOW_COUNT" -gt 0 ] 2>/dev/null; then
+            printf '\n  ⚠️ 降速/降宽链路:'
+            printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
+                [ -z "$lbdf" ] && continue
+                case "$lverdict" in *⚠️*) printf '\n    %-9s %-42s %-9s %-9s %s' "$lbdf" "$(printf '%.40s' "$ldesc")" "$lcap" "$lsta" "$lverdict" ;; esac
+            done
+        else
+            printf '\n  链路状态     : 全部非管理芯片链路满速（全量明细见文末附录）'
+        fi
+        if [ "$PCIE_MGMT_COUNT" -gt 0 ] 2>/dev/null; then
+            printf '\n  管理芯片     : %s 条固有低速为正常现象，不计链路异常' "$PCIE_MGMT_COUNT"
+        fi
     elif [ -n "$PCIE_SLOW_LINKS" ]; then
         printf '\n  ⚠️ 降速/降宽链路:'
         printf '%s\n' "$PCIE_SLOW_LINKS" | while IFS= read -r line; do printf '\n    - %s' "$line"; done
@@ -389,6 +397,16 @@ fi)$(if [ -n "$BASELINE_COMPARE" ]; then
         [ -z "$bitem" ] && continue
         printf '  %-26s %-6s 当前:%s  基线:%s\n' "$bitem" "$bst" "$bcur" "$bbase"
     done
+fi)
+
+-- PCIe 链路明细（附录） --$(if [ "$PCIE_LINKS_TOTAL" -gt 0 ] 2>/dev/null && [ -n "$PCIE_LINK_TABLE" ]; then
+    printf '\n  全量 %s 条链路逐条状态（交付核对扩展板卡通路/模组接口用；异常行见「PCIe 拓扑与链路」摘要）' "$PCIE_LINKS_TOTAL"
+    printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
+        [ -z "$lbdf" ] && continue
+        printf '\n    %-9s %-42s %-9s %-9s %s' "$lbdf" "$(printf '%.40s' "$ldesc")" "$lcap" "$lsta" "$lverdict"
+    done
+else
+    printf '\n  数据: N/A（旧采集无 pcie_full 全量日志）'
 fi)
 
 [术语说明]
