@@ -40,7 +40,10 @@ gen_txt() {
                 _gl=$(echo "$glimit" | grep -oE "[0-9.]+" | head -1 | awk '{printf "%g", $1}')
                 gdraw_disp="${gdraw}/${_gl}W"
             fi
-            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  PCIe(协商):${gpcie_disp}  VBIOS:${gvb:-N/A}"$'\n'
+            # v1.44.0 SXM 适配：SXM 平台该值实为 NVLink 通道协商（模组无 CPU 直连 PCIe 链路）
+            _gpu_link_lbl="PCIe(协商)"
+            case "${PLATFORM_LABEL:-}" in *SXM*) _gpu_link_lbl="NVLink(协商)" ;; esac
+            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  ${_gpu_link_lbl}:${gpcie_disp}  VBIOS:${gvb:-N/A}"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
     fi
     # 盘明细纯文本
@@ -67,14 +70,19 @@ gen_txt() {
     [ -n "$PSID_NOTICE" ] && nic_details_txt="  ${PSID_NOTICE}"$'\n'
     [ -n "$MST_NOTICE" ] && nic_details_txt="${nic_details_txt}  ⚠️ ${MST_NOTICE}"$'\n'
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
+        local _gd_col=0
+        [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ] && _gd_col=1
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport; do
             [ -z "$nnic" ] && continue
-            if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
-                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}"$'\n'
+            if [ "$_gd_col" -eq 1 ]; then
+                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  口:${nport:-—}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}"$'\n'
             else
-                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}"$'\n'
+                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  口:${nport:-—}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}"$'\n'
             fi
         done < <(printf '%s\n' "$NIC_DETAILS")
+        if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -eq 0 ]; then
+            nic_details_txt="${nic_details_txt}  (本机无 GPU 直连网卡，GPU直连列隐藏)"$'\n'
+        fi
     fi
     # USB 外接网卡（非 PCIe）追加到明细末尾，独立成段
     if [ -n "$USB_NICS" ]; then
@@ -140,11 +148,17 @@ HwScope 硬件巡检报告
 
 -- PCIe 拓扑与链路 --$(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
     if [ -n "$PCIE_PEX_DETAILS" ]; then printf '\n  Fabric Switch : %s' "$PCIE_PEX_DETAILS"; fi
-    if [ -n "$PCIE_SLOW_LINKS" ]; then
+    if [ "$PCIE_LINKS_TOTAL" -gt 0 ] && [ -n "$PCIE_LINK_TABLE" ]; then
+        printf '\n  链路明细     : %s 条 · 满速 %s · 降速/降宽 %s · 管理芯片 %s' "$PCIE_LINKS_TOTAL" "$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT))" "$PCIE_SLOW_COUNT" "$PCIE_MGMT_COUNT"
+        printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
+            [ -z "$lbdf" ] && continue
+            printf '\n    %-9s %-42s %-9s %-9s %s' "$lbdf" "$(printf '%.40s' "$ldesc")" "$lcap" "$lsta" "$lverdict"
+        done
+    elif [ -n "$PCIE_SLOW_LINKS" ]; then
         printf '\n  ⚠️ 降速/降宽链路:'
         printf '%s\n' "$PCIE_SLOW_LINKS" | while IFS= read -r line; do printf '\n    - %s' "$line"; done
     elif [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
-        printf '\n  链路状态     : ✅ 全部 %s 个设备链路满速（无降速/降宽）' "$PCIE_LINKS_TOTAL"
+        printf '\n  链路状态     : ✅ 全部 %s 条链路满速（无降速/降宽）' "$PCIE_LINKS_TOTAL"
     fi
 else
     printf '\n  链路数据     : N/A（旧采集无 pcie_full 全量日志，链路检测需重新采集）'

@@ -103,6 +103,15 @@ if [ -f "$_fru_src" ]; then
                 fi
             fi
         fi
+        # dmidecode Type 39 独立生成源（v1.44.0）：Supermicro 等平台 FRU 无 PSU 条目、传感器仅离散
+        # PS<N> Status（无 PSU*_Temp/PS*_Pin 模拟量）——占位行与传感器占位均失败时，SMBIOS Type 39
+        # 是唯一 PSU 明细来源（Location/型号/厂商/SN/PN/容量/状态全有），生成占位行交由下方补全逻辑填字段
+        if [ -z "$PSU_DETAILS" ] && [ -f "${dmidecode_psu}" ] && grep -q "System Power Supply" "${dmidecode_psu}" 2>/dev/null; then
+            PSU_DETAILS=$(grep -v "^#" "${dmidecode_psu}" 2>/dev/null | awk '
+                /Location:/ { if (n != "") print "PSU" n "|N/A|N/A|N/A|N/A|N/A"; split($NF, a, "PSU"); n=a[2] }
+                END { if (n != "") print "PSU" n "|N/A|N/A|N/A|N/A|N/A" }
+            ')
+        fi
         # dmidecode type39 补型号/SN/PN/容量（按 Location 匹配槽位；无 FRU 平台用 SMBIOS 补齐）
         if [ -n "$PSU_DETAILS" ] && [ -f "${dmidecode_psu}" ]; then
             # 构建 "Location→型号|厂商|SN|PN|容量|Revision" 映射（dmidecode type39 每个 PSU 一段）
@@ -134,9 +143,16 @@ if [ -f "$_fru_src" ]; then
                 PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
             fi
         fi
-        # 平台限制标注：FRU 无 PSU 条目时说明（避免客户误以为漏采）
+        # 平台限制标注：FRU 无 PSU 条目时说明（避免客户误以为漏采）——按明细行来源区分文案（v1.44.0）
         if [ -n "$PSU_DETAILS" ]; then
-            PSU_PLATFORM_NOTE="平台未暴露单电源 FRU（传感器+SMBIOS 确认存在与功耗）"
+            if [ -n "$_temp_src" ]; then
+                PSU_PLATFORM_NOTE="平台未暴露单电源 FRU（传感器+SMBIOS 确认存在与功耗）"
+            else
+                # PS<N> Status 传感器佐证（0x1/ok = 在位正常）：sdr list 带 ok 状态列，有则注明增强可信度
+                _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_sdr_psu.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $3 ~ /ok/ {n++} END{print n+0}')
+                [ "${_ps_ok:-0}" -gt 0 ] 2>/dev/null || _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $2 ~ /^0x1$/ {n++} END{print n+0}')
+                PSU_PLATFORM_NOTE="平台未暴露单电源 FRU 与单 PSU 功率传感器（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位，型号/SN/额定容量为 dmidecode 数据${_ps_ok:+，PS 状态传感器均 ok})"
+            fi
         fi
     fi
     # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）

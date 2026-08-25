@@ -100,6 +100,17 @@ if [ -n "$GPU_TOPO_FILE" ]; then
     fi
 fi
 if [ -f "${nic_inventory}" ]; then
+    # 物理口聚合（v1.44.0）：同卡多口共享总线号（11:00.0/11:00.1 = 同一物理卡两个功能），
+    # 按 BDF 前缀（去功能号）统计每卡接口数——比 SN 聚合可靠（非 Mellanox 卡 SN 不保证同卡唯一）
+    declare -A NIC_PORT_TOTAL
+    while IFS='|' read -r _d _b _rest; do
+        [ -z "$_d" ] || [ "$_d" = "N/A" ] || [ "$_d" = "#" ] && continue
+        echo "$_b" | grep -qE "^[0-9a-fA-F]{2,4}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$" || continue
+        _bd="${_b%%.*}"
+        NIC_PORT_TOTAL[$_bd]=$(( ${NIC_PORT_TOTAL[$_bd]:-0} + 1 ))
+    done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
+    declare -A NIC_PORT_IDX
+    GPU_DIRECT_COUNT=0
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ncapspd ncapwd; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
@@ -171,11 +182,14 @@ if [ -f "${nic_inventory}" ]; then
         fi
         # GPU 直连标记（topo PIX 判定）——无有效 topo 数据（旧采集/采集失败）时整列隐藏，避免误会：
         #   "GPU直连" = PIX 直连；"—" = 有 topo 数据但非直连
+        # v1.44.0：GPU_DIRECT_COUNT 统计——平台无任何直连网卡时（非 H200/B200 类 1:1 直连形态）
+        # 整列全 "—"，渲染层据此隐藏该列（动态列隐藏惯例，JSON 保留全字段）
         gd_mark=""
         if [ -n "$GPU_TOPO_FILE" ]; then
             GPU_TOPO_AVAIL=1
             if [ "${GPU_DIRECT_NIC[$nnic]:-0}" = "1" ]; then
                 gd_mark="GPU直连"
+                GPU_DIRECT_COUNT=$((GPU_DIRECT_COUNT + 1))
             else
                 gd_mark="—"
             fi
@@ -207,7 +221,14 @@ if [ -f "${nic_inventory}" ]; then
         case "${nchip:-}" in ""|N/A|na|NA) nchip="—" ;; esac
         [ -z "$nmac" ] && nmac="—"
         [ -z "$npcie_cap" ] && npcie_cap="—"
-        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}"$'\n'
+        # 物理口序号：同卡第 N 口/共 M 口（USB/非 PCIe 接口已在上方排除；明细行序 = BDF 升序，同卡相邻）
+        nport="—"
+        _bd_pre="${nnbdf%%.*}"
+        if [ -n "${NIC_PORT_TOTAL[$_bd_pre]:-}" ]; then
+            NIC_PORT_IDX[$_bd_pre]=$(( ${NIC_PORT_IDX[$_bd_pre]:-0} + 1 ))
+            nport="${NIC_PORT_IDX[$_bd_pre]}/${NIC_PORT_TOTAL[$_bd_pre]}"
+        fi
+        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}|${nport}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
 # 网卡明细回退：nic_inventory.csv 空但 ibstat 有 CA（旧采集 v1.x 未生成 csv）→ 从 ibstat 构建简化明细
@@ -230,7 +251,7 @@ PSID_NOTICE=""
 if [ "$NIC_MLX" -eq 1 ]; then
     _mlx_no_psid=0
     _mlx_total=0
-    while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
+    while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport; do
         [ -z "$nnic" ] && continue
         # 只统计 Mellanox 卡（型号含 ConnectX/BlueField/MLX，或芯片列 MT 编号 MT3xxx/MT4xxx）
         if ! echo "$npn" | grep -qiE "ConnectX|BlueField|MLX" && ! echo "$nchip" | grep -qE "^MT[0-9]{4}"; then

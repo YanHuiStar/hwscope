@@ -19,6 +19,30 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 
 输出结构：`output/<机器ID>/` 下按模块分目录（bmc/cpu/gpu/...），每命令一个日志 + 报告文件。
 
+### 模块总览（17 个，与 `modules/*.sh` 逐项对应）
+
+| 编号 | 模块 | 采集内容 | 主要工具 | conf 开关 |
+|------|------|----------|----------|-----------|
+| 01 | motherboard | 主板/BIOS/机箱 | dmidecode | `MODULE_MB` |
+| 02 | cpu | CPU 信息 | dmidecode + lscpu | `MODULE_CPU` |
+| 03 | memory | 内存插槽/容量/速率 | dmidecode | `MODULE_MEMORY` |
+| 04 | gpu | GPU 信息 | nvidia-smi | `MODULE_GPU` |
+| 05 | nvswitch | NVSwitch 信息 | nvswitch + fabric-manager | `MODULE_NVSWITCH` |
+| 06 | pcie | PCIe 拓扑/速率 | lspci | `MODULE_PCIE` |
+| 07 | network | 网络/IB/光模块 | ibstat + mlxlink + ethtool | `MODULE_NETWORK` |
+| 08 | storage | 存储设备(SATA/SAS/NVMe/SMART) | lsblk + smartctl | `MODULE_STORAGE` |
+| 09 | raid | RAID/HBA 卡信息 | storcli64 / sas3ircu | `MODULE_RAID` |
+| 10 | psu | 电源 (PSU) 信息 | IPMI + sysfs | `MODULE_PSU` |
+| 11 | fan | 风扇 (FAN) 信息 | IPMI + hwmon + sensors | `MODULE_FAN` |
+| 12 | bmc | BMC/IPMI 带外信息 | ipmitool + Redfish | `MODULE_BMC` |
+| 13 | nvsm | NVSM 综合(条件执行) | nvsm | `MODULE_NVSM` |
+| 14 | dcgm | DCGM 诊断(条件执行) | dcgmi | `MODULE_DCGM` |
+| 15 | firmware | 固件合规 (VBIOS/BMC/NIC/NVSwitch) | 对照 `conf/fw_required.txt` | `MODULE_FIRMWARE` |
+| 16 | power | 能耗台账 (累计能耗) | BMC 累计能耗 + DCMI/Redfish 快照 | `MODULE_POWER` |
+| 99 | os | OS 基础信息 | — | `MODULE_OS` |
+
+> 单模块调试：`bash modules/<NN>_<模块>.sh <输出目录>`；开关默认全开（`conf/hwscope.conf` 置 0 关闭对应模块）。
+
 ## 报告生成
 
 > 报告体系为独立 `report/` 模块（v1.35.0）：主入口 `report/report.sh`（v1.35.3 起移除 tools/ 兼容 wrapper，统一新路径）。
