@@ -43,16 +43,33 @@ run_dcgm() {
 
     # nvidia-persistenced 临时开关（v1.44.2，用户方案）：DCGM 诊断依赖 persistence mode 稳定性——
     # 原状态已开启则不动；原状态关闭则临时开启（nvidia-smi -pm 1），DCGM 采集后恢复原状（只读无害，不留状态变更）
-    PERSIST_WAS_OFF=0
+    # v1.44.3 加固：逐卡记录原状态（混插平台可能部分卡已开启，全局 -pm 0 会误关）+ trap 兜底（采集被 kill 时防 -pm 1 残留）
+    PERSIST_TOUCHED=0
+    PERSIST_ORIG=()
+    __dcgm_restore_persist() {
+        [ "${PERSIST_TOUCHED:-0}" -eq 1 ] || return 0
+        local _i=0 _s
+        for _s in "${PERSIST_ORIG[@]}"; do
+            [ "$_s" = "Disabled" ] && nvidia-smi -i "$_i" -pm 0 >/dev/null 2>&1
+            _i=$((_i+1))
+        done
+        PERSIST_TOUCHED=0
+        echo "[INFO] 已恢复 nvidia-persistenced 原状态（逐卡还原）"
+    }
     if check_cmd nvidia-smi; then
-        _pm=$(nvidia-smi --query-gpu=persistence_mode --format=csv,noheader 2>/dev/null | grep -viE "N/A|unknown" | head -1)
-        if [ "$_pm" = "Disabled" ]; then
-            PERSIST_WAS_OFF=1
+        while IFS= read -r _pmline; do
+            [ -n "$_pmline" ] && PERSIST_ORIG+=("$_pmline")
+        done < <(nvidia-smi --query-gpu=persistence_mode --format=csv,noheader 2>/dev/null | grep -viE "N/A|unknown")
+        _pm_off=0
+        for _s in "${PERSIST_ORIG[@]}"; do [ "$_s" = "Disabled" ] && _pm_off=1; done
+        if [ "$_pm_off" -eq 1 ]; then
             if nvidia-smi -pm 1 >/dev/null 2>&1; then
+                PERSIST_TOUCHED=1
                 echo "[INFO] nvidia-persistenced 临时开启（DCGM 采集后恢复原状）"
+                # 兜底：脚本被 kill/Ctrl-C 时 EXIT 触发恢复；函数正常路径恢复后 TOUCHED=0，trap 触发为空操作
+                trap '__dcgm_restore_persist' EXIT
             else
                 echo -e "${YELLOW}[WARN] nvidia-smi -pm 1 失败（无权限或平台不支持），DCGM 在无 persistence 下运行${NC}" >&2
-                PERSIST_WAS_OFF=0   # 没开成功就不需要恢复
             fi
             sleep 1
         fi
@@ -66,14 +83,9 @@ run_dcgm() {
         "dcgmi diag -r 1 2>&1" "${dir}/dcgmi_diag_level1.log" \
         "dcgmi --version 2>&1" "${dir}/dcgmi_version.log"
 
-    # 恢复 nvidia-persistenced 原状态（v1.44.2：原本关闭则采集后关闭，不留状态变更）
-    if [ "$PERSIST_WAS_OFF" -eq 1 ]; then
-        if nvidia-smi -pm 0 >/dev/null 2>&1; then
-            echo "[INFO] 已恢复 nvidia-persistenced 原状态（关闭）"
-        else
-            echo -e "${YELLOW}[WARN] 恢复 persistence 失败（手动执行 nvidia-smi -pm 0）${NC}" >&2
-        fi
-    fi
+    # 恢复 nvidia-persistenced 原状态（逐卡还原；恢复后 trap 为空操作）
+    __dcgm_restore_persist
+    trap - EXIT
 
 write_manifest "${dir}/manifest.txt" \
         "dcgmi_discovery" "dcgmi_discovery.log" \
