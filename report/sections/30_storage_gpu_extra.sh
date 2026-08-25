@@ -70,6 +70,7 @@ if [ -f "${disk_inventory}" ]; then
                 # Micron N-T-N 结构（3T8=3.84TB 等；通用提取会把 "3T" 误判为 3TB）
                 elif echo "$dmodel" | grep -qE 'MTFD[KHC][A-Z]{2}[0-9]T[0-9]TFR'; then
                     case "$dmodel" in
+                        *1T9*) dspec="额定1.92TB" ;;
                         *3T8*) dspec="额定3.84TB" ;;
                         *7T6*) dspec="额定7.68TB" ;;
                         *1T6*) dspec="额定1.60TB" ;;

@@ -264,9 +264,9 @@ gen_acceptance() {
         add_item "PCIe 链路完整" "WARN" "检测到降速/降宽链路: $(printf '%s\n' "$PCIE_SLOW_LINKS" | head -1 | cut -c1-60)..."
     elif [ "${PCIE_LINKS_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
         if [ -n "$PCIE_PEX_DETAILS" ]; then
-            add_item "PCIe 链路完整" "PASS" "PEX Fabric Switch 已枚举（${PCIE_PEX_DETAILS}），${PCIE_LINKS_TOTAL} 个设备链路满速"
+            add_item "PCIe 链路完整" "PASS" "PEX Fabric Switch 已枚举（${PCIE_PEX_DETAILS}），${PCIE_LINKS_TOTAL} 条链路满速"
         else
-            add_item "PCIe 链路完整" "PASS" "${PCIE_LINKS_TOTAL} 个设备链路满速（无降速/降宽）"
+            add_item "PCIe 链路完整" "PASS" "${PCIE_LINKS_TOTAL} 条链路满速（无降速/降宽）"
         fi
     else
         add_item "PCIe 链路完整" "N/A" "无链路数据（旧采集无 pcie_full 全量日志，链路检测需重新采集）" 1
@@ -293,7 +293,7 @@ gen_acceptance() {
     fi
     ACC_NIC_IB="N/A"; ACC_NIC_IB_COUNT=0; ACC_NIC_ETH="N/A"; ACC_NIC_ETH_COUNT=0
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport; do
             [ -z "$nnic" ] && continue
             # v1.43.10 修正：按接口名归类（ibp*/ib* = IB 计算网卡；en*/eth* = 以太）。
             # 原按 ConnectX|MCX 前缀归类会把 CX5 以太（MCX556A）误入 IB——实测 6 张假 IB（2 以太+4 IB）

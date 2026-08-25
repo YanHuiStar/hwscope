@@ -13,12 +13,36 @@ load_manifest "${NET_DIR}" mst_notice "mst_notice.log"
 # MST 未启动提示（Mellanox SN 兜底说明）
 MST_NOTICE=""
 [ -f "${mst_notice}" ] && MST_NOTICE=$(grep -v "^#" "${mst_notice}" | head -1)
-# IB 设备总数（CA 数量）与活动口数（State: Active）分开统计——"设备数"≠"活动口数"
-IB_COUNT=$(grep -c "^CA '" "${ibstat}" 2>/dev/null)
-IB_ACTIVE=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
-# Link 状态统计：Down（未连）+ 未插线缆（mlxlink Recommendation，排除 module 文件）
-IB_LINK_DOWN=$(grep -c "State: Down" "${ibstat}" 2>/dev/null)
-IB_UNPLUGGED=$(for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do [ -f "$f" ] || continue; case "$f" in *_module.log) continue;; esac; grep -c "Cable is unplugged" "$f" 2>/dev/null; done | awk '{s+=$1} END{print s+0}')
+# IB 设备口径（v1.44.0）：ibstat CA 含以太模式 CA（如 CX5 双口以太也被枚举为 CA，State: Down 属正常）
+# ——真 IB 设备按 ibdev2netdev 映射到 ibp*/ibs* 接口的 CA 计数；无映射数据回退 ibstat CA 总数（旧口径）
+IB_CA_LIST=""
+if [ -f "${ibdev2netdev}" ]; then
+    IB_CA_LIST=$(grep -v "^#" "${ibdev2netdev}" 2>/dev/null | awk '$5 ~ /^ibp[0-9]|^ibs/ {print $1}' | sort -u | tr '\n' ',' | sed 's/,$//')
+fi
+if [ -n "$IB_CA_LIST" ]; then
+    _ib_stats=$(awk -v cas="${IB_CA_LIST}" '
+        BEGIN { n=split(cas, arr, ","); for (i=1; i<=n; i++) want[arr[i]]=1 }
+        /^CA / { ca=substr($2, 2, length($2)-2); inib=(ca in want); if (inib) total++; next }
+        inib && /State: Active/{active++}
+        inib && /State: Down/{down++}
+        END { printf "%d %d %d", total+0, active+0, down+0 }
+    ' "${ibstat}" 2>/dev/null)
+    read -r IB_COUNT IB_ACTIVE IB_LINK_DOWN <<< "${_ib_stats:-0 0 0}"
+    # 未插线缆统计同样限定 IB CA（CX5 以太口 mlxlink "unplugged" 不算 IB 线缆缺失）
+    IB_UNPLUGGED=$(for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do
+        [ -f "$f" ] || continue
+        case "$f" in *_module.log) continue;; esac
+        _ca=$(basename "$f" .log | sed 's/^mlxlink_//')
+        echo ",${IB_CA_LIST}," | grep -q ",${_ca}," || continue
+        grep -c "Cable is unplugged" "$f" 2>/dev/null
+    done | awk '{s+=$1} END{print s+0}')
+else
+    IB_COUNT=$(grep -c "^CA '" "${ibstat}" 2>/dev/null)
+    IB_ACTIVE=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
+    # Link 状态统计：Down（未连）+ 未插线缆（mlxlink Recommendation，排除 module 文件）
+    IB_LINK_DOWN=$(grep -c "State: Down" "${ibstat}" 2>/dev/null)
+    IB_UNPLUGGED=$(for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do [ -f "$f" ] || continue; case "$f" in *_module.log) continue;; esac; grep -c "Cable is unplugged" "$f" 2>/dev/null; done | awk '{s+=$1} END{print s+0}')
+fi
 # 活动口的速率分布（如 "100 Gb/s ×4"；无活动口显示 Down）
 IB_ACTIVE_SPEED=""
 if [ "${IB_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then

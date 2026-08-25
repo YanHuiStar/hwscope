@@ -65,17 +65,20 @@ gen_md() {
             disk_details_md="${disk_details_md}| ${dn} | ${dname} | ${dtype} | ${dsize}${_spec_col} | ${dmodel} | ${dsn} | ${dfw} | ${dbdf} | ${dpo} | ${dpc}${_spare_col}${_health_col} |"$'\n'
         done < <(printf '%s\n' "$DISK_DETAILS")
     fi
-    # 网卡明细 Markdown 表
+    # 网卡明细 Markdown 表（v1.44.0：端口列 = 同卡第 N 口/共 M 口；GPU直连列仅平台存在直连网卡时显示——
+    # 无 H200/B200 类 1:1 直连形态时整列全 "—"，按动态列隐藏惯例隐藏并附注）
     local nic_details_md=""
     if [ -n "$NIC_DETAILS" ]; then
         local nn=0
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
+        local _gd_col=0
+        [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ] && _gd_col=1
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport; do
             [ -z "$nnic" ] && continue
             nn=$((nn + 1))
-            if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
-                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${ngd:-} |"$'\n'
+            if [ "$_gd_col" -eq 1 ]; then
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${ngd:-} |"$'\n'
             else
-                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} |"$'\n'
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} |"$'\n'
             fi
         done < <(printf '%s\n' "$NIC_DETAILS")
     fi
@@ -143,7 +146,22 @@ $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_T
         echo "| Fabric Switch | ${PCIE_PEX_DETAILS} |"
         echo ""
     fi
-    if [ -n "$PCIE_SLOW_LINKS" ]; then
+    # v1.44.0 全量链路表格：降速/降宽行在前（BDF 升序），管理芯片固有低速不计异常
+    if [ "$PCIE_LINKS_TOTAL" -gt 0 ] && [ -n "$PCIE_LINK_TABLE" ]; then
+        echo "### 链路明细（${PCIE_LINKS_TOTAL} 条 · 满速 $((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT)) · 降速/降宽 ${PCIE_SLOW_COUNT} · 管理芯片 ${PCIE_MGMT_COUNT}）"
+        echo ""
+        echo "| BDF | 设备 | LnkCap | LnkSta | 判定 |"
+        echo "|-----|------|--------|--------|------|"
+        printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
+            [ -z "$lbdf" ] && continue
+            echo "| ${lbdf} | ${ldesc} | ${lcap} | ${lsta} | ${lverdict} |"
+        done
+        echo ""
+        if [ "${PCIE_MGMT_COUNT:-0}" -gt 0 ]; then
+            echo "> 管理芯片（BMC VGA 桥等）固有低速为正常现象，不计链路异常"
+            echo ""
+        fi
+    elif [ -n "$PCIE_SLOW_LINKS" ]; then
         echo "### ⚠️ 降速/降宽链路（LnkSta < LnkCap）"
         echo ""
         printf '%s\n' "$PCIE_SLOW_LINKS" | while IFS= read -r line; do
@@ -151,7 +169,7 @@ $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_T
         done
         echo ""
     elif [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
-        echo "| 链路状态 | ✅ 全部 ${PCIE_LINKS_TOTAL} 个设备链路满速（无降速/降宽） |"
+        echo "| 链路状态 | ✅ 全部 ${PCIE_LINKS_TOTAL} 条链路满速（无降速/降宽） |"
     fi
 else
     echo "| 链路数据 | N/A（旧采集无 pcie_full 全量日志，链路检测需重新采集） |"
@@ -232,7 +250,10 @@ fi)
 $(if [ -n "$gpu_details_md" ]; then
     echo ""
     echo "### 图形处理器明细（GPU）"
-    echo "| 卡 | 型号 | SN | 显存(检测/额定) | 功耗(检测/额定) | 温度 | PCIe(协商) | VBIOS |"
+    # v1.44.0 SXM 适配：SXM 平台模组无 CPU 直连 PCIe 链路，nvidia-smi 链路协商值实为 NVLink 通道
+    _gpu_link_col="PCIe(协商)"
+    case "${PLATFORM_LABEL:-}" in *SXM*) _gpu_link_col="NVLink(协商)" ;; esac
+    echo "| 卡 | 型号 | SN | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS |"
     echo "|----|------|----|----|------|------|----------|-------|"
     printf '%s' "$gpu_details_md"
 fi)
@@ -351,12 +372,17 @@ fi)
 $(net_extra_md)
 
 ### 网络适配器明细（NIC）
-$(if [ "$GPU_TOPO_AVAIL" -eq 1 ]; then
-    echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | GPU直连 |"
-    echo "|---|------|-----|-----|----|------|------|------|------|------|------|"
+$(if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ]; then
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | GPU直连 |"
+    echo "|---|------|-----|------|-----|----|------|------|------|------|------|--------|"
+elif [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ]; then
+    echo "> GPU直连 列已隐藏：本机无 GPU 直连网卡（网卡均不与 GPU 同 PCIe Switch；H200/B200 类 1:1 直连或 B300 板载网卡形态才会标记）"
+    echo ""
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID |"
+    echo "|---|------|-----|------|-----|----|------|------|------|------|------|"
 else
-    echo "| # | 接口 | BDF | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID |"
-    echo "|---|------|-----|-----|----|------|------|------|------|------|"
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID |"
+    echo "|---|------|-----|------|-----|----|------|------|------|------|------|"
 fi)
 $(printf '%s' "$nic_details_md")
 $(if [ -z "$nic_details_md" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
@@ -402,7 +428,11 @@ elif [ -n "$SEL_DETAILS" ]; then
         echo "| ${sid} | ${sdate} | ${stime} | ${stype} | ${sdesc} |"
     done
 else
-    echo "> 告警事件: 无"
+    if [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
+        echo "> 告警事件: 无（另有 ${SEL_TOTAL} 条非告警历史事件，如开机传感器状态记录，无需处理）"
+    else
+        echo "> 告警事件: 无"
+    fi
 fi)
 
 $(if [ -n "$BMC_CONSISTENCY" ]; then

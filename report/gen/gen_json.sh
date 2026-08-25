@@ -47,6 +47,15 @@ gen_json() {
         done < <(printf '%s\n' "$RAID_VD_DETAILS")
         raid_vd_json=$(printf '%s' "$raid_vd_json" | sed '$ s/,$//')
     fi
+    # PCIe 全量链路 JSON 数组（v1.44.0：bdf|设备|LnkCap|LnkSta|判定，表格化同步）
+    local pcie_link_json=""
+    if [ -n "$PCIE_LINK_TABLE" ]; then
+        pcie_link_json=$(printf '%s\n' "$PCIE_LINK_TABLE" | awk -F'|' '
+            $1 != "" {
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                printf "      {\"bdf\": \"%s\", \"device\": \"%s\", \"lnk_cap\": \"%s\", \"lnk_sta\": \"%s\", \"verdict\": \"%s\"},\n", $1, $2, $3, $4, $5
+            }' | sed '$ s/,$//')
+    fi
     # 网卡明细 JSON 数组（dev|bdf|mac|sn|pn|fw|speed|width）
     local nic_details_json=""
     if [ -n "$NIC_DETAILS" ]; then
@@ -54,7 +63,7 @@ gen_json() {
         nic_details_json=$(printf '%s' "$NIC_DETAILS" | awk -F'|' '
             $1 != "" {
                 for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
-                printf "      {\"dev\": \"%s\", \"bdf\": \"%s\", \"mac\": \"%s\", \"serial\": \"%s\", \"pn\": \"%s\", \"chip\": \"%s\", \"firmware\": \"%s\", \"pcie\": \"%s\", \"psid\": \"%s\", \"gpu_direct\": \"%s\"},\n", $1, $2, $3, $4, $5, $10, $6, $7, $8, $9
+                printf "      {\"dev\": \"%s\", \"bdf\": \"%s\", \"mac\": \"%s\", \"serial\": \"%s\", \"pn\": \"%s\", \"chip\": \"%s\", \"firmware\": \"%s\", \"pcie\": \"%s\", \"psid\": \"%s\", \"gpu_direct\": \"%s\", \"ports\": \"%s\"},\n", $1, $2, $3, $4, $5, $10, $6, $7, $8, $9, ($11 != "" ? $11 : "N/A")
             }' | sed '$ s/,$//')
     elif [ -n "$NIC_FALLBACK_DETAILS" ]; then
         # 回退（旧采集无 nic_inventory）：ca|type|guid|state
@@ -188,8 +197,13 @@ gen_json() {
     "pex_switches": "${PCIE_PEX_DETAILS:-}",
     "links_total": ${PCIE_LINKS_TOTAL:-0},
     "links_ok": ${PCIE_LINKS_OK:-1},
+    "slow_count": ${PCIE_SLOW_COUNT:-0},
+    "mgmt_chip_count": ${PCIE_MGMT_COUNT:-0},
     "slow_links": [
       $(if [ -n "${PCIE_SLOW_LINKS:-}" ]; then printf '%s\n' "${PCIE_SLOW_LINKS}" | awk '{printf "      \"%s\",\n", $0}' | sed '$ s/,$//'; fi)
+    ],
+    "link_details": [
+      $(printf '%s' "${pcie_link_json:-}")
     ]
   },
   "cpu": {

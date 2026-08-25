@@ -109,8 +109,9 @@ install_llamacpp() {
         echo -e "${GREEN}已存在，执行 git pull${NC}"
         cd "$dir" && git pull
     else
-        git clone https://github.com/ggml-org/llama.cpp.git "$dir"
-        cd "$dir"
+        # clone 失败兜底：否则 cd 失败后在当前目录跑 cmake 污染仓库（v1.43.11）
+        git clone https://github.com/ggml-org/llama.cpp.git "$dir" || { echo -e "${RED}git clone 失败，跳过 llama.cpp 安装${NC}"; return 1; }
+        cd "$dir" || { echo -e "${RED}无法进入 ${dir}，跳过 llama.cpp 安装${NC}"; return 1; }
     fi
     cmake -B build -DGGML_CUDA=ON 2>/dev/null && cmake --build build --config Release -j"$(nproc)"
     echo -e "${GREEN}完成! 使用:${NC}"

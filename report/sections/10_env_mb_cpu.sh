@@ -31,40 +31,52 @@ PCIE_PEX_DETAILS=""
 if [ -f "${lspci_all}" ]; then
     PCIE_PEX_DETAILS=$(grep -v "^#" "${lspci_all}" 2>/dev/null | grep -oiE "PEX89[0-9xX]*|PEX97[0-9xX]*|Switchtec [A-Za-z0-9]+" | sort | uniq -c | awk '{printf "%s ×%d; ", $2, $1}' | sed 's/; $//')
 fi
-# 降速/降宽检测（pcie_full.log 按设备块解析 LnkCap vs LnkSta；排除空闲 Gen1 x16——PEX 下行未接模组/板卡的特征）
+# 链路解析（pcie_full.log 按设备块解析 LnkCap vs LnkSta；排除空闲 Gen1 x16——PEX 下行未接模组/板卡的特征）
+# v1.44.0 表格化：全量有效链路三态判定（降速/管理芯片/满速）而非仅降速列表；
+# 管理芯片（ASPEED AST/Matrox BMC VGA 桥等）Gen2→Gen1 属固有低速，标注不计异常（不进 slow 判定）
 PCIE_SLOW_LINKS=""
 PCIE_LINKS_TOTAL=0
+PCIE_LINK_TABLE=""       # 全量链路行：BDF|设备|LnkCap|LnkSta|判定（sort 后降速行在前）
+PCIE_SLOW_COUNT=0
+PCIE_MGMT_COUNT=0
 if [ -f "${pcie_full}" ]; then
-    PCIE_LINK_DATA=$(awk '
+    PCIE_LINK_TABLE=$(awk '
         /^[0-9a-f]{2}:/ { if (b != "") check(); b=$1; d=substr($0,index($0,$2)); c=""; s="" }
         /LnkCap:/ { c=$0 }
         /LnkSta:/ { s=$0 }
         END { if (b != "") check() }
         function spd(x,   t) { t=x; sub(/.*Speed /,"",t); sub(/GT\/s.*/,"",t); gsub(/ /,"",t); return t+0 }
         function wdt(x,   t) { t=x; sub(/.*Width /,"",t); sub(/,.*/,"",t); gsub(/[^0-9]/,"",t); return t+0 }
-        function check(   csp,cwd,ssp,swd) {
+        function gname(x) { if (x >= 31.9) return "Gen5"; if (x >= 15.9) return "Gen4"; if (x >= 7.9) return "Gen3"; if (x >= 4.9) return "Gen2"; return "Gen1" }
+        function fmt(w, s) { return "x" w " " gname(s) }
+        function check(   csp,cwd,ssp,swd,mgmt,verdict) {
             if (c == "" || s == "") return
             csp=spd(c); cwd=wdt(c); ssp=spd(s); swd=wdt(s)
             if (swd == 0) return            # x0 = 端口未连接（PEX 下行空置）
             if (ssp == 5 && swd == 16) return   # 空闲 Gen1 x16 = PEX 下行未接模组/板卡
             total++
-            if (ssp < csp || swd < cwd) {
-                print b, d, "| cap " cwd "x" csp ", sta " swd "x" ssp
+            mgmt = (d ~ /ASPEED|AST[0-9]+|Matrox|VGA compatible|Display controller/) ? 1 : 0
+            if (mgmt) {
+                verdict = "管理芯片固有"
+            } else if (ssp < csp || swd < cwd) {
+                verdict = (swd < cwd && ssp < csp) ? "⚠️ 降宽+降速" : ((swd < cwd) ? "⚠️ 降宽" : "⚠️ 降速")
+            } else {
+                verdict = "✓ 满速"
             }
+            printf "%d|%s|%s|%s|%s|%s\n", mgmt, b, substr(d,1,58), fmt(cwd,csp), fmt(swd,ssp), verdict
         }
-    ' "${pcie_full}" 2>/dev/null)
-    PCIE_LINKS_TOTAL=$(awk '/^[0-9a-f]{2}:/{n++} END{print n+0}' "${pcie_full}" 2>/dev/null)
-    [ -z "$PCIE_LINKS_TOTAL" ] && PCIE_LINKS_TOTAL=0
+    ' "${pcie_full}" 2>/dev/null | sort -t'|' -k1,1n -k2,2 | cut -d'|' -f2-)
+    if [ -n "$PCIE_LINK_TABLE" ]; then
+        PCIE_LINKS_TOTAL=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '|')
+        PCIE_SLOW_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '⚠️')
+        PCIE_MGMT_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '管理芯片')
+        PCIE_SLOW_LINKS=$(printf '%s\n' "$PCIE_LINK_TABLE" | awk -F'|' '$5 ~ /⚠️/ {print $1" "$2" | cap "$3", sta "$4}')
+    fi
 # 旧采集无 pcie_full：pcie_speed_width.log 是 grep 行流（缺 LnkCap 的设备导致 cap/sta 错配，
 # 未连接端口 x0），配对不可靠——不判降速，验收项判 N/A 不计数（v1.41.0 实测教训）
 else
-    PCIE_LINK_DATA=""
+    PCIE_LINK_TABLE=""
     PCIE_LINKS_TOTAL=0
-fi
-if [ -n "$PCIE_LINK_DATA" ]; then
-    PCIE_SLOW_LINKS=$(printf '%s\n' "$PCIE_LINK_DATA" | grep -v "^$")
-else
-    PCIE_SLOW_LINKS=""
 fi
 if [ -n "$PCIE_SLOW_LINKS" ]; then PCIE_LINKS_OK=0; else PCIE_LINKS_OK=1; fi
 GPU_DRIVER=$(grep -m1 "Driver Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
