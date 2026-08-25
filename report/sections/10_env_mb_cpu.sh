@@ -38,6 +38,7 @@ PCIE_LINKS_TOTAL=0
 PCIE_LINK_TABLE=""       # 全量链路行：BDF|设备|LnkCap|LnkSta|判定（排序 = 管理芯片排后 + BDF 升序）
 PCIE_SLOW_COUNT=0
 PCIE_MGMT_COUNT=0
+PCIE_BRIDGE_NEG_COUNT=0  # bridge 下游协商行数（v1.44.3：附录标注"协商（下游能力）"，从"满速"统计中分离）
 if [ -f "${pcie_full}" ]; then
     PCIE_LINK_TABLE=$(awk '
         /^[0-9a-f]{2}:/ { if (b != "") check(); b=$1; d=substr($0,index($0,$2)); c=""; s="" }
@@ -64,6 +65,9 @@ if [ -f "${pcie_full}" ]; then
             # 故 bridge 一律不判异常（仅附录展示）；端点设备（NIC/GPU/RAID 卡）速率+宽度降均判异常
             } else if (!isbridge && (ssp < csp || swd < cwd)) {
                 verdict = (swd < cwd && ssp < csp) ? "⚠️ 降宽+降速" : ((swd < cwd) ? "⚠️ 降宽" : "⚠️ 降速")
+            # v1.44.3：bridge 降速标注"协商（下游能力）"——附录显示不再误写"✓ 满速"（判定仍不计异常）
+            } else if (ssp < csp || swd < cwd) {
+                verdict = "协商（下游能力）"
             } else {
                 verdict = "✓ 满速"
             }
@@ -74,6 +78,7 @@ if [ -f "${pcie_full}" ]; then
         PCIE_LINKS_TOTAL=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '|')
         PCIE_SLOW_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '⚠️')
         PCIE_MGMT_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '管理芯片')
+        PCIE_BRIDGE_NEG_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '协商（下游能力）')
         PCIE_SLOW_LINKS=$(printf '%s\n' "$PCIE_LINK_TABLE" | awk -F'|' '$5 ~ /⚠️/ {print $1" "$2" | cap "$3", sta "$4}')
     fi
 # 旧采集无 pcie_full：pcie_speed_width.log 是 grep 行流（缺 LnkCap 的设备导致 cap/sta 错配，

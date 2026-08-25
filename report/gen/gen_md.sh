@@ -148,8 +148,8 @@ $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_T
     fi
     # v1.44.0 摘要 + 异常明细（v1.44.1）：满速链路不逐条列（全量明细见文末附录）
     if [ "$PCIE_LINKS_TOTAL" -gt 0 ] && [ -n "$PCIE_LINK_TABLE" ]; then
-        _full=$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT))
-        echo "| 链路统计 | ${PCIE_LINKS_TOTAL} 条 · 满速 ${_full} · 降速/降宽 ${PCIE_SLOW_COUNT} · 管理芯片 ${PCIE_MGMT_COUNT} |"
+        _full=$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT - ${PCIE_BRIDGE_NEG_COUNT:-0}))
+        echo "| 链路统计 | ${PCIE_LINKS_TOTAL} 条 · 满速 ${_full} · 降速/降宽 ${PCIE_SLOW_COUNT} · bridge 协商 ${PCIE_BRIDGE_NEG_COUNT:-0} · 管理芯片 ${PCIE_MGMT_COUNT} |"
         echo ""
         if [ "$PCIE_SLOW_COUNT" -gt 0 ] 2>/dev/null; then
             echo "### ⚠️ 降速/降宽链路"

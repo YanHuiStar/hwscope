@@ -19,6 +19,9 @@
 - 内存每槽 / GPU 每卡（含 VBIOS）/ CPU 每颗 / 存储每盘 / 网络每端口 / PSU / SEL 事件 / 风扇 / RAID（虚拟盘级）/ HBA
 - GPU 显存/功耗按"检测/额定"双值（如 `140.4 GiB/141GB`）
 - **动态列隐藏**：整列全为占位符时隐藏并附注说明；JSON 始终保留全字段
+- **PCIe 链路明细（v1.44.0+）**：正文 = 统计摘要（满速/降速降宽/bridge 协商/管理芯片）+ ⚠️ 异常链路表；报告末尾附录 = 全量链路表（BDF/设备/LnkCap/LnkSta/判定）。判定三态：endpoint（网卡/GPU/RAID 卡）降速降宽=⚠️ 异常；bridge 端口降速=协商（下游能力，不计异常——x16 口接 x8 卡属正常协商，真问题体现在端点自身判定）；ASPEED/Matrox 管理芯片固有低速=标注不计
+- **PSU 多数据源（v1.44.0+）**：明细按 IPMI FRU → 传感器占位 → SMBIOS Type 39（dmidecode）三级回退生成；Supermicro 等无单电源 FRU/功率传感器的平台由 Type 39 补全型号/SN/额定容量并附平台说明，PS<N> Status 传感器佐证在位状态
+- **NIC 端口列（v1.44.0+）**：按 BDF 总线聚合显示同卡第 N 口/共 M 口（如 CX5 双口卡 `1/2`、`2/2`）；SXM 平台 GPU 明细链路列显示为 NVLink(协商)
 
 ### GPU 额定显存规格库
 
@@ -32,6 +35,9 @@
 
 - **硬件概览（配置单）**：自动生成自检测数据（准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理），可对照采购配置单核对
 - **15 项判定**：GPU PCIe / NVLink / DCGM / VBIOS / 内存速率 / IB 线缆 / 磁盘寿命 / SMART / 电源冗余 / 温度 / SEL / 风扇冗余（v1.36.0）/ 固件合规 / OS-BMC 一致性 / PCIe 链路完整（v1.41.0）
+
+> **PCIe 链路完整判定口径（v1.44.2+）**：只判 endpoint 设备（网卡/GPU/RAID 卡）——bridge 端口（PCIe switch/根端口）的 LnkSta 反映下游设备能力，不判异常；真链路问题（线缆/接触/插槽）会体现在端点自身 LnkCap vs LnkSta 判定中。
+> **IB 设备口径（v1.44.0+）**：按 ibdev2netdev 映射到 ibp*/ibs* 接口的 CA 计数——以太模式 CA（如 CX5 双口以太）不计入 IB 设备数与 IB Link Down。
 
 ### 样例（HGX B300 实际输出）
 
