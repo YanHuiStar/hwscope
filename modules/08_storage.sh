@@ -124,12 +124,18 @@ run_storage() {
                 nsmart=$(nvme smart-log "$ndev" 2>/dev/null)
                 npo=$(echo "$nsmart" | grep "power_on_hours" | awk '{print $3}')
                 npc=$(echo "$nsmart" | grep "power_cycles" | awk '{print $3}')
-                nspare=$(echo "$nsmart" | grep "percent_used" | awk '{print $3}')
-                # percent_used 是已用百分比，Spare% = 100 - used（先去 % 再算术，防 "3%" 语法错误）
+                # v1.43.7 修复：nvme smart-log 字段是 percentage_used（非 percent_used——少 age 子串匹配不到）
+                nspare=$(echo "$nsmart" | grep "percentage_used" | awk '{print $3}')
+                # percentage_used 是已用百分比，Spare% = 100 - used（先去 % 再算术，防 "3%" 语法错误）
                 if [ -n "$nspare" ]; then
                     nspare=$(echo "$nspare" | tr -d '%')
                     if [[ "$nspare" =~ ^[0-9]+$ ]]; then nspare=$((100 - nspare)); else nspare="N/A"; fi
                 fi
+            fi
+            # nvme 命令缺失时 fallback smartctl（smart_<dev>_health.log 的 "Percentage Used"）
+            if [ -z "$nspare" ] && [ -f "${dir}/smart_${nname}_health.log" ]; then
+                nspare=$(grep -i "Percentage Used" "${dir}/smart_${nname}_health.log" | awk '{print $3}' | tr -d '%')
+                if [[ "$nspare" =~ ^[0-9]+$ ]]; then nspare=$((100 - nspare)); else nspare=""; fi
             fi
             [ -z "$npo" ] && npo="0"; [ -z "$npc" ] && npc="0"; [ -z "$nspare" ] && nspare="N/A"
             echo "${nname}|NVMe|${nsize:-N/A}|${nmodel:-N/A}|${nsn:-N/A}|${nfw:-N/A}|${nbdf:-N/A}|${npo}|${npc}|${nspare}%"

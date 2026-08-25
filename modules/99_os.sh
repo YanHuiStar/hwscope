@@ -49,9 +49,13 @@ run_os() {
 
     # 6. 服务状态（条件执行：需 systemctl；v1.41.0 全量原则：status 全量落盘不截断）
     if check_cmd systemctl; then
-        for svc in nvidia-fabricmanager nvsmd nvidia-persistenced; do
+        for svc in nvidia-fabricmanager nvidia-persistenced; do
             run_and_log "systemctl status $svc 2>&1" "${dir}/service_${svc}.log"
         done
+        # nvsmd 仅 MGX 平台（nvsm 命令存在）才查——A100/PCIe 平台无此服务，not-found 报 WARN 属误报（v1.43.7）
+        if command -v nvsm >/dev/null 2>&1; then
+            run_and_log "systemctl status nvsmd 2>&1" "${dir}/service_nvsmd.log"
+        fi
     fi
 
     # 7. NUMA 拓扑（部分条件执行）
