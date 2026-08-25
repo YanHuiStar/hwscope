@@ -122,10 +122,13 @@ fi
 # ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/；解包到 output/remote_output/ 固定层，对标本地结构；归档包落 logs/remote_logs/） ───
 echo -e "\033[0;33m[INFO] 回拉采集结果 + 归档包 → ${LOCAL_OUT}/remote_output/\033[0m"
 mkdir -p "${LOCAL_OUT}/remote_output"
+# 回拉：2>/dev/null 丢弃 stderr（旧版 tar 无 --warning=no-timestamp 支持时 future 时间戳警告刷屏；
+# 警告无害——tar 失败有 exit code 检查 + 本地解包校验双重兜底）
 if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "${SUDO} tar czf - --warning=no-timestamp -C ${REMOTE_DIR}/output . -C ${REMOTE_DIR} logs; rm -rf ${REMOTE_DIR}" > "/tmp/hwscope_pull_${TS}.tgz" 2>/dev/null; then
     echo -e "\033[0;31m[ERROR] 结果回拉失败\033[0m"; exit 1
 fi
-tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "${LOCAL_OUT}/remote_output" || { echo -e "\033[0;31m[ERROR] 回拉数据损坏或为空（远端打包失败？）\033[0m"; exit 1; }
+# 本地解包同样丢弃 stderr：旧版 tar 对未来时间戳（目标机时钟偏差）解包也警告刷屏——v1.43.5 实测根因
+tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "${LOCAL_OUT}/remote_output" 2>/dev/null || { echo -e "\033[0;31m[ERROR] 回拉数据损坏或为空（远端打包失败？）\033[0m"; exit 1; }
 rm -f "/tmp/hwscope_pull_${TS}.tgz"
 
 # 归档包移到 logs/remote_logs/（与本地采集日志区分；远端 logs/ 解包到了 LOCAL_OUT/remote_output/logs）
