@@ -40,6 +40,9 @@ usage() {
 }
 
 HOST=""; SUDO="sudo"; LOCAL_OUT=""; INSTALL_ITEMS=""; SSH_OPTS="-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
+# 清理残留 ControlMaster socket：上次运行 ssh -O exit 后 socket 文件可能残留，
+# 新 ssh 尝试复用已死 master → "Shared connection closed" / 回拉非 gzip（v1.43.4 实测）
+rm -f /tmp/ssh_hwscope_mux_* 2>/dev/null || true
 while [ $# -gt 0 ]; do
     case "$1" in
         -H) HOST="$2"; shift 2 ;;
@@ -74,8 +77,9 @@ echo -e "\033[0;36m========================================\033[0m"
 cleanup() {
     # 远端清理（回拉命令内已 rm -rf，此处为中断/失败时的兜底幂等清理；打印在横幅前由主流程完成，避免顺序错乱）
     ssh $SSH_OPTS "$HOST" "rm -rf ${REMOTE_DIR}" >/dev/null 2>&1
-    # 关闭 ControlMaster 复用连接（避免残留）
+    # 关闭 ControlMaster 复用连接（避免残留）并删除 socket 文件（防下次复用已死 master）
     ssh -O exit -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h "$HOST" >/dev/null 2>&1
+    rm -f /tmp/ssh_hwscope_mux_* 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
