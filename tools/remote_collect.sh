@@ -118,7 +118,7 @@ fi
 # ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/；解包到 output/remote_output/ 固定层，对标本地结构；归档包落 logs/remote_logs/） ───
 echo -e "\033[0;33m[INFO] 回拉采集结果 + 归档包 → ${LOCAL_OUT}/remote_output/\033[0m"
 mkdir -p "${LOCAL_OUT}/remote_output"
-if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "${SUDO} tar czf - -C ${REMOTE_DIR}/output . -C ${REMOTE_DIR} logs; rm -rf ${REMOTE_DIR}" > "/tmp/hwscope_pull_${TS}.tgz" 2>/dev/null; then
+if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "${SUDO} tar czf - --warning=no-timestamp -C ${REMOTE_DIR}/output . -C ${REMOTE_DIR} logs; rm -rf ${REMOTE_DIR}" > "/tmp/hwscope_pull_${TS}.tgz" 2>/dev/null; then
     echo -e "\033[0;31m[ERROR] 结果回拉失败\033[0m"; exit 1
 fi
 tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "${LOCAL_OUT}/remote_output" || { echo -e "\033[0;31m[ERROR] 回拉数据损坏或为空（远端打包失败？）\033[0m"; exit 1; }
