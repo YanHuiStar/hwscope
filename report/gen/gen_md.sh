@@ -146,19 +146,28 @@ $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_T
         echo "| Fabric Switch | ${PCIE_PEX_DETAILS} |"
         echo ""
     fi
-    # v1.44.0 全量链路表格：降速/降宽行在前（BDF 升序），管理芯片固有低速不计异常
+    # v1.44.0 摘要 + 异常明细（v1.44.1）：满速链路不逐条列（全量明细见文末附录）
     if [ "$PCIE_LINKS_TOTAL" -gt 0 ] && [ -n "$PCIE_LINK_TABLE" ]; then
-        echo "### 链路明细（${PCIE_LINKS_TOTAL} 条 · 满速 $((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT)) · 降速/降宽 ${PCIE_SLOW_COUNT} · 管理芯片 ${PCIE_MGMT_COUNT}）"
+        _full=$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT))
+        echo "| 链路统计 | ${PCIE_LINKS_TOTAL} 条 · 满速 ${_full} · 降速/降宽 ${PCIE_SLOW_COUNT} · 管理芯片 ${PCIE_MGMT_COUNT} |"
         echo ""
-        echo "| BDF | 设备 | LnkCap | LnkSta | 判定 |"
-        echo "|-----|------|--------|--------|------|"
-        printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
-            [ -z "$lbdf" ] && continue
-            echo "| ${lbdf} | ${ldesc} | ${lcap} | ${lsta} | ${lverdict} |"
-        done
-        echo ""
-        if [ "${PCIE_MGMT_COUNT:-0}" -gt 0 ]; then
-            echo "> 管理芯片（BMC VGA 桥等）固有低速为正常现象，不计链路异常"
+        if [ "$PCIE_SLOW_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "### ⚠️ 降速/降宽链路"
+            echo ""
+            echo "| BDF | 设备 | LnkCap | LnkSta | 判定 |"
+            echo "|-----|------|--------|--------|------|"
+            printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
+                [ -z "$lbdf" ] && continue
+                case "$lverdict" in *⚠️*) echo "| ${lbdf} | ${ldesc} | ${lcap} | ${lsta} | ${lverdict} |" ;; esac
+            done
+            echo ""
+        fi
+        if [ "$PCIE_MGMT_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "> 管理芯片（BMC VGA 桥等）${PCIE_MGMT_COUNT} 条固有低速为正常现象，不计链路异常"
+            echo ""
+        fi
+        if [ "$PCIE_SLOW_COUNT" -eq 0 ] 2>/dev/null; then
+            echo "> 全部非管理芯片链路满速（全量明细见文末附录）"
             echo ""
         fi
     elif [ -n "$PCIE_SLOW_LINKS" ]; then
@@ -617,6 +626,22 @@ $(if [ -n "$BASELINE_COMPARE" ]; then
         esac
         echo "| ${bitem} | ${bst_disp} | ${bcur} | ${bbase} |"
     done
+fi)
+
+---
+## PCIe 链路明细（附录）
+$(if [ "$PCIE_LINKS_TOTAL" -gt 0 ] 2>/dev/null && [ -n "$PCIE_LINK_TABLE" ]; then
+    echo "> 全量 ${PCIE_LINKS_TOTAL} 条链路逐条状态（交付核对扩展板卡通路/模组接口用；异常行见「PCIe 拓扑与链路」摘要）"
+    echo ""
+    echo "| BDF | 设备 | LnkCap | LnkSta | 判定 |"
+    echo "|-----|------|--------|--------|------|"
+    printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
+        [ -z "$lbdf" ] && continue
+        echo "| ${lbdf} | ${ldesc} | ${lcap} | ${lsta} | ${lverdict} |"
+    done
+    echo ""
+else
+    echo "| 数据 | N/A（旧采集无 pcie_full 全量日志） |"
 fi)
 
 ---

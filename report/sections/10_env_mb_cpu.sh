@@ -31,12 +31,11 @@ PCIE_PEX_DETAILS=""
 if [ -f "${lspci_all}" ]; then
     PCIE_PEX_DETAILS=$(grep -v "^#" "${lspci_all}" 2>/dev/null | grep -oiE "PEX89[0-9xX]*|PEX97[0-9xX]*|Switchtec [A-Za-z0-9]+" | sort | uniq -c | awk '{printf "%s ×%d; ", $2, $1}' | sed 's/; $//')
 fi
-# 链路解析（pcie_full.log 按设备块解析 LnkCap vs LnkSta；排除空闲 Gen1 x16——PEX 下行未接模组/板卡的特征）
-# v1.44.0 表格化：全量有效链路三态判定（降速/管理芯片/满速）而非仅降速列表；
-# 管理芯片（ASPEED AST/Matrox BMC VGA 桥等）Gen2→Gen1 属固有低速，标注不计异常（不进 slow 判定）
+# 降速/降宽检测（pcie_full.log 按设备块解析 LnkCap vs LnkSta；排除空闲 Gen1 x16——PEX 下行未接模组/板卡的特征）
+# v1.44.0 表格化：全量有效链路三态判定（降速/管理芯片/满速）；排序 = 管理芯片排后（非 0 列升序） + BDF 升序
 PCIE_SLOW_LINKS=""
 PCIE_LINKS_TOTAL=0
-PCIE_LINK_TABLE=""       # 全量链路行：BDF|设备|LnkCap|LnkSta|判定（sort 后降速行在前）
+PCIE_LINK_TABLE=""       # 全量链路行：BDF|设备|LnkCap|LnkSta|判定（排序 = 管理芯片排后 + BDF 升序）
 PCIE_SLOW_COUNT=0
 PCIE_MGMT_COUNT=0
 if [ -f "${pcie_full}" ]; then
