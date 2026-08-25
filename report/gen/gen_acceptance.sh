@@ -295,12 +295,20 @@ gen_acceptance() {
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip; do
             [ -z "$nnic" ] && continue
-            if echo "${npn}${nchip}" | grep -qiE "ConnectX|MCX[0-9]|MT[0-9]{4}"; then
+            # v1.43.10 修正：按接口名归类（ibp*/ib* = IB 计算网卡；en*/eth* = 以太）。
+            # 原按 ConnectX|MCX 前缀归类会把 CX5 以太（MCX556A）误入 IB——实测 6 张假 IB（2 以太+4 IB）
+            if echo "$nnic" | grep -qE "^ib"; then
                 ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
                 [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="${npn:-N/A}"
             else
                 ACC_NIC_ETH_COUNT=$((ACC_NIC_ETH_COUNT+1))
-                [ "$ACC_NIC_ETH" = "N/A" ] && ACC_NIC_ETH="$(echo "${npn:-N/A}" | sed 's/Intel Corporation Ethernet Controller //; s/ for 10GBASE-T.*//; s/ (rev [0-9]*)//')"
+                # 以太型号聚合（多种卡混插都显示，如 "MCX556A-ECAT + AOC-ATG-i2TM"）
+                _eth_m=$(echo "${npn:-N/A}" | sed 's/Intel Corporation Ethernet Controller //; s/ for 10GBASE-T.*//; s/ (rev [0-9]*)//')
+                if [ "$ACC_NIC_ETH" = "N/A" ]; then
+                    ACC_NIC_ETH="$_eth_m"
+                elif ! echo "$ACC_NIC_ETH" | grep -qF "$_eth_m"; then
+                    ACC_NIC_ETH="${ACC_NIC_ETH} + ${_eth_m}"
+                fi
             fi
         done < <(printf '%s\n' "$NIC_DETAILS")
     fi
