@@ -32,6 +32,17 @@ if [ -f "${ipmi_sdr}" ]; then
         esac
     fi
 fi
+# 平台无 PSU 冗余传感器判定（v1.43.9）：SDR 有 PSU 供电传感器但无冗余等级 → 平台固有不计数（验收用）
+PSU_SENSOR_PRESENT=0
+if [ -f "${ipmi_sdr}" ] && grep -qiE "PSU|Power|Pwr" "${ipmi_sdr}" 2>/dev/null; then
+    PSU_SENSOR_PRESENT=1
+fi
+# dmidecode PSU 数量 fallback（IPMI 无 PSU FRU 时，验收冗余判定兜底用）
+PSU_COUNT_DMI=0
+load_manifest "${PSU_DIR}" dmidecode_psu "dmidecode_psu.log"
+if [ -f "${dmidecode_psu}" ]; then
+    PSU_COUNT_DMI=$(grep -ci "System Power Supply" "${dmidecode_psu}" 2>/dev/null || echo 0)
+fi
 if [ -f "$_fru_src" ]; then
     pdesc=""; pmodel=""; ppn=""; psn=""; pending=""
     while IFS= read -r pline; do

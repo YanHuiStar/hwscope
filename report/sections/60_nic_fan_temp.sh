@@ -284,6 +284,11 @@ if [ -f "${ipmi_fan_redundancy}" ]; then
         esac
     fi
 fi
+# 平台无风扇冗余传感器判定（v1.43.9）：风扇转速传感器正常但无冗余等级 → 平台固有不计数（验收用）
+FAN_SENSOR_PRESENT=0
+if [ -f "${ipmi_fan_sensors}" ] && grep -qiE "FAN" "${ipmi_fan_sensors}" 2>/dev/null; then
+    FAN_SENSOR_PRESENT=1
+fi
 
 # 温度概况（ipmi_sensors_temp.log：进风/出风/CPU/内存/电源 关键温度聚合 min-max）
 TEMP_SUMMARY=""
