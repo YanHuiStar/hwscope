@@ -1,7 +1,7 @@
 # HwScope 硬件压测（test/）
 
 > 硬件压力测试脚本：**只测不改**（不修改硬件/系统配置；仅 fio/dd 会在指定盘写测试文件并自动清理）。
-> 所有压测日志统一落盘 `logs/test/<时间戳>/`（test/lib/test_common.sh 负责），不污染采集目录。
+> 所有压测日志统一落盘 `logs/test/<SN>-<时间戳>/`（test/lib/test_common.sh 负责），不污染采集目录。
 > 工具概览索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）。
 
 ## 架构：聚合与实现解耦
@@ -56,9 +56,9 @@ bash test/cpu/cpu_stress_ng.sh 60
 
 ## 日志位置
 
-- 所有测试输出：`logs/test/<时间戳>/`（含 `test_report.txt` 汇总 + 各测试项 detail 日志 + manifest.txt）
+- 所有测试输出：`logs/test/<SN>-<时间戳>/`（含 `test_report.txt` 汇总 + 各测试项 detail 日志 + manifest.txt）
 - 报告归档：采集后可用 `report/report.sh <out> --test-dir <压测目录>` 将压测结果并入交付报告
-- **标准测试报告**（v1.45.0）：`bash test/report.sh <logs/test/<时间戳>/目录>` 生成 `hwscope_test_report.{md,html}`——测试环境/工具方法/理论峰值/结果对比/分析/结论/附录，数据口径科学可追溯（内存理论峰值 = 通道×速率×8B，STREAM 利用率评价；HTML 可浏览器打印 PDF）
+- **标准测试报告**（v1.45.0）：`bash test/report.sh <logs/test/<SN>-<时间戳>/目录>` 生成 `hwscope_test_report.{md,html}`——测试环境/工具方法/理论峰值/结果对比/分析/结论/附录，数据口径科学可追溯（内存理论峰值 = 通道×速率×8B，STREAM 利用率评价；HTML 可浏览器打印 PDF）
 - **单组件测试 + 单组件报告**（v1.45.1）：只跑单个脚本（如 `bash test/memory/mem_sysbench.sh`）→ 日志目录只有该组件 → `bash test/report.sh <该目录>` 即出单组件报告（目录自适应，不需要额外参数）
 - **磁盘测试默认屏蔽系统盘**（v1.45.1）：fio/dd 交互列表自动排除系统盘；参数指定系统盘时警告并要求输入 YES 确认（`--force` 跳过）——防写测试压垮系统盘/数据安全
 
