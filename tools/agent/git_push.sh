@@ -227,6 +227,43 @@ try_push() {   # $1=proxy(可空)；WSL 用 Windows git.exe（127.0.0.1 可达 W
 
 push_main() {
     local proxy attempt out
+    # ─── 熔断冷却（v1.45.8）：连续失败 ≥3 次 → 冷却期 5 分钟，期内调用直接快速 FAIL——
+    #     防 agent（WorkBuddy 等）在断网时死循环调用 git_push 空转烧积分/时间（用户反馈） ───
+    local cooldown_file="${PROJECT_DIR}/.git/git_push_cooldown"
+    local fail_count_file="${PROJECT_DIR}/.git/git_push_fail_count"
+    if [ -f "$cooldown_file" ] && [ -n "${GIT_PUSH_BYPASS_COOLDOWN:-}" ] && [ "$GIT_PUSH_BYPASS_COOLDOWN" = "1" ]; then
+        rm -f "$cooldown_file" "$fail_count_file"
+    fi
+    if [ -f "$cooldown_file" ]; then
+        local cd_until=$(cat "$cooldown_file" 2>/dev/null | tr -d ' ')
+        if [ "$(date +%s)" -lt "$cd_until" ] 2>/dev/null; then
+            fail "熔断冷却中（连续推送失败，$(date -d "@$cd_until" '+%H:%M:%S' 2>/dev/null || echo 稍后) 后可重试）——网络不通时请勿反复重试，检查代理/直连后再推"
+            return 1
+        else
+            rm -f "$cooldown_file" "$fail_count_file"   # 冷却期结束，复位
+        fi
+    fi
+    # ─── 网络快速预检（v1.45.8）：github.com 直连 3s + 代理 3s 都不通 → 快速 FAIL——
+    #     断网时避免 3×21s 直连空转（WorkBuddy 死循环场景每轮开销从 ~90s 降到 ~4s），
+    #     预检失败也计入失败计数（连续 3 次仍触发熔断冷却） ───
+    local pre_ok=0
+    if command -v curl >/dev/null 2>&1; then
+        curl -sI --max-time 3 https://github.com -o /dev/null && pre_ok=1
+        if [ "$pre_ok" -eq 0 ]; then
+            local pre_proxy
+            pre_proxy="$(detect_proxy)"
+            [ -n "$pre_proxy" ] && curl -x "$pre_proxy" -sI --max-time 3 https://github.com -o /dev/null && pre_ok=1
+        fi
+        if [ "$pre_ok" -eq 0 ]; then
+            local fc0=0
+            [ -f "$fail_count_file" ] && fc0=$(cat "$fail_count_file" 2>/dev/null | tr -d ' ')
+            fc0=$((fc0 + 1))
+            echo "$fc0" > "$fail_count_file"
+            [ "$fc0" -ge 3 ] && { echo "$(( $(date +%s) + 300 ))" > "$cooldown_file"; warn "连续 ${fc0} 次失败——已触发 5 分钟熔断冷却"; }
+            fail "网络预检失败（直连+代理均不可达，4s 快速判定）——断网状态请勿反复重试，连上节点/网络恢复后再推"
+            return 1
+        fi
+    fi
     # 版本单调性检查（v1.37.2）：本地 HWSCOPE_VERSION < 远程 → 拒绝（防凭记忆回退版本；fetch 已在上一步执行）
     local lver rver
     lver=$(grep '^HWSCOPE_VERSION=' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | head -1 | sed 's/.*"v\(.*\)".*/\1/')
@@ -242,7 +279,7 @@ push_main() {
     for attempt in 1 2 3; do
         info "推送尝试 ${attempt}/3（直连）..."
         out="$(try_push)"
-        if [ $? -eq 0 ]; then return 0; fi
+        if [ $? -eq 0 ]; then rm -f "$fail_count_file" "$cooldown_file"; return 0; fi
         echo "$out" | sed 's/^/    /'
         [ "$attempt" -lt 3 ] && sleep 2
     done
@@ -254,7 +291,7 @@ push_main() {
             if curl -x "$proxy" -sI --max-time 6 https://github.com -o /dev/null; then
                 info "代理连通 ✓，走代理推送..."
                 out="$(try_push "$proxy")"
-                if [ $? -eq 0 ]; then return 0; fi
+                if [ $? -eq 0 ]; then rm -f "$fail_count_file" "$cooldown_file"; return 0; fi
                 echo "$out" | sed 's/^/    /'
             else
                 warn "代理端口在监听但节点未连通（代理未连上节点/协议不匹配）"
@@ -262,11 +299,23 @@ push_main() {
         else
             info "无 curl，跳过连通性预检直接尝试..."
             out="$(try_push "$proxy")"
-            if [ $? -eq 0 ]; then return 0; fi
+            if [ $? -eq 0 ]; then rm -f "$fail_count_file" "$cooldown_file"; return 0; fi
             echo "$out" | sed 's/^/    /'
         fi
     else
         warn "未探测到本机代理"
+    fi
+
+    # 失败计数 + 熔断（v1.45.8）：连续 3 次失败 → 冷却 5 分钟（冷却期内调用直接快速 FAIL）
+    local fc=0
+    [ -f "$fail_count_file" ] && fc=$(cat "$fail_count_file" 2>/dev/null | tr -d ' ')
+    fc=$((fc + 1))
+    echo "$fc" > "$fail_count_file"
+    if [ "$fc" -ge 3 ]; then
+        echo "$(( $(date +%s) + 300 ))" > "$cooldown_file"
+        warn "连续 ${fc} 次推送失败——已触发 5 分钟熔断冷却（防 agent 死循环烧积分）；网络恢复后重试（或 GIT_PUSH_BYPASS_COOLDOWN=1 手动绕过）"
+    else
+        warn "推送失败（${fc}/3 次，连续 3 次后触发熔断冷却）"
     fi
 
     fail "推送失败"
