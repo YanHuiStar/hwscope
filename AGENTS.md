@@ -71,7 +71,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 规则：
 - **改动完成立即 `git commit` 到本地**，不等待、不批量攒
-- **不主动 `git push`** — 只有用户明确说"提交到远程/推送"才 push
+- **Agent 一律不执行推送（v1.45.11 立规，替代旧"用户明确说才推"）** — `git push` / `git_push.sh` 永远由用户自己操作；本地 commit 即任务完成，汇报"已提交未推送"即可，不尝试推送、不验证推送可达性
 - 当前惯例：功能改动与版本升级合并一条 commit，格式 `<type>: <摘要>; release vX.Y.Z`
 - CRLF 等纯换行修复：`refactor` 或并入同主题 commit
 
@@ -87,6 +87,17 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **提交后**跑 `bash tools/agent/agent_sync.sh --mark`（本地状态文件 AGENT_STATE.md 标记未推送提交；该文件 gitignore，仅单机多会话协调用，不承担跨机器——跨机器以 fetch 为准）
 - **多机器提示**：换机器开工同样先 agent_sync（fetch 到该机最新）；禁止"我以为远程是 vX"——以 agent_sync 输出为准
 - 提交前 `git status` 审查只 add 本会话文件（禁 add -A，见安全约定）
+
+## 环境故障止损纪律（v1.45.11 立规，Windows/git-bash 实测教训）
+
+> 2026-08-26/27 实录：Agent 在环境故障上反复重试消耗大量 token/积分后总结。核心原则：**环境类故障一次尝试失败即停，上报用户等指示**——重试不解决网络/杀软/系统问题，只烧积分。
+
+- **推送失败 = 用户侧问题**：网络不通（代理节点/断网）时重试每轮空转 ~90s+ 大量 token。git_push 已内置 4s 预检 + 3 败熔断；输出 `[PAUSE]` 后禁止再碰，上报原因即止（详见上节 v1.45.9 纪律）
+- **MSYS bash fork 崩溃识别**（git-bash 特有）：特征 = 命令**静默 exit 1 且零输出**（连开头的 echo 都不执行）或 stderr 报 `dofork: child died ... 0xC0000142` / `Resource temporarily unavailable`。规律：`ls`/`cat`/`grep` 等直接 exec 的命令正常，**fork 类全崩**（子 bash、`$( )` 密集脚本、git 复杂操作）。应对：**立即停全部操作上报用户**（多为杀软实时扫描锁定 DLL，通常分钟级自愈；曾实测 60s 后恢复）——静默失败时最容易犯的错误是以为代码有 bug 反复排查重跑，实际是环境
+- **环境不稳期间禁做写 git 元数据的操作**：`git stash`/`git reset` 撞上 fork 崩溃会损坏仓库（实录：refs/ 目录丢失 + .pack 文件消失 → "not a git repository"）。环境异常时：改动用 `git commit` 固化或 `cp` 备份文件到仓库外，**不用 stash**；只用只读 git 命令（log/diff/status）
+- **仓库损坏恢复路径**（万一发生）：源码文件不受 .git 损坏影响（工作区零丢失）——① `mkdir -p .git/refs/heads .git/refs/tags` ② `git -c http.proxy=http://127.0.0.1:<端口> fetch origin`（走系统代理，端口见 Windows Internet 选项）③ `git update-ref refs/heads/main <远程HEAD>` ④ `rm -f .git/index && git reset`（重建 index，不动工作区）⑤ 重新 commit
+- **Windows 杀软是环境故障首要嫌疑**：.pack 被隔离 + DLL 锁定（fork 崩溃）同时发生基本可断定。建议用户把项目目录与 Git 安装目录加入杀软白名单（根治）；`echo > /dev/tcp/127.0.0.1/<port>` 可探测代理端口（常见 7890/7897/10809/1080）
+- **长任务前先说风险**：执行含大量 fork 的脚本（report.sh 等含数百个 `$( )`）前，告知用户"Windows 下有 fork 崩溃风险，失败即停"；失败一次后不重试，改用静态验证（`bash -n` 语法 + 抽取核心 awk/grep 逻辑单独验证）交付结论
 
 ## 报告与归档
 
