@@ -238,6 +238,7 @@ push_main() {
         local cd_until=$(cat "$cooldown_file" 2>/dev/null | tr -d ' ')
         if [ "$(date +%s)" -lt "$cd_until" ] 2>/dev/null; then
             fail "熔断冷却中（连续推送失败，$(date -d "@$cd_until" '+%H:%M:%S' 2>/dev/null || echo 稍后) 后可重试）——网络不通时请勿反复重试，检查代理/直连后再推"
+            ai "[PAUSE] 熔断冷却中——暂停推送尝试；上报用户：连续推送失败已触发冷却，网络恢复后告知我再推"
             return 1
         else
             rm -f "$cooldown_file" "$fail_count_file"   # 冷却期结束，复位
@@ -261,6 +262,7 @@ push_main() {
             echo "$fc0" > "$fail_count_file"
             [ "$fc0" -ge 3 ] && { echo "$(( $(date +%s) + 300 ))" > "$cooldown_file"; warn "连续 ${fc0} 次失败——已触发 5 分钟熔断冷却"; }
             fail "网络预检失败（直连+代理均不可达，4s 快速判定）——断网状态请勿反复重试，连上节点/网络恢复后再推"
+            ai "[PAUSE] 网络预检失败——暂停推送尝试，不要再自动重试；上报用户：检查代理节点是否已连接/网络是否恢复"
             return 1
         fi
     fi
@@ -320,11 +322,11 @@ push_main() {
 
     fail "推送失败"
     echo ""
-    ai "按顺序处理:"
-    ai "  1) 启动本机代理客户端并在界面点击『连接』（进程在跑≠已连节点，须有 v2ray/xray 子进程监听 127.0.0.1 端口）"
-    ai "  2) 连上后重跑: bash tools/agent/git_push.sh -y"
-    ai "  3) 若输出含 rejected/fetch first: 先 git pull --rebase $REMOTE $BRANCH 再重推"
-    ai "  4) 仍失败: 手动确认网络（ping github.com / 浏览器访问 github.com）"
+    # v1.45.9：失败后明确指示 AI 暂停推送并上报用户——网络不通是用户侧问题（代理节点/网络状态），
+    # 盲目重试只会空转烧 token/积分（WorkBuddy 死循环教训）。不要自动重试，等用户指令。
+    ai "[PAUSE] 推送已全部失败——暂停推送尝试，不要再自动重试（每轮重试浪费 token/积分）"
+    ai "[REPORT] 将结果上报用户：\"推送失败（原因见上），请检查代理节点是否已连接 / 网络是否恢复，确认后我再推\""
+    ai "仅在用户明确说『推送/重试』或确认网络恢复后才重新运行本脚本"
     status FAIL
     return 1
 }

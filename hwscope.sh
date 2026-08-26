@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.45.8 (2026-08)
+# Version : 1.45.9 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.45.8"
+HWSCOPE_VERSION="v1.45.9"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -203,7 +203,7 @@ if [ -z "$OUTPUT_BASE" ]; then
     fi
 fi
 # --stamp：目录已存在（默认 SN 目录或 --output 指定路径）→ 追加时间戳后缀保留多版本
-# （v1.45.8：此前仅默认路径生效，--output 指定已存在目录 + --stamp 会直接报错，与 --stamp 语义矛盾）
+# （v1.45.9：此前仅默认路径生效，--output 指定已存在目录 + --stamp 会直接报错，与 --stamp 语义矛盾）
 if [ "$STAMP_MODE" -eq 1 ] && [ -d "$OUTPUT_BASE" ]; then
     OUTPUT_BASE="${OUTPUT_BASE}-${local_timestamp}"
 fi
@@ -229,7 +229,7 @@ if [ -d "$OUTPUT_BASE" ]; then
         if [ "${#OUTPUT_BASE}" -lt 6 ]; then
             echo -e "${RED}[ERROR] 输出路径过短，拒绝删除: ${OUTPUT_BASE}（请检查 --output 参数）${NC}"; exit 1
         fi
-        # 覆盖前归档校验（v1.45.8）：默认覆盖的安全性依赖"上次归档成功"，但归档可能因磁盘满/中断失败——
+        # 覆盖前归档校验（v1.45.9）：默认覆盖的安全性依赖"上次归档成功"，但归档可能因磁盘满/中断失败——
         # 校验 logs/ 该机器最新归档 ≥ 目录内容最新 mtime；无归档或有过期内容 → 先补归档，补档失败拒绝覆盖
         _sn_id=$(basename "$OUTPUT_BASE" | sed 's/-[0-9]\{14\}$//')   # 去 --stamp 时间戳后缀还原机器标识
         mkdir -p "${SCRIPT_DIR}/logs"
