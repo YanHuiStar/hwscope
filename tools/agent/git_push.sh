@@ -249,11 +249,11 @@ push_main() {
     #     预检失败也计入失败计数（连续 3 次仍触发熔断冷却） ───
     local pre_ok=0
     if command -v curl >/dev/null 2>&1; then
-        curl -sI --max-time 3 https://github.com -o /dev/null && pre_ok=1
+        curl -sI --max-time 3 https://github.com >/dev/null 2>&1 && pre_ok=1
         if [ "$pre_ok" -eq 0 ]; then
             local pre_proxy
             pre_proxy="$(detect_proxy)"
-            [ -n "$pre_proxy" ] && curl -x "$pre_proxy" -sI --max-time 3 https://github.com -o /dev/null && pre_ok=1
+            [ -n "$pre_proxy" ] && curl -x "$pre_proxy" -sI --max-time 3 https://github.com >/dev/null 2>&1 && pre_ok=1
         fi
         if [ "$pre_ok" -eq 0 ]; then
             local fc0=0
