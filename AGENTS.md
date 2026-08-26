@@ -71,7 +71,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 规则：
 - **改动完成立即 `git commit` 到本地**，不等待、不批量攒
-- **Agent 一律不执行推送（v1.45.11 立规，替代旧"用户明确说才推"）** — `git push` / `git_push.sh` 永远由用户自己操作；本地 commit 即任务完成，汇报"已提交未推送"即可，不尝试推送、不验证推送可达性
+- **不主动 `git push`** — 只有用户明确说"提交到远程/推送"才 push，且**必须走 `git_push.sh`**（已内置防死循环：4s 网络预检 + 3 败熔断冷却 + `[PAUSE]` 失败纪律，见协作规则章节；裸 `git push` 禁用）
 - 当前惯例：功能改动与版本升级合并一条 commit，格式 `<type>: <摘要>; release vX.Y.Z`
 - CRLF 等纯换行修复：`refactor` 或并入同主题 commit
 
