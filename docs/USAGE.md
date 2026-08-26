@@ -171,7 +171,7 @@ bash test/gpu/gpu_burn_test.sh 1800      # GPU 长时满载（gpu-burn -tc，默
 bash test/nccl/nccl_test.sh              # NCCL 集合通信
 ```
 
-单脚本支持 `[时长秒]` 参数与 `-h`/`--help`。结果落盘 `logs/test/<SN>-<时间戳>/`。
+单脚本支持 `[时长秒]` 参数与 `-h`/`--help`。结果落盘 `logs/test/<SN>/`。
 
 **测试日志自包含机器身份**（v1.38.0）：各测试脚本在 test_init 后自动写入 `=== Server Info ===` 段（机器 ID/型号/CPU/内存/GPU/OS）到汇总日志 + `server_info.log`——单测一项也知道是哪台机器（参考厂商 FLD 日志做法）。单独查看：
 

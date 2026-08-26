@@ -45,7 +45,7 @@ if [ "${1:-}" = "--all" ]; then
     source "${SCRIPT_DIR}/test/lib/test_common.sh" 2>/dev/null || true
     SESSION_DIR="$(test_new_dir)"
     export HW_TEST_SESSION_DIR="$SESSION_DIR"
-    echo "测试会话目录: ${SESSION_DIR}（全部测试日志累积于此）"
+    echo "测试目录: ${SESSION_DIR}（本机全部测试日志累积于此，文件名带时间戳区分）"
     echo ""
     echo "全部测试顺序执行..."
     for entry in "${TOOLS[@]}"; do
@@ -88,7 +88,7 @@ IFS=',' read -ra sels <<< "$choices"
 source "${SCRIPT_DIR}/test/lib/test_common.sh" 2>/dev/null || true
 SESSION_DIR="$(test_new_dir)"
 export HW_TEST_SESSION_DIR="$SESSION_DIR"
-echo "测试会话目录: ${SESSION_DIR}（本次所选测试日志累积于此）"
+echo "测试目录: ${SESSION_DIR}（本次所选测试日志累积于此）"
 echo ""
 for sel in "${sels[@]}"; do
     sel=$(echo "$sel" | tr -d ' ')

@@ -5,8 +5,8 @@
 # 功能：日志目录初始化、工具菜单、结果记录
 # =============================================================================
 
-# 新建测试目录（v1.45.3：logs/test/<SN>-<时间戳>/——SN 标识机器（同采集 output/<SN>），时间戳区分多次压测；
-# 无 SN 平台（WSL/开发机）兜底纯时间戳，与 detect_machine_id 语义一致）
+# 测试目录（v1.45.5，用户方案）：logs/test/<SN>/ 稳定按机器累积——单测/菜单/--all 全部落同一 SN 目录
+# （文件名字段带时间戳区分重复测试）；无 SN 平台（WSL/开发机）兜底 logs/test/<时间戳>/（detect_machine_id 同语义）
 test_new_dir() {
     local _mid=""
     if command -v dmidecode >/dev/null 2>&1; then
@@ -15,13 +15,13 @@ test_new_dir() {
         echo "$_mid" | grep -qiE "To Be Filled|O\.E\.M\.|Default string|Not Specified|Unknown|None" && _mid=""
         _mid=$(echo "$_mid" | tr -cd 'A-Za-z0-9_-')
     fi
-    local base="${SCRIPT_DIR}/logs/test/${_mid:+${_mid}-}$(date '+%Y%m%d%H%M%S')"
+    local base="${SCRIPT_DIR}/logs/test/${_mid:-$(date '+%Y%m%d%H%M%S')}"
     mkdir -p "$base"
     echo "$base"
 }
 
-# 初始化日志目录：会话共享（HW_TEST_SESSION_DIR 已设 = test_all 聚合会话，复用不新建——所有测试累积到一个目录，
-# 避免连续单测/--all 产生碎片目录）或独立新建
+# 初始化日志目录：优先会话目录（HW_TEST_SESSION_DIR 已设 = test_all 聚合会话），否则按 SN 稳定目录；
+# 主日志文件名带时间戳（<测试名>-<时间戳>.log）——重复测试不覆盖，同机日志全部累积
 test_init() {
     local test_name="$1"
     local base
@@ -32,7 +32,7 @@ test_init() {
     fi
     mkdir -p "$base"
     REPORT_DIR="$base"
-    REPORT_LOG="${base}/${test_name}.log"
+    REPORT_LOG="${base}/${test_name}-$(date '+%Y%m%d%H%M%S').log"
     TEST_SEQ=0
     # manifest.txt：供 report/report.sh --test-dir 读 manifest 解耦（压测归档章节）
     {
