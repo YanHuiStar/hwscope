@@ -7,15 +7,19 @@
 
 # 测试目录（v1.45.5，用户方案）：logs/test/<SN>/ 稳定按机器累积——单测/菜单/--all 全部落同一 SN 目录
 # （文件名字段带时间戳区分重复测试）；无 SN 平台（WSL/开发机）兜底 logs/test/<时间戳>/（detect_machine_id 同语义）
+# v1.45.7：复用 lib/platform.sh 的 detect_machine_id（单一实现——此前本地复制版缺 UUID 兜底层且
+# 垃圾值过滤词少 "System Serial"，同机 output/<SN>/ 与 logs/test/<SN>/ 可能不一致）
 test_new_dir() {
     local _mid=""
-    if command -v dmidecode >/dev/null 2>&1; then
-        _mid=$(dmidecode -t system 2>/dev/null | grep -i 'Serial Number' | grep -v 'Not Specified' | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
-        [ -z "$_mid" ] && _mid=$(dmidecode -t baseboard 2>/dev/null | grep -i 'Serial Number' | grep -v 'Not Specified' | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
-        echo "$_mid" | grep -qiE "To Be Filled|O\.E\.M\.|Default string|Not Specified|Unknown|None" && _mid=""
-        _mid=$(echo "$_mid" | tr -cd 'A-Za-z0-9_-')
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/lib/platform.sh" 2>/dev/null || true
+    if command -v detect_machine_id >/dev/null 2>&1; then
+        _mid="$(detect_machine_id)"
     fi
-    local base="${SCRIPT_DIR}/logs/test/${_mid:-$(date '+%Y%m%d%H%M%S')}"
+    [ -z "$_mid" ] && _mid=$(date '+%Y%m%d%H%M%S')
+    local base="${SCRIPT_DIR}/logs/test/${_mid}"
     mkdir -p "$base"
     echo "$base"
 }
@@ -35,11 +39,15 @@ test_init() {
     REPORT_LOG="${base}/${test_name}-$(date '+%Y%m%d%H%M%S').log"
     TEST_SEQ=0
     # manifest.txt：供 report/report.sh --test-dir 读 manifest 解耦（压测归档章节）
+    # v1.45.7 追加式：同 SN 目录多轮测试累积（此前覆写只剩最后一次 test_name，主报告压测章节丢历史测试；
+    # 消费方 grep '^summary=' | tail -1 取最新，天然兼容追加格式）
+    if [ ! -f "${base}/manifest.txt" ]; then
+        echo "# HwScope test output manifest" > "${base}/manifest.txt"
+    fi
     {
-        echo "# HwScope test output manifest"
         echo "# Generated: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "test_name=${test_name}"
-    } > "${base}/manifest.txt"
+    } >> "${base}/manifest.txt"
     {
         echo "============================================================"
         echo "HwScope ${HWSCOPE_VERSION:-unknown} — ${test_name} 测试"
