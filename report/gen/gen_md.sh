@@ -406,6 +406,9 @@ else
     echo "|---|------|-----|------|-----|----|------|------|------|------|------|"
 fi)
 $(printf '%s' "$nic_details_md")
+$(if printf '%s\n' "$nic_details_md" | grep -q "能力 " 2>/dev/null; then
+    echo "> 注：PCIe(协商) 标注 \`(能力 …)\` 表示卡能力高于当前协商——多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障；如疑可对照板卡规格确认"
+fi)
 $(if [ -z "$nic_details_md" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
     echo "### 网络适配器明细（NIC，ibstat 回退，旧采集无 nic_inventory）"
     echo "| # | CA | 型号 | Node GUID | Link 状态 |"

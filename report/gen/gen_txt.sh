@@ -276,7 +276,7 @@ fi)
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
   Link状态: Active ${IB_ACTIVE:-0} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）}
   额定速率: ${IB_NOMINAL:-N/A}
-  网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
+  网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)$(if printf '%s\n' "$nic_details_txt" | grep -q "能力 " 2>/dev/null; then printf '\n  注: PCIe(协商) 标"(能力 …)"= 卡能力高于当前协商，多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障\n'; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
     printf '\n  网卡明细（ibstat 回退，旧采集无 nic_inventory）:\n'
     echo "$NIC_FALLBACK_DETAILS" | while IFS='|' read -r fca ftype fguid fstate; do
         [ -z "$fca" ] && continue
