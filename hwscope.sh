@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.45.1 (2026-08)
+# Version : 1.45.2 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.45.1"
+HWSCOPE_VERSION="v1.45.2"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -105,7 +105,7 @@ usage() {
     echo "  --module-timeout N              单模块超时秒数（默认 300）"
     echo "  --sim [N]                       模拟模式：每模块等待 N 秒（默认 5）"
     echo "  --no-module                     跳过光模块查询（仅影响 07_network 光模块部分，缩短采集约 48s；不影响其他模块）"
-    echo "  --test-dir /path/to/test         关联压测目录（logs/test/<时间戳>/），报告生成压测章节"
+    echo "  --test-dir /path/to/test         关联压测目录（logs/test/<SN>-<时间戳>/），报告生成压测章节"
     echo "  --output /path/to/dir           指定输出目录"
     echo "  --force                         覆盖已有输出目录"
     echo "  -q, --quiet                     静默模式（仅输出异常）"
