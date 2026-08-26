@@ -84,6 +84,12 @@ read -rp "> 输入编号（多个逗号: 0,1），Enter 取消: " -r choices
 [ -z "$choices" ] && echo "已取消" && exit 0
 
 IFS=',' read -ra sels <<< "$choices"
+# v1.45.4：菜单选中多个测试 → 同一会话目录（避免碎片；单独选 1 个 = 该会话内独立目录同语义）
+source "${SCRIPT_DIR}/test/lib/test_common.sh" 2>/dev/null || true
+SESSION_DIR="$(test_new_dir)"
+export HW_TEST_SESSION_DIR="$SESSION_DIR"
+echo "测试会话目录: ${SESSION_DIR}（本次所选测试日志累积于此）"
+echo ""
 for sel in "${sels[@]}"; do
     sel=$(echo "$sel" | tr -d ' ')
     if [ "$sel" = "$idx" ]; then
