@@ -7,8 +7,8 @@
 ```bash
 sudo bash hwscope.sh                          # 全量采集（双层并行）
 sudo bash hwscope.sh --serial                 # 串行（低负载）
-sudo bash hwscope.sh                  # 输出目录 output/<SN>/（v1.45.6 起重复采集默认覆盖——采集=当前状态快照，历史自动归档 logs/）
-sudo bash hwscope.sh --stamp          # 输出目录加时间戳 output/<SN>-<时间戳>/（保留多版本，换配件前后对比）
+sudo bash hwscope.sh                  # 输出目录 output/<SN>/（v1.45.6 起重复采集默认覆盖——采集=当前状态快照，历史自动归档 logs/；v1.45.7 覆盖前自动校验归档完整性，含未归档数据先补归档、补档失败拒绝覆盖）
+sudo bash hwscope.sh --stamp          # 输出目录加时间戳后缀（保留多版本，换配件前后对比；默认 SN 目录或 --output 指定路径均已存在时均生效，v1.45.7）
 sudo bash hwscope.sh --force          # （兼容保留：v1.45.6 起默认即覆盖）
 sudo bash hwscope.sh --quiet                  # 静默模式（不打印模块明细）
 sudo bash hwscope.sh --no-parallel            # 禁模块内并行（低负载）

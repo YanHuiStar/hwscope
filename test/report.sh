@@ -38,21 +38,37 @@ SI_GPU=$(grep -m1 "GPU" "$SERVER_INFO" 2>/dev/null | cut -d: -f2 | xargs)
 SI_OS=$(grep -m1 "OS/Kernel" "$SERVER_INFO" 2>/dev/null | cut -d: -f2 | xargs)
 
 # ─── 内存通道/速率探测（未指定参数时）───
+# v1.45.7 修复：通道数 = populated DIMM 的 Bank Locator 去 Dimm 槽位维度后的去重数——
+# 此前数 Type 17 插槽行数（2DPC 机器 = 通道×2，理论峰值翻倍、STREAM 利用率减半误判）
+# Bank Locator 编码 channel（如 P1_Node0_Channel0_Dimm0）；厂商命名不含 Dimm 时退化为槽级（≥真实通道）
+MEM_CHAN_SRC=""
 if [ -z "$MEM_CHANNELS" ] || [ -z "$MEM_SPEED" ]; then
     if command -v dmidecode >/dev/null 2>&1; then
-        [ -z "$MEM_CHANNELS" ] && MEM_CHANNELS=$(dmidecode -t memory 2>/dev/null | grep -c "Locator: CPU.*_DIMM\|Locator: DIMM" || true)
+        if [ -z "$MEM_CHANNELS" ]; then
+            MEM_CHANNELS=$(dmidecode -t memory 2>/dev/null | awk '
+                /^Memory Device/{inm=1; size=""; bank=""; next}
+                inm && /Size:/{size=$0}
+                inm && /Bank Locator:/{bank=$0; sub(/.*Bank Locator:[ \t]*/,"",bank)}
+                inm && /^$/{ if(size !~ /No Module/ && size != "" && bank != "") { gsub(/_?-?Dimm[0-9]+/,"",bank); chan[bank]=1 } inm=0 }
+                END{ n=0; for(c in chan) n++; print (n>0?n:"") }')
+            [ -n "$MEM_CHANNELS" ] && MEM_CHAN_SRC="探测(Bank Locator 去重)"
+        fi
         [ -z "$MEM_SPEED" ] && MEM_SPEED=$(dmidecode -t memory 2>/dev/null | grep -m1 "Configured Memory Speed" | awk '{print $NF}')
     fi
 fi
-MEM_CHANNELS=${MEM_CHANNELS:-8}
+if [ -z "$MEM_CHANNELS" ]; then
+    MEM_CHANNELS=8
+    MEM_CHAN_SRC="默认估算（8 通道；--channels N 手动指定更准）"
+fi
 MEM_SPEED=${MEM_SPEED:-5600}
+[ -n "$MEM_CHAN_SRC" ] || MEM_CHAN_SRC="参数指定"
 # 理论峰值 = 通道 × 速率 × 8 字节（业界口径，示例报告同款公式）
 MEM_PEAK=$(awk "BEGIN{printf \"%.1f\", $MEM_CHANNELS * $MEM_SPEED * 8 / 1000}")
 
 # ─── 通用日志段提取：标题 + 结果行 ───
 gen_sections() {
     local f
-    for f in "$TEST_DIR"/*.log; do
+    for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         [ "$(basename "$f")" = "server_info.log" ] && continue
         [ "$(basename "$f")" = "manifest.txt" ] && continue
         local title=$(grep -m1 "━━━" "$f" 2>/dev/null | sed 's/.*━━━ //;s/ ━━━.*//')
@@ -65,7 +81,7 @@ gen_sections() {
 # ─── 专项解析：STREAM（内存带宽，业界标准）───
 parse_stream() {
     local f
-    for f in "$TEST_DIR"/*.log; do
+    for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         grep -qE "^(Copy|Scale|Add|Triad):" "$f" 2>/dev/null || continue
         local rows=""
         while IFS= read -r line; do
@@ -94,7 +110,7 @@ parse_stream() {
 # ─── 专项解析：sysbench 内存 / CPU ───
 parse_sysbench() {
     local f kind="$1"
-    for f in "$TEST_DIR"/*.log; do
+    for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         case "$kind" in
             mem)
                 grep -q "Total operations\|MiB/sec" "$f" 2>/dev/null || continue
@@ -115,7 +131,7 @@ parse_sysbench() {
 # ─── 专项解析：fio（磁盘 IOPS/带宽）───
 parse_fio() {
     local f
-    for f in "$TEST_DIR"/*.log; do
+    for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         grep -q "IOPS\|BW=" "$f" 2>/dev/null || continue
         local iops=$(grep -m1 "IOPS" "$f" | grep -oE "IOPS=[0-9.]+[kKM]?" | head -1)
         local bw=$(grep -m1 "BW=" "$f" | grep -oE "BW=[0-9.]+[kKM]?i?B/s" | head -1)
@@ -128,7 +144,7 @@ parse_fio() {
 # ─── 专项解析：iperf3（网卡吞吐）───
 parse_iperf() {
     local f
-    for f in "$TEST_DIR"/*.log; do
+    for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         grep -q "sender\|receiver" "$f" 2>/dev/null || continue
         local rx=$(grep -m1 "receiver" "$f" | grep -oE "[0-9.]+ [GM]bits/sec" | head -1)
         echo "| iperf3 吞吐 | ${rx:-N/A}（receiver）|（参考指标，详见附录）|"
@@ -140,7 +156,7 @@ parse_iperf() {
 # ─── 专项解析：IB perftest（带宽/延迟）───
 parse_perftest() {
     local f
-    for f in "$TEST_DIR"/*.log; do
+    for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         grep -q "BW average\|Latency average" "$f" 2>/dev/null || continue
         local bw=$(grep -m1 "BW average" "$f" | grep -oE "[0-9.]+ [MG]b/sec" | head -1)
         local lat=$(grep -m1 "Latency average" "$f" | grep -oE "[0-9.]+ usec" | head -1)
@@ -153,7 +169,7 @@ parse_perftest() {
 # ─── 专项解析：gpu_burn 通过性 ───
 parse_gpuburn() {
     local f
-    for f in "$TEST_DIR"/*.log; do
+    for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         grep -q "gpu_burn" "$f" 2>/dev/null || continue
         local r=$(grep -m1 "gpu_burn:" "$f" | sed 's/.*gpu_burn: //')
         [ -n "$r" ] && { echo "| GPU 压测 | ${r} |（稳定性测试，通过=无 ECC 错误）|"; return 0; }
@@ -187,12 +203,13 @@ if [ -n "$STREAM_ROWS" ]; then
     fi
 fi
 
-# 结论汇总（按有数据的组件）
+# 结论汇总（按有数据的组件；v1.45.7 序号动态递增——此前固定 1-4，组件缺失时跳号）
 CONCLUSIONS=""
-[ -n "$STREAM_ROWS" ] && CONCLUSIONS="${CONCLUSIONS}1. 内存带宽：${MEM_CONCLUSION}\n"
-[ -n "$SYSBENCH_CPU" ] && CONCLUSIONS="${CONCLUSIONS}2. CPU 计算：已完成基准测试（sysbench events/s），详见结果表。\n"
-[ -n "$FIO_ROWS" ] && CONCLUSIONS="${CONCLUSIONS}3. 磁盘性能：已完成 fio 基准测试，详见结果表与附录。\n"
-[ -n "$GPUBURN_ROWS" ] && CONCLUSIONS="${CONCLUSIONS}4. GPU 稳定性：$(echo "$GPUBURN_ROWS" | cut -d'|' -f3 | xargs)（通过=无 ECC 错误）。\n"
+_ci=0
+[ -n "$STREAM_ROWS" ] && { _ci=$((_ci+1)); CONCLUSIONS="${CONCLUSIONS}${_ci}. 内存带宽：${MEM_CONCLUSION}\n"; }
+[ -n "$SYSBENCH_CPU" ] && { _ci=$((_ci+1)); CONCLUSIONS="${CONCLUSIONS}${_ci}. CPU 计算：已完成基准测试（sysbench events/s），详见结果表。\n"; }
+[ -n "$FIO_ROWS" ] && { _ci=$((_ci+1)); CONCLUSIONS="${CONCLUSIONS}${_ci}. 磁盘性能：已完成 fio 基准测试，详见结果表与附录。\n"; }
+[ -n "$GPUBURN_ROWS" ] && { _ci=$((_ci+1)); CONCLUSIONS="${CONCLUSIONS}${_ci}. GPU 稳定性：$(echo "$GPUBURN_ROWS" | cut -d'|' -f3 | xargs)（通过=无 ECC 错误）。\n"; }
 [ -z "$CONCLUSIONS" ] && CONCLUSIONS="本目录测试已完成，各组件结果见附录原始日志。\n"
 
 REPORT_MD="${TEST_DIR}/hwscope_test_report.md"
@@ -230,9 +247,9 @@ REPORT_MD="${TEST_DIR}/hwscope_test_report.md"
     if [ -n "$STREAM_ROWS" ]; then
         echo "| 指标 | 理论峰值 | 公式 |"
         echo "|------|---------|------|"
-        echo "| 内存带宽 | ${MEM_PEAK} GB/s | ${MEM_CHANNELS} 通道 × ${MEM_SPEED} MT/s × 8 字节 |"
+        echo "| 内存带宽 | ${MEM_PEAK} GB/s | ${MEM_CHANNELS} 通道 × ${MEM_SPEED} MT/s × 8 字节（通道数：${MEM_CHAN_SRC}） |"
     else
-        echo "内存理论峰值 ${MEM_PEAK} GB/s（${MEM_CHANNELS} 通道 × ${MEM_SPEED} MT/s × 8 字节）——本次未采集 STREAM 数据，仅作环境参考。"
+        echo "内存理论峰值 ${MEM_PEAK} GB/s（${MEM_CHANNELS} 通道 × ${MEM_SPEED} MT/s × 8 字节；通道数：${MEM_CHAN_SRC}）——本次未采集 STREAM 数据，仅作环境参考。"
     fi
     echo ""
     echo "## 四、测试结果"
@@ -250,7 +267,7 @@ REPORT_MD="${TEST_DIR}/hwscope_test_report.md"
         echo ""
         echo "| 测试 | 结果 | 说明 |"
         echo "|------|------|------|"
-        echo "| ${SYSBENCH_MEM} |"
+        echo "${SYSBENCH_MEM}"
         echo ""
     }
     [ -n "$SYSBENCH_CPU$FIO_ROWS$IPERF_ROWS$PERFTEST_ROWS$GPUBURN_ROWS" ] && {
@@ -277,7 +294,7 @@ REPORT_MD="${TEST_DIR}/hwscope_test_report.md"
     echo "## 附录"
     echo ""
     echo "原始输出见同目录（全部测试日志，含工具版本/参数/完整输出）："
-    for f in "$TEST_DIR"/*.log; do
+    for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         [ "$(basename "$f")" = "server_info.log" ] && continue
         echo "- \`$(basename "$f")\`"
     done

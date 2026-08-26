@@ -6,7 +6,7 @@
 #       bash test/test_all.sh --all     # 全部单脚本顺序执行
 # 说明: 纯聚合编排——测试实现全在 test/<组件>/ 单脚本中，本文件不含任何测试逻辑；
 #       单脚本可独立执行（如 bash test/cpu/cpu_stress_ng.sh 60）
-# 日志: 各单脚本落盘 logs/test/<时间戳>/
+# 日志: 各单脚本落盘 logs/test/<SN>/（稳定按机器累积，文件名带时间戳）
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -39,10 +39,10 @@ case "${1:-}" in
         exit 0 ;;
 esac
 
-# ─── --all：全部顺序执行（v1.45.3 会话共享目录：建一个 <SN>-<时间戳> 目录，所有子测试累积，
-#            避免 17 个测试产生 17 个碎片目录；结束后可用 test/report.sh <会话目录> 出全量报告） ───
+# ─── --all：全部顺序执行（v1.45.3 会话共享：所有子测试落同一 logs/test/<SN>/ 目录（v1.45.5 稳定机器目录），
+#            文件名带时间戳区分，避免 17 个测试产生 17 个碎片目录；结束后可用 test/report.sh <目录> 出报告） ───
 if [ "${1:-}" = "--all" ]; then
-    source "${SCRIPT_DIR}/test/lib/test_common.sh" 2>/dev/null || true
+    source "${SCRIPT_DIR}/lib/test_common.sh" 2>/dev/null || true
     SESSION_DIR="$(test_new_dir)"
     export HW_TEST_SESSION_DIR="$SESSION_DIR"
     echo "测试目录: ${SESSION_DIR}（本机全部测试日志累积于此，文件名带时间戳区分）"
@@ -84,8 +84,8 @@ read -rp "> 输入编号（多个逗号: 0,1），Enter 取消: " -r choices
 [ -z "$choices" ] && echo "已取消" && exit 0
 
 IFS=',' read -ra sels <<< "$choices"
-# v1.45.4：菜单选中多个测试 → 同一会话目录（避免碎片；单独选 1 个 = 该会话内独立目录同语义）
-source "${SCRIPT_DIR}/test/lib/test_common.sh" 2>/dev/null || true
+# v1.45.4：菜单选中多个测试 → 同一 logs/test/<SN>/ 目录（会话共享防碎片；单选同语义）
+source "${SCRIPT_DIR}/lib/test_common.sh" 2>/dev/null || true
 SESSION_DIR="$(test_new_dir)"
 export HW_TEST_SESSION_DIR="$SESSION_DIR"
 echo "测试目录: ${SESSION_DIR}（本次所选测试日志累积于此）"

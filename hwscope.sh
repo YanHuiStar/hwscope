@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.45.6 (2026-08)
+# Version : 1.45.7 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.45.6"
+HWSCOPE_VERSION="v1.45.7"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -198,19 +198,20 @@ MACHINE_ID=$(detect_machine_id)
 local_timestamp=$(date '+%Y%m%d%H%M%S')
 if [ -z "$OUTPUT_BASE" ]; then
     OUTPUT_BASE="${SCRIPT_DIR}/output/${MACHINE_ID}"
-    if [ -d "$OUTPUT_BASE" ]; then
-        if [ "$STAMP_MODE" -eq 1 ]; then
-            OUTPUT_BASE="${SCRIPT_DIR}/output/${MACHINE_ID}-${local_timestamp}"
-        else
-            echo "[INFO] output/${MACHINE_ID}/ 已存在——本次采集将覆盖（历史数据已由上次归档保留在 logs/；如需多版本对比用 --stamp）"
-        fi
+    if [ -d "$OUTPUT_BASE" ] && [ "$STAMP_MODE" -ne 1 ]; then
+        echo "[INFO] output/${MACHINE_ID}/ 已存在——本次采集将覆盖（历史数据已由上次归档保留在 logs/；如需多版本对比用 --stamp）"
     fi
+fi
+# --stamp：目录已存在（默认 SN 目录或 --output 指定路径）→ 追加时间戳后缀保留多版本
+# （v1.45.7：此前仅默认路径生效，--output 指定已存在目录 + --stamp 会直接报错，与 --stamp 语义矛盾）
+if [ "$STAMP_MODE" -eq 1 ] && [ -d "$OUTPUT_BASE" ]; then
+    OUTPUT_BASE="${OUTPUT_BASE}-${local_timestamp}"
 fi
 
 if [ -d "$OUTPUT_BASE" ]; then
     if [ "$STAMP_MODE" -eq 1 ]; then
-        # --stamp 且目录已存在（同秒重跑/冲突）：拒绝，避免混写
-        echo -e "${RED}[ERROR] 输出目录已存在: ${OUTPUT_BASE}${NC}"; echo "（--stamp 模式目录含时间戳，1 秒内重跑请等待或指定 --output）"; exit 1
+        # --stamp 时间戳后缀同秒冲突（1 秒内重跑）：拒绝，避免混写
+        echo -e "${RED}[ERROR] 输出目录已存在: ${OUTPUT_BASE}${NC}"; echo "（--stamp 目录含时间戳，1 秒内重跑请等待或指定 --output）"; exit 1
     else
         # 默认覆盖模式：rm -rf 清理防旧文件残留（v1.45.6：覆盖 = 采集最新状态，历史已归档 logs/）
         # rm -rf 护栏：归一化绝对路径后拒绝 系统根/一级目录/家目录/过短路径（防 --output 误敲灾难性删除）
@@ -227,6 +228,21 @@ if [ -d "$OUTPUT_BASE" ]; then
         fi
         if [ "${#OUTPUT_BASE}" -lt 6 ]; then
             echo -e "${RED}[ERROR] 输出路径过短，拒绝删除: ${OUTPUT_BASE}（请检查 --output 参数）${NC}"; exit 1
+        fi
+        # 覆盖前归档校验（v1.45.7）：默认覆盖的安全性依赖"上次归档成功"，但归档可能因磁盘满/中断失败——
+        # 校验 logs/ 该机器最新归档 ≥ 目录内容最新 mtime；无归档或有过期内容 → 先补归档，补档失败拒绝覆盖
+        _sn_id=$(basename "$OUTPUT_BASE" | sed 's/-[0-9]\{14\}$//')   # 去 --stamp 时间戳后缀还原机器标识
+        mkdir -p "${SCRIPT_DIR}/logs"
+        _latest_arch=$(ls -t "${SCRIPT_DIR}/logs/"${_sn_id}-*.tar.gz 2>/dev/null | head -1)
+        if [ -z "$_latest_arch" ] || [ -n "$(find "$OUTPUT_BASE" -type f -newer "$_latest_arch" -print -quit 2>/dev/null)" ]; then
+            _rescue_arch="${SCRIPT_DIR}/logs/${_sn_id}-$(date '+%Y%m%d%H%M%S').tar.gz"
+            if tar czf "$_rescue_arch" -C "$(dirname "$OUTPUT_BASE")" "$(basename "$OUTPUT_BASE")" 2>/dev/null; then
+                echo "[INFO] 检测到未归档数据，已补归档: $(basename "$_rescue_arch")"
+            else
+                rm -f "$_rescue_arch"
+                echo -e "${RED}[ERROR] 目录含上次未归档的数据且补归档失败（磁盘满？），拒绝覆盖——请手动备份 ${OUTPUT_BASE} 后重试${NC}"
+                exit 1
+            fi
         fi
         rm -rf "$OUTPUT_BASE"
         echo -e "${YELLOW}[WARN] 覆盖已有输出目录: ${OUTPUT_BASE}（历史数据在 logs/ 归档）${NC}"

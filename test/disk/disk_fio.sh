@@ -14,9 +14,10 @@ source "${SCRIPT_DIR}/test/lib/test_common.sh" 2>/dev/null || true
 
 # ─── 选盘（参数优先 → 交互 lsblk；v1.45.1 默认屏蔽系统盘——fio 写测试会压垮系统盘/影响数据安全） ───
 DISK="${1:-}"
-# 系统盘识别：根挂载所在物理盘（如 / 在 /dev/sda2 → 系统盘 sda）
+# 系统盘识别：根挂载所在物理盘（如 / 在 /dev/sda2 → 系统盘 sda；NVMe /dev/nvme0n1p2 → nvme0n1）
 SYS_DISK=$(lsblk -no PKNAME "$(findmnt -no SOURCE / 2>/dev/null)" 2>/dev/null | head -1)
-[ -z "$SYS_DISK" ] && SYS_DISK=$(df / 2>/dev/null | awk 'NR==2 {print $1}' | sed 's|[0-9]*$||;s|/dev/||')
+# fallback 剥分区号：p?[0-9]*$ 同时覆盖 SATA（sda12→sda）与 NVMe（nvme0n1p2→nvme0n1，v1.45.7）
+[ -z "$SYS_DISK" ] && SYS_DISK=$(df / 2>/dev/null | awk 'NR==2 {print $1}' | sed 's|p\?[0-9]*$||;s|/dev/||')
 if [ -z "$DISK" ]; then
     echo "可用磁盘（已排除系统盘 ${SYS_DISK:-?}）:"
     lsblk -d -o NAME,SIZE,MODEL 2>/dev/null | grep -v "loop\|NAME" | grep -v "^${SYS_DISK} " | head -10
