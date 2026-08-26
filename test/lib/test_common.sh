@@ -5,10 +5,9 @@
 # 功能：日志目录初始化、工具菜单、结果记录
 # =============================================================================
 
-# 初始化日志目录（v1.45.2：logs/test/<SN>-<时间戳>/——SN 标识机器（同采集 output/<SN>），时间戳区分多次压测；
+# 新建测试目录（v1.45.3：logs/test/<SN>-<时间戳>/——SN 标识机器（同采集 output/<SN>），时间戳区分多次压测；
 # 无 SN 平台（WSL/开发机）兜底纯时间戳，与 detect_machine_id 语义一致）
-test_init() {
-    local test_name="$1"
+test_new_dir() {
     local _mid=""
     if command -v dmidecode >/dev/null 2>&1; then
         _mid=$(dmidecode -t system 2>/dev/null | grep -i 'Serial Number' | grep -v 'Not Specified' | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
@@ -17,6 +16,20 @@ test_init() {
         _mid=$(echo "$_mid" | tr -cd 'A-Za-z0-9_-')
     fi
     local base="${SCRIPT_DIR}/logs/test/${_mid:+${_mid}-}$(date '+%Y%m%d%H%M%S')"
+    mkdir -p "$base"
+    echo "$base"
+}
+
+# 初始化日志目录：会话共享（HW_TEST_SESSION_DIR 已设 = test_all 聚合会话，复用不新建——所有测试累积到一个目录，
+# 避免连续单测/--all 产生碎片目录）或独立新建
+test_init() {
+    local test_name="$1"
+    local base
+    if [ -n "${HW_TEST_SESSION_DIR:-}" ] && [ -d "$HW_TEST_SESSION_DIR" ]; then
+        base="$HW_TEST_SESSION_DIR"
+    else
+        base="$(test_new_dir)"
+    fi
     mkdir -p "$base"
     REPORT_DIR="$base"
     REPORT_LOG="${base}/${test_name}.log"

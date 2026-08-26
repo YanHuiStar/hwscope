@@ -39,8 +39,14 @@ case "${1:-}" in
         exit 0 ;;
 esac
 
-# ─── --all：全部顺序执行 ───
+# ─── --all：全部顺序执行（v1.45.3 会话共享目录：建一个 <SN>-<时间戳> 目录，所有子测试累积，
+#            避免 17 个测试产生 17 个碎片目录；结束后可用 test/report.sh <会话目录> 出全量报告） ───
 if [ "${1:-}" = "--all" ]; then
+    source "${SCRIPT_DIR}/test/lib/test_common.sh" 2>/dev/null || true
+    SESSION_DIR="$(test_new_dir)"
+    export HW_TEST_SESSION_DIR="$SESSION_DIR"
+    echo "测试会话目录: ${SESSION_DIR}（全部测试日志累积于此）"
+    echo ""
     echo "全部测试顺序执行..."
     for entry in "${TOOLS[@]}"; do
         IFS=':' read -r cat name path <<< "$entry"
@@ -50,6 +56,7 @@ if [ "${1:-}" = "--all" ]; then
     done
     echo ""
     echo "全部测试完成"
+    echo "报告生成: bash test/report.sh ${SESSION_DIR}"
     exit 0
 fi
 
