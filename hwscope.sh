@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.45.5 (2026-08)
+# Version : 1.45.6 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,11 +85,11 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.45.5"
+HWSCOPE_VERSION="v1.45.6"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
-FORCE_MODE="${FORCE:-0}"; QUIET=0; PARALLEL=1; NO_MODULE=0; MODULE_PARALLEL=1
+FORCE_MODE="${FORCE:-0}"; STAMP_MODE=0; QUIET=0; PARALLEL=1; NO_MODULE=0; MODULE_PARALLEL=1
 TEST_DIR=""
 
 usage() {
@@ -107,7 +107,8 @@ usage() {
     echo "  --no-module                     跳过光模块查询（仅影响 07_network 光模块部分，缩短采集约 48s；不影响其他模块）"
     echo "  --test-dir /path/to/test         关联压测目录（logs/test/<SN>/），报告生成压测章节"
     echo "  --output /path/to/dir           指定输出目录"
-    echo "  --force                         覆盖已有输出目录"
+    echo "  --force                         覆盖已有输出目录（v1.45.6 起默认即覆盖，此参数保留兼容）"
+    echo "  --stamp                         输出目录加时间戳后缀（output/<SN>-<时间戳>/，保留多版本对比）"
     echo "  -q, --quiet                     静默模式（仅输出异常）"
     echo "  -h, --help                      显示此帮助"
     echo "  -v, --version                   显示版本"
@@ -131,6 +132,7 @@ while [[ $# -gt 0 ]]; do
         --skip)     [ -n "${2:-}" ] || { echo -e "${RED}错误: --skip 需要模块列表（如 dcgm,nvsm）${NC}"; usage; exit 1; }; SKIP_MODULES="$2"; shift 2 ;;
         --output)   [ -n "${2:-}" ] || { echo -e "${RED}错误: --output 需要目录路径${NC}"; usage; exit 1; }; OUTPUT_BASE="$2"; shift 2 ;;
         --force)    FORCE_MODE=1; shift ;;
+        --stamp)    STAMP_MODE=1; shift ;;
         --parallel) PARALLEL=1; shift ;;
         --serial)   PARALLEL=0; shift ;;
         --no-parallel) MODULE_PARALLEL=0; shift ;;
@@ -189,15 +191,28 @@ SKIP_MODULES="$(echo "$SKIP_MODULES" | tr -d ' ')"
 # ─── 机器标识 ───
 MACHINE_ID=$(detect_machine_id)
 
-# ─── 输出目录 ───
+# ─── 输出目录（v1.45.6 语义反转，用户方案）───
+# 默认：output/<SN>/（或 UUID/时间戳兜底）——采集=当前状态快照，重复采集直接覆盖（机器可能换配件，
+#       旧快照不代表现状）；历史数据每次采集结束自动归档 logs/<SN>-<TS>.tar.gz，覆盖不丢数据
+# --stamp：output/<SN>-<时间戳>/——保留多版本（换配件前后对比/追溯）
 local_timestamp=$(date '+%Y%m%d%H%M%S')
 if [ -z "$OUTPUT_BASE" ]; then
     OUTPUT_BASE="${SCRIPT_DIR}/output/${MACHINE_ID}"
-    [ -d "$OUTPUT_BASE" ] && [ "$FORCE_MODE" -ne 1 ] && OUTPUT_BASE="${SCRIPT_DIR}/output/${MACHINE_ID}-${local_timestamp}"
+    if [ -d "$OUTPUT_BASE" ]; then
+        if [ "$STAMP_MODE" -eq 1 ]; then
+            OUTPUT_BASE="${SCRIPT_DIR}/output/${MACHINE_ID}-${local_timestamp}"
+        else
+            echo "[INFO] output/${MACHINE_ID}/ 已存在——本次采集将覆盖（历史数据已由上次归档保留在 logs/；如需多版本对比用 --stamp）"
+        fi
+    fi
 fi
 
 if [ -d "$OUTPUT_BASE" ]; then
-    if [ "$FORCE_MODE" -eq 1 ]; then
+    if [ "$STAMP_MODE" -eq 1 ]; then
+        # --stamp 且目录已存在（同秒重跑/冲突）：拒绝，避免混写
+        echo -e "${RED}[ERROR] 输出目录已存在: ${OUTPUT_BASE}${NC}"; echo "（--stamp 模式目录含时间戳，1 秒内重跑请等待或指定 --output）"; exit 1
+    else
+        # 默认覆盖模式：rm -rf 清理防旧文件残留（v1.45.6：覆盖 = 采集最新状态，历史已归档 logs/）
         # rm -rf 护栏：归一化绝对路径后拒绝 系统根/一级目录/家目录/过短路径（防 --output 误敲灾难性删除）
         _out_parent=$(cd "$(dirname "$OUTPUT_BASE")" 2>/dev/null && pwd 2>/dev/null)
         [ -n "$_out_parent" ] && OUTPUT_BASE="${_out_parent}/$(basename "$OUTPUT_BASE")"
@@ -214,9 +229,7 @@ if [ -d "$OUTPUT_BASE" ]; then
             echo -e "${RED}[ERROR] 输出路径过短，拒绝删除: ${OUTPUT_BASE}（请检查 --output 参数）${NC}"; exit 1
         fi
         rm -rf "$OUTPUT_BASE"
-        echo -e "${YELLOW}[WARN] 覆盖已有输出目录: ${OUTPUT_BASE}${NC}"
-    else
-        echo -e "${RED}[ERROR] 输出目录已存在: ${OUTPUT_BASE}${NC}"; echo "使用 --force 覆盖或指定其他目录"; exit 1
+        echo -e "${YELLOW}[WARN] 覆盖已有输出目录: ${OUTPUT_BASE}（历史数据在 logs/ 归档）${NC}"
     fi
 fi
 mkdir -p "$OUTPUT_BASE"
