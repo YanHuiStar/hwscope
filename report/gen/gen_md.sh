@@ -9,11 +9,18 @@ gen_md() {
     # 内存插槽明细 Markdown 表
     local dimms_md=""
     if [ -n "$MEM_DIMMS" ]; then
+        # 位宽列动态隐藏（v1.45.13）：部件号能推断出 x4/x8 才显示该列（整列全空隐藏，动态列惯例）
+        local d_width_any=0
+        printf '%s\n' "$MEM_DIMMS" | grep -qE '\|x[0-9]+$' && d_width_any=1
         local dseq=0
-        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank; do
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank dwidth; do
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
-            dimms_md="${dimms_md}| ${dseq} | ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dnom} | ${dcur} | ${drank:-N/A} |"$'\n'
+            if [ "$d_width_any" -eq 1 ]; then
+                dimms_md="${dimms_md}| ${dseq} | ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dnom} | ${dcur} | ${drank:-N/A} | ${dwidth:-N/A} |"$'\n'
+            else
+                dimms_md="${dimms_md}| ${dseq} | ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dnom} | ${dcur} | ${drank:-N/A} |"$'\n'
+            fi
         done < <(printf '%s\n' "$MEM_DIMMS")
     fi
     # GPU 每卡明细 Markdown 表
@@ -226,8 +233,13 @@ fi)
 | 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
 
 ### 内存模块明细（DIMM）
-| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
-|----|------|------|------|----|--------|--------|--------|------|
+$(if printf '%s\n' "$MEM_DIMMS" | grep -qE '\|x[0-9]+$' 2>/dev/null; then
+    echo "| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank | 位宽 |"
+    echo "|----|------|------|------|----|--------|--------|--------|------|------|"
+else
+    echo "| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |"
+    echo "|----|------|------|------|----|--------|--------|--------|------|"
+fi)
 $(printf '%s' "$dimms_md")
 
 ## GPU

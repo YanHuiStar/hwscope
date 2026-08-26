@@ -196,6 +196,26 @@ if [ -f "${dmidecode_memory_full}" ]; then
         in_dimm && /^[[:space:]]*$/ { if(size!="") printf "%s|%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur, rank; in_dimm=0 }
     ' "${dmidecode_memory_full}" 2>/dev/null)
 fi
+# 部件号 → 芯片位宽推断（v1.45.13：x4/x8；未知=空——报告整列全空时动态隐藏该列）
+# 仅可靠模式（行业确认）；Samsung DDR5 M321R 编码存疑、Hynix x4 模式不确定 → 不推断宁缺
+mem_dimm_width() {
+    local pn="$1"
+    case "$pn" in
+        MTA36ASF4G72*) echo "x4" ;;
+        MTA36ASF8G72*) echo "x8" ;;
+        M393A*K40*)    echo "x4" ;;
+        M393A*K43*)    echo "x8" ;;
+        M393A*G40*)    echo "x4" ;;
+        M393A*G43*)    echo "x8" ;;
+        HMCG88A*)      echo "x8" ;;
+    esac
+}
+if [ -n "$MEM_DIMMS" ]; then
+    MEM_DIMMS=$(printf '%s\n' "$MEM_DIMMS" | while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank; do
+        [ -z "$dslot" ] && continue
+        printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$dslot" "$dsize" "$dmfr" "$dsn" "$dpn" "$dnom" "$dcur" "$drank" "$(mem_dimm_width "$dpn")"
+    done)
+fi
 # 物理额定总量（每槽 Size 求和，64GB×32=2048GB）——与系统可见(MEM_TOTAL)区分，需在 MEM_DIMMS 之后计算
 MEM_TOTAL_PHYS=""
 if [ -n "$MEM_DIMMS" ]; then

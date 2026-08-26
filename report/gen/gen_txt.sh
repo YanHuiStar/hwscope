@@ -10,10 +10,10 @@ gen_txt() {
     local dimms_txt=""
     if [ -n "$MEM_DIMMS" ]; then
         local dseq=0
-        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank; do
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank dwidth; do
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
-            dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  额定${dnom}/现${dcur}  Rank:${drank:-N/A}"$'\n'
+            dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  额定${dnom}/现${dcur}  Rank:${drank:-N/A}${dwidth:+ ${dwidth}}"$'\n'
         done < <(printf '%s\n' "$MEM_DIMMS")
     fi
     # GPU 每卡明细纯文本

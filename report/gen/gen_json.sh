@@ -6,14 +6,14 @@
 # =============================================================================
 gen_json() {
     local f="${OUT}/hwscope_report.json"
-    # 内存插槽明细 JSON 数组（slot|size|mfr|sn|pn|nom|cur|rank）
+    # 内存插槽明细 JSON 数组（slot|size|mfr|sn|pn|nom|cur|rank|width——JSON 保留全字段，不受隐藏影响）
     local dimms_json=""
     if [ -n "$MEM_DIMMS" ]; then
         local dseq=0
-        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank; do
+        while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank dwidth; do
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
-            dimms_json="${dimms_json}      {\"index\": \"${dseq}\", \"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"nominal_speed\": \"${dnom}\", \"current_speed\": \"${dcur}\", \"rank\": \"${drank:-N/A}\"},"$'\n'
+            dimms_json="${dimms_json}      {\"index\": \"${dseq}\", \"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"nominal_speed\": \"${dnom}\", \"current_speed\": \"${dcur}\", \"rank\": \"${drank:-N/A}\", \"chip_width\": \"${dwidth:-}\"},"$'\n'
         done < <(printf '%s\n' "$MEM_DIMMS")
         dimms_json=$(printf '%s' "$dimms_json" | sed '$ s/,$//')
     fi
