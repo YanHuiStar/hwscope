@@ -83,7 +83,8 @@ gen_md() {
             [ -z "$nnic" ] && continue
             nn=$((nn + 1))
             if [ "$_gd_col" -eq 1 ]; then
-                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} | ${ngd:-} | ${nlink:-—} |"$'\n'
+                # v1.45.17 修复：去掉尾部重复的 nlink 列（表头 13 列对齐——Link 状态仅 GPU直连 前一列）
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} | ${ngd:-} |"$'\n'
             else
                 nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} |"$'\n'
             fi
@@ -235,10 +236,10 @@ fi)
 ### 内存模块明细（DIMM）
 $(if printf '%s\n' "$MEM_DIMMS" | grep -qE '\|x[0-9]+$' 2>/dev/null; then
     echo "| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank | 位宽 |"
-    echo "|----|------|------|-----------|------|----|--------|--------|--------|------|------|-----------|"
+    echo "|----|------|------|------|----|--------|--------|--------|------|------|"
 else
     echo "| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |"
-    echo "|----|------|------|-----------|------|----|--------|--------|--------|------|"
+    echo "|----|------|------|------|----|--------|--------|--------|------|"
 fi)
 $(printf '%s' "$dimms_md")
 
@@ -393,14 +394,14 @@ fi)
 $(net_extra_md)
 
 ### 网络适配器明细（NIC）
-$(if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ]; then
-    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | Link 状态 |"
-    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|--------|-----------|"
-elif [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ]; then
+$(if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -eq 0 ]; then
     echo "> GPU直连 列已隐藏：本机无 GPU 直连网卡（网卡均不与 GPU 同 PCIe Switch；H200/B200 类 1:1 直连或 B300 板载网卡形态才会标记）"
     echo ""
     echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |"
     echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|"
+elif [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ]; then
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 |"
+    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|--------|"
 else
     echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |"
     echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|"

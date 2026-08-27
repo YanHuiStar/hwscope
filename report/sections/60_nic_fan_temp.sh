@@ -16,7 +16,17 @@ if [ -f "${ibstat}" ]; then
         case "$il" in
             *"CA '"*) cur_ca=$(echo "$il" | sed "s/.*'\(.*\)'.*/\1/") ;;
             *"CA type:"*) [ -n "$cur_ca" ] && CA_MODEL[$cur_ca]=$(echo "$il" | awk '{print $NF}') ;;
-            *"State:"*) [ -n "$cur_ca" ] && CA_STATE[$cur_ca]=$(echo "$il" | awk '{print $NF}') ;;
+            *"State:"*)
+                # v1.45.17：多口 CA 聚合——ibstat 按口输出 State（CA 级无 State），双口卡两端口状态
+                # 可能不同；原实现后者覆盖前者。集合式聚合（逗号分隔去重），显示如 "Up" 或 "Up,Down"
+                [ -n "$cur_ca" ] || continue
+                _st=$(echo "$il" | awk '{print $NF}')
+                _prev="${CA_STATE[$cur_ca]:-}"
+                case ",${_prev}," in
+                    *",${_st},"*) : ;;                              # 已含该状态
+                    ",,") CA_STATE[$cur_ca]="$_st" ;;
+                    *)  CA_STATE[$cur_ca]="${_prev},${_st}" ;;
+                esac ;;
         esac
     done < <(grep -v "^#" "${ibstat}")
 fi
@@ -337,9 +347,12 @@ if [ -f "${ipmi_sensors_temp}" ]; then
 fi
 # OS 侧温度兜底（v1.45.16）：无 BMC 温度（ipmi_sensors_temp 无/失败/平台无 BMC）时，
 # 从 lm-sensors（sensors_all.log）聚合 CPU 封装温度——标注"OS 侧"，验收不因此误判
+# v1.45.17：聚合全部 Package id 取 min-max（双路 CPU 此前只显示第一颗）
 TEMP_SUMMARY_OS=""
 if [ -z "$TEMP_SUMMARY" ] && [ -f "${sensors_all}" ]; then
-    _os_cpu=$(grep -m1 "Package id" "${sensors_all}" 2>/dev/null | grep -oE '[0-9.]+°C' | head -1)
+    _os_cpu=$(grep "Package id" "${sensors_all}" 2>/dev/null | grep -oE '[0-9.]+°C' | awk '
+        {gsub(/°C/,""); if(NR==1||$1+0<min)min=$1+0; if($1+0>max)max=$1+0}
+        END{if(NR==1) printf "%.0f°C", min; else if(NR>1) printf "%.0f-%.0f°C", min, max}')
     if [ -n "$_os_cpu" ]; then
         TEMP_SUMMARY_OS="CPU ${_os_cpu}（OS 侧 lm-sensors）"
     else
