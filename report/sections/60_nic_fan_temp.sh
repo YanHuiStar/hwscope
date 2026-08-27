@@ -279,6 +279,7 @@ fi
 # ─── 风扇（IPMI 传感器，| 分隔格式） ───
 FAN_DIR="${OUT}/fan"
 load_manifest "${FAN_DIR}" ipmi_fan_sensors "ipmi_fan_sensors.log"
+load_manifest "${FAN_DIR}" sensors_all "sensors_all.log"
 # 风扇匹配：兼容 Fan10_Speed_F / FAN1_Speed / Fan2 等大小写变体；只统计转速传感器（$3=RPM），
 # 跳过 Present/discrete 等离散值（如 PSU1 Slow FAN1 是 discrete 状态位 0x1，非真实转速）
 FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
@@ -333,4 +334,16 @@ if [ -f "${ipmi_sensors_temp}" ]; then
     }
     TEMP_SUMMARY="$( _temp_agg 'inlet.*temp|tr[0-9]+.*temp' '进风'; _temp_agg 'outlet.*temp' '出风'; _temp_agg '^cpu[0-9]+[ _]temp' 'CPU'; _temp_agg 'dimm.*temp' '内存'; _temp_agg 'psu[0-9]+[ _]temp' '电源'; _temp_agg 'pch.*temp' 'PCH' )"
     TEMP_SUMMARY=$(echo "$TEMP_SUMMARY" | sed 's/  *$//')
+fi
+# OS 侧温度兜底（v1.45.16）：无 BMC 温度（ipmi_sensors_temp 无/失败/平台无 BMC）时，
+# 从 lm-sensors（sensors_all.log）聚合 CPU 封装温度——标注"OS 侧"，验收不因此误判
+TEMP_SUMMARY_OS=""
+if [ -z "$TEMP_SUMMARY" ] && [ -f "${sensors_all}" ]; then
+    _os_cpu=$(grep -m1 "Package id" "${sensors_all}" 2>/dev/null | grep -oE '[0-9.]+°C' | head -1)
+    if [ -n "$_os_cpu" ]; then
+        TEMP_SUMMARY_OS="CPU ${_os_cpu}（OS 侧 lm-sensors）"
+    else
+        _os_cpu2=$(grep -m1 "Core 0:" "${sensors_all}" 2>/dev/null | grep -oE '[0-9.]+°C' | head -1)
+        [ -n "$_os_cpu2" ] && TEMP_SUMMARY_OS="CPU ${_os_cpu2}（OS 侧 lm-sensors）"
+    fi
 fi
