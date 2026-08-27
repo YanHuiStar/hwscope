@@ -16,8 +16,19 @@ if [ -f "$GPU_CSV" ]; then
         GPU_CSV=""
     fi
 fi
-# GPU 硬件存在性（lspci 3D controller NVIDIA 数量）——区分「无 GPU」vs「有 GPU 但驱动异常/采集失败」
-GPU_PCI_PRESENT=$(grep -c "3D controller: NVIDIA" "${lspci_all}" 2>/dev/null)
+# GPU 硬件存在性（lspci 3D controller，厂商无关 v1.46.0——AMD/Intel 卡也识别，不再误报"无 GPU"）
+# GPU_PCI_VENDOR：NVIDIA / AMD / Intel / 其他（混插取首个非集显厂商；VGA compatible 的 Intel 核显不算独立 GPU）
+GPU_PCI_PRESENT=$(grep -cE "3D controller" "${lspci_all}" 2>/dev/null)
+GPU_PCI_VENDOR=""
+if [ "$GPU_PCI_PRESENT" -gt 0 ] 2>/dev/null; then
+    _gv=$(grep -m1 "3D controller" "${lspci_all}" 2>/dev/null)
+    case "$_gv" in
+        *NVIDIA*) GPU_PCI_VENDOR="NVIDIA" ;;
+        *"Advanced Micro Devices"*|*AMD*|*ATI*) GPU_PCI_VENDOR="AMD" ;;
+        *Intel*) GPU_PCI_VENDOR="Intel" ;;
+        *) GPU_PCI_VENDOR="其他" ;;
+    esac
+fi
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
     GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ',' | sed 's/,$//')

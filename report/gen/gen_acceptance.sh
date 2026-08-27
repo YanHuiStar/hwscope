@@ -29,7 +29,7 @@ gen_acceptance() {
         if [ "$HEAD_NODE" -eq 1 ]; then
             add_item "GPU PCIe 链路完整" "N/A" "HGX 机头（无本地 GPU，模组单独采集验收）" 1
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-            add_item "GPU PCIe 链路完整" "WARN" "检测到 ${GPU_PCI_PRESENT} 个 NVIDIA GPU（PCI 3D controller）但 nvidia-smi 无数据（驱动未安装或异常）"
+            add_item "GPU PCIe 链路完整" "WARN" "检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU（PCI 3D controller）但对应管理工具无数据（驱动未安装或异常）"
         else
             add_item "GPU PCIe 链路完整" "N/A" "无 GPU" 1
         fi
