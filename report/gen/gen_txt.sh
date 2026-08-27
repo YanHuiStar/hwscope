@@ -72,12 +72,12 @@ gen_txt() {
     if [ -n "$NIC_DETAILS" ]; then
         local _gd_col=0
         [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ] && _gd_col=1
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport nlink; do
             [ -z "$nnic" ] && continue
             if [ "$_gd_col" -eq 1 ]; then
-                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  口:${nport:-—}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}"$'\n'
+                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  口:${nport:-—}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}  ${ngd:-}${nchip:+ 芯片:${nchip}}  Link:${nlink:-—}"$'\n'
             else
-                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  口:${nport:-—}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}"$'\n'
+                nic_details_txt="${nic_details_txt}    ${nnic}  ${nnbdf}  口:${nport:-—}  ${nmac}  SN:${nsn}  ${npn}  FW:${nfw}  PCIe(协商):${npcie}  PSID:${npsid}${nchip:+ 芯片:${nchip}}  Link:${nlink:-—}"$'\n'
             fi
         done < <(printf '%s\n' "$NIC_DETAILS")
         if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -eq 0 ]; then

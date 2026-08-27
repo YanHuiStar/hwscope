@@ -79,13 +79,13 @@ gen_md() {
         local nn=0
         local _gd_col=0
         [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ] && _gd_col=1
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport nlink; do
             [ -z "$nnic" ] && continue
             nn=$((nn + 1))
             if [ "$_gd_col" -eq 1 ]; then
-                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${ngd:-} |"$'\n'
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} | ${ngd:-} | ${nlink:-—} |"$'\n'
             else
-                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} |"$'\n'
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} |"$'\n'
             fi
         done < <(printf '%s\n' "$NIC_DETAILS")
     fi
@@ -209,14 +209,14 @@ $(if [ -n "$CPU_DETAILS" ]; then
     echo "### 处理器明细（CPU）"
     if [ "$c_has_sn" -eq 1 ]; then
         echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping | SN |"
-        echo "|---|--------|------|------|------|---------|---------|----------|----|"
+        echo "|---|--------|------|------|-----------|------|---------|---------|----------|----|"
         echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
             cseq=$((cseq + 1))
             echo "| ${cseq} | ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} | ${csn:-} |"
         done
     else
         echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping |"
-        echo "|---|--------|------|------|------|---------|---------|----------|"
+        echo "|---|--------|------|------|-----------|------|---------|---------|----------|"
         echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
             cseq=$((cseq + 1))
             echo "| ${cseq} | ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} |"
@@ -235,10 +235,10 @@ fi)
 ### 内存模块明细（DIMM）
 $(if printf '%s\n' "$MEM_DIMMS" | grep -qE '\|x[0-9]+$' 2>/dev/null; then
     echo "| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank | 位宽 |"
-    echo "|----|------|------|------|----|--------|--------|--------|------|------|"
+    echo "|----|------|------|-----------|------|----|--------|--------|--------|------|------|-----------|"
 else
     echo "| # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |"
-    echo "|----|------|------|------|----|--------|--------|--------|------|"
+    echo "|----|------|------|-----------|------|----|--------|--------|--------|------|"
 fi)
 $(printf '%s' "$dimms_md")
 
@@ -275,7 +275,7 @@ $(if [ -n "$gpu_details_md" ]; then
     _gpu_link_col="PCIe(协商)"
     case "${PLATFORM_LABEL:-}" in *SXM*) _gpu_link_col="NVLink(协商)" ;; esac
     echo "| 卡 | 型号 | SN | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS |"
-    echo "|----|------|----|----|------|------|----------|-------|"
+    echo "|----|------|----|----|------|------|-----------|----------|-------|"
     printf '%s' "$gpu_details_md"
 fi)
 
@@ -283,7 +283,7 @@ $(if [ -n "$nvs_md" ]; then
     echo ""
     echo "## NVSwitch"
     echo "| 编号 | 状态 | 温度 | 活动/总端口 |"
-    echo "|------|------|------|-------------|"
+    echo "|------|------|-----------|------|-------------|"
     printf '%s' "$nvs_md"
 fi)
 
@@ -293,7 +293,7 @@ $(if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
     echo "> 对照 conf/fw_required.txt（厂商推荐版本基线）逐项判定；无基线条目判未知（仅记录）"
     echo ""
     echo "| 组件 | 设备 | 当前版本 | 推荐版本 | 状态 | 说明 |"
-    echo "|------|------|---------|---------|------|------|"
+    echo "|------|------|-----------|---------|---------|------|------|-----------|"
     echo "$FW_COMPLIANCE_DETAILS" | while IFS='|' read -r fc fd fcur fbase fst fnote; do
         [ -z "$fc" ] && continue
         case "$fst" in
@@ -317,7 +317,7 @@ fi)
 
 ### 存储盘明细
 | # | 设备 | 类型 | 容量$(if [ "$disk_has_spec" -eq 1 ]; then echo " | 额定"; fi) | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数$(if [ "$disk_has_spare" -eq 1 ]; then echo " | 寿命%"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo " | 健康"; fi) |
-|---|------|------|------$(if [ "$disk_has_spec" -eq 1 ]; then echo "|------"; fi)|------|----|------|-----|---------|----------$(if [ "$disk_has_spare" -eq 1 ]; then echo "|-------"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo "|------"; fi)|
+|---|------|------|-----------|------$(if [ "$disk_has_spec" -eq 1 ]; then echo "|------"; fi)|------|----|------|-----|---------|----------$(if [ "$disk_has_spare" -eq 1 ]; then echo "|-------"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo "|------"; fi)|
 $(printf '%s' "$disk_details_md")
 $(if [ -n "$DISK_DETAILS" ] && { [ "$disk_has_spare" -eq 0 ] || [ "$disk_has_health" -eq 0 ]; }; then
     echo "> 注：$(if [ "$disk_has_spare" -eq 0 ]; then echo "寿命%"; fi)$(if [ "$disk_has_spare" -eq 0 ] && [ "$disk_has_health" -eq 0 ]; then echo "、"; fi)$(if [ "$disk_has_health" -eq 0 ]; then echo "健康"; fi) 列因旧采集无 SMART 数据而隐藏"
@@ -369,7 +369,7 @@ fi)
 $(if [ -n "$HBA_DETAILS" ]; then
     echo "## 主机总线适配器明细（HBA）"
     echo "| # | 控制器 | 型号 | 固件 | SN | 状态 | SAS地址 | 端口 |"
-    echo "|---|--------|------|------|----|------|---------|------|"
+    echo "|---|--------|------|------|-----------|----|------|---------|------|"
     echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
         [ -z "$hname" ] && continue
         hseq=$((hseq + 1))
@@ -394,16 +394,16 @@ $(net_extra_md)
 
 ### 网络适配器明细（NIC）
 $(if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ]; then
-    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | GPU直连 |"
-    echo "|---|------|-----|------|-----|----|------|------|------|------|------|--------|"
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | Link 状态 |"
+    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|--------|-----------|"
 elif [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ]; then
     echo "> GPU直连 列已隐藏：本机无 GPU 直连网卡（网卡均不与 GPU 同 PCIe Switch；H200/B200 类 1:1 直连或 B300 板载网卡形态才会标记）"
     echo ""
-    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID |"
-    echo "|---|------|-----|------|-----|----|------|------|------|------|------|"
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |"
+    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|"
 else
-    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID |"
-    echo "|---|------|-----|------|-----|----|------|------|------|------|------|"
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |"
+    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|"
 fi)
 $(printf '%s' "$nic_details_md")
 $(if printf '%s\n' "$nic_details_md" | grep -q "能力 " 2>/dev/null; then
@@ -425,7 +425,7 @@ $(if [ -n "$USB_NICS" ]; then
     echo "另发现 USB 外接网卡（非 PCIe，不参与网卡统计）:"
     echo ""
     echo "| 接口 | MAC | 型号 | 固件 |"
-    echo "|------|-----|------|------|"
+    echo "|------|-----|------|------|-----------|"
     while IFS='|' read -r unnic unmac unpn unfw; do
         [ -z "$unnic" ] && continue
         echo "| ${unnic} | ${unmac} | ${unpn:-—} | ${unfw:-—} |"
@@ -445,7 +445,7 @@ $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
 elif [ -n "$SEL_DETAILS" ]; then
     echo "### SEL 告警事件"
     echo "| # | 日期 | 时间 | 类型 | 描述 |"
-    echo "|---|------|------|------|------|"
+    echo "|---|------|------|-----------|------|------|"
     sel_seq=0
     echo "$SEL_DETAILS" | while IFS='|' read -r sid sdate stime stype sdesc; do
         sel_seq=$((sel_seq+1))
@@ -495,7 +495,7 @@ fi)
 ## 电源 PSU
 ### 电源模块明细（PSU）
 | # | 描述 | 型号 | 部件号 | 序列号 | 额定容量 | 当前功耗 |
-|----|------|------|--------|--------|---------|---------|
+|----|------|------|-----------|--------|-----------|--------|---------|---------|
 $(if [ -n "$PSU_DETAILS" ]; then
     pseq=0
     while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
@@ -565,7 +565,7 @@ $(if [ -n "$TEST_DETAILS" ]; then
     echo "> 压测目录: ${TEST_DIR_LABEL}（test/ 压测脚本落盘，report 只读解析，不重跑）"
     echo ""
     echo "| 测试项 | 结果 | 耗时 | 详情文件 |"
-    echo "|--------|------|------|---------|"
+    echo "|--------|------|------|-----------|---------|"
     echo "$TEST_DETAILS" | while IFS='|' read -r tname tstatus telapsed tfile; do
         [ -z "$tname" ] && continue
         case "$tstatus" in
@@ -612,7 +612,7 @@ $(if [ -n "$FLD_SUMMARY" ]; then
         echo ""
         echo "### 非通过项明细"
         echo "| 测试项 | 组件 | 结果 | 说明 |"
-        echo "|--------|------|------|------|"
+        echo "|--------|------|------|-----------|------|"
         printf '%s\n' "$FLD_DETAILS" | while IFS='|' read -r fvid fcomp fres fnote; do
             [ -z "$fvid" ] && continue
             case "$fres" in
@@ -631,7 +631,7 @@ $(if [ -n "$BASELINE_COMPARE" ]; then
     echo "> ${BASELINE_COMPARE_NOTE}"
     echo ""
     echo "| 项 | 状态 | 当前 | 基线 |"
-    echo "|----|------|------|------|"
+    echo "|----|------|------|-----------|------|"
     echo "$BASELINE_COMPARE" | while IFS='|' read -r bitem bst bcur bbase; do
         [ -z "$bitem" ] && continue
         case "$bst" in
@@ -663,7 +663,7 @@ fi)
 ## 术语说明
 
 | 术语 | 说明 |
-|------|------|
+|------|------|-----------|
 $(glossary_md)
 $(if [ -n "$NIC_MLX" ]; then
     echo ""

@@ -6,7 +6,8 @@
 # =============================================================================
 # 网卡明细（nic_inventory.csv: dev|bdf|mac|sn|pn|fw|speed|width|psid）
 # IB 控制器型号识别：ibstat CA type + ibdev2netdev 映射（mlx5_N ↔ ibp*），附加到 PN 列
-declare -A CA_MODEL NETDEV_CA
+# v1.45.15：同循环收集 CA State（端口 Link 状态——完整明细补"Link 状态"列）
+declare -A CA_MODEL NETDEV_CA CA_STATE NETDEV_STATE
 NIC_MLX=0
 GPU_TOPO_AVAIL=0
 if [ -f "${ibstat}" ]; then
@@ -15,6 +16,7 @@ if [ -f "${ibstat}" ]; then
         case "$il" in
             *"CA '"*) cur_ca=$(echo "$il" | sed "s/.*'\(.*\)'.*/\1/") ;;
             *"CA type:"*) [ -n "$cur_ca" ] && CA_MODEL[$cur_ca]=$(echo "$il" | awk '{print $NF}') ;;
+            *"State:"*) [ -n "$cur_ca" ] && CA_STATE[$cur_ca]=$(echo "$il" | awk '{print $NF}') ;;
         esac
     done < <(grep -v "^#" "${ibstat}")
 fi
@@ -221,6 +223,15 @@ if [ -f "${nic_inventory}" ]; then
         case "${nchip:-}" in ""|N/A|na|NA) nchip="—" ;; esac
         [ -z "$nmac" ] && nmac="—"
         [ -z "$npcie_cap" ] && npcie_cap="—"
+        # v1.45.15：端口 Link 状态——IB 口从 ibstat State（经 NETDEV_CA 映射），以太口从 ethtool Link detected
+        nlink="—"
+        if [ -n "${NETDEV_CA[$nnic]:-}" ]; then
+            nlink="${CA_STATE[${NETDEV_CA[$nnic]}]:-—}"
+        fi
+        if [ "$nlink" = "—" ]; then
+            _ld=$(grep -m1 "Link detected" "${NET_DIR}/ethtool_${nnic}.log" 2>/dev/null | cut -d: -f2- | xargs)
+            [ -n "$_ld" ] && nlink="$_ld"
+        fi
         # 物理口序号：同卡第 N 口/共 M 口（USB/非 PCIe 接口已在上方排除；明细行序 = BDF 升序，同卡相邻）
         nport="—"
         _bd_pre="${nnbdf%%.*}"
@@ -228,7 +239,7 @@ if [ -f "${nic_inventory}" ]; then
             NIC_PORT_IDX[$_bd_pre]=$(( ${NIC_PORT_IDX[$_bd_pre]:-0} + 1 ))
             nport="${NIC_PORT_IDX[$_bd_pre]}/${NIC_PORT_TOTAL[$_bd_pre]}"
         fi
-        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}|${nport}"$'\n'
+        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}|${nport}|${nlink}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
 # 网卡明细回退：nic_inventory.csv 空但 ibstat 有 CA（旧采集 v1.x 未生成 csv）→ 从 ibstat 构建简化明细
