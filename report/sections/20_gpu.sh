@@ -9,25 +9,43 @@ load_manifest "${GPU_DIR}" gpu_inventory "gpu_inventory.csv"
 load_manifest "${GPU_DIR}" gpu_ecc_inventory "gpu_ecc_inventory.csv"
 GPU_CSV="${gpu_inventory}"
 GPU_ECC_CSV="${gpu_ecc_inventory}"
-GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""
+GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""; GPU_AMD_SUSPECT=""
 if [ -f "$GPU_CSV" ]; then
     # 有效性守卫：nvidia-smi 失败时 csv 只有报错行（如 "NVIDIA-SMI has failed..."），不算 GPU 数据
     if grep -v "^#" "$GPU_CSV" | grep -qiE "NVIDIA-SMI has failed|couldn't communicate|No devices were found"; then
         GPU_CSV=""
     fi
 fi
-# GPU 硬件存在性（lspci 3D controller，厂商无关 v1.46.0——AMD/Intel 卡也识别，不再误报"无 GPU"）
-# GPU_PCI_VENDOR：NVIDIA / AMD / Intel / 其他（混插取首个非集显厂商；VGA compatible 的 Intel 核显不算独立 GPU）
+# GPU 硬件存在性（lspci 3D controller，厂商无关 v1.46.0——AMD/Intel/昇腾卡也识别，不再误报"无 GPU"）
+# GPU_PCI_VENDORS：按厂商分组计数（混插识别，如 "NVIDIA:8 AMD:2"）；GPU_PLATFORM：平台类型判定
+# 厂商判定顺序：昇腾（Huawei）→ NVIDIA → AMD → Intel → 其他；VGA compatible 的集显不算独立 GPU
 GPU_PCI_PRESENT=$(grep -cE "3D controller" "${lspci_all}" 2>/dev/null)
 GPU_PCI_VENDOR=""
+GPU_PCI_VENDORS=""
+GPU_PLATFORM="none"
 if [ "$GPU_PCI_PRESENT" -gt 0 ] 2>/dev/null; then
-    _gv=$(grep -m1 "3D controller" "${lspci_all}" 2>/dev/null)
-    case "$_gv" in
-        *NVIDIA*) GPU_PCI_VENDOR="NVIDIA" ;;
-        *"Advanced Micro Devices"*|*AMD*|*ATI*) GPU_PCI_VENDOR="AMD" ;;
-        *Intel*) GPU_PCI_VENDOR="Intel" ;;
-        *) GPU_PCI_VENDOR="其他" ;;
-    esac
+    GPU_PCI_VENDORS=$(grep "3D controller" "${lspci_all}" 2>/dev/null | sed -n 's/.*3D controller: //p' | while IFS= read -r _gl; do
+        case "$_gl" in
+            *NVIDIA*) echo "NVIDIA" ;;
+            *"Advanced Micro Devices"*|*AMD*|*ATI*) echo "AMD" ;;
+            *Huawei*|*HiSilicon*) echo "Ascend" ;;
+            *Intel*) echo "Intel" ;;
+            *) echo "Other" ;;
+        esac
+    done | sort | uniq -c | awk '{printf "%s:%s ", $2, $1}' | sed 's/ $//')
+    GPU_PCI_VENDOR=$(echo "$GPU_PCI_VENDORS" | awk -F'[: ]' '{print $1}')
+    _gv_count=$(echo "$GPU_PCI_VENDORS" | grep -oE ":" | wc -l)
+    if [ "$_gv_count" -gt 1 ]; then
+        GPU_PLATFORM="mixed"
+    else
+        case "$GPU_PCI_VENDOR" in
+            NVIDIA) GPU_PLATFORM="nvidia" ;;
+            AMD) GPU_PLATFORM="amd" ;;
+            Ascend) GPU_PLATFORM="ascend" ;;
+            Intel) GPU_PLATFORM="intel" ;;
+            *) GPU_PLATFORM="other" ;;
+        esac
+    fi
 fi
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
@@ -183,3 +201,50 @@ if [ -f "$GPU_ECC_CSV" ]; then
 fi
 # GPU 序列号列表（资产追踪；消费卡 serial=0 时忽略）
 GPU_SERIALS=$(grep -v "^#" "$GPU_CSV" 2>/dev/null | tail -n +2 | awk -F',' '{gsub(/^ +/,"",$3); gsub(/ +$/,"",$3); if($3!="" && $3!="0" && $3!="[N/A]") print $3}' | tr '\n' ',' | sed 's/,$//')
+
+# ─── AMD GPU 解析（v1.46.1，ROCm）：nvidia GPU_CSV 无数据但 gpu_amd_inventory.json 存在时 ───
+load_manifest "${GPU_DIR}" gpu_amd_inventory "gpu_amd_inventory.json"
+if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
+    AMD_JSON="${gpu_amd_inventory}"
+    _amd_cards=$(grep -oE '"card[0-9]+"' "${AMD_JSON}" 2>/dev/null | sort -u)
+    if [ -n "$_amd_cards" ]; then
+        GPU_COUNT=$(echo "$_amd_cards" | wc -l)
+        GPU_NAMES=$(grep -oE '"Product Name": "[^"]*"' "${AMD_JSON}" | sort -u | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//')
+        GPU_MEM=$(grep -oE '"VRAM Total Memory \(B\)": "[0-9]+"' "${AMD_JSON}" | grep -oE '[0-9]+' | awk '{s+=$1} END{printf "%.0f GiB", s/1024/1024/1024}')
+        GPU_DETAILS=""
+        _ai=0
+        for _card in $_amd_cards; do
+            _an=$(grep -oE '"Product Name": "[^"]*"' "${AMD_JSON}" | head -1 | cut -d'"' -f4)
+            _auid=$(grep -oE '"Unique ID": "[^"]*"' "${AMD_JSON}" | head -1 | cut -d'"' -f4)
+            _amem=$(grep -oE '"VRAM Total Memory \(B\)": "[0-9]+"' "${AMD_JSON}" | head -1 | grep -oE '[0-9]+')
+            _atmp=$(grep -oE '"Temperature \(Sensor edge\) \(C\)": "[^"]*"' "${AMD_JSON}" | head -1 | grep -oE '[0-9.]+')
+            _apwr=$(grep -oE '"Average Graphics Package Power Consumption \(W\)": "[^"]*"' "${AMD_JSON}" | head -1 | grep -oE '[0-9.]+')
+            _autl=$(grep -oE '"GPU use \(%\)": "[^"]*"' "${AMD_JSON}" | head -1 | grep -oE '[0-9.]+')
+            [ -z "$_amem" ] && _amem="0"
+            # 魔改/伪装检测（v1.46.1）：AMD 规格库交叉验证（3% 容差，与 NVIDIA 同逻辑）
+            _aspec=""
+            _amem_gb_num=$(awk "BEGIN{printf \"%.1f\", $_amem/1024/1024/1024}")
+            if command -v gpu_mem_candidates >/dev/null 2>&1; then
+                _acands=$(gpu_mem_candidates "$_an" 2>/dev/null)
+                if [ -n "$_acands" ]; then
+                    for _ac in $_acands; do
+                        _adiff=$(awk "BEGIN{d=($_amem_gb_num-$_ac)/$_ac; if(d<0)d=-d; printf \"%.3f\", d}")
+                        if awk "BEGIN{exit !($_adiff <= 0.03)}"; then _aspec="$_ac"; break; fi
+                    done
+                    [ -z "$_aspec" ] && GPU_AMD_SUSPECT="${GPU_AMD_SUSPECT}卡${_ai}(${_an} 检测${_amem_gb}GB vs 额定${_acands}GB); "
+                fi
+            fi
+            _amem_gb=$(awk "BEGIN{printf \"%.0f\", $_amem/1024/1024/1024}")
+            GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_auid:-N/A}|${_amem_gb}GB${_aspec:+/$_aspec}|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|N/A|N/A|N/A|N/A|N/A"$'\n'
+            _ai=$((_ai + 1))
+        done
+        GPU_DETAILS=$(printf '%s' "$GPU_DETAILS" | sed '/^$/d')
+        # 汇总：温度/功耗从明细聚合（字段 5=功耗 6=温度）
+        GPU_TEMP=$(printf '%s
+' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$6); if($6+0>mx)mx=$6+0} END{if(mx>0) printf "%d°C", mx; else print "N/A"}')
+        GPU_POWER=$(printf '%s
+' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$5); s+=$5} END{if(s>0) printf "%d W", s; else print "N/A"}')
+        GPU_PLATFORM="amd"
+        GPU_PCI_VENDOR="AMD"
+    fi
+fi

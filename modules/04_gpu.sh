@@ -15,9 +15,29 @@ run_gpu() {
 
     module_start "$MODULE_NAME"
 
-    # 检查 nvidia-smi 是否存在
+    # ─── GPU 平台检测（v1.46.1）：lspci 3D controller 厂商判定——决定采集路径 ───
+    #   nvidia-smi 存在 → NVIDIA 路径；无 nvidia-smi 但 rocm-smi/amd-smi → AMD(ROCm) 路径；
+    #   有 GPU 但工具全无 → 落盘 PCI 提示（报告显示"驱动未装"，不误报无 GPU）
+    local gpu_pci_present=0 gpu_pci_vendor=""
+    if check_cmd lspci; then
+        gpu_pci_present=$(lspci 2>/dev/null | grep -cE "3D controller")
+        gpu_pci_vendor=$(lspci 2>/dev/null | grep -m1 "3D controller" | sed 's/.*3D controller: //' | awk '{print $1}')
+    fi
+
     if ! check_cmd nvidia-smi; then
-        echo -e "${YELLOW}[SKIP] nvidia-smi not found, skipping GPU module${NC}"
+        if [ "$gpu_pci_present" -gt 0 ] 2>/dev/null; then
+            if check_cmd rocm-smi || check_cmd amd-smi; then
+                run_amd_gpu "$dir"
+                module_end "$MODULE_NAME"
+                return 0
+            fi
+            # 有 GPU 但 NVIDIA/AMD 工具都无 → 落盘 PCI 提示（供报告"驱动未装"展示）
+            echo "# GPU PCI detected but no vendor tool (nvidia-smi/rocm-smi/amd-smi)" > "${dir}/gpu_pci_only.log"
+            echo "# Vendor line: $(lspci 2>/dev/null | grep -m1 '3D controller')" >> "${dir}/gpu_pci_only.log"
+            echo -e "${YELLOW}[WARN] 检测到 ${gpu_pci_present} 个 GPU（${gpu_pci_vendor:-未知}）但 nvidia-smi/rocm-smi 均未安装——仅记录 PCI 存在性${NC}"
+        else
+            echo -e "${YELLOW}[SKIP] 无 GPU（无 3D controller 设备），跳过 GPU 模块${NC}"
+        fi
         module_end "$MODULE_NAME"
         return 0
     fi
@@ -73,6 +93,62 @@ run_gpu() {
         "gpu_remapped_rows" "gpu_remapped_rows.csv"
 
     module_end "$MODULE_NAME"
+}
+
+# ─── AMD GPU 采集（v1.46.1，ROCm 生态）───
+# rocm-smi（旧）/ amd-smi（ROCm 7+ 新）对标 nvidia-smi；rocminfo 对标 nvidia-smi -q（型号/gfx 架构）
+# 全量落盘 + 清单提取（v1.41.1 全量原则）；report 端按厂商解析
+run_amd_gpu() {
+    local dir="$1"
+    local amd_smi_cmd=""
+    if check_cmd amd-smi; then
+        amd_smi_cmd="amd-smi"
+    elif check_cmd rocm-smi; then
+        amd_smi_cmd="rocm-smi"
+    else
+        echo -e "${YELLOW}[SKIP] AMD GPU 已检测但 rocm-smi/amd-smi 均未安装（无 ROCm 环境）${NC}"
+        echo "# AMD GPU detected but no ROCm tool" > "${dir}/gpu_amd_pci_only.log"
+        module_end "$MODULE_NAME"
+        return 0
+    fi
+
+    echo -e "${CYAN}[INFO] 检测到 AMD GPU（${amd_smi_cmd}），走 ROCm 采集路径${NC}"
+
+    # 全量落盘（并行）
+    local amd_jobs=()
+    amd_jobs+=(
+        "${amd_smi_cmd} --showallinfo --json"        "${dir}/gpu_amd_full.log"
+        "${amd_smi_cmd} --showproductname --showuniqueid --showmeminfo vram --showtemp --showpower --showuse --showclocks --showpids --json" "${dir}/gpu_amd_inventory.json"
+        "${amd_smi_cmd} --showmeminfo all --json"    "${dir}/gpu_amd_meminfo.log"
+        "${amd_smi_cmd} --showtemp --json"           "${dir}/gpu_amd_temp.log"
+        "${amd_smi_cmd} --showpower --json"          "${dir}/gpu_amd_power.log"
+        "${amd_smi_cmd} --showuse --json"            "${dir}/gpu_amd_use.log"
+        "${amd_smi_cmd} --showclocks --json"         "${dir}/gpu_amd_clocks.log"
+        "${amd_smi_cmd} --showfwinfo --json"         "${dir}/gpu_amd_fw.log"
+        "${amd_smi_cmd} --showrasinfo --json"        "${dir}/gpu_amd_ras.log"
+    )
+    # rocminfo 型号/架构（对标 nvidia-smi -q）
+    if check_cmd rocminfo; then
+        amd_jobs+=("rocminfo" "${dir}/gpu_amd_rocminfo.log")
+    fi
+    run_and_log_parallel 6 "${amd_jobs[@]}"
+
+    # 每卡明细（按卡数循环）
+    local amd_count
+    amd_count=$("${amd_smi_cmd}" --showuniqueid --json 2>/dev/null | grep -c "unique_id\|uniqueid" || true)
+    [ "$amd_count" -lt 1 ] 2>/dev/null && amd_count=0
+    local _ai=0
+    while [ "$_ai" -lt "$amd_count" ]; do
+        run_and_log "${amd_smi_cmd} -d $_ai --showallinfo --json" "${dir}/gpu_amd_${_ai}_detail.json"
+        _ai=$((_ai + 1))
+    done
+
+    write_manifest "${dir}/manifest.txt" \
+        "gpu_amd_full" "gpu_amd_full.log" \
+        "gpu_amd_inventory" "gpu_amd_inventory.json" \
+        "gpu_amd_rocminfo" "gpu_amd_rocminfo.log" \
+        "gpu_amd_ras" "gpu_amd_ras.log" \
+        "gpu_amd_pci_only" "gpu_amd_pci_only.log"
 }
 
 # 允许单独执行
