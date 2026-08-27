@@ -15,17 +15,19 @@ run_gpu() {
 
     module_start "$MODULE_NAME"
 
-    # ─── GPU 平台检测（v1.46.1）：lspci 3D controller 厂商判定——决定采集路径 ───
+    # ─── GPU 平台检测（v1.46.2 起调 detect_gpu_vendors 单一实现）───
     #   nvidia-smi 存在 → NVIDIA 路径；无 nvidia-smi 但 rocm-smi/amd-smi → AMD(ROCm) 路径；
     #   有 GPU 但工具全无 → 落盘 PCI 提示（报告显示"驱动未装"，不误报无 GPU）
-    local gpu_pci_present=0 gpu_pci_vendor=""
-    if check_cmd lspci; then
-        gpu_pci_present=$(lspci 2>/dev/null | grep -cE "3D controller")
-        gpu_pci_vendor=$(lspci 2>/dev/null | grep -m1 "3D controller" | sed 's/.*3D controller: //' | awk '{print $1}')
+    if command -v detect_gpu_vendors >/dev/null 2>&1; then
+        detect_gpu_vendors
+    else
+        # 兜底（函数缺失时）
+        GPU_PCI_PRESENT=$(lspci 2>/dev/null | grep -cE "3D controller")
+        GPU_PCI_VENDOR=""; GPU_PCI_VENDORS=""; GPU_PLATFORM="none"
     fi
 
     if ! check_cmd nvidia-smi; then
-        if [ "$gpu_pci_present" -gt 0 ] 2>/dev/null; then
+        if [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             if check_cmd rocm-smi || check_cmd amd-smi; then
                 run_amd_gpu "$dir"
                 module_end "$MODULE_NAME"
@@ -34,7 +36,7 @@ run_gpu() {
             # 有 GPU 但 NVIDIA/AMD 工具都无 → 落盘 PCI 提示（供报告"驱动未装"展示）
             echo "# GPU PCI detected but no vendor tool (nvidia-smi/rocm-smi/amd-smi)" > "${dir}/gpu_pci_only.log"
             echo "# Vendor line: $(lspci 2>/dev/null | grep -m1 '3D controller')" >> "${dir}/gpu_pci_only.log"
-            echo -e "${YELLOW}[WARN] 检测到 ${gpu_pci_present} 个 GPU（${gpu_pci_vendor:-未知}）但 nvidia-smi/rocm-smi 均未安装——仅记录 PCI 存在性${NC}"
+            echo -e "${YELLOW}[WARN] 检测到 ${GPU_PCI_PRESENT} 个 GPU（${GPU_PCI_VENDORS:-${GPU_PCI_VENDOR:-未知}}）但 nvidia-smi/rocm-smi 均未安装——仅记录 PCI 存在性${NC}"
         else
             echo -e "${YELLOW}[SKIP] 无 GPU（无 3D controller 设备），跳过 GPU 模块${NC}"
         fi

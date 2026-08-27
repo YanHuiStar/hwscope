@@ -16,36 +16,14 @@ if [ -f "$GPU_CSV" ]; then
         GPU_CSV=""
     fi
 fi
-# GPU 硬件存在性（lspci 3D controller，厂商无关 v1.46.0——AMD/Intel/昇腾卡也识别，不再误报"无 GPU"）
-# GPU_PCI_VENDORS：按厂商分组计数（混插识别，如 "NVIDIA:8 AMD:2"）；GPU_PLATFORM：平台类型判定
-# 厂商判定顺序：昇腾（Huawei）→ NVIDIA → AMD → Intel → 其他；VGA compatible 的集显不算独立 GPU
-GPU_PCI_PRESENT=$(grep -cE "3D controller" "${lspci_all}" 2>/dev/null)
-GPU_PCI_VENDOR=""
-GPU_PCI_VENDORS=""
-GPU_PLATFORM="none"
-if [ "$GPU_PCI_PRESENT" -gt 0 ] 2>/dev/null; then
-    GPU_PCI_VENDORS=$(grep "3D controller" "${lspci_all}" 2>/dev/null | sed -n 's/.*3D controller: //p' | while IFS= read -r _gl; do
-        case "$_gl" in
-            *NVIDIA*) echo "NVIDIA" ;;
-            *"Advanced Micro Devices"*|*AMD*|*ATI*) echo "AMD" ;;
-            *Huawei*|*HiSilicon*) echo "Ascend" ;;
-            *Intel*) echo "Intel" ;;
-            *) echo "Other" ;;
-        esac
-    done | sort | uniq -c | awk '{printf "%s:%s ", $2, $1}' | sed 's/ $//')
-    GPU_PCI_VENDOR=$(echo "$GPU_PCI_VENDORS" | awk -F'[: ]' '{print $1}')
-    _gv_count=$(echo "$GPU_PCI_VENDORS" | grep -oE ":" | wc -l)
-    if [ "$_gv_count" -gt 1 ]; then
-        GPU_PLATFORM="mixed"
-    else
-        case "$GPU_PCI_VENDOR" in
-            NVIDIA) GPU_PLATFORM="nvidia" ;;
-            AMD) GPU_PLATFORM="amd" ;;
-            Ascend) GPU_PLATFORM="ascend" ;;
-            Intel) GPU_PLATFORM="intel" ;;
-            *) GPU_PLATFORM="other" ;;
-        esac
-    fi
+# GPU 硬件存在性（lspci 3D controller，v1.46.2 起调 detect_gpu_vendors 单一实现——报告端传 lspci_all 日志）
+# 输出：GPU_PCI_PRESENT / GPU_PCI_VENDORS（厂商分组）/ GPU_PCI_VENDOR / GPU_PLATFORM（nvidia/amd/mixed/...）
+if command -v detect_gpu_vendors >/dev/null 2>&1; then
+    detect_gpu_vendors "${lspci_all}"
+else
+    # 兜底（函数缺失时）：仅基础存在性
+    GPU_PCI_PRESENT=$(grep -cE "3D controller" "${lspci_all}" 2>/dev/null)
+    GPU_PCI_VENDOR=""; GPU_PCI_VENDORS=""; GPU_PLATFORM="none"
 fi
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
@@ -71,25 +49,16 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_MEM_DET_MIB=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f6 | grep -oE "[0-9]+" | head -1)
     GPU_MEM_SPEC=""
     GPU_MEM_SPEC_NOTE=""
-    if [ -n "$GPU_MODEL_LINE" ] && [ -n "$GPU_MEM_DET_MIB" ]; then
-        _cands=$(gpu_mem_candidates "$GPU_MODEL_LINE")
-        if [ -n "$_cands" ]; then
-            # 交叉验证：找与检测 MiB 最接近的候选口径（GB 十进制≈953.674 MiB/GB；GiB=1024 MiB/GiB）
-            _best_c="" _best_diff="" _best_mib=""
-            for _c in ${_cands//|/ }; do
-                for _mib in $(awk -v c="$_c" 'BEGIN{printf "%.0f %.0f", c*1000000000/1048576, c*1024}' < /dev/null); do
-                    _diff=$(awk -v d="$GPU_MEM_DET_MIB" -v m="$_mib" 'BEGIN{printf "%.4f", (d>m?d-m:m-d)/d}' < /dev/null)
-                    if [ -z "$_best_diff" ] || awk -v a="$_diff" -v b="$_best_diff" 'BEGIN{exit !(a<b)}'; then
-                        _best_diff="$_diff"; _best_c="$_c"; _best_mib="$_mib"
-                    fi
-                done
-            done
-            if awk -v d="$_best_diff" 'BEGIN{exit !(d<0.03)}'; then
-                GPU_MEM_SPEC="${_best_c}GB/卡"
+    if [ -n "$GPU_MODEL_LINE" ] && [ -n "$GPU_MEM_DET_MIB" ] && command -v verify_gpu_mem >/dev/null 2>&1; then
+        # 统一魔改检测（v1.46.2）：verify_gpu_mem 双口径多候选最近匹配（原逻辑泛化，NVIDIA/AMD 共用）
+        verify_gpu_mem "$GPU_MODEL_LINE" "$GPU_MEM_DET_MIB"
+        if [ -n "$VERIFY_MEM_SPEC" ]; then
+            if [ -z "$VERIFY_MEM_NOTE" ]; then
+                GPU_MEM_SPEC="${VERIFY_MEM_SPEC}GB/卡"
             else
                 GPU_MEM_MISMATCH=$(awk -v d="$GPU_MEM_DET_MIB" 'BEGIN{printf "%.0f", d/1024}' < /dev/null)
-                GPU_MEM_SPEC="${_best_c}GB"
-                GPU_MEM_SPEC_NOTE="⚠️ 检测 ${GPU_MEM_MISMATCH}GB 与额定 ${_best_c}GB 不符（疑似显存魔改或伪装，需核实）"
+                GPU_MEM_SPEC="${VERIFY_MEM_SPEC}GB"
+                GPU_MEM_SPEC_NOTE="⚠️ ${VERIFY_MEM_NOTE}（疑似显存魔改或伪装，需核实）"
             fi
         fi
     fi
@@ -221,17 +190,14 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
             _apwr=$(grep -oE '"Average Graphics Package Power Consumption \(W\)": "[^"]*"' "${AMD_JSON}" | head -1 | grep -oE '[0-9.]+')
             _autl=$(grep -oE '"GPU use \(%\)": "[^"]*"' "${AMD_JSON}" | head -1 | grep -oE '[0-9.]+')
             [ -z "$_amem" ] && _amem="0"
-            # 魔改/伪装检测（v1.46.1）：AMD 规格库交叉验证（3% 容差，与 NVIDIA 同逻辑）
+            # 魔改/伪装检测（v1.46.2）：统一 verify_gpu_mem（B→MiB 后双口径匹配）
             _aspec=""
-            _amem_gb_num=$(awk "BEGIN{printf \"%.1f\", $_amem/1024/1024/1024}")
-            if command -v gpu_mem_candidates >/dev/null 2>&1; then
-                _acands=$(gpu_mem_candidates "$_an" 2>/dev/null)
-                if [ -n "$_acands" ]; then
-                    for _ac in $_acands; do
-                        _adiff=$(awk "BEGIN{d=($_amem_gb_num-$_ac)/$_ac; if(d<0)d=-d; printf \"%.3f\", d}")
-                        if awk "BEGIN{exit !($_adiff <= 0.03)}"; then _aspec="$_ac"; break; fi
-                    done
-                    [ -z "$_aspec" ] && GPU_AMD_SUSPECT="${GPU_AMD_SUSPECT}卡${_ai}(${_an} 检测${_amem_gb}GB vs 额定${_acands}GB); "
+            if [ -n "$_amem" ] && command -v verify_gpu_mem >/dev/null 2>&1; then
+                _amem_mib=$(awk -v b="$_amem" 'BEGIN{printf "%.0f", b/1048576}')
+                if verify_gpu_mem "$_an" "$_amem_mib"; then
+                    _aspec="$VERIFY_MEM_SPEC"
+                else
+                    [ -n "$VERIFY_MEM_NOTE" ] && GPU_AMD_SUSPECT="${GPU_AMD_SUSPECT}卡${_ai}(${_an} ${VERIFY_MEM_NOTE}); "
                 fi
             fi
             _amem_gb=$(awk "BEGIN{printf \"%.0f\", $_amem/1024/1024/1024}")

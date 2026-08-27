@@ -172,6 +172,8 @@ gen_json() {
     "hostname": "${HOSTNAME:-unknown}",
     "platform": "${PLATFORM:-unknown}",
     "platform_label": "${PLATFORM_LABEL:-unknown}",
+    "machine_class": "${MACHINE_CLASS:-unknown}",
+    "machine_class_label": "${MACHINE_CLASS_LABEL:-}",
     "timestamp": "${TIMESTAMP:-unknown}"
   },
   "environment": {
