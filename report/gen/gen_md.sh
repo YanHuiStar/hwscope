@@ -243,19 +243,22 @@ else
 fi)
 $(printf '%s' "$dimms_md")
 
-## GPU
-$(if [ "$GPU_COUNT" -eq 0 ]; then
-    echo "| 项 | 值 |"
-    echo "|----|----|"
-    if [ "$HEAD_NODE" -eq 1 ]; then
-        echo "| 状态 | HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集） |"
-    elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-        echo "| 状态 | ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 NVIDIA GPU（PCI 3D controller），但 nvidia-smi 无数据（驱动未安装或异常） |"
+$(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+    echo "## GPU"
+    if [ "$GPU_COUNT" -eq 0 ]; then
+        if [ "$HEAD_NODE" -eq 1 ]; then
+        echo "| 项 | 值 |"
+        echo "|----|----|"
+            echo "| 状态 | HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集） |"
+        elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| 项 | 值 |"
+            echo "|----|----|"
+            echo "| 状态 | ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU（PCI 3D controller），但 ${GPU_PCI_VENDOR:-GPU} 管理工具无数据（驱动未安装或异常） |"
+        else
+            echo "<!-- GPU: 无 GPU 平台，整段隐藏（v1.46.0） -->"
+        fi
     else
-        echo "| 状态 | N/A（无 GPU） |"
-    fi
-else
-    echo "| 项 | 值 |"
+        echo "| 项 | 值 |"
     echo "|----|----|"
     echo "| 数量 | ${GPU_COUNT:-0} |"
     echo "| 型号 | ${GPU_NAMES:-N/A} |"
@@ -265,8 +268,9 @@ else
     echo "| ECC | ${GPU_ECC:-N/A} |"
     echo "| 退役行 | ${GPU_REMAP:-N/A} |"
     echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
-    if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then
-        echo "| NVLink | ${NV_LINK_SUMMARY} |"
+        if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then
+            echo "| NVLink | ${NV_LINK_SUMMARY} |"
+        fi
     fi
 fi)
 $(if [ -n "$gpu_details_md" ]; then
