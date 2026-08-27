@@ -80,3 +80,32 @@
             *)                       echo "" ;;
         esac
     }
+
+# ─── 魔改/伪装检测统一函数（v1.46.2，NVIDIA/AMD 共用）───
+# verify_gpu_mem <型号> <检测MiB>
+# 全局输出：VERIFY_MEM_SPEC（匹配的额定规格 GiB，无候选/无匹配=空）、VERIFY_MEM_NOTE（不匹配描述，如"检测 180GB 与额定 188GB 不符"）
+# 返回：0=匹配（3% 容差内），1=无候选或不匹配
+# 双口径匹配：候选规格同时按 GB 十进制（*1e9/2^20 MiB）与 GiB（*1024 MiB）换算，取最近（A100 40|80 等分型号自动选近者）
+verify_gpu_mem() {
+    local _model="$1" _det_mib="$2"
+    VERIFY_MEM_SPEC=""
+    VERIFY_MEM_NOTE=""
+    [ -z "$_model" ] || [ -z "$_det_mib" ] && return 1
+    local _cands _best_c="" _best_diff="" _best_mib=""
+    _cands=$(gpu_mem_candidates "$_model" 2>/dev/null)
+    [ -z "$_cands" ] && return 1
+    for _c in ${_cands//|/ }; do
+        for _mib in $(awk -v c="$_c" 'BEGIN{printf "%.0f %.0f", c*1000000000/1048576, c*1024}' < /dev/null); do
+            _diff=$(awk -v d="$_det_mib" -v m="$_mib" 'BEGIN{printf "%.4f", (d>m?d-m:m-d)/d}' < /dev/null)
+            if [ -z "$_best_diff" ] || awk -v a="$_diff" -v b="$_best_diff" 'BEGIN{exit !(a<b)}'; then
+                _best_diff="$_diff"; _best_c="$_c"; _best_mib="$_mib"
+            fi
+        done
+    done
+    if awk -v d="$_best_diff" 'BEGIN{exit !(d<0.03)}'; then
+        VERIFY_MEM_SPEC="$_best_c"
+        return 0
+    fi
+    VERIFY_MEM_NOTE="检测 $(awk -v d="$_det_mib" 'BEGIN{printf "%.0f", d/1024}' < /dev/null)GB 与额定 ${_best_c}GB 不符"
+    return 1
+}

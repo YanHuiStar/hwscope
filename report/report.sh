@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"   # 项目根（report/ 的上级
 REPORT_DIR="${SCRIPT_DIR}/report"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 parse_help "$@"
+source "${SCRIPT_DIR}/lib/platform.sh" 2>/dev/null || true   # v1.46.2：detect_gpu_vendors / classify_machine
 source "${SCRIPT_DIR}/lib/nvlink.sh" 2>/dev/null || true
 
 # ─── 参数解析（兼容: report.sh [dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>] [--bmc-verify] [--fld-dir <dir>]） ───
@@ -65,6 +66,10 @@ for _s in 10_env_mb_cpu 20_gpu 30_storage_gpu_extra 40_network_bmc 50_nvlink_dcg
     source "${REPORT_DIR}/sections/${_s}.sh"
 done
 unset _s
+# 设备形态分类（v1.46.2）：读日志信号（chassis/ECC/BMC/GPU），零新采集
+if command -v classify_machine >/dev/null 2>&1; then
+    classify_machine "$OUT"
+fi
 for _g in gen_common gen_json gen_md gen_txt gen_html gen_acceptance gen_bmc_verify; do
     source "${REPORT_DIR}/gen/${_g}.sh"
 done

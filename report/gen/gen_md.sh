@@ -136,6 +136,7 @@ gen_md() {
 | 内核 | ${KERNEL:-N/A} |
 | 驱动 | ${GPU_DRIVER:-N/A} |
 | CUDA | ${GPU_CUDA:-N/A} |
+| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |
 | 采集耗时 | ${TIMING_TOTAL:-N/A} |
 
 ## 主板
