@@ -114,8 +114,8 @@ parse_sysbench() {
         case "$kind" in
             mem)
                 grep -q "Total operations\|MiB/sec" "$f" 2>/dev/null || continue
-                local ops=$(grep -m1 "Total operations" "$f" | grep -oE "[0-9]+")
-                local rate=$(grep -m1 "MiB/sec" "$f" | grep -oE "[0-9.]+")
+                local ops=$(grep -m1 "Total operations" "$f" | grep -oE "[0-9]+" | head -1)
+                local rate=$(grep -m1 "MiB/sec" "$f" | grep -oE "[0-9.]+" | head -1)
                 echo "| sysbench 内存吞吐 | ${rate:-N/A} MiB/s |（总操作 ${ops:-N/A}，参考指标）|"
                 return 0 ;;
             cpu)
@@ -133,8 +133,8 @@ parse_fio() {
     local f
     for f in $(ls -t "$TEST_DIR"/*.log 2>/dev/null); do
         grep -q "IOPS\|BW=" "$f" 2>/dev/null || continue
-        local iops=$(grep -m1 "IOPS" "$f" | grep -oE "IOPS=[0-9.]+[kKM]?" | head -1)
-        local bw=$(grep -m1 "BW=" "$f" | grep -oE "BW=[0-9.]+[kKM]?i?B/s" | head -1)
+        local iops=$(grep -oE "IOPS=[0-9.]+[kKM]?" "$f" | head -1)
+        local bw=$(grep -oE "BW=[0-9.]+[kKM]?i?B/s" "$f" | head -1)
         echo "| fio | ${iops:-N/A} / ${bw:-N/A} |（参考指标，详见附录）|"
         return 0
     done
@@ -260,6 +260,7 @@ REPORT_MD="${TEST_DIR}/hwscope_test_report.md"
         echo "| 项目 | 带宽 | 与理论峰值比 |"
         echo "|------|------|------------|"
         printf '%b' "$STREAM_ROWS"
+        echo ""
         echo ""
     }
     [ -n "$SYSBENCH_MEM" ] && {
