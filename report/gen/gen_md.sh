@@ -253,7 +253,7 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             echo "| 项 | 值 |"
             echo "|----|----|"
-            echo "| 状态 | ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU（PCI 3D controller），但 ${GPU_PCI_VENDOR:-GPU} 管理工具无数据（驱动未安装或异常） |"
+            echo "| 状态 | ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 GPU（${GPU_PCI_VENDORS:-${GPU_PCI_VENDOR:-未知}}），但对应管理工具无数据（驱动未安装或异常） |"
         else
             echo "<!-- GPU: 无 GPU 平台，整段隐藏（v1.46.0） -->"
         fi

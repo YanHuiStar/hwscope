@@ -43,7 +43,9 @@ gen_acceptance() {
     case "${NVLINK_HEALTH:-N/A}" in
         OK)   add_item "NVLink 互联" "PASS" "全互联无降级链路" ;;
         异常) add_item "NVLink 互联" "FAIL" "存在降级链路${NVLINK_CRC:+，且有非零 CRC 错误}" ;;
-        *)    if [ "$HEAD_NODE" -eq 1 ]; then
+        *)    if [ "${GPU_PLATFORM:-}" = "amd" ]; then
+                  add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（Instinct 经 xGMI/Infinity Fabric 互联，不适用）" 1
+              elif [ "$HEAD_NODE" -eq 1 ]; then
                   add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）" 1
               elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
                   add_item "NVLink 互联" "WARN" "检测到 NVIDIA GPU 但驱动异常，NVLink 状态不可用"
@@ -59,7 +61,9 @@ gen_acceptance() {
         通过*) add_item "DCGM 诊断" "PASS" "${DCGM_SUMMARY}" ;;
         Fail*硬件:[1-9]*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
         配置项*Fail*|Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
-        *)    if [ "$HEAD_NODE" -eq 1 ]; then
+        *)    if [ "${GPU_PLATFORM:-}" = "amd" ]; then
+                  add_item "DCGM 诊断" "N/A" "AMD 平台无 DCGM（ROCm 诊断：rocminfo + amd-smi ras 见 GPU 段附录）" 1
+              elif [ "$HEAD_NODE" -eq 1 ]; then
                   add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）" 1
               elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
                   add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行"

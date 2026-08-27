@@ -53,6 +53,15 @@
             *P4*)                    echo "8" ;;
             *L4*)                    echo "24" ;;
             *T4*)                    echo "16" ;;
+            # ── AMD Instinct（v1.46.1，ROCm 生态；GiB 口径与 NVIDIA 库一致）──
+            *MI355X*)                echo "281" ;;
+            *MI325X*)                echo "250" ;;
+            *MI300X*)                echo "188" ;;
+            *MI250X*)                echo "125" ;;
+            *MI210*)                 echo "62" ;;
+            *MI100*)                 echo "31" ;;
+            *"Radeon PRO W7900"*)    echo "45" ;;
+            *"Radeon PRO W6800"*)    echo "31" ;;
             # ── 消费/游戏卡（魔改重灾区）──
             *"RTX 4090"*)            echo "24" ;;
             *"RTX 4080"*)            echo "16" ;;
