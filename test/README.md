@@ -101,3 +101,9 @@ HWSCOPE_SAMPLE_ROOT=<多机样本根> bash test/report_regression.sh --all --upd
 
 > **运行环境**：需 Linux（或 fork 稳定的环境）——`report.sh` 含数百个 `$( )`，
 > Windows git-bash 下可能触发 MSYS fork 崩溃（AGENTS.md“环境故障止损纪律”）。
+>
+> **定位（v1.48.4）：主要给 Agent 用，也给人用。**
+> - **Agent（WorkBuddy / Hermes 等）改动 `report/sections/`、`report/gen/`、`report/lib/` 或采集模块输出格式后，提交前必跑一次**——
+>   本脚本存在的理由：v1.44–v1.48 实录的 4 个解析 bug（AMD 多卡明细全显示 card0、内存通道数算成插槽数、
+>   表格列错位、1T9 容量误判）全是 Agent 改解析/渲染代码时引入、人工 review 漏掉的。改完跑一次，差异立刻暴露。
+> - **人（交付/验收）**：真机采集后交付前自检、升级报告版本后确认输出未漂移。
