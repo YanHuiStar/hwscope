@@ -177,25 +177,19 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
     AMD_JSON="${gpu_amd_inventory}"
     _amd_cards=$(grep -oE '"card[0-9]+"' "${AMD_JSON}" 2>/dev/null | sort -u)
     if [ -n "$_amd_cards" ]; then
-        # v1.46.3 修复：awk 按 "cardN" 分段逐卡提取——原 for 循环每字段对全 JSON head -1，
-        # 多卡机器每行都显示第一张卡的数据（明细全失真）。字段用整行 sub 提取，不依赖 JSON 格式化
+        # v1.46.3+ 修复：awk 逐卡提取（真实 rocm-smi --json = 每卡一行紧凑格式，cardN 与字段同行；
+        # 行内 sub 提取各字段，兼容任意 JSON 空白）。原实现按"每字段一行"分段导致字段全空
         _amd_rows=$(awk '
-            function emit() {
-                if (cn != "") printf "%s|%s|%s|%s|%s|%s|%s\n", cn, an, uid, mem, tmp, pwr, utl
+            /"card[0-9]+"/ {
+                cn=$0; sub(/.*"card/,"",cn); sub(/".*/,"",cn)
+                an=$0; sub(/.*"Product Name":[[:space:]]*"/,"",an); sub(/".*/,"",an)
+                uid=$0; sub(/.*"Unique ID":[[:space:]]*"/,"",uid); sub(/".*/,"",uid)
+                mem=$0; sub(/.*"VRAM Total Memory \(B\)":[[:space:]]*"/,"",mem); sub(/".*/,"",mem)
+                tmp=$0; sub(/.*"Temperature \(Sensor edge\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp)
+                pwr=$0; sub(/.*"Average Graphics Package Power Consumption \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr)
+                utl=$0; sub(/.*"GPU use \(%\)":[[:space:]]*"/,"",utl); sub(/".*/,"",utl)
+                printf "%s|%s|%s|%s|%s|%s|%s\n", cn, an, uid, mem, tmp, pwr, utl
             }
-            /"card[0-9]+"[[:space:]]*:[[:space:]]*\{/ {
-                emit()
-                if (match($0, /"card[0-9]+"/)) cn = substr($0, RSTART+5, RLENGTH-6)
-                an=""; uid=""; mem=""; tmp=""; pwr=""; utl=""
-                next
-            }
-            /"Product Name":/ { an=$0; sub(/.*"Product Name":[[:space:]]*"/,"",an); sub(/".*/,"",an) }
-            /"Unique ID":/    { uid=$0; sub(/.*"Unique ID":[[:space:]]*"/,"",uid); sub(/".*/,"",uid) }
-            /"VRAM Total Memory \(B\)":/ { mem=$0; sub(/.*"VRAM Total Memory \(B\)":[[:space:]]*"/,"",mem); sub(/".*/,"",mem) }
-            /"Temperature \(Sensor edge\) \(C\)":/ { tmp=$0; sub(/.*"Temperature \(Sensor edge\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp) }
-            /"Average Graphics Package Power Consumption \(W\)":/ { pwr=$0; sub(/.*"Average Graphics Package Power Consumption \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr) }
-            /"GPU use \(%\)":/ { utl=$0; sub(/.*"GPU use \(%\)":[[:space:]]*"/,"",utl); sub(/".*/,"",utl) }
-            END { emit() }
         ' "${AMD_JSON}")
         GPU_COUNT=$(printf '%s\n' "$_amd_rows" | grep -c '|')
         GPU_NAMES=$(grep -oE '"Product Name": "[^"]*"' "${AMD_JSON}" | sort -u | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//')

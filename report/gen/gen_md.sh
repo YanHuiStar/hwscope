@@ -264,6 +264,9 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
     echo "| 数量 | ${GPU_COUNT:-0} |"
     echo "| 型号 | ${GPU_NAMES:-N/A} |"
     echo "| 显存总量 | ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）${GPU_MEM_SPEC_NOTE:+ ${GPU_MEM_SPEC_NOTE}} |"
+    if [ -n "${GPU_AMD_SUSPECT:-}" ]; then
+        echo "| 显存异常 | ⚠️ ${GPU_AMD_SUSPECT%, }（疑似显存魔改或伪装，需核实） |"
+    fi
     echo "| 额定功耗 | ${GPU_POWER:-N/A} |"
     echo "| 温度 | ${GPU_TEMP:-N/A} |"
     echo "| ECC | ${GPU_ECC:-N/A} |"
