@@ -68,13 +68,13 @@ extract_metrics() {
 
     # 3. 内存（DIMM 行数/表头列/额定总量——抓位宽列与通道数解析）
     echo "[memory]"
-    echo "  dimm_rows=$(awk '/^### 内存模块明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^$/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+    echo "  dimm_rows=$(awk '/^### 内存模块明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
     grep -m1 '^| # | 插槽 | 容量' "$md" 2>/dev/null | sed 's/^/  header: /'
     grep -m1 '^| 物理额定总量' "$md" 2>/dev/null | sed 's/^/  /'
 
     # 4. PSU（行数——抓 PSU 三级回退解析失败）
     echo "[psu]"
-    echo "  psu_rows=$(awk '/^### 电源模块明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^$/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+    echo "  psu_rows=$(awk '/^### 电源模块明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
 
     # 5. PCIe 链路统计（抓 bridge 判定/降速数变化）
     echo "[pcie]"
@@ -83,12 +83,12 @@ extract_metrics() {
 
     # 6. 磁盘（行数/容量——抓 1T9 等容量口径误判）
     echo "[disk]"
-    echo "  disk_rows=$(awk '/^### 存储盘明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^$/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+    echo "  disk_rows=$(awk '/^### 存储盘明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
     grep -oE '\| (sd[a-z]+|nvme[0-9]+n[0-9]+) \|[^|]*\| [0-9.]+ ?[TG]B' "$md" 2>/dev/null | sort -u | head -6 | sed 's/^/  /'
 
     # 7. NIC（行数/表头列——抓端口列与 Link 状态列）
     echo "[nic]"
-    echo "  nic_rows=$(awk '/^### 网络适配器明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^$/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+    echo "  nic_rows=$(awk '/^### 网络适配器明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
     grep -m1 '^| # | 接口 | BDF |' "$md" 2>/dev/null | sed 's/^/  header: /'
 
     # 8. JSON 完整性与关键字段（抓占位/丢失字段）

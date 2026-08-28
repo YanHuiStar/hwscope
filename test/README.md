@@ -102,6 +102,13 @@ HWSCOPE_SAMPLE_ROOT=<多机样本根> bash test/report_regression.sh --all --upd
 > **运行环境**：需 Linux（或 fork 稳定的环境）——`report.sh` 含数百个 `$( )`，
 > Windows git-bash 下可能触发 MSYS fork 崩溃（AGENTS.md“环境故障止损纪律”）。
 >
+> **WSL 使用注意（实测坑）**：Windows 工作区文件是 **CRLF**（`core.autocrlf=true`），
+> Linux bash 跑 CRLF 的 `.sh` 会**静默失败**（`\r: command not found`）——表现为报告"生成成功"
+> 实际是旧的，指标全是旧值。Windows + WSL 场景务必先跑：
+> ```bash
+> cp -r /mnt/d/<项目> /tmp/hw && cd /tmp/hw && bash fixcrlf.sh   # 再跑回归
+> ```
+>
 > **定位（v1.48.4）：主要给 Agent 用，也给人用。**
 > - **Agent（WorkBuddy / Hermes 等）改动 `report/sections/`、`report/gen/`、`report/lib/` 或采集模块输出格式后，提交前必跑一次**——
 >   本脚本存在的理由：v1.44–v1.48 实录的 4 个解析 bug（AMD 多卡明细全显示 card0、内存通道数算成插槽数、
