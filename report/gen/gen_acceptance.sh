@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# HwScope - 验收清单生成器 gen_acceptance（13 项判定 + 配置单）
+# HwScope - 验收清单生成器 gen_acceptance（15 项判定 + 配置单）
 # report/gen/gen_acceptance.sh
 # 拆分自原 tools/report.sh（v1.35.0 refactor，行为不变）；由 report/report.sh source 装配
 # =============================================================================
@@ -43,17 +43,19 @@ gen_acceptance() {
     case "${NVLINK_HEALTH:-N/A}" in
         OK)   add_item "NVLink 互联" "PASS" "全互联无降级链路" ;;
         异常) add_item "NVLink 互联" "FAIL" "存在降级链路${NVLINK_CRC:+，且有非零 CRC 错误}" ;;
-        *)    if [ "${GPU_PLATFORM:-}" = "amd" ]; then
-                  add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（Instinct 经 xGMI/Infinity Fabric 互联，不适用）" 1
-              elif [ "$HEAD_NODE" -eq 1 ]; then
-                  add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）" 1
-              elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-                  add_item "NVLink 互联" "WARN" "检测到 NVIDIA GPU 但驱动异常，NVLink 状态不可用"
-              elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-                  add_item "NVLink 互联" "N/A" "无 GPU" 1
-              else
-                  add_item "NVLink 互联" "N/A" "无 topo 数据（旧采集）"
-              fi ;;
+        *)    case "${GPU_PLATFORM:-}" in
+                  amd) add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（Instinct 经 xGMI/Infinity Fabric 互联，不适用）" 1 ;;
+                  ascend) add_item "NVLink 互联" "N/A" "昇腾平台无 NVLink（Atlas 模组经 HCCS 互联，不适用）" 1 ;;
+                  *)    if [ "$HEAD_NODE" -eq 1 ]; then
+                            add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）" 1
+                        elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+                            add_item "NVLink 互联" "WARN" "检测到 NVIDIA GPU 但驱动异常，NVLink 状态不可用"
+                        elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+                            add_item "NVLink 互联" "N/A" "无 GPU" 1
+                        else
+                            add_item "NVLink 互联" "N/A" "无 topo 数据（旧采集）"
+                        fi ;;
+              esac ;;
     esac
 
     # 3. DCGM 诊断
@@ -61,17 +63,19 @@ gen_acceptance() {
         通过*) add_item "DCGM 诊断" "PASS" "${DCGM_SUMMARY}" ;;
         Fail*硬件:[1-9]*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
         配置项*Fail*|Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
-        *)    if [ "${GPU_PLATFORM:-}" = "amd" ]; then
-                  add_item "DCGM 诊断" "N/A" "AMD 平台无 DCGM（ROCm 诊断：rocminfo + amd-smi ras 见 GPU 段附录）" 1
-              elif [ "$HEAD_NODE" -eq 1 ]; then
-                  add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）" 1
-              elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-                  add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行"
-              elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-                  add_item "DCGM 诊断" "N/A" "无 GPU" 1
-              else
-                  add_item "DCGM 诊断" "N/A" "未运行（DCGM 未安装或已禁用）"
-              fi ;;
+        *)    case "${GPU_PLATFORM:-}" in
+                  amd) add_item "DCGM 诊断" "N/A" "AMD 平台无 DCGM（ROCm 诊断：rocminfo + amd-smi ras 见 GPU 段附录）" 1 ;;
+                  ascend) add_item "DCGM 诊断" "N/A" "昇腾平台无 DCGM（Atlas 诊断：npu-smi info / npu-smi health 见 GPU 段附录）" 1 ;;
+                  *)    if [ "$HEAD_NODE" -eq 1 ]; then
+                            add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）" 1
+                        elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+                            add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行"
+                        elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+                            add_item "DCGM 诊断" "N/A" "无 GPU" 1
+                        else
+                            add_item "DCGM 诊断" "N/A" "未运行（DCGM 未安装或已禁用）"
+                        fi ;;
+              esac ;;
     esac
 
     # 4. GPU VBIOS 版本一致（混插固件是交付要记录的固件一致性问题）
@@ -351,6 +355,8 @@ gen_acceptance() {
         fi
         if [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
             echo "| GPU模组 | ${GPU_NAMES:-N/A}（${GPU_MEM_SPEC:-N/A}${ACC_GPU_MEMTYPE:+ ${ACC_GPU_MEMTYPE}}） | 张 | ${GPU_COUNT} |"
+        elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| GPU模组 | 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} 加速卡（无对应管理工具，仅 PCI 存在性） | 张 | ${GPU_PCI_PRESENT} |"
         else
             echo "| GPU模组 | 无（${PLATFORM_LABEL:-N/A} 平台） | — | — |"
         fi

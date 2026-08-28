@@ -22,7 +22,7 @@ if command -v detect_gpu_vendors >/dev/null 2>&1; then
     detect_gpu_vendors "${lspci_all}"
 else
     # 兜底（函数缺失时）：仅基础存在性
-    GPU_PCI_PRESENT=$(grep -cE "3D controller" "${lspci_all}" 2>/dev/null)
+    GPU_PCI_PRESENT=$(grep -cE "3D controller|Processing accelerators" "${lspci_all}" 2>/dev/null)
     GPU_PCI_VENDOR=""; GPU_PCI_VENDORS=""; GPU_PLATFORM="none"
 fi
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then

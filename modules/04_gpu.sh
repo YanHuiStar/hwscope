@@ -22,7 +22,7 @@ run_gpu() {
         detect_gpu_vendors
     else
         # 兜底（函数缺失时）
-        GPU_PCI_PRESENT=$(lspci 2>/dev/null | grep -cE "3D controller")
+        GPU_PCI_PRESENT=$(lspci 2>/dev/null | grep -cE "3D controller|Processing accelerators")
         GPU_PCI_VENDOR=""; GPU_PCI_VENDORS=""; GPU_PLATFORM="none"
     fi
 
@@ -35,10 +35,10 @@ run_gpu() {
             fi
             # 有 GPU 但 NVIDIA/AMD 工具都无 → 落盘 PCI 提示（供报告"驱动未装"展示）
             echo "# GPU PCI detected but no vendor tool (nvidia-smi/rocm-smi/amd-smi)" > "${dir}/gpu_pci_only.log"
-            echo "# Vendor line: $(lspci 2>/dev/null | grep -m1 '3D controller')" >> "${dir}/gpu_pci_only.log"
+            echo "# Vendor line: $(lspci 2>/dev/null | grep -m1 -E '3D controller|Processing accelerators')" >> "${dir}/gpu_pci_only.log"
             echo -e "${YELLOW}[WARN] 检测到 ${GPU_PCI_PRESENT} 个 GPU（${GPU_PCI_VENDORS:-${GPU_PCI_VENDOR:-未知}}）但 nvidia-smi/rocm-smi 均未安装——仅记录 PCI 存在性${NC}"
         else
-            echo -e "${YELLOW}[SKIP] 无 GPU（无 3D controller 设备），跳过 GPU 模块${NC}"
+            echo -e "${YELLOW}[SKIP] 无 GPU（无 3D controller/加速卡设备），跳过 GPU 模块${NC}"
         fi
         module_end "$MODULE_NAME"
         return 0

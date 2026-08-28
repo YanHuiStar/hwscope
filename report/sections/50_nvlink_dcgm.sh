@@ -50,7 +50,7 @@ if [ "$GPU_COUNT" -eq 0 ]; then
     if [ "$HEAD_NODE" -eq 1 ]; then
         HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (HGX 机头无本地 GPU，模组单独采集)"$'\n'
     elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-        HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 NVIDIA GPU 但 nvidia-smi 无数据（驱动未安装或异常）"$'\n'
+        HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU 但管理工具无数据（驱动未安装或异常）"$'\n'
     else
         HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (无 GPU)"$'\n'
     fi

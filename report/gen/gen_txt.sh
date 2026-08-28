@@ -202,7 +202,7 @@ $(if [ "$GPU_COUNT" -eq 0 ]; then
     if [ "$HEAD_NODE" -eq 1 ]; then
         echo "  HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集）"
     elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-        echo "  ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 NVIDIA GPU（PCI 3D controller），但 nvidia-smi 无数据（驱动未安装或异常）"
+        echo "  ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU（PCI 3D controller/加速卡），但管理工具无数据（驱动未安装或异常）"
     else
         echo "  N/A (无 GPU)"
     fi
