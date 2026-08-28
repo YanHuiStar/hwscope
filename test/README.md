@@ -77,3 +77,27 @@ git clone https://github.com/NVIDIA/nccl-tests && cd nccl-tests && make NCCL_HOM
 # gpu-burn（GPU 长压测）
 git clone https://github.com/wilicc/gpu-burn && make
 ```
+
+---
+
+## 报告解析回归测试（report_regression.sh，v1.48.3）
+
+> 与硬件压测无关：本脚本用**固定采集样本**跑报告生成，提取关键指标与基线比对，
+> 防解析器/渲染层改动引入**静默回归**（历史教训：AMD 多卡明细全显示 card0、内存通道数
+> 算成插槽数、表格列错位、1T9 容量误判——都只能靠真机样本发现，人工 review 易漏）。
+
+```bash
+bash test/report_regression.sh <采集目录>              # 跑报告 + 比对基线
+bash test/report_regression.sh <采集目录> --update     # 刷新基线（确认改动正确后执行）
+bash test/report_regression.sh --all                   # 遍历样本根全部样本
+HWSCOPE_SAMPLE_ROOT=<多机样本根> bash test/report_regression.sh --all --update
+```
+
+- **10 组指标**：表格列数一致 / GPU / 内存 / PSU / PCIe 链路统计 / 磁盘 / NIC / JSON 字段与体积 / HTML 标签闭合 / 验收清单判定结果
+- **样本零污染**：仅备份并还原 6 个报告文件（不复制整个采集目录——数百日志文件复制极慢）
+- **基线**：`test/baseline/<机器ID>.txt`（指标摘要入库，几 KB）；采集数据不入仓库
+- **退出码**：0=一致/已更新，1=存在差异（回归候选），2=无基线/无样本
+- **改动解析器/渲染层的正确姿势**：改动前跑一次（确认当前一致）→ 改完再跑一次 → 有差异则人工确认是预期改动还是回归；确认预期后 `--update` 刷新基线
+
+> **运行环境**：需 Linux（或 fork 稳定的环境）——`report.sh` 含数百个 `$( )`，
+> Windows git-bash 下可能触发 MSYS fork 崩溃（AGENTS.md“环境故障止损纪律”）。
