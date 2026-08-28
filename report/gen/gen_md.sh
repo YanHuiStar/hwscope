@@ -278,6 +278,9 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
         if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then
             echo "| NVLink | ${NV_LINK_SUMMARY} |"
         fi
+        if [ -n "${GPU_XGMI_SUMMARY:-}" ]; then
+            echo "| xGMI | ${GPU_XGMI_SUMMARY} |"
+        fi
     fi
 fi)
 $(if [ -n "$gpu_details_md" ]; then

@@ -73,6 +73,7 @@ HEAD_NODE=0
 PLATFORM_LABEL="$PLATFORM"
 case "$PLATFORM" in
     *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM}（HGX 机头：PCIe Fabric 接模组，模组单独采集）" ;;
+    *_OAM)  PLATFORM_LABEL="${PLATFORM}（AMD OAM 模组：xGMI/Infinity Fabric 互联，v1.48.0）" ;;
 esac
 TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 's/^ //')
 
