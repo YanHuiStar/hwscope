@@ -28,7 +28,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 | 01 | motherboard | 主板/BIOS/机箱 | dmidecode | `MODULE_MB` |
 | 02 | cpu | CPU 信息 | dmidecode + lscpu | `MODULE_CPU` |
 | 03 | memory | 内存插槽/容量/速率 | dmidecode | `MODULE_MEMORY` |
-| 04 | gpu | GPU 信息 | nvidia-smi / rocm-smi·amd-smi（v1.46.x 双厂商）| `MODULE_GPU` |
+| 04 | gpu | GPU 信息 | nvidia-smi / amd-smi·rocm-smi / npu-smi / xpu-smi / 国产 SMI（v1.47.0 适配器框架，见 §采集说明）| `MODULE_GPU` |
 | 05 | nvswitch | NVSwitch 信息 | nvswitch + fabric-manager | `MODULE_NVSWITCH` |
 | 06 | pcie | PCIe 拓扑/速率 | lspci | `MODULE_PCIE` |
 | 07 | network | 网络/IB/光模块 | ibstat + mlxlink + ethtool | `MODULE_NETWORK` |
@@ -44,6 +44,8 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 | 99 | os | OS 基础信息 | — | `MODULE_OS` |
 
 > 单模块调试：`bash modules/<NN>_<模块>.sh <输出目录>`；开关默认全开（`conf/hwscope.conf` 置 0 关闭对应模块）。
+
+**GPU 多厂商适配器（v1.47.0）**：04 模块按 `GPU_PLATFORM` 分发到 `modules/gpu/adapter_<vendor>.sh`——NVIDIA（nvidia-smi，金标准）/ AMD（amd-smi·rocm-smi）/ 昇腾（npu-smi）/ Intel（xpu-smi）/ 寒武纪·壁仞·摩尔线程·沐曦·天数智芯（cnmon·bmt-smi·mthreads-gmi·mx-smi·ix-smi）。每个适配器输出**统一 `gpu_inventory.csv`**（列与 nvidia-smi 18 列一致），报告/显存魔改检测/验收 GPU PCIe 项跨厂商零改动生效。厂商工具未装时自动降级 **lspci 层兜底**（PCIe 链路可判，卡不丢失），工具依赖见 `docs/DEPENDENCIES.md` §3.6。
 
 ## 报告生成
 

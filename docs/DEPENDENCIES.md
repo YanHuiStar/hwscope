@@ -136,6 +136,22 @@ mst status    # 验证：能列出 Mellanox 设备即成功
 
 > 无 ROCm 工具时模块落盘 `gpu_amd_pci_only.log` 并 `[SKIP]`（PCI 级存在性仍可识别，不中断采集）；报告端 AMD 平台验收 NVLink/DCGM 判 N/A（xGMI/Infinity Fabric 互联、ROCm 诊断走 rocminfo + amd-smi ras）。
 
+### 3.6 昇腾/Intel/国产加速卡工具（GPU 模块 04，v1.47.0 适配器框架，全部可选）
+
+> v1.47.0 起 GPU 模块按 `GPU_PLATFORM` 分发到 `modules/gpu/adapter_*.sh`。以下工具**均为可选**——装了即走对应厂商采集路径（全量日志 + 统一 CSV），没装自动降级到 **lspci 层兜底**（名称/BDF/PCIe 链路可判，显存/温度等 N/A），采集永不中断、卡不丢失。
+
+| 厂商 | 工具 | 说明 | 来源 |
+|------|------|------|------|
+| 华为昇腾 | `npu-smi` | Atlas 卡采集（info/board/HCCS 拓扑/health，全量日志落盘；CSV 解析待真机校准） | CANN Toolkit（Atlas 800T/900 随系统安装）|
+| Intel | `xpu-smi` | Intel Data Center GPU / Arc 采集（discovery/stats） | [Intel XPU Manager](https://intel.github.io/xpumanager/) |
+| 寒武纪 | `cnmon` | MLU 采集（info） | Cambricon NeuWare |
+| 壁仞 | `bmt-smi` | BR100 采集 | Biren 软件栈 |
+| 摩尔线程 | `mthreads-gmi` | MTT 采集（-L/-q） | MUSA 工具包 |
+| 沐曦 | `mx-smi` | 曦云 C 系列采集 | MetaX 软件栈 |
+| 天数智芯 | `ix-smi` | 天垓 BI 采集 | Iluvatar 软件栈 |
+
+> 各厂商 SMI 输出格式解析统一标注【待真机校准】：当前统一 CSV 取 lspci 层（PCIe 链路判定已可用），厂商工具全量日志全部落盘，真机样本到位后仅需校准对应 adapter 的解析逻辑（数据零丢失、可回溯）。
+
 ## 4. 发行版差异速查
 
 | 场景 | 命令 | 说明 |

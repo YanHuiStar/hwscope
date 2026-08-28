@@ -62,6 +62,16 @@
             *MI100*)                 echo "31" ;;
             *"Radeon PRO W7900"*)    echo "45" ;;
             *"Radeon PRO W6800"*)    echo "31" ;;
+            # ── 昇腾 Atlas（v1.47.0，待真机校准；Atlas 800T/900 模组 8 卡 HCCS 互联）──
+            *Ascend910B*)                echo "64" ;;    # 910B 训练卡 64GB HBM2e
+            *Ascend910*)                 echo "64" ;;    # 910（无 B 后缀 lspci 名）64GB
+            *"Ascend 310"*|*Ascend310*)  echo "8|24" ;;  # 310/310P 推理卡 8/24GB（待校准）
+            # ── Intel Data Center GPU（v1.47.0，待真机校准）──
+            *"Max 1550"*)              echo "128" ;;
+            *"Max 1100"*)              echo "96" ;;
+            # ── 国产 GPU（v1.47.0，待真机校准）──
+            *"MTT S4000"*)             echo "48" ;;
+            *"MTT S80"*)               echo "32" ;;
             # ── 消费/游戏卡（魔改重灾区）──
             *"RTX 4090"*)            echo "24" ;;
             *"RTX 4080"*)            echo "16" ;;

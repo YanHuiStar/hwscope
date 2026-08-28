@@ -272,6 +272,9 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
     echo "| ECC | ${GPU_ECC:-N/A} |"
     echo "| 退役行 | ${GPU_REMAP:-N/A} |"
     echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
+        if [ -n "${GPU_ASCEND_NOTE:-}" ]; then
+            echo "| 昇腾 | ${GPU_ASCEND_NOTE} |"
+        fi
         if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then
             echo "| NVLink | ${NV_LINK_SUMMARY} |"
         fi

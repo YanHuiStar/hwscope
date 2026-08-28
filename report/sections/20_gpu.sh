@@ -36,9 +36,9 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     temp_col=$(get_csv_col_index "$GPU_CSV" "temperature.gpu")
 
     GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${mem_col:-6}" -F',' '{
-        gsub(/ MiB/, "", $col)
-        sum += $col
-    } END{printf "%.0f GiB", sum/1024}')
+        v = $col; gsub(/ MiB/, "", v); gsub(/^ +| +$/, "", v)
+        if (v ~ /^[0-9]+$/) sum += v; else na++
+    } END{if (sum > 0) printf "%.0f GiB", sum/1024; else print "N/A"}')
     # ─── GPU 额定显存规格库 + 检测值交叉验证 ───
     # 检测值（memory.total MiB）永远来自硬件；额定值（厂商规格）来自此规格库。
     # 匹配算法：型号模式 → 候选额定值列表 → 与检测值交叉验证（GB 十进制/GiB 双口径，取近者）：
@@ -155,7 +155,7 @@ if [ -n "$GPU_DETAILS" ]; then
     for gf in "${GPU_DIR}"/gpu_*_detail.log; do
         [ -f "$gf" ] || continue
         gvb_idx=$(basename "$gf" | sed 's/^gpu_//; s/_detail\.log$//')
-        gvb_ver=$(grep -m1 "VBIOS Version" "$gf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
+        gvb_ver=$(grep -m1 -E "VBIOS Version|Firmware Version" "$gf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
         [ -n "$gvb_ver" ] && GPU_VBIOS_MAP["$gvb_idx"]="$gvb_ver"
     done
     # 明细行追加第 11 列 VBIOS（映射不到置 N/A）
@@ -222,4 +222,11 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
         GPU_PLATFORM="amd"
         GPU_PCI_VENDOR="AMD"
     fi
+fi
+
+# ─── 昇腾 Atlas 附注（v1.47.0）：npu-smi 全量日志（info/board/HCCS topo/health）已落盘 ───
+# HCCS 互联与健康判定解析【待真机校准】；当前统一 CSV 为 lspci 层（名称/BDF/PCIe 链路可判）
+GPU_ASCEND_NOTE=""
+if [ -f "${GPU_DIR}/gpu_ascend_hccs_topo.log" ] || [ -f "${GPU_DIR}/gpu_ascend_health.log" ]; then
+    GPU_ASCEND_NOTE="昇腾 Atlas 采集（npu-smi info/board/HCCS 拓扑/health 全量日志已落盘；HCCS 互联与健康判定解析待真机校准）"
 fi
