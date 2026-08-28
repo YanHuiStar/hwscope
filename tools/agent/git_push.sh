@@ -76,14 +76,23 @@ info "环境: ${ENV_NAME} | 项目: ${PROJECT_DIR}"
 # 环境 → tasklist/netstat/直连/代理全走 Windows（v1.39.2）
 # 递归防护（v1.40.4）：bat 里 `where bash` 可能命中 WSL 的 bash.exe（本机 System32\bash.exe），
 # 导致 bat 又调回 WSL bash → 无限转交；GIT_PUSH_HANDOFF=1 时跳过转交，走 WSL 内直连/代理逻辑
+# v1.47.2：仅当 Windows 侧确实存在 Git Bash 才转交——无 Git Bash 时 bat 的 `where bash` 兜底
+#   会命中 System32\bash.exe（WSL）→ bat 调回 WSL 递归 + cmd 解析炸串（本机实测）；无则 WSL 内直接推
 if [ "$ENV_NAME" = "wsl" ] && [ "${PROJECT_DIR#/mnt/}" != "$PROJECT_DIR" ] && [ "${GIT_PUSH_HANDOFF:-0}" != "1" ]; then
-    win_path="$(wslpath -w "$PROJECT_DIR" 2>/dev/null || echo "$PROJECT_DIR")"
-    # v1.40.4: git_push.bat 已随 agent 工具迁至 tools/agent/（v1.40.1），此处路径同步，否则 WSL 转交找不到 bat
-    bat_path="${win_path}\\tools\\agent\\git_push.bat"
-    info "WSL 访问 Windows 盘项目，转交 Windows 侧推送: ${bat_path}"
-    # WSLENV 声明后环境变量才传给 Windows 进程（WSL interop 默认只传 WSLENV 白名单）
-    WSLENV=GIT_PUSH_NO_PAUSE:GIT_PUSH_HANDOFF GIT_PUSH_NO_PAUSE=1 GIT_PUSH_HANDOFF=1 /mnt/c/Windows/System32/cmd.exe /c "${bat_path}" "$@" 2>&1
-    exit $?
+    if [ -x "/mnt/c/Program Files/Git/bin/bash.exe" ] || [ -x "/mnt/c/Program Files (x86)/Git/bin/bash.exe" ] \
+        || ls /mnt/c/Users/*/AppData/Local/Programs/Git/bin/bash.exe >/dev/null 2>&1; then
+        win_path="$(wslpath -w "$PROJECT_DIR" 2>/dev/null || echo "$PROJECT_DIR")"
+        # v1.40.4: git_push.bat 已随 agent 工具迁至 tools/agent/（v1.40.1），此处路径同步，否则 WSL 转交找不到 bat
+        bat_path="${win_path}\\tools\\agent\\git_push.bat"
+        # info() 用 echo -e 会把 bat_path 的 \t（tools）解释成 TAB → 路径行用 printf 显示（v1.47.2）
+        info "WSL 访问 Windows 盘项目，转交 Windows 侧推送（Git Bash 存在）:"
+        printf '    %s\n' "${bat_path}"
+        # WSLENV 声明后环境变量才传给 Windows 进程（WSL interop 默认只传 WSLENV 白名单）
+        WSLENV=GIT_PUSH_NO_PAUSE:GIT_PUSH_HANDOFF GIT_PUSH_NO_PAUSE=1 GIT_PUSH_HANDOFF=1 /mnt/c/Windows/System32/cmd.exe /c "${bat_path}" "$@" 2>&1
+        exit $?
+    else
+        warn "WSL 项目在 Windows 盘，但未检测到 Git Bash（bat 转交会触发 where bash→WSL 递归）——跳过转交，WSL 内直接推送"
+    fi
 fi
 
 # 代理探测（v2ray/xray/clash 进程 → 监听端口）——须在 fetch 前定义（bash 函数先定义后调用）
