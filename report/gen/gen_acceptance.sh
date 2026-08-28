@@ -44,7 +44,11 @@ gen_acceptance() {
         OK)   add_item "NVLink 互联" "PASS" "全互联无降级链路" ;;
         异常) add_item "NVLink 互联" "FAIL" "存在降级链路${NVLINK_CRC:+，且有非零 CRC 错误}" ;;
         *)    case "${GPU_PLATFORM:-}" in
-                  amd) add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（Instinct 经 xGMI/Infinity Fabric 互联，不适用）" 1 ;;
+                  amd) if [ -n "${GPU_XGMI_SUMMARY:-}" ]; then
+                           add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（xGMI/Infinity Fabric 互联，拓扑日志已采集；链路健康判定待真机校准）" 1
+                       else
+                           add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（Instinct 经 xGMI/Infinity Fabric 互联，不适用）" 1
+                       fi ;;
                   ascend) add_item "NVLink 互联" "N/A" "昇腾平台无 NVLink（Atlas 模组经 HCCS 互联；HCCS 拓扑日志已采集，判定解析待真机校准）" 1 ;;
                   *)    if [ "$HEAD_NODE" -eq 1 ]; then
                             add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）" 1

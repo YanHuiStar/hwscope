@@ -72,7 +72,12 @@ detect_platform() {
         detect_gpu_vendors
         if [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             # 有独立 GPU（AMD/Ascend/Intel 等）→ PCIe 形态（NVIDIA SXM 才走 _sxm 分支）
-            PLATFORM="${hw_arch}_PCIe"
+            # v1.48.0：AMD OAM 模组（device ID 判定的 MI250X/MI300X/MI325X）→ x86_64_OAM
+            if [ "${GPU_OAM:-0}" -eq 1 ] 2>/dev/null; then
+                PLATFORM="${hw_arch}_OAM"
+            else
+                PLATFORM="${hw_arch}_PCIe"
+            fi
         elif check_cmd lspci && lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec"; then
             PLATFORM="${hw_arch}_head"
         else
@@ -92,10 +97,13 @@ ipmi_preheat() {
 
 # ─── GPU 厂商检测（v1.46.2，单一实现——采集端 04_gpu / 报告端 20_gpu 共用）───
 # 设置全局变量：GPU_PCI_PRESENT（3D controller/Processing accelerators 加速卡数）、GPU_PCI_VENDORS（厂商分组 "AMD:8 NVIDIA:2"）、
-#   GPU_PCI_VENDOR（首个厂商，单厂商场景直接可用）、GPU_PLATFORM（nvidia/amd/ascend/intel/mixed/other/none）
+#   GPU_PCI_VENDOR（首个厂商，单厂商场景直接可用）、GPU_PLATFORM（nvidia/amd/ascend/intel/mixed/other/none）、
+#   GPU_OAM（AMD Instinct OAM 模组标记，v1.48.0：device ID 属 OAM 型号 → 1）
 # 参数 $1（可选）：lspci 日志文件路径——报告端只读日志传此参；采集端实时检测不传（内部调 lspci）
 # 厂商判定：昇腾（Huawei/HiSilicon）→ NVIDIA → AMD → Intel → 其他；VGA compatible 集显不算独立 GPU
 # v1.46.7 类目扩展：华为昇腾卡 lspci 类目为 "Processing accelerators"（非 3D controller），须一并匹配
+# v1.48.0 OAM 识别：AMD 卡 device ID（lspci -nn [1002:xxxx]）属 OAM 模组型号（MI250X/MI300X/MI325X）→ GPU_OAM=1；
+#   ID 表【待真机校准】——真机样本核对后再增补 MI355X 等新号
 detect_gpu_vendors() {
     local _src="${1:-}"
     local _lspci_out=""
@@ -108,6 +116,7 @@ detect_gpu_vendors() {
     GPU_PCI_VENDOR=""
     GPU_PCI_VENDORS=""
     GPU_PLATFORM="none"
+    GPU_OAM=0
     [ -z "$_lspci_out" ] && return 0
     # GPU 类目: NVIDIA/AMD/Intel 独立显卡为 "3D controller"; 华为昇腾等加速卡为 "Processing accelerators"
     GPU_PCI_PRESENT=$(printf '%s\n' "$_lspci_out" | grep -cE "3D controller|Processing accelerators")
@@ -134,6 +143,24 @@ detect_gpu_vendors() {
                 Intel) GPU_PLATFORM="intel" ;;
                 *) GPU_PLATFORM="other" ;;
             esac
+        fi
+        # ─── AMD OAM 模组判定（v1.48.0）───
+        if [ "$GPU_PLATFORM" = "amd" ]; then
+            local _nn_out="$_lspci_out"
+            # device ID 只在 lspci -nn 输出里（[1002:xxxx]）；入参无 ID 且 lspci 可用则实时补查
+            if ! printf '%s\n' "$_nn_out" | grep -qE "\[1002:[0-9a-fA-F]{4}\]"; then
+                check_cmd lspci && _nn_out=$(lspci -nn 2>/dev/null)
+            fi
+            local _aid _oam=1 _n=0
+            for _aid in $(printf '%s\n' "$_nn_out" | grep -E "3D controller|Processing accelerators" \
+                    | grep -iE "Advanced Micro Devices|AMD|ATI" | grep -oE "1002:[0-9a-fA-F]{4}" | cut -d: -f2 | sort -u); do
+                _n=$((_n + 1))
+                case "$_aid" in
+                    7408|74a1|74c2) ;;   # MI250X/MI300X/MI325X OAM 模组（ID 待真机校准）
+                    *) _oam=0 ;;
+                esac
+            done
+            [ "$_n" -gt 0 ] && [ "$_oam" -eq 1 ] && GPU_OAM=1
         fi
     fi
 }

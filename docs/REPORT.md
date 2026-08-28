@@ -37,7 +37,7 @@
 
 - **硬件概览（配置单）**：自动生成自检测数据（准系统/CPU/内存/GPU模组/计算网卡/网卡&端口/存储/电源模块/系统管理），可对照采购配置单核对
 - **15 项判定**：GPU PCIe / NVLink / DCGM / VBIOS / 内存速率 / IB 线缆 / 磁盘寿命 / SMART / 电源冗余 / 温度 / SEL / 风扇冗余（v1.36.0）/ 固件合规 / OS-BMC 一致性 / PCIe 链路完整（v1.41.0）
-- **多厂商 GPU（v1.46.x）**：NVIDIA 平台 NVLink/DCGM/VBIOS 正常判定；**AMD 平台 NVLink/DCGM 判 N/A**（无 NVLink/DCGM，xGMI 互联 + ROCm 诊断 rocminfo/amd-smi ras）；**昇腾平台 NVLink/DCGM 判 N/A**（无 NVLink/DCGM，HCCS 互联 + npu-smi 诊断；v1.46.7 起 lspci "Processing accelerators" 类目可识别）；GPU PCIe 项 AMD 按 lspci 链路判定 / PCIe 链路完整（v1.41.0）。**昇腾/Intel/国产等任意已识别加速卡**（v1.47.0 适配器框架）统一 CSV 走 lspci 层 → "GPU PCIe 链路完整"验收项按 LnkCap/LnkSta 全厂商可判（降速 FAIL / 满速 PASS）
+- **多厂商 GPU（v1.46.x）**：NVIDIA 平台 NVLink/DCGM/VBIOS 正常判定；**AMD 平台 NVLink/DCGM 判 N/A**（无 NVLink/DCGM，xGMI 互联 + ROCm 诊断 rocminfo/amd-smi ras；**v1.48.0 起 OAM 模组识别 → x86_64_OAM 平台标记 + xGMI 拓扑采集/摘要**，链路健康判定待真机校准）；**昇腾平台 NVLink/DCGM 判 N/A**（无 NVLink/DCGM，HCCS 互联 + npu-smi 诊断；v1.46.7 起 lspci "Processing accelerators" 类目可识别）；GPU PCIe 项 AMD 按 lspci 链路判定 / PCIe 链路完整（v1.41.0）。**昇腾/Intel/国产等任意已识别加速卡**（v1.47.0 适配器框架）统一 CSV 走 lspci 层 → "GPU PCIe 链路完整"验收项按 LnkCap/LnkSta 全厂商可判（降速 FAIL / 满速 PASS）
 
 > **PCIe 链路完整判定口径（v1.44.2+）**：只判 endpoint 设备（网卡/GPU/RAID 卡）——bridge 端口（PCIe switch/根端口）的 LnkSta 反映下游设备能力，不判异常；真链路问题（线缆/接触/插槽）会体现在端点自身 LnkCap vs LnkSta 判定中。
 > **IB 设备口径（v1.44.0+）**：按 ibdev2netdev 映射到 ibp*/ibs* 接口的 CA 计数——以太模式 CA（如 CX5 双口以太）不计入 IB 设备数与 IB Link Down。

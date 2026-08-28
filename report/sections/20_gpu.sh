@@ -230,3 +230,15 @@ GPU_ASCEND_NOTE=""
 if [ -f "${GPU_DIR}/gpu_ascend_hccs_topo.log" ] || [ -f "${GPU_DIR}/gpu_ascend_health.log" ]; then
     GPU_ASCEND_NOTE="昇腾 Atlas 采集（npu-smi info/board/HCCS 拓扑/health 全量日志已落盘；HCCS 互联与健康判定解析待真机校准）"
 fi
+
+# ─── AMD xGMI/Infinity Fabric 互联摘要（v1.48.0；adapter_amd 落盘 --showtopo 拓扑日志）───
+# xGMI 链路健康判定【待真机校准】；当前做存在性摘要（有拓扑数据即显示，验收互联项据此 N/A 不计入）
+GPU_XGMI_SUMMARY=""
+if [ -f "${GPU_DIR}/gpu_amd_topo.log" ]; then
+    _xlinks=$(grep -oiE "xGMI|XGMI" "${GPU_DIR}/gpu_amd_topo.log" 2>/dev/null | wc -l)
+    if [ "${_xlinks:-0}" -gt 0 ] 2>/dev/null; then
+        GPU_XGMI_SUMMARY="xGMI/Infinity Fabric 互联拓扑已采集（${_xlinks} 处 xGMI 标记；链路健康判定待真机校准）"
+    else
+        GPU_XGMI_SUMMARY="xGMI 拓扑日志已采集（未检出 xGMI 标记，解析待真机校准）"
+    fi
+fi

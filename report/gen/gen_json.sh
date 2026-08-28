@@ -246,6 +246,7 @@ ${dimms_json}
     "remapped_rows": "${GPU_REMAP:-N/A}",
     "vbios": "${GPU_VBIOS:-N/A}",
     "ascend_note": "${GPU_ASCEND_NOTE:-}",
+    "xgmi": "${GPU_XGMI_SUMMARY:-}",
     "nvlink": "${NV_LINK_SUMMARY:-N/A}",
     "serials": "${GPU_SERIALS:-N/A}",
     "details": [
