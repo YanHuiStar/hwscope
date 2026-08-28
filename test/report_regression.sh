@@ -63,8 +63,20 @@ extract_metrics() {
     # 2. GPU（明细行数/型号/JSON 卡数——抓多卡全显示同一张卡）
     echo "[gpu]"
     echo "  gpu_detail_rows=$(awk '/^## GPU/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^## /{f=0} END{print c+0}' "$md" 2>/dev/null)"
-    grep -oE '(H100|H200|B200|B300|A100|A800|H800|L40|L20|GB200|GB300|MI300X|MI325X|MI250X|MI355X)[A-Za-z0-9 -]*' "$md" 2>/dev/null | sort -u | head -4 | sed 's/^/  model: /'
-    echo "  gpu_json_count=$(grep -o '"index"' "$json" 2>/dev/null | wc -l)"
+    # v1.48.6：model 从 JSON gpu.models 提取——全文 grep 会被术语表污染（机头报告术语表 NVLink/SXM 说明含 B300 字样 → 假型号）
+    grep -oE '"models": "[^"]*"' "$json" 2>/dev/null | head -1 | cut -d'"' -f4 | sed 's/^/  model: /'
+    # v1.48.6：python 选择——WindowsApps python3 存根（Store 别名）静默无输出，须排除；Linux python3 / Windows python 均可用
+    _py=""
+    for _c in python3 python; do
+        _p=$(command -v "$_c" 2>/dev/null || true)
+        case "$_p" in *WindowsApps*) continue ;; esac
+        [ -n "$_p" ] && _py="$_p" && break
+    done
+    [ -z "$_py" ] && _py=python
+    # Windows python 不认 MSYS 路径（/tmp/...）——cygpath 转换（Linux 无 cygpath 自动跳过）
+    _json_win="$json"
+    command -v cygpath >/dev/null 2>&1 && _json_win=$(cygpath -m "$json" 2>/dev/null || echo "$json")   # -m 正斜杠（-w 反斜杠会被 python 当转义符）
+    echo "  gpu_json_count=$("$_py" -c "import json; d=json.load(open('$_json_win')); print(len(d.get('gpu',{}).get('details',[])))" 2>/dev/null || echo 0)"
 
     # 3. 内存（DIMM 行数/表头列/额定总量——抓位宽列与通道数解析）
     echo "[memory]"

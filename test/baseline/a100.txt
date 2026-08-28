@@ -3,11 +3,8 @@
   table_rows=393
 [gpu]
   gpu_detail_rows=8
-  model: A100 
-  model: A100 NVSwitch
-  model: A100 SXM4 80GB
-  model: A100-SXM4-80GB
-  gpu_json_count=46
+  model: NVIDIA A100-SXM4-80GB
+  gpu_json_count=8
 [memory]
   dimm_rows=32
   header: | # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank | 位宽 |
