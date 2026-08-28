@@ -177,19 +177,25 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
     AMD_JSON="${gpu_amd_inventory}"
     _amd_cards=$(grep -oE '"card[0-9]+"' "${AMD_JSON}" 2>/dev/null | sort -u)
     if [ -n "$_amd_cards" ]; then
-        # v1.46.3+ 修复：awk 逐卡提取（真实 rocm-smi --json = 每卡一行紧凑格式，cardN 与字段同行；
-        # 行内 sub 提取各字段，兼容任意 JSON 空白）。原实现按"每字段一行"分段导致字段全空
+        # v1.46.3+ 修复（v1.48.1 加固）：awk 逐卡提取——缓冲累积法，rocm-smi（每卡单行紧凑）与
+        # amd-smi（ROCm 7+，pretty 多行）两种 JSON 格式都兼容：card 行起累积缓冲至下一 card 行
+        # （或 EOF）后从缓冲整体提取字段（此前按"cardN 与字段同行"硬编码，amd-smi pretty 时字段全空）
         _amd_rows=$(awk '
-            /"card[0-9]+"/ {
-                cn=$0; sub(/.*"card/,"",cn); sub(/".*/,"",cn)
-                an=$0; sub(/.*"Product Name":[[:space:]]*"/,"",an); sub(/".*/,"",an)
-                uid=$0; sub(/.*"Unique ID":[[:space:]]*"/,"",uid); sub(/".*/,"",uid)
-                mem=$0; sub(/.*"VRAM Total Memory \(B\)":[[:space:]]*"/,"",mem); sub(/".*/,"",mem)
-                tmp=$0; sub(/.*"Temperature \(Sensor edge\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp)
-                pwr=$0; sub(/.*"Average Graphics Package Power Consumption \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr)
-                utl=$0; sub(/.*"GPU use \(%\)":[[:space:]]*"/,"",utl); sub(/".*/,"",utl)
+            function emit() {
+                if (buf == "") return
+                cn=buf; sub(/.*"card/,"",cn); sub(/".*/,"",cn)
+                an=buf; sub(/.*"Product Name":[[:space:]]*"/,"",an); sub(/".*/,"",an)
+                uid=buf; sub(/.*"Unique ID":[[:space:]]*"/,"",uid); sub(/".*/,"",uid)
+                mem=buf; sub(/.*"VRAM Total Memory \(B\)":[[:space:]]*"/,"",mem); sub(/".*/,"",mem)
+                tmp=buf; sub(/.*"Temperature \(Sensor edge\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp)
+                pwr=buf; sub(/.*"Average Graphics Package Power Consumption \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr)
+                utl=buf; sub(/.*"GPU use \(%\)":[[:space:]]*"/,"",utl); sub(/".*/,"",utl)
                 printf "%s|%s|%s|%s|%s|%s|%s\n", cn, an, uid, mem, tmp, pwr, utl
+                buf=""
             }
+            /"card[0-9]+"/ { emit(); buf=$0; next }
+            { if (buf != "") buf = buf " " $0 }
+            END { emit() }
         ' "${AMD_JSON}")
         GPU_COUNT=$(printf '%s\n' "$_amd_rows" | grep -c '|')
         GPU_NAMES=$(grep -oE '"Product Name": "[^"]*"' "${AMD_JSON}" | sort -u | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//')
