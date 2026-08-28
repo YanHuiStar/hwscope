@@ -12,12 +12,21 @@ rem NOTE: keep this file pure ASCII - Chinese output comes from git_push.sh.
 rem ============================================================================
 
 set "BASH="
-rem v1.40.4: 优先 Git Bash 具体路径——`where bash` 在装有 WSL 的机器会命中 System32\bash.exe
-rem （WSL bash），bat 调回 WSL 侧触发 git_push.sh 转交 → 无限递归；Git Bash 路径优先可避免
+rem v1.40.4: prefer explicit Git Bash paths - `where bash` on WSL machines hits
+rem System32\bash.exe / WindowsApps\bash.exe (both WSL launchers), which call
+rem back into WSL and recurse.
+rem v1.47.2: the `where bash` fallback now ACCEPTS ONLY paths under a "\Git\"
+rem directory (Git Bash installs always live there), so a WSL-only machine
+rem prints a clean error instead of recursing into WSL.
 if exist "%ProgramFiles%\Git\bin\bash.exe" set "BASH=%ProgramFiles%\Git\bin\bash.exe"
 if not defined BASH if exist "%LocalAppData%\Programs\Git\bin\bash.exe" set "BASH=%LocalAppData%\Programs\Git\bin\bash.exe"
 if not defined BASH if exist "%ProgramFiles(x86)%\Git\bin\bash.exe" set "BASH=%ProgramFiles(x86)%\Git\bin\bash.exe"
-if not defined BASH where bash >nul 2>nul && set "BASH=bash"
+if not defined BASH (
+    for /f "delims=" %%b in ('where bash 2^>nul') do (
+        echo %%b | findstr /i /c:"\Git\" >nul 2>nul
+        if not errorlevel 1 set "BASH=%%b"
+    )
+)
 if not defined BASH (
     echo [ERROR] git-bash not found. Install Git for Windows: https://git-scm.com/download/win
     pause
