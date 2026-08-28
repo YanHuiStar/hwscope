@@ -177,18 +177,33 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
     AMD_JSON="${gpu_amd_inventory}"
     _amd_cards=$(grep -oE '"card[0-9]+"' "${AMD_JSON}" 2>/dev/null | sort -u)
     if [ -n "$_amd_cards" ]; then
-        GPU_COUNT=$(echo "$_amd_cards" | wc -l)
+        # v1.46.3 修复：awk 按 "cardN" 分段逐卡提取——原 for 循环每字段对全 JSON head -1，
+        # 多卡机器每行都显示第一张卡的数据（明细全失真）。字段用整行 sub 提取，不依赖 JSON 格式化
+        _amd_rows=$(awk '
+            function emit() {
+                if (cn != "") printf "%s|%s|%s|%s|%s|%s|%s\n", cn, an, uid, mem, tmp, pwr, utl
+            }
+            /"card[0-9]+"[[:space:]]*:[[:space:]]*\{/ {
+                emit()
+                if (match($0, /"card[0-9]+"/)) cn = substr($0, RSTART+5, RLENGTH-6)
+                an=""; uid=""; mem=""; tmp=""; pwr=""; utl=""
+                next
+            }
+            /"Product Name":/ { an=$0; sub(/.*"Product Name":[[:space:]]*"/,"",an); sub(/".*/,"",an) }
+            /"Unique ID":/    { uid=$0; sub(/.*"Unique ID":[[:space:]]*"/,"",uid); sub(/".*/,"",uid) }
+            /"VRAM Total Memory \(B\)":/ { mem=$0; sub(/.*"VRAM Total Memory \(B\)":[[:space:]]*"/,"",mem); sub(/".*/,"",mem) }
+            /"Temperature \(Sensor edge\) \(C\)":/ { tmp=$0; sub(/.*"Temperature \(Sensor edge\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp) }
+            /"Average Graphics Package Power Consumption \(W\)":/ { pwr=$0; sub(/.*"Average Graphics Package Power Consumption \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr) }
+            /"GPU use \(%\)":/ { utl=$0; sub(/.*"GPU use \(%\)":[[:space:]]*"/,"",utl); sub(/".*/,"",utl) }
+            END { emit() }
+        ' "${AMD_JSON}")
+        GPU_COUNT=$(printf '%s\n' "$_amd_rows" | grep -c '|')
         GPU_NAMES=$(grep -oE '"Product Name": "[^"]*"' "${AMD_JSON}" | sort -u | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//')
         GPU_MEM=$(grep -oE '"VRAM Total Memory \(B\)": "[0-9]+"' "${AMD_JSON}" | grep -oE '[0-9]+' | awk '{s+=$1} END{printf "%.0f GiB", s/1024/1024/1024}')
         GPU_DETAILS=""
         _ai=0
-        for _card in $_amd_cards; do
-            _an=$(grep -oE '"Product Name": "[^"]*"' "${AMD_JSON}" | head -1 | cut -d'"' -f4)
-            _auid=$(grep -oE '"Unique ID": "[^"]*"' "${AMD_JSON}" | head -1 | cut -d'"' -f4)
-            _amem=$(grep -oE '"VRAM Total Memory \(B\)": "[0-9]+"' "${AMD_JSON}" | head -1 | grep -oE '[0-9]+')
-            _atmp=$(grep -oE '"Temperature \(Sensor edge\) \(C\)": "[^"]*"' "${AMD_JSON}" | head -1 | grep -oE '[0-9.]+')
-            _apwr=$(grep -oE '"Average Graphics Package Power Consumption \(W\)": "[^"]*"' "${AMD_JSON}" | head -1 | grep -oE '[0-9.]+')
-            _autl=$(grep -oE '"GPU use \(%\)": "[^"]*"' "${AMD_JSON}" | head -1 | grep -oE '[0-9.]+')
+        while IFS='|' read -r _cardn _an _auid _amem _atmp _apwr _autl; do
+            [ -z "$_cardn" ] && continue
             [ -z "$_amem" ] && _amem="0"
             # 魔改/伪装检测（v1.46.2）：统一 verify_gpu_mem（B→MiB 后双口径匹配）
             _aspec=""
@@ -197,13 +212,13 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
                 if verify_gpu_mem "$_an" "$_amem_mib"; then
                     _aspec="$VERIFY_MEM_SPEC"
                 else
-                    [ -n "$VERIFY_MEM_NOTE" ] && GPU_AMD_SUSPECT="${GPU_AMD_SUSPECT}卡${_ai}(${_an} ${VERIFY_MEM_NOTE}); "
+                    [ -n "$VERIFY_MEM_NOTE" ] && GPU_AMD_SUSPECT="${GPU_AMD_SUSPECT}卡${_cardn}(${_an} ${VERIFY_MEM_NOTE}); "
                 fi
             fi
-            _amem_gb=$(awk "BEGIN{printf \"%.0f\", $_amem/1024/1024/1024}")
+            _amem_gb=$(awk -v b="$_amem" 'BEGIN{printf "%.0f", b/1024/1024/1024}')
             GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_auid:-N/A}|${_amem_gb}GB${_aspec:+/$_aspec}|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|N/A|N/A|N/A|N/A|N/A"$'\n'
             _ai=$((_ai + 1))
-        done
+        done <<< "$_amd_rows"
         GPU_DETAILS=$(printf '%s' "$GPU_DETAILS" | sed '/^$/d')
         # 汇总：温度/功耗从明细聚合（字段 5=功耗 6=温度）
         GPU_TEMP=$(printf '%s
