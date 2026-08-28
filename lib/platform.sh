@@ -184,14 +184,11 @@ classify_machine() {
                 MACHINE_CLASS="server-traditional"
             fi ;;
         *Tower*|*Mini*Tower*|*"Mini Tower"*|*Desktop*|*"Low Profile"*|*"Space-saving"*|*"Mini PC"*)
-            # 塔式/台式：ECC+多路/服务器平台 → 工作站；BMC+GPU → 服务器版工作站
+            # 塔式/台式：BMC+GPU → 服务器版工作站；ECC+GPU → 工作站；仅 ECC → 服务器版工作站；其余台式
             if [ "$_bmc" -eq 1 ] && [ "$_gpu_cnt" -gt 0 ] 2>/dev/null; then
                 MACHINE_CLASS="workstation-server"
             elif [ "$_ecc" -eq 1 ] && [ "$_gpu_cnt" -gt 0 ] 2>/dev/null; then
-                case "$_gpu_plat" in
-                    nvidia|amd) MACHINE_CLASS="workstation-consumer" ;;
-                    *) MACHINE_CLASS="workstation-consumer" ;;
-                esac
+                MACHINE_CLASS="workstation-consumer"
             elif [ "$_ecc" -eq 1 ]; then
                 MACHINE_CLASS="workstation-server"
             else
@@ -216,10 +213,15 @@ classify_machine() {
             fi ;;
     esac
     # GB300 机架级（v1.46.2 特征占位：GB300 NVL72 液冷——GPU 温度极低 + 无风扇传感器 + 大量 NVLink）
+    # v1.46.3 只读修复：报告端（_dir 模式）从 gpu 日志判断，不再调 nvidia-smi（报告只读原则）
     if [ "$MACHINE_CLASS" = "server-nvidia-gpu" ]; then
-        if nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | grep -qi "GB300\|GB200"; then
-            MACHINE_CLASS="server-gb300"
+        _gb300=0
+        if [ -n "$_dir" ]; then
+            grep -qiE "GB300|GB200" "$_dir/gpu/gpu_full.log" 2>/dev/null && _gb300=1
+        elif command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | grep -qi "GB300\|GB200" && _gb300=1
         fi
+        [ "$_gb300" -eq 1 ] && MACHINE_CLASS="server-gb300"
     fi
     # 中文标签（gen 渲染用；随 MACHINE_CLASS 同步计算，勿放 sections——那时 MACHINE_CLASS 未就绪）
     case "$MACHINE_CLASS" in
