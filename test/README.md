@@ -41,6 +41,8 @@ test/
 | `gpu/gpu_partnerdiag.sh` | 出厂诊断 | partnerdiag | FLD 包 |
 | `nccl/nccl_test.sh` | 集合通信 | nccl-tests | 需编译产物 |
 
+> **多平台提示（v1.46.x）**：GPU 压测工具均为 **CUDA/NVIDIA 生态**（bandwidthTest/gpu-burn/nvbandwidth/partnerdiag/nccl-tests），**AMD Instinct（ROCm）平台暂不适用**——采集与报告支持 AMD，压测扩展后续规划；GPU 压力测试请用采集侧 ROCm 路径（rocminfo/amd-smi ras）做基础核验。
+
 ## 使用
 
 ```bash

@@ -54,10 +54,13 @@ hwscope/
 | 平台 | 识别方式 | 说明 |
 |------|---------|------|
 | x86_64_SXM | nvidia-smi + NVSwitch | HGX B200/B300 一体化主机 |
-| x86_64_PCIe | nvidia-smi 无 NVSwitch | PCIe GPU 服务器 |
+| x86_64_PCIe | nvidia-smi 无 NVSwitch | NVIDIA PCIe GPU 服务器 |
+| x86_64_PCIe（AMD） | lspci 3D controller AMD + 无 nvidia-smi（v1.46.6） | AMD Instinct / ROCm GPU 服务器（GPU_PLATFORM=amd） |
 | x86_64_head | PEX89/PEX97 Switchtec + 无 GPU | HGX 机头（模组单独采集） |
 | x86_64_none | 无 GPU 无 Switch | 传统服务器/虚拟机 |
 | aarch64_SXM | ARM + GPU | 国产/ARM 平台 |
+
+> GPU 平台（GPU_PLATFORM，v1.46.x）：nvidia / amd / ascend / intel / mixed / other / none——采集与报告按厂商分路径（NVIDIA=DCGM/NVLink，AMD=ROCm/rocminfo）。
 
 机器 ID（目录命名）：SN → baseboard SN → UUID → 时间戳兜底（四层保证非空且路径安全）。
 
