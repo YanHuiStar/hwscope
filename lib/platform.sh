@@ -67,8 +67,13 @@ detect_platform() {
             PLATFORM="${hw_arch}_none"
         fi
     else
-        # 无 nvidia-smi 也可能有机头（仅 Fabric Switch 可见）
-        if check_cmd lspci && lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec"; then
+        # 无 nvidia-smi：检测 AMD/昇腾等独立 GPU（v1.46.6 多平台——NVIDIA 走 nvidia-smi，
+        # 其他厂商走 lspci 3D controller 判定，避免 AMD 机器被误判为 none/head）
+        detect_gpu_vendors
+        if [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+            # 有独立 GPU（AMD/Ascend/Intel 等）→ PCIe 形态（NVIDIA SXM 才走 _sxm 分支）
+            PLATFORM="${hw_arch}_PCIe"
+        elif check_cmd lspci && lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec"; then
             PLATFORM="${hw_arch}_head"
         else
             PLATFORM="${hw_arch}_none"
