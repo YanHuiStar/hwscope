@@ -218,6 +218,9 @@ else
     echo "  ECC    : ${GPU_ECC:-N/A}"
     echo "  退役行 : ${GPU_REMAP:-N/A}"
     echo "  VBIOS  : ${GPU_VBIOS:-N/A}"
+    if [ -n "${GPU_ASCEND_NOTE:-}" ]; then
+        echo "  昇腾   : ${GPU_ASCEND_NOTE}"
+    fi
 fi)$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)$(if [ "$GPU_COUNT" -gt 0 ]; then printf '%s' "$gpu_details_txt"; fi)$(if [ -n "$nvs_txt" ]; then printf '\n[NVSwitch]\n'; printf '%s' "$nvs_txt"; fi)$(if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
     printf '\n[固件合规]\n'
     echo "$FW_COMPLIANCE_DETAILS" | while IFS='|' read -r fc fd fcur fbase fst fnote; do

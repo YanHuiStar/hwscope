@@ -68,6 +68,7 @@ hwscope/
 ## 模块架构
 
 - **采集/报告分离**：`modules/*.sh` 只生成数据；`report/report.sh` 只读生成报告（不重新采集）；采集与报告分属 `modules/`（数据）与 `report/`（交付物）两个平级模块
+- **GPU 多厂商适配器层（v1.47.0）**：`modules/gpu/adapter_*.sh` 按 `GPU_PLATFORM` 分发（NVIDIA/AMD/昇腾/Intel/国产/通用兜底），统一输出 `gpu_inventory.csv`（列与 nvidia-smi 18 列一致）→ 报告/魔改检测/验收跨厂商零改动消费；识别类目：独立卡=lspci "3D controller"，昇腾等加速卡="Processing accelerators"
 - **每命令一个日志**：可审计、可单模块重跑
 - 模块自动跳过：工具未装 / 平台无此硬件（如虚拟机无 BMC）时 `[SKIP]`，不影响整体
 - 依赖按需降级：dmidecode/lspci 缺失时系统汇总仍可用
