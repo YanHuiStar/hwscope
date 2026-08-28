@@ -68,7 +68,7 @@ detect_platform() {
         fi
     else
         # 无 nvidia-smi：检测 AMD/昇腾等独立 GPU（v1.46.6 多平台——NVIDIA 走 nvidia-smi，
-        # 其他厂商走 lspci 3D controller 判定，避免 AMD 机器被误判为 none/head）
+        # 其他厂商走 lspci 3D controller/Processing accelerators 判定，避免 AMD/昇腾机器被误判为 none/head）
         detect_gpu_vendors
         if [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             # 有独立 GPU（AMD/Ascend/Intel 等）→ PCIe 形态（NVIDIA SXM 才走 _sxm 分支）
@@ -91,10 +91,11 @@ ipmi_preheat() {
 
 
 # ─── GPU 厂商检测（v1.46.2，单一实现——采集端 04_gpu / 报告端 20_gpu 共用）───
-# 设置全局变量：GPU_PCI_PRESENT（3D controller 数）、GPU_PCI_VENDORS（厂商分组 "AMD:8 NVIDIA:2"）、
+# 设置全局变量：GPU_PCI_PRESENT（3D controller/Processing accelerators 加速卡数）、GPU_PCI_VENDORS（厂商分组 "AMD:8 NVIDIA:2"）、
 #   GPU_PCI_VENDOR（首个厂商，单厂商场景直接可用）、GPU_PLATFORM（nvidia/amd/ascend/intel/mixed/other/none）
 # 参数 $1（可选）：lspci 日志文件路径——报告端只读日志传此参；采集端实时检测不传（内部调 lspci）
 # 厂商判定：昇腾（Huawei/HiSilicon）→ NVIDIA → AMD → Intel → 其他；VGA compatible 集显不算独立 GPU
+# v1.46.7 类目扩展：华为昇腾卡 lspci 类目为 "Processing accelerators"（非 3D controller），须一并匹配
 detect_gpu_vendors() {
     local _src="${1:-}"
     local _lspci_out=""
@@ -108,10 +109,11 @@ detect_gpu_vendors() {
     GPU_PCI_VENDORS=""
     GPU_PLATFORM="none"
     [ -z "$_lspci_out" ] && return 0
-    GPU_PCI_PRESENT=$(printf '%s\n' "$_lspci_out" | grep -cE "3D controller")
+    # GPU 类目: NVIDIA/AMD/Intel 独立显卡为 "3D controller"; 华为昇腾等加速卡为 "Processing accelerators"
+    GPU_PCI_PRESENT=$(printf '%s\n' "$_lspci_out" | grep -cE "3D controller|Processing accelerators")
     [ -z "$GPU_PCI_PRESENT" ] && GPU_PCI_PRESENT=0
     if [ "$GPU_PCI_PRESENT" -gt 0 ] 2>/dev/null; then
-        GPU_PCI_VENDORS=$(printf '%s\n' "$_lspci_out" | grep "3D controller" | sed -n 's/.*3D controller: //p' | while IFS= read -r _gl; do
+        GPU_PCI_VENDORS=$(printf '%s\n' "$_lspci_out" | grep -E "3D controller|Processing accelerators" | sed -n 's/.*\(3D controller\|Processing accelerators\): //p' | while IFS= read -r _gl; do
             case "$_gl" in
                 *NVIDIA*) echo "NVIDIA" ;;
                 *"Advanced Micro Devices"*|*AMD*|*ATI*) echo "AMD" ;;

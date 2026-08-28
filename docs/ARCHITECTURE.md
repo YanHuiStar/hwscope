@@ -56,11 +56,12 @@ hwscope/
 | x86_64_SXM | nvidia-smi + NVSwitch | HGX B200/B300 一体化主机 |
 | x86_64_PCIe | nvidia-smi 无 NVSwitch | NVIDIA PCIe GPU 服务器 |
 | x86_64_PCIe（AMD） | lspci 3D controller AMD + 无 nvidia-smi（v1.46.6） | AMD Instinct / ROCm GPU 服务器（GPU_PLATFORM=amd） |
+| x86_64_PCIe（昇腾） | lspci Processing accelerators Huawei/HiSilicon + 无 nvidia-smi（v1.46.7） | Atlas 昇腾加速服务器（GPU_PLATFORM=ascend） |
 | x86_64_head | PEX89/PEX97 Switchtec + 无 GPU | HGX 机头（模组单独采集） |
 | x86_64_none | 无 GPU 无 Switch | 传统服务器/虚拟机 |
 | aarch64_SXM | ARM + GPU | 国产/ARM 平台 |
 
-> GPU 平台（GPU_PLATFORM，v1.46.x）：nvidia / amd / ascend / intel / mixed / other / none——采集与报告按厂商分路径（NVIDIA=DCGM/NVLink，AMD=ROCm/rocminfo）。
+> GPU 平台（GPU_PLATFORM，v1.46.x）：nvidia / amd / ascend / intel / mixed / other / none——采集与报告按厂商分路径（NVIDIA=DCGM/NVLink，AMD=ROCm/rocminfo，昇腾=HCCS/npu-smi）。识别类目：NVIDIA/AMD/Intel 独立卡=lspci "3D controller"，华为昇腾卡=lspci "Processing accelerators"（v1.46.7）。
 
 机器 ID（目录命名）：SN → baseboard SN → UUID → 时间戳兜底（四层保证非空且路径安全）。
 
