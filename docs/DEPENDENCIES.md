@@ -15,7 +15,8 @@
 | **核心基础** | `dmidecode` | `dmidecode` | 必需 |
 | | `lspci` | `pciutils` | 必需 |
 | | `ipmitool` | `ipmitool` | 有 BMC 时必需 |
-| **04 GPU** | `nvidia-smi` | `nvidia-driver-*`（驱动自带，勿单独装）| GPU 机器必需 |
+| **04 GPU** | `nvidia-smi` | `nvidia-driver-*`（驱动自带，勿单独装）| NVIDIA GPU 机器必需 |
+| **04 GPU (AMD)** | `rocm-smi`/`amd-smi` + `rocminfo` | ROCm 环境（v1.46.x 起支持，见 §3.5）| AMD Instinct GPU 机器 |
 | **05 NVSwitch** | `nvswitch` | NVIDIA 平台包（见 §3.4）| SXM 平台 |
 | | `nvidia-fabricmanager` | NVIDIA 平台包 | SXM 平台 |
 | **06 PCIe** | `lspci`（同核心）| `pciutils` | 必需 |
@@ -117,6 +118,23 @@ mst status    # 验证：能列出 Mellanox 设备即成功
 | `nvsm` | NVIDIA System Management | NVIDIA NVSM（HGX 平台包，随整机镜像）|
 
 > 无独立 nvswitch CLI 的 B300/GB300 平台：模块自动降级走 `nvidia-smi nvswitch` 子命令（驱动 525+ 内置），**无需额外安装**。
+
+### 3.5 AMD ROCm（GPU 模块 04，v1.46.x 起支持 AMD Instinct）
+
+| 工具 | 说明 | 来源 |
+|------|------|------|
+| `rocm-smi`（旧）/ `amd-smi`（ROCm 7+ 新） | AMD GPU 采集（对标 nvidia-smi，模块自动选择） | ROCm 环境 |
+| `rocminfo` | AMD GPU 型号/架构（对标 nvidia-smi -q） | ROCm 环境 |
+
+安装（Ubuntu，以 ROCm 官方源为例）：
+
+```bash
+# 按发行版从 AMD ROCm 仓库安装 rocm-smi / amd-smi / rocminfo：
+# Ubuntu: amdgpu-install --usecase=rocm（AMD 官方安装器）或 apt install rocm-smi-lib rocminfo
+# 详细见 https://rocm.docs.amd.com（依赖 ROCm 驱动与节点授权）
+```
+
+> 无 ROCm 工具时模块落盘 `gpu_amd_pci_only.log` 并 `[SKIP]`（PCI 级存在性仍可识别，不中断采集）；报告端 AMD 平台验收 NVLink/DCGM 判 N/A（xGMI/Infinity Fabric 互联、ROCm 诊断走 rocminfo + amd-smi ras）。
 
 ## 4. 发行版差异速查
 

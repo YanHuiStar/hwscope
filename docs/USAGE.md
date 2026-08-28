@@ -28,7 +28,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 | 01 | motherboard | 主板/BIOS/机箱 | dmidecode | `MODULE_MB` |
 | 02 | cpu | CPU 信息 | dmidecode + lscpu | `MODULE_CPU` |
 | 03 | memory | 内存插槽/容量/速率 | dmidecode | `MODULE_MEMORY` |
-| 04 | gpu | GPU 信息 | nvidia-smi | `MODULE_GPU` |
+| 04 | gpu | GPU 信息 | nvidia-smi / rocm-smi·amd-smi（v1.46.x 双厂商）| `MODULE_GPU` |
 | 05 | nvswitch | NVSwitch 信息 | nvswitch + fabric-manager | `MODULE_NVSWITCH` |
 | 06 | pcie | PCIe 拓扑/速率 | lspci | `MODULE_PCIE` |
 | 07 | network | 网络/IB/光模块 | ibstat + mlxlink + ethtool | `MODULE_NETWORK` |
