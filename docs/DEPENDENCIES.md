@@ -17,6 +17,7 @@
 | | `ipmitool` | `ipmitool` | 有 BMC 时必需 |
 | **04 GPU** | `nvidia-smi` | `nvidia-driver-*`（驱动自带，勿单独装）| NVIDIA GPU 机器必需 |
 | **04 GPU (AMD)** | `rocm-smi`/`amd-smi` + `rocminfo` | ROCm 环境（v1.46.x 起支持，见 §3.5）| AMD Instinct GPU 机器 |
+| **04 GPU (其他厂商)** | `npu-smi`/`xpu-smi`/`cnmon`/`bmt-smi`/`mthreads-gmi`/`mx-smi`/`ix-smi` | 厂商软件栈（v1.47.0 适配器框架，见 §3.6）| 对应厂商卡机器，全部可选（未装走 lspci 兜底）|
 | **05 NVSwitch** | `nvswitch` | NVIDIA 平台包（见 §3.4）| SXM 平台 |
 | | `nvidia-fabricmanager` | NVIDIA 平台包 | SXM 平台 |
 | **06 PCIe** | `lspci`（同核心）| `pciutils` | 必需 |
@@ -126,6 +127,8 @@ mst status    # 验证：能列出 Mellanox 设备即成功
 | `rocm-smi`（旧）/ `amd-smi`（ROCm 7+ 新） | AMD GPU 采集（对标 nvidia-smi，模块自动选择） | ROCm 环境 |
 | `rocminfo` | AMD GPU 型号/架构（对标 nvidia-smi -q） | ROCm 环境 |
 
+> v1.48.0 起：`amd-smi --showtopo`（xGMI 拓扑采集）与 OAM 模组判定（lspci device ID，随 `lspci -nn` 采集自动完成）复用上表工具与核心 `pciutils`，**无额外依赖**。
+
 安装（Ubuntu，以 ROCm 官方源为例）：
 
 ```bash
@@ -169,9 +172,12 @@ sudo bash hwscope.sh 2>&1 | grep -E "\[SKIP\]|WARN" | head
 
 # 针对性验证关键工具
 dmidecode -t system | head -3        # 主板模块
-nvidia-smi -L                          # GPU 模块
-smartctl -V >/dev/null && echo OK      # 存储模块
+nvidia-smi -L                        # GPU 模块（NVIDIA）
+rocm-smi --showproductname           # GPU 模块（AMD，或 amd-smi monitor）
+npu-smi info                         # GPU 模块（昇腾，如装了 CANN）
+smartctl -V >/dev/null && echo OK    # 存储模块
 storcli64 /c0 show | head -5          # RAID 模块（如装了）
-mst status                             # Mellanox 工具（如装了）
+mst status                            # Mellanox 工具（如装了）
+lspci -nn | grep -c "3D controller\|Processing accelerators"   # GPU PCI 存在性（含 device ID，OAM 判定用）
 ```
 装齐后应无 `[SKIP]`（无对应硬件/平台的模块除外，如无 IB 卡的机器跳过 IB 工具属正常）。
