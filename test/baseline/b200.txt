@@ -3,10 +3,8 @@
   table_rows=209
 [gpu]
   gpu_detail_rows=8
-  model: B200 
-  model: B300 
-  model: B300 SXM6 
-  gpu_json_count=34
+  model: NVIDIA B200
+  gpu_json_count=8
 [memory]
   dimm_rows=24
   header: | # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
