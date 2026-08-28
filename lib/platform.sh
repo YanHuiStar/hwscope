@@ -145,22 +145,29 @@ detect_gpu_vendors() {
             esac
         fi
         # ─── AMD OAM 模组判定（v1.48.0）───
+        # v1.48.1 只读修复：实时补查 lspci -nn 仅限采集端（未传 _src）；报告端（传日志）无 ID 时
+        # GPU_OAM 安全降级为 0（不实时执行命令——报告只读原则；v1.48.1 起采集端 lspci_all.log 已含 -nn ID）
         if [ "$GPU_PLATFORM" = "amd" ]; then
             local _nn_out="$_lspci_out"
-            # device ID 只在 lspci -nn 输出里（[1002:xxxx]）；入参无 ID 且 lspci 可用则实时补查
             if ! printf '%s\n' "$_nn_out" | grep -qE "\[1002:[0-9a-fA-F]{4}\]"; then
-                check_cmd lspci && _nn_out=$(lspci -nn 2>/dev/null)
+                if [ -z "$_src" ]; then
+                    check_cmd lspci && _nn_out=$(lspci -nn 2>/dev/null)
+                else
+                    _nn_out=""    # 报告端旧采集（无 device ID）：OAM 判不出，跳过
+                fi
             fi
-            local _aid _oam=1 _n=0
-            for _aid in $(printf '%s\n' "$_nn_out" | grep -E "3D controller|Processing accelerators" \
-                    | grep -iE "Advanced Micro Devices|AMD|ATI" | grep -oE "1002:[0-9a-fA-F]{4}" | cut -d: -f2 | sort -u); do
-                _n=$((_n + 1))
-                case "$_aid" in
-                    7408|74a1|74c2) ;;   # MI250X/MI300X/MI325X OAM 模组（ID 待真机校准）
-                    *) _oam=0 ;;
-                esac
-            done
-            [ "$_n" -gt 0 ] && [ "$_oam" -eq 1 ] && GPU_OAM=1
+            if [ -n "$_nn_out" ]; then
+                local _aid _oam=1 _n=0
+                for _aid in $(printf '%s\n' "$_nn_out" | grep -E "3D controller|Processing accelerators" \
+                        | grep -iE "Advanced Micro Devices|AMD|ATI" | grep -oE "1002:[0-9a-fA-F]{4}" | cut -d: -f2 | sort -u); do
+                    _n=$((_n + 1))
+                    case "$_aid" in
+                        7408|74a1|74c2) ;;   # MI250X/MI300X/MI325X OAM 模组（ID 待真机校准）
+                        *) _oam=0 ;;
+                    esac
+                done
+                [ "$_n" -gt 0 ] && [ "$_oam" -eq 1 ] && GPU_OAM=1
+            fi
         fi
     fi
 }

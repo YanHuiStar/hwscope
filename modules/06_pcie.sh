@@ -24,8 +24,10 @@ run_pcie() {
     fi
 
     # 1~6. 基础 PCIe 信息（独立命令，并行采集；串行模式自动降级）
+    # v1.48.1：lspci 加 -nn（输出兼容普通格式，仅多 [vendor:device] ID）——报告端 OAM 判定读日志
+    # 即可得 device ID，不再实时补查 lspci（报告只读原则；旧采集无 ID 时 OAM 判定安全降级为 0）
     run_and_log_parallel 6 \
-        "lspci" "${dir}/lspci_all.log" \
+        "lspci -nn" "${dir}/lspci_all.log" \
         "lspci -t -vv" "${dir}/lspci_tree.log" \
         "lspci -v | grep -A 30 'NVIDIA'" "${dir}/lspci_nvidia.log" \
         "lspci | grep -E 'PCI bridge|Host Bridge|PCIe'" "${dir}/pcie_bridge.log" \
