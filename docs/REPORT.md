@@ -25,9 +25,10 @@
 
 ### GPU 额定显存规格库
 
-内置 60+ 主流 NVIDIA 型号额定容量映射，**检测值交叉验证**（GB/GiB 双口径 3% 容差）自动匹配正确容量：
+内置 60+ 主流 NVIDIA 型号 + AMD Instinct（MI300X/MI325X/MI250X/MI355X 等，v1.46.x）额定容量映射，**检测值交叉验证**（GB/GiB 双口径 3% 容差）自动匹配正确容量：
 - 多版本型号（如 A100 40|80）自动选近者
-- **检测与额定不符 → `⚠️ 疑似显存魔改或伪装`**（PCIe 魔改卡识别）
+- **检测与额定不符 → `⚠️ 疑似显存魔改或伪装`**（PCIe 魔改卡识别；NVIDIA/AMD 统一 verify_gpu_mem 检测）
+- **AMD 平台**：04 模块走 ROCm（rocm-smi/amd-smi + rocminfo）采集，报告按厂商解析；验收 NVLink/DCGM 判 N/A（AMD 无 NVLink/DCGM，ROCm 诊断走 rocminfo + amd-smi ras）
 
 ## 验收清单（Acceptance Checklist）
 
