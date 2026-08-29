@@ -98,7 +98,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **仓库损坏恢复路径**（万一发生）：源码文件不受 .git 损坏影响（工作区零丢失）——① `mkdir -p .git/refs/heads .git/refs/tags` ② `git -c http.proxy=http://127.0.0.1:<端口> fetch origin`（走系统代理，端口见 Windows Internet 选项）③ `git update-ref refs/heads/main <远程HEAD>` ④ `rm -f .git/index && git reset`（重建 index，不动工作区）⑤ 重新 commit
 - **Windows 杀软是环境故障首要嫌疑**：.pack 被隔离 + DLL 锁定（fork 崩溃）同时发生基本可断定。建议用户把项目目录与 Git 安装目录加入杀软白名单（根治）；`echo > /dev/tcp/127.0.0.1/<port>` 可探测代理端口（常见 7890/7897/10809/1080）
 - **长任务前先说风险**：执行含大量 fork 的脚本（report.sh 等含数百个 `$( )`）前，告知用户"Windows 下有 fork 崩溃风险，失败即停"；失败一次后不重试，改用静态验证（`bash -n` 语法 + 抽取核心 awk/grep 逻辑单独验证）交付结论
-- **报告解析回归纪律（v1.48.4 立规，防静默回归）**：改动 `report/sections/`、`report/gen/`、`report/lib/`（解析/渲染逻辑）或采集模块输出格式后，**提交前必须跑** `bash test/report_regression.sh <采集目录>`（或 `--all`）——与基线有差异时人工确认是预期改动还是回归，确认预期后 `--update` 刷新基线。历史教训：AMD 多卡明细全显示 card0、内存通道数算成插槽数、表格列错位、1T9 容量误判，均由 Agent 改解析代码引入且人工 review 漏检；脚本纯 bash/awk 实现，**需 Linux 环境**（git-bash 下 report.sh 的 fork 密集会触发 MSYS 崩溃——实测整个 shell 被杀，且管道会吞掉缓冲输出造成"脚本无输出"的假象，诊断应重定向到文件而非管道）
+- **报告解析回归纪律（v1.48.4 立规，v1.48.14 迁移 tools/agent + 触发规则细化）**：改动 `report/sections/`、`report/gen/`、`report/lib/`（解析/渲染逻辑）或采集模块输出格式后，**提交前必须跑** `bash tools/agent/report_regression.sh <采集目录>`（或 `--all` 全量；`--samples SN1,SN2` 选跑受影响样本省时间——GPU 改动跑 GPU 样本等）——与基线有差异时人工确认是预期改动还是回归，确认预期后 `--update` 刷新基线。**触发规则：解析/渲染/输出格式相关改动必跑；纯文档、版本号、非报告逻辑改动不跑**（避免每次提交空等 ~5 分钟）。历史教训：AMD 多卡明细全显示 card0、内存通道数算成插槽数、表格列错位、1T9 容量误判，均由 Agent 改解析代码引入且人工 review 漏检；脚本纯 bash/awk 实现，**需 Linux 环境**（git-bash 下 report.sh 的 fork 密集会触发 MSYS 崩溃——实测整个 shell 被杀，且管道会吞掉缓冲输出造成"脚本无输出"的假象，诊断应重定向到文件而非管道）
 
 ## 报告与归档
 

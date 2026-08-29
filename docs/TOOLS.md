@@ -80,4 +80,4 @@
 | `install_ai.sh` | AI 推理引擎安装：vLLM / SGLang / TRT-LLM / Ollama / llama.cpp |
 | `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...）；`-c <1,2,...> -y` 非交互安装（远程自动安装用，v1.42.0） |
 | `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认） |
-- **`test/report_regression.sh`（v1.48.3）**：报告解析回归测试——固定样本跑报告 + 10 组指标与基线比对，防解析/渲染静默回归；用法 `bash test/report_regression.sh <采集目录> [--update] [--all]`，基线 `test/baseline/<机器ID>.txt`；改解析器前后各跑一次。需 Linux 环境（fork 密集脚本在 git-bash 下易崩）
+- **`tools/agent/report_regression.sh`（v1.48.3，v1.48.14 迁 tools/agent/）**：报告解析回归测试——固定样本跑报告 + 10 组指标与基线比对，防解析/渲染静默回归；用法 `bash tools/agent/report_regression.sh <采集目录> [--update] [--all] [--samples SN1,SN2]`，基线 `tools/agent/baseline/<机器ID>.txt`；改解析器前后各跑一次（解析/渲染/输出格式改动必跑，纯文档/版本不跑）。需 Linux 环境（fork 密集脚本在 git-bash 下易崩）

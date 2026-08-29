@@ -15,10 +15,22 @@ run_gpu_amd() {
     elif check_cmd rocm-smi; then
         amd_smi_cmd="rocm-smi"
     else
-        echo -e "${YELLOW}[SKIP] AMD GPU 已检测但 rocm-smi/amd-smi 均未安装（无 ROCm 环境）${NC}"
-        echo "# AMD GPU detected but no ROCm tool" > "${dir}/gpu_amd_pci_only.log"
-        gpu_fallback_pci "$dir" "$prefix" "amd-smi/rocm-smi" "Advanced Micro Devices|AMD|ATI"
-        return 1
+        # v1.48.14：OFED 冲突环境 amd-smi/rocm-smi 的 PATH/LD_LIBRARY_PATH 在 ~/.bashrc 手动 export
+        # （登录 shell 才生效）——非交互调用（sudo bash / 采集脚本）不读 bashrc → 工具"消失"。
+        # 确认是 AMD 卡但默认找不到时，才补 source 用户 bashrc 重试（正常环境不受 bashrc 副作用影响）
+        if [ -n "$HOME" ] && [ -f "$HOME/.bashrc" ]; then
+            . "$HOME/.bashrc" >/dev/null 2>&1 || true
+        fi
+        if check_cmd amd-smi; then
+            amd_smi_cmd="amd-smi"
+        elif check_cmd rocm-smi; then
+            amd_smi_cmd="rocm-smi"
+        else
+            echo -e "${YELLOW}[SKIP] AMD GPU 已检测但 rocm-smi/amd-smi 均未安装（无 ROCm 环境）${NC}"
+            echo "# AMD GPU detected but no ROCm tool" > "${dir}/gpu_amd_pci_only.log"
+            gpu_fallback_pci "$dir" "$prefix" "amd-smi/rocm-smi" "Advanced Micro Devices|AMD|ATI"
+            return 1
+        fi
     fi
 
     echo -e "${CYAN}[INFO] 检测到 AMD GPU（${amd_smi_cmd}），走 ROCm 采集路径${NC}"

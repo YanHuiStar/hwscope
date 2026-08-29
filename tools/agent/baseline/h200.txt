@@ -1,4 +1,4 @@
-# 报告解析回归指标（test/report_regression.sh）
+# 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
   table_rows=181
 [gpu]
