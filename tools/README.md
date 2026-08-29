@@ -62,6 +62,11 @@
 
 ---
 
+### `sync_time.sh` — SSH 时间同步
+- **用法**：`bash tools/sync_time.sh root@10.0.0.1 [root@10.0.0.2 ...]`
+- **功能**：以运维机时间为基准，SSH 同步目标机系统时间 + 硬件时钟（RTC）——解决内网无 NTP 时的目标机时钟偏差（采集时间戳可信度）
+- **实现**：epoch 秒传递（无时区歧义）；先停 NTP 防冲突，`date -s @epoch` + `hwclock -w`（重启不丢）；交互式密码 + ControlMaster 复用
+
 ## 🟡 远程采集
 
 ### `remote_collect.sh` — SSH 远程采集
