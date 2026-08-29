@@ -52,7 +52,9 @@ for HOST in "${HOSTS[@]}"; do
     esac
     TTY_OPTS=""
     [ -n "$SUDO" ] && TTY_OPTS="-t"
-    if ssh $SSH_OPTS $TTY_OPTS "$HOST" "${SUDO} timedatectl set-ntp false 2>/dev/null; ${SUDO} date -s @${EPOCH} && ${SUDO} hwclock -w 2>/dev/null; echo '  目标机时间: '; date '+%Y-%m-%d %H:%M:%S %Z'"; then
+    # v1.48.13 修复：远程命令序列的退出码取最后一条（date 打印必然成功）→ 设置失败也报 [OK]。
+    #   改为捕获设置链（date -s && hwclock -w）的退出码并以它 exit（\$?/exit 转义交给远程展开）
+    if ssh $SSH_OPTS $TTY_OPTS "$HOST" "${SUDO} timedatectl set-ntp false 2>/dev/null; ${SUDO} date -s @${EPOCH} && ${SUDO} hwclock -w 2>/dev/null; _rc=\$?; echo '  目标机时间: '; date '+%Y-%m-%d %H:%M:%S %Z'; exit \$_rc"; then
         echo "[OK] ${HOST} 时间已同步（与运维机一致）"
     else
         echo -e "\033[0;31m[ERROR] ${HOST} 同步失败\033[0m"

@@ -18,13 +18,13 @@
   nic_rows=20
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |
 [json]
-  json_bytes=18578
+  json_bytes=18579
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=23
   html_table_close=23
-  html_bytes=23452
+  html_bytes=23454
 [acceptance]
         2 FAIL
        12 N/A
