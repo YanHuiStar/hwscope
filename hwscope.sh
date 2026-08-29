@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.48.6 (2026-08)
+# Version : 1.48.7 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.48.6"
+HWSCOPE_VERSION="v1.48.7"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -221,7 +221,12 @@ if [ -d "$OUTPUT_BASE" ]; then
             /|/bin|/boot|/dev|/etc|/home|/lib|/lib64|/media|/mnt|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var)
                 echo -e "${RED}[ERROR] 拒绝删除系统目录: ${OUTPUT_BASE}${NC}"; exit 1 ;;
             /[a-zA-Z0-9_-]*)
-                echo -e "${RED}[ERROR] 拒绝删除一级目录: ${OUTPUT_BASE}（只允许删除二级及以上目录，请检查 --output 参数）${NC}"; exit 1 ;;
+                # v1.48.7 修正：glob * 含 / 会把多级路径误判为一级（如 /opt/Tools/hwscope/output/<SN> 被拦）。
+                # 一级目录判定 = 首段后无斜杠（[^/]* 不含 /）
+                case "$OUTPUT_BASE" in
+                    /*/*) ;;  # 二级及以上：放行
+                    *) echo -e "${RED}[ERROR] 拒绝删除一级目录: ${OUTPUT_BASE}（只允许删除二级及以上目录，请检查 --output 参数）${NC}"; exit 1 ;;
+                esac ;;
         esac
         if [ -n "${HOME:-}" ] && { [ "$OUTPUT_BASE" = "$HOME" ] || [ "${OUTPUT_BASE#${HOME}/}" != "$OUTPUT_BASE" ]; }; then
             echo -e "${RED}[ERROR] 拒绝删除家目录: ${OUTPUT_BASE}${NC}"; exit 1
