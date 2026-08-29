@@ -10,9 +10,11 @@
 # =============================================================================
 
 MODULE_NAME="GPU"
-# v1.47.0: 用 BASH_SOURCE[0]（source 时 $0 是主脚本，dirname 会解析错；独立执行时二者一致）
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/common.sh" 2>/dev/null || true
+# v1.48.9 修复：用独立变量 MODULE_DIR——原 v1.47.0 直接赋 SCRIPT_DIR，被 hwscope.sh source 时
+# BASH_SOURCE[0]=完整路径(/opt/.../modules/04_gpu.sh)，dirname 污染全局 SCRIPT_DIR=modules/，
+# 导致后续模块拼接出 modules/modules/05_xxx.sh 全部报"模块脚本不存在"（01-03 用 $0 无害，05+ 全挂）
+MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${MODULE_DIR}/../lib/common.sh" 2>/dev/null || true
 
 run_gpu() {
     local output_dir="$1"
