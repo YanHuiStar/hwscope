@@ -35,9 +35,10 @@ run_gpu() {
 
     # ─── 装载 GPU 适配器（v1.47.0）───
     local _ad
-    [ -f "${SCRIPT_DIR}/gpu/lib.sh" ] && source "${SCRIPT_DIR}/gpu/lib.sh"
+    # v1.48.12 修复：适配器加载路径原用 SCRIPT_DIR（v1.48.9 改 MODULE_DIR 后为空）→ source 静默失败 → run_gpu_* 未定义
+    [ -f "${MODULE_DIR}/gpu/lib.sh" ] && source "${MODULE_DIR}/gpu/lib.sh"
     for _ad in nvidia amd ascend intel cambricon biren moorethreads metax iluvatar generic; do
-        [ -f "${SCRIPT_DIR}/gpu/adapter_${_ad}.sh" ] && source "${SCRIPT_DIR}/gpu/adapter_${_ad}.sh"
+        [ -f "${MODULE_DIR}/gpu/adapter_${_ad}.sh" ] && source "${MODULE_DIR}/gpu/adapter_${_ad}.sh"
     done
 
     # ─── 无 GPU → SKIP（不落 inventory，报告按"无 GPU"N/A 处理）───
