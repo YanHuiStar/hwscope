@@ -48,6 +48,7 @@
 |------|------|
 | `nvlink_verify.sh` | NVLink 完整性校验（拓扑比对） |
 | `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前） |
+| `sync_time.sh` | SSH 时间同步 | 本机时间基准 → 目标机（epoch 秒无时区歧义；停 NTP + date -s + hwclock -w） |
 | `sync_version.sh` | 版本号三处同步（hwscope.sh 注释/变量 + README 徽章） |
 
 ### 开发 / Agent 协作（v1.36.1+）
