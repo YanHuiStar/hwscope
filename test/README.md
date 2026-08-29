@@ -80,17 +80,17 @@ git clone https://github.com/wilicc/gpu-burn && make
 
 ---
 
-## 报告解析回归测试（report_regression.sh，v1.48.3）
+## 报告解析回归测试（report_regression.sh，v1.48.3；v1.48.14 迁 tools/agent/）
 
 > 与硬件压测无关：本脚本用**固定采集样本**跑报告生成，提取关键指标与基线比对，
 > 防解析器/渲染层改动引入**静默回归**（历史教训：AMD 多卡明细全显示 card0、内存通道数
 > 算成插槽数、表格列错位、1T9 容量误判——都只能靠真机样本发现，人工 review 易漏）。
 
 ```bash
-bash test/report_regression.sh <采集目录>              # 跑报告 + 比对基线
-bash test/report_regression.sh <采集目录> --update     # 刷新基线（确认改动正确后执行）
-bash test/report_regression.sh --all                   # 遍历样本根全部样本
-HWSCOPE_SAMPLE_ROOT=<多机样本根> bash test/report_regression.sh --all --update
+bash tools/agent/report_regression.sh <采集目录>              # 跑报告 + 比对基线
+bash tools/agent/report_regression.sh <采集目录> --update     # 刷新基线（确认改动正确后执行）
+bash tools/agent/report_regression.sh --all                   # 遍历样本根全部样本
+HWSCOPE_SAMPLE_ROOT=<多机样本根> bash tools/agent/report_regression.sh --all --update
 ```
 
 - **10 组指标**：表格列数一致 / GPU / 内存 / PSU / PCIe 链路统计 / 磁盘 / NIC / JSON 字段与体积 / HTML 标签闭合 / 验收清单判定结果

@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
-# 报告解析回归测试 — test/report_regression.sh
-# 用法: bash test/report_regression.sh <采集目录> [--update] [--keep]
-#       bash test/report_regression.sh --all [--update]
-#       HWSCOPE_SAMPLE_ROOT=<多机样本根> bash test/report_regression.sh --all
+# 报告解析回归测试 — tools/agent/report_regression.sh（agent 开发验证工具）
+# 用法: bash tools/agent/report_regression.sh <采集目录> [--update] [--keep] [--samples SN1,SN2]
+#       bash tools/agent/report_regression.sh --all [--update]
+#       HWSCOPE_SAMPLE_ROOT=<多机样本根> bash tools/agent/report_regression.sh --all
 # 功能: 用固定采集样本跑报告生成，提取关键指标与基线比对——防解析器改动引入静默回归
 #       （历史教训：AMD 多卡明细全显示 card0、内存通道数算成插槽数、表格列错位、1T9
 #        容量误判——均只能靠真机样本发现；本脚本把真机验证固化为可重复的一条命令）
@@ -17,14 +17,15 @@
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BASELINE_DIR="${SCRIPT_DIR}/baseline"
 
-UPDATE=0; ALL=0; KEEP=0; SAMPLE=""
+UPDATE=0; ALL=0; KEEP=0; SAMPLE=""; SAMPLES=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --update) UPDATE=1; shift ;;
         --all)    ALL=1; shift ;;
+        --samples) SAMPLES="$2"; shift 2 ;;
         --keep)   KEEP=1; shift ;;
         -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) [ -z "$SAMPLE" ] && SAMPLE="$1"; shift ;;
@@ -39,7 +40,7 @@ extract_metrics() {
     local html="${dir}/hwscope_report.html"
     local acc="${dir}/hwscope_acceptance.md"
 
-    echo "# 报告解析回归指标（test/report_regression.sh）"
+    echo "# 报告解析回归指标（tools/agent/report_regression.sh）"
 
     # 1. 表格列数一致性（表头 vs 分隔行 vs 数据行——抓列错位/重复列/分隔段数不符）
     echo "[table_columns]"
@@ -147,7 +148,7 @@ run_one() {
     if [ "$UPDATE" -eq 1 ]; then
         mkdir -p "$BASELINE_DIR"
         cp "$cur" "$base"
-        echo "  [BASELINE] 已写入: test/baseline/${sn}.txt（$(wc -l < "$base" | tr -d ' ') 行指标）"
+        echo "  [BASELINE] 已写入: ${base}（$(wc -l < "$base" | tr -d ' ') 行指标）"
     elif [ -f "$base" ]; then
         if diff -q "$base" "$cur" >/dev/null 2>&1; then
             echo "  [OK] 与基线一致（无解析回归）"
@@ -188,6 +189,23 @@ if [ "$ALL" -eq 1 ]; then
     exit 0
 fi
 
-[ -z "$SAMPLE" ] && { echo "用法: bash test/report_regression.sh <采集目录> [--update] [--keep]"; echo "     bash test/report_regression.sh --all [--update]"; exit 1; }
+# v1.48.14：--samples 选跑（只跑指定样本——GPU 改动跑 GPU 样本等，不跑全量省时间）
+if [ -n "$SAMPLES" ]; then
+    root="${HWSCOPE_SAMPLE_ROOT:-${PROJECT_DIR}/output}"
+    found=0; fail=0
+    for sn in ${SAMPLES//,/ }; do
+        d="${root}/${sn}"
+        [ -d "$d" ] || { echo "[WARN] 样本不存在: $sn（root=$root）"; continue; }
+        found=$((found+1))
+        run_one "$d" || fail=$((fail+1))
+        echo ""
+    done
+    [ "$found" -gt 0 ] || exit 2
+    echo "汇总: ${found} 个样本，${fail} 个差异"
+    [ "$fail" -eq 0 ] || exit 1
+    exit 0
+fi
+
+[ -z "$SAMPLE" ] && { echo "用法: bash tools/agent/report_regression.sh <采集目录> [--update] [--keep] [--samples SN1,SN2]"; echo "     bash tools/agent/report_regression.sh --all [--update]"; exit 1; }
 run_one "${SAMPLE%/}"
 exit $?
