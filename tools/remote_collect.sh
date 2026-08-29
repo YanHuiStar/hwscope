@@ -92,8 +92,9 @@ fi
 
 # ─── 2. 推送项目（排除 output/logs/.git；conf 含 BMC 凭据会随包到远端，执行后即清理） ───
 echo -e "\033[0;33m[INFO] 推送项目到远端 ${REMOTE_DIR} ...\033[0m"
-tar czf - --exclude=output --exclude=logs --exclude=.git --exclude='*.tmp' -C "${SCRIPT_DIR}" . \
-    | ssh $SSH_OPTS "$HOST" "mkdir -p ${REMOTE_DIR} && tar xzf - -C ${REMOTE_DIR}" \
+# --warning=no-timestamp：运维机时钟偏差时文件 mtime 未来会刷屏（无害警告，与回拉一致静默；v1.48.10）
+tar czf - --warning=no-timestamp --exclude=output --exclude=logs --exclude=.git --exclude='*.tmp' -C "${SCRIPT_DIR}" . \
+    | ssh $SSH_OPTS "$HOST" "mkdir -p ${REMOTE_DIR} && tar xzf - -C ${REMOTE_DIR} 2>/dev/null" \
     || { echo -e "\033[0;31m[ERROR] 项目推送失败\033[0m"; exit 1; }
 
 # ─── 3. 远端安装依赖（--install 时）+ 执行采集 ───
