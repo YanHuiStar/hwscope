@@ -119,10 +119,12 @@ detect_gpu_vendors() {
     GPU_OAM=0
     [ -z "$_lspci_out" ] && return 0
     # GPU 类目: NVIDIA/AMD/Intel 独立显卡为 "3D controller"; 华为昇腾等加速卡为 "Processing accelerators"
+    # v1.48.15：sed 提取容忍类目码后缀 [1200]（lspci -vvv 输出 `Processing accelerators [1200]:`，
+    # 实时 lspci 简版无后缀——此前仅简版匹配，报告端读 -vvv 日志厂商提取失败 → 误判 other）
     GPU_PCI_PRESENT=$(printf '%s\n' "$_lspci_out" | grep -cE "3D controller|Processing accelerators")
     [ -z "$GPU_PCI_PRESENT" ] && GPU_PCI_PRESENT=0
     if [ "$GPU_PCI_PRESENT" -gt 0 ] 2>/dev/null; then
-        GPU_PCI_VENDORS=$(printf '%s\n' "$_lspci_out" | grep -E "3D controller|Processing accelerators" | sed -n 's/.*\(3D controller\|Processing accelerators\): //p' | while IFS= read -r _gl; do
+        GPU_PCI_VENDORS=$(printf '%s\n' "$_lspci_out" | grep -E "3D controller|Processing accelerators" | sed -n 's/.*\(3D controller\|Processing accelerators\)[^:]*: //p' | while IFS= read -r _gl; do
             case "$_gl" in
                 *NVIDIA*) echo "NVIDIA" ;;
                 *"Advanced Micro Devices"*|*AMD*|*ATI*) echo "AMD" ;;

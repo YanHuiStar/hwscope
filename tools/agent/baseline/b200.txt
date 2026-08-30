@@ -3,7 +3,7 @@
   table_rows=209
 [gpu]
   gpu_detail_rows=8
-  model: NVIDIA B200
+  model:  NVIDIA B200
   gpu_json_count=8
 [memory]
   dimm_rows=24
@@ -18,7 +18,7 @@
   nic_rows=20
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |
 [json]
-  json_bytes=18579
+  json_bytes=18580
         1 "disk_count"
         1 "platform"
 [html]

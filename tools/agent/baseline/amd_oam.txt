@@ -3,7 +3,7 @@
   table_rows=326
 [gpu]
   gpu_detail_rows=8
-  model: Advanced Micro Devices Inc. [AMD/ATI] Aqua Vanjaram [Instinct MI300X]
+  model: Instinct MI300X
   gpu_json_count=8
 [memory]
   dimm_rows=24
@@ -19,15 +19,14 @@
   nic_rows=0
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |
 [json]
-  json_bytes=37844
+  json_bytes=37402
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=25
   html_table_close=25
-  html_bytes=42144
+  html_bytes=41670
 [acceptance]
         2 FAIL
-       13 N/A
+       14 N/A
         3 PASS
-        2 WARN
