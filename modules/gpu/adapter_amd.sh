@@ -10,27 +10,18 @@
 run_gpu_amd() {
     local dir="$1" prefix="${2:-}"
     local amd_smi_cmd=""
-    if check_cmd amd-smi; then
-        amd_smi_cmd="amd-smi"
-    elif check_cmd rocm-smi; then
-        amd_smi_cmd="rocm-smi"
+    # v1.48.16：统一 check_cmd_flex（PATH → /opt/rocm/bin 全路径试跑 → ~/.bashrc 环境重试）
+    # OFED 冲突场景：amd-smi/rocm-smi 装 /opt/rocm 非标准目录 + 环境变量写 ~/.bashrc（登录才生效），
+    # 脚本/非交互执行默认找不到——check_cmd_flex 三阶降级兜底（替代 v1.48.14 的裸 source 逻辑）
+    if check_cmd_flex amd-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
+        amd_smi_cmd="${CMD_FLEX_PATH:-amd-smi}"
+    elif check_cmd_flex rocm-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
+        amd_smi_cmd="${CMD_FLEX_PATH:-rocm-smi}"
     else
-        # v1.48.14：OFED 冲突环境 amd-smi/rocm-smi 的 PATH/LD_LIBRARY_PATH 在 ~/.bashrc 手动 export
-        # （登录 shell 才生效）——非交互调用（sudo bash / 采集脚本）不读 bashrc → 工具"消失"。
-        # 确认是 AMD 卡但默认找不到时，才补 source 用户 bashrc 重试（正常环境不受 bashrc 副作用影响）
-        if [ -n "$HOME" ] && [ -f "$HOME/.bashrc" ]; then
-            . "$HOME/.bashrc" >/dev/null 2>&1 || true
-        fi
-        if check_cmd amd-smi; then
-            amd_smi_cmd="amd-smi"
-        elif check_cmd rocm-smi; then
-            amd_smi_cmd="rocm-smi"
-        else
-            echo -e "${YELLOW}[SKIP] AMD GPU 已检测但 rocm-smi/amd-smi 均未安装（无 ROCm 环境）${NC}"
-            echo "# AMD GPU detected but no ROCm tool" > "${dir}/gpu_amd_pci_only.log"
-            gpu_fallback_pci "$dir" "$prefix" "amd-smi/rocm-smi" "Advanced Micro Devices|AMD|ATI"
-            return 1
-        fi
+        echo -e "${YELLOW}[SKIP] AMD GPU 已检测但 rocm-smi/amd-smi 均未找到（无 ROCm 环境；装 /opt/rocm 或配好环境后重试）${NC}"
+        echo "# AMD GPU detected but no ROCm tool" > "${dir}/gpu_amd_pci_only.log"
+        gpu_fallback_pci "$dir" "$prefix" "amd-smi/rocm-smi" "Advanced Micro Devices|AMD|ATI"
+        return 1
     fi
 
     echo -e "${CYAN}[INFO] 检测到 AMD GPU（${amd_smi_cmd}），走 ROCm 采集路径${NC}"
