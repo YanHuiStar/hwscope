@@ -16,6 +16,15 @@ if [ -f "$GPU_CSV" ]; then
         GPU_CSV=""
     fi
 fi
+# ─── lspci 型号文本规范化（v1.48.15）───
+# `Advanced Micro Devices ... [Instinct MI300X]` → `Instinct MI300X`（NVIDIA `[A100 PCIe 40GB]` 同理）；
+# 无 [] 保留原文。仅显示层用——规格库匹配/魔改检测仍走原始 GPU_MODEL_LINE（信息完整防误配）
+gpu_model_short() {
+    local _m="$1" _s
+    _s=$(printf '%s\n' "$_m" | sed -n 's/.*\[\([^]]*\)\].*/\1/p' | head -1)
+    [ -n "$_s" ] && echo "$_s" || echo "$_m"
+}
+
 # GPU 硬件存在性（lspci 3D controller，v1.46.2 起调 detect_gpu_vendors 单一实现——报告端传 lspci_all 日志）
 # 输出：GPU_PCI_PRESENT / GPU_PCI_VENDORS（厂商分组）/ GPU_PCI_VENDOR / GPU_PLATFORM（nvidia/amd/mixed/...）
 if command -v detect_gpu_vendors >/dev/null 2>&1; then
@@ -27,7 +36,7 @@ else
 fi
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
-    GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{print $2}' | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ',' | sed 's/,$//')
+    GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{n=$2; gsub(/^ +| +$/, "", n); last=""; while (match(n, /\[[^]]*\]/)) { last=substr(n, RSTART+1, RLENGTH-2); n=substr(n, RSTART+RLENGTH) }; if (last!="") print last; else print $2}' | sort -u | tr '\n' ',' | sed 's/,$//')
     # 显存总量 / 功耗上限 / 温度
     # 显存总量（nvidia-smi memory.total，MiB→GiB 二进制换算，为可见值含 ECC 预留）
     # 动态匹配列名，避免硬编码位置
@@ -78,11 +87,23 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         GPU_MEM_SPEC_NUM=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+" | head -1)
         [ -n "$GPU_MEM_SPEC_NUM" ] && GPU_MEM_SPEC_TOTAL=$(awk "BEGIN{printf \"%.0fGB\", ${GPU_MEM_SPEC_NUM}*${GPU_COUNT}}" < /dev/null)
     fi
+    # v1.48.15：generic 降级兜底（无工具 → 检测显存 N/A、魔改验证未触发）但型号已知 →
+    # 规格库给额定（单卡 × 卡数），报告显示"检测 N/A/额定 1504GB"而非全空
+    if [ -z "$GPU_MEM_SPEC_TOTAL" ] && [ -n "$GPU_MODEL_LINE" ] && command -v gpu_mem_candidates >/dev/null 2>&1; then
+        _spec_nom=$(gpu_mem_candidates "$GPU_MODEL_LINE" 2>/dev/null | grep -oE "[0-9]+" | head -1)
+        if [ -n "$_spec_nom" ]; then
+            GPU_MEM_SPEC_TOTAL=$(awk -v n="$_spec_nom" -v cnt="$GPU_COUNT" 'BEGIN{printf "%.0fGB", n*cnt}' < /dev/null)
+            GPU_MEM_SPEC="${_spec_nom}GB/卡"
+        fi
+    fi
     # 每卡明细行（兼容新旧 CSV：新 18 列含 PCIe/利用率，旧 12 列降级为 N/A）
     while IFS=',' read -r gidx gname gsn gbdf guuid gmem gused glimit gdraw gtemp gutil gclk gcclk gecc ggen gwidth ggenmax gwidthmax; do
         # 注意：此处禁止 echo|sed/tr 管道——循环 stdin 是 here-string，子进程会抢占 fd 导致 read 错位
         shopt -s extglob
         gname=${gname##*( )}; gname=${gname%%*( )}
+        # v1.48.15：明细型号规范化（lspci [xxx] → 营销名）
+        gname_short=$(gpu_model_short "$gname")
+        [ -n "$gname_short" ] && gname="$gname_short"
         gsn=${gsn##*( )}; gsn=${gsn%%*( )}
         gmem_f=${gmem// /}
         # 显存单位统一：MiB → GiB（275040MiB → 268.6 GiB）；纯参数运算无子进程

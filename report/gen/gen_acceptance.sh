@@ -90,7 +90,11 @@ gen_acceptance() {
             add_item "GPU VBIOS 版本一致" "N/A" "无 GPU" 1
         fi
     elif [ "$GPU_VBIOS" = "N/A" ]; then
-        add_item "GPU VBIOS 版本一致" "N/A" "无 VBIOS 数据（旧采集或驱动不可用）"
+        if [ "${GPU_PLATFORM:-}" = "amd" ]; then
+            add_item "GPU VBIOS 版本一致" "N/A" "无固件数据（ROCm 工具缺失，generic 降级）"
+        else
+            add_item "GPU VBIOS 版本一致" "N/A" "无 VBIOS 数据（旧采集或驱动不可用）"
+        fi
     elif echo "$GPU_VBIOS" | grep -q "不一致"; then
         add_item "GPU VBIOS 版本一致" "WARN" "${GPU_VBIOS#⚠️ }"
     else

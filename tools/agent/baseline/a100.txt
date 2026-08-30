@@ -3,7 +3,7 @@
   table_rows=393
 [gpu]
   gpu_detail_rows=8
-  model: NVIDIA A100-SXM4-80GB
+  model:  NVIDIA A100-SXM4-80GB
   gpu_json_count=8
 [memory]
   dimm_rows=32
@@ -19,7 +19,7 @@
   nic_rows=8
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |
 [json]
-  json_bytes=52986
+  json_bytes=52987
         1 "disk_count"
         1 "platform"
 [html]
