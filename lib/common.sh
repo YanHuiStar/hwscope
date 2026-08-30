@@ -137,6 +137,42 @@ check_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# ─── 灵活命令检测（v1.48.16）：PATH → 候选目录全路径试跑 → ~/.bashrc 环境重试 ───
+# 背景：CUDA（/usr/local/cuda）、ROCm（/opt/rocm）等工具装非标准目录 + 环境变量写 ~/.bashrc
+# （登录 shell 才生效）——脚本/非交互执行找不到。三阶降级：
+#   ① $PATH 直接命中 → CMD_FLEX_PATH=全路径
+#   ② 候选目录探测 + 试跑（--version 类，RPATH 好的工具免 bashrc）→ CMD_FLEX_PATH=候选全路径
+#   ③ ①②失败 → source ~/.bashrc（静默，最后手段——OFED 冲突等 bashrc 环境变量场景）→ 再找
+# 输出全局 CMD_FLEX_PATH（空 = 未找到）；调用方用 ${CMD_FLEX_PATH:-<cmd>} 执行
+check_cmd_flex() {
+    local _cmd="$1"; shift
+    CMD_FLEX_PATH=""
+    # ① PATH
+    if command -v "$_cmd" >/dev/null 2>&1; then
+        CMD_FLEX_PATH=$(command -v "$_cmd")
+        return 0
+    fi
+    # ② 候选目录全路径 + 试跑（--version 无害；不支持则走③）
+    local _cand
+    for _cand in "$@"; do
+        if [ -x "${_cand}/${_cmd}" ]; then
+            CMD_FLEX_PATH="${_cand}/${_cmd}"
+            if "${_cand}/${_cmd}" --version >/dev/null 2>&1; then
+                return 0
+            fi
+        fi
+    done
+    # ③ bashrc 环境重试（仅当候选目录找到过——确认工具真实存在才 source，避免白 source）
+    if [ -n "$CMD_FLEX_PATH" ] && [ -n "$HOME" ] && [ -f "$HOME/.bashrc" ]; then
+        . "$HOME/.bashrc" >/dev/null 2>&1 || true
+        if command -v "$_cmd" >/dev/null 2>&1; then
+            CMD_FLEX_PATH=$(command -v "$_cmd")
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # ─── WARN 计数器 ───
 reset_warn_count() { _MODULE_WARN_COUNT=0; }
 get_warn_count()   { echo "$_MODULE_WARN_COUNT"; }
