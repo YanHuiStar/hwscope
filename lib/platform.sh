@@ -117,7 +117,19 @@ detect_gpu_vendors() {
     GPU_PCI_VENDORS=""
     GPU_PLATFORM="none"
     GPU_OAM=0
-    [ -z "$_lspci_out" ] && return 0
+    [ -z "$_lspci_out" ] && {
+        # v1.48.17：WSL 等无 lspci 平台兜底——nvidia-smi 有卡则判 NVIDIA（仅采集端无 _src 时；
+        # 报告端传日志 _src 有文件不会到这，保持只读）
+        if [ -z "$_src" ] && check_cmd nvidia-smi && nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | grep -q .; then
+            GPU_PCI_PRESENT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+            GPU_PCI_PRESENT=$(echo "$GPU_PCI_PRESENT" | head -1 | tr -dc '0-9')
+            [ -z "$GPU_PCI_PRESENT" ] && GPU_PCI_PRESENT=0
+            GPU_PCI_VENDOR="NVIDIA"
+            GPU_PCI_VENDORS="NVIDIA:${GPU_PCI_PRESENT}"
+            GPU_PLATFORM="nvidia"
+        fi
+        return 0
+    }
     # GPU 类目: NVIDIA/AMD/Intel 独立显卡为 "3D controller"; 华为昇腾等加速卡为 "Processing accelerators"
     # v1.48.15：sed 提取容忍类目码后缀 [1200]（lspci -vvv 输出 `Processing accelerators [1200]:`，
     # 实时 lspci 简版无后缀——此前仅简版匹配，报告端读 -vvv 日志厂商提取失败 → 误判 other）

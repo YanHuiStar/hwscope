@@ -13,8 +13,11 @@ MODULE_NAME="GPU"
 # v1.48.9 修复：用独立变量 MODULE_DIR——原 v1.47.0 直接赋 SCRIPT_DIR，被 hwscope.sh source 时
 # BASH_SOURCE[0]=完整路径(/opt/.../modules/04_gpu.sh)，dirname 污染全局 SCRIPT_DIR=modules/，
 # 导致后续模块拼接出 modules/modules/05_xxx.sh 全部报"模块脚本不存在"（01-03 用 $0 无害，05+ 全挂）
-MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd)"
 source "${MODULE_DIR}/../lib/common.sh" 2>/dev/null || true
+# v1.48.17：并行子进程模式（hwscope.sh 用独立 bash 执行模块，不继承主脚本函数）——
+# detect_gpu_vendors 在 lib/platform.sh，须显式 source（WSL 无 lspci 时 nvidia-smi 兜底依赖它）
+source "${MODULE_DIR}/../lib/platform.sh" 2>/dev/null || true
 
 run_gpu() {
     local output_dir="$1"
