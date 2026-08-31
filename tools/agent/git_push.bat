@@ -21,6 +21,11 @@ rem prints a clean error instead of recursing into WSL.
 if exist "%ProgramFiles%\Git\bin\bash.exe" set "BASH=%ProgramFiles%\Git\bin\bash.exe"
 if not defined BASH if exist "%LocalAppData%\Programs\Git\bin\bash.exe" set "BASH=%LocalAppData%\Programs\Git\bin\bash.exe"
 if not defined BASH if exist "%ProgramFiles(x86)%\Git\bin\bash.exe" set "BASH=%ProgramFiles(x86)%\Git\bin\bash.exe"
+rem v1.48.21: registry probe for non-standard install paths (e.g. D:\Programming\Git) -
+rem Git for Windows always writes HKLM\SOFTWARE\GitForWindows\InstallPath
+if not defined BASH for /f "tokens=2*" %%i in ('reg query "HKLM\SOFTWARE\GitForWindows" /v InstallPath 2^>nul') do (
+    if exist "%%j\bin\bash.exe" set "BASH=%%j\bin\bash.exe"
+)
 if not defined BASH (
     for /f "delims=" %%b in ('where bash 2^>nul') do (
         echo %%b | findstr /i /c:"\Git\" >nul 2>nul
