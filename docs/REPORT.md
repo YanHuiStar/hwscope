@@ -33,6 +33,9 @@
 - **检测与额定不符 → `⚠️ 疑似显存魔改或伪装`**（PCIe 魔改卡识别；NVIDIA/AMD 统一 verify_gpu_mem 检测）
 - **AMD 平台**：04 模块走 ROCm（rocm-smi/amd-smi + rocminfo）采集，报告按厂商解析；验收 NVLink/DCGM 判 N/A（AMD 无 NVLink/DCGM，ROCm 诊断走 rocminfo + amd-smi ras）
 - **多厂商适配器（v1.47.0）**：昇腾（npu-smi + HCCS 拓扑/health 日志）/ Intel（xpu-smi）/ 国产（cnmon·bmt-smi·mthreads-gmi·mx-smi·ix-smi）全量日志落盘 + 统一 `gpu_inventory.csv`（lspci 层，PCIe 链路判定可用）；厂商 SMI 解析标注【待真机校准】；无工具自动 lspci 兜底，卡不丢失
+- **型号文本规范化（v1.48.15）**：从 lspci 厂商行提取 marketing 括号内的短型号（如 `AMD Instinct MI300X` / `NVIDIA B200`），明细与规格库匹配更稳定（不再带 `[AMD/ATI]` 等噪音）
+- **无工具兜底的额定显存显示（v1.48.15）**：generic 降级（无厂商 SMI）时检测显存为 N/A、魔改验证不触发，但型号已知 → 规格库仍给出额定（如"检测 N/A / 额定 1504GB"），报告不显示全空
+- **VBIOS 文案 AMD 感知（v1.48.15）**：AMD 平台固件版本按厂商语义表述（AMD 无 VBIOS 概念，显示固件版本而非 VBIOS 字样）
 
 ## 验收清单（Acceptance Checklist）
 

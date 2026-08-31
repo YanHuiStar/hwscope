@@ -143,6 +143,8 @@ mst status    # 验证：能列出 Mellanox 设备即成功
 
 > v1.47.0 起 GPU 模块按 `GPU_PLATFORM` 分发到 `modules/gpu/adapter_*.sh`。以下工具**均为可选**——装了即走对应厂商采集路径（全量日志 + 统一 CSV），没装自动降级到 **lspci 层兜底**（名称/BDF/PCIe 链路可判，显存/温度等 N/A），采集永不中断、卡不丢失。
 
+**工具自动探测（v1.48.16 `check_cmd_flex`）**：工具不在 PATH 里也能用——三层探测（PATH → 常见非标准安装目录全路径试运行（如 `/usr/local/cuda`、`/opt/rocm`、`/usr/local/Ascend`）→ 确认存在后重读 `~/.bashrc` 环境），**无需用户手动加 PATH**（OFED 与 ROCm 冲突场景下 amd-smi/rocm-smi 常只在 bashrc 导出，v1.48.14 起自动处理）。
+
 | 厂商 | 工具 | 说明 | 来源 |
 |------|------|------|------|
 | 华为昇腾 | `npu-smi` | Atlas 卡采集（info/board/HCCS 拓扑/health，全量日志落盘；CSV 解析待真机校准） | CANN Toolkit（Atlas 800T/900 随系统安装）|
