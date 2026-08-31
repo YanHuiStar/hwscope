@@ -76,6 +76,11 @@
 - **凭据**：交互式密码默认（SSH ControlMaster 复用，输一次密码）；root 免 sudo，普通用户自动 `-t` 供 sudo 交互；SSH key 仅限可信内网。密码不落盘
 - **输出**：本地 `output/remote_output/<机器ID>/`（对标本地 output/<SN> 结构）；归档包 → `logs/remote_logs/`
 
+### `regen_reports.sh` — 批量重生成报告（tools/agent/，agent 专用，v1.48.18）
+- **用法**：`bash tools/agent/regen_reports.sh`（桌面 6 份默认样本）；`bash tools/agent/regen_reports.sh <目录...>` 指定样本；`--samples SN1,SN2` 桌面选跑
+- **选项**：`--regression` 生成后跑回归对比（tools/agent/baseline/）；`--update` 顺带刷新基线；`--acceptance` 验收清单（默认已含）
+- **输出**：每样本报告/验收状态 + 验收判定 + 汇总（agent 直接消费）；桌面路径自动探测（git-bash / WSL）
+
 ### `git_push.sh` — 一键推送更新（tools/agent/，开发维护工具，AI agent 可用）
 - **用法**：`bash tools/agent/git_push.sh`（默认 fetch + 逐提交改动摘要审查，交互确认）；`-y` 跳过确认；`--no-fetch` 跳过前置 fetch；`--dry-run` 只审查；`-q/--quiet` 机器可读模式
 - **功能**：默认先 fetch 检测其他 agent 是否已推送（防推旧）→ 展示每个待推提交的改动摘要 → **版本单调检查**（本地版本 < 远程版本拒绝推送，防凭记忆回退版本号，v1.37.2）→ 直连重试 3 次 → 自动探测本机代理（v2ray/xray/clash 进程动态端口，一次性走代理）→ 失败输出 `[AI-ACTION]` 指引
