@@ -46,12 +46,32 @@
   - 依赖：GitHub Actions（仓库已托管）
   - 验收标准：每次 push 自动检查，失败即红
 
+- [ ] **[P1] AMD/国产 GPU 显存规格库真机校准** — MI355X/MI325X 等新号与昇腾/寒武纪型号入 `gpu_spec.sh`，device ID 表（OAM 判定）真机样本核对
+  - 依赖：真机样本（AMD OAM 服务器已采 amd-oam-sample；国产卡待现场）
+  - 验收标准：新机型采集后额定显存/魔改检测正确
+
+- [ ] **[P1] GB300 机架级特征检测** — 液冷（GPU 温度异常低 + 无风扇传感器）+ NVLink 72 卡拓扑 → `server-gb300` 分类
+  - 依赖：GB300 NVL72 真机样本
+  - 验收标准：GB300 采集自动分类 server-gb300 且不误判
+
+- [ ] **[P2] 消费级平台段隐藏统一策略** — 笔记本/台式机/一体机上无 BMC/IB/PEX 段的条件隐藏收拢为统一规则（现逐段各自条件化）
+  - 依赖：消费级样本数据
+  - 验收标准：消费级报告无"无 BMC"类 N/A 噪音段
+
+- [ ] **[P2] 各厂商工具 check_cmd_flex 候选目录补充** — npu-smi（/usr/local/Ascend）、xpu-smi、cnmon 等候选目录真机验证后入 `check_cmd_flex` 调用
+  - 依赖：昇腾/Intel/寒武纪真机
+  - 验收标准：非标准安装目录工具自动探测成功（不依赖 bashrc）
+
 ---
 
 ## 已完成（归档）
 
 > 按版本倒序排列；同一主版本的多轮迭代合并为一条。
 
+- v1.48.x — **全 GPU 厂商生态 + 质量工程**：多厂商适配器框架（v1.47.0：adapter_nvidia/amd/ascend/intel/国产×5/generic，统一 18 列 CSV 报告端零改动）；AMD OAM 模组识别（v1.48.0：x86_64_OAM 平台 + device ID 判定 + xGMI 拓扑）；报告解析回归测试体系（v1.48.3：10 指标组 vs 基线，抓出 29 处表格错位/AMD 多卡失真；`tools/agent/report_regression.sh` + 6 份真实样本基线）；OFED 冲突 ROCm 环境（amd-smi/rocm-smi bashrc 环境自动补加载，v1.48.14）；check_cmd_flex 通用工具检测（PATH → 候选目录试跑 → bashrc，v1.48.16）；WSL 实测修复（并行子进程函数继承 + nvidia-smi 兜底，v1.48.17）；regen_reports.sh agent 批量报告重生成（v1.48.18）；CUDA 行非 NVIDIA 平台隐藏（v1.48.19）；平台分类修复（Processing accelerators [1200] 类目码）+ GPU 型号规范化（lspci [营销名]）+ generic 额定显存兜底（v1.48.15）
+- v1.46.x — **多厂商 GPU 检测 + 函数化 + 设备形态**：厂商无关 GPU 检测（v1.46.0：AMD/Intel 卡不再误报无 GPU，无 GPU 段隐藏）；AMD/ROCm 全链路（v1.46.1：rocm-smi/amd-smi 采集 + JSON 解析 + MI 系列显存规格库 + 魔改检测 + 验收适配）；detect_gpu_vendors/verify_gpu_mem 函数化单一实现 + 设备形态分类（v1.46.2：chassis/ECC/BMC/GPU 信号 → 笔记本~GB300 10 类）
+- v1.45.x — **测试报告生成器 + 目录语义 + 报告完善 + 推送纪律**：`test/report.sh` 压测报告生成器（v1.45.0：STREAM 理论峰值 = 通道×速率×8B，利用率判定）；磁盘测默认屏蔽系统盘（v1.45.1）；logs/test/<SN>/ 稳定累积 + 采集默认覆盖 --stamp（v1.45.5-6）；DIMM 位宽列（v1.45.13：部件号推断 x4/x8 + 动态隐藏）；NIC PCIe 通路设计注（v1.45.14）；网卡 Link 状态列（v1.45.15）；整机温度 OS 侧 lm-sensors 兜底（v1.45.16）；git_push 防死循环三层防线（v1.45.8-10：4s 预检 + 熔断冷却 + [PAUSE] 纪律）
+- v1.44.x — **报告数据完善**：PSU dmidecode Type39 独立源（无 FRU 平台出 PSU 明细）；PCIe 全链路表（3 态判定 + 附录）；NIC 端口列（BDF 聚合）+ GPU 直连列动态隐藏；nvidia-persistenced 临时开关围绕 DCGM（v1.44.2）；PCIe 链路判定修正（bridge 端口不判异常，端点才判）
 - v1.43.1 — **Windows 工具编码修复**（真机测试暴露）：remote_run.ps1 补 UTF-8 BOM（write 工具重写剥 BOM，PS5.1 按 ANSI 读中文致语法崩）、remote_run.bat 转 CRLF（LF 行尾 cmd 解析含中文批处理崩溃）；AGENTS.md 记录 ps1/bat 编辑陷阱（改后必须 PS5.1 校验 + 补 BOM + bat 转 CRLF）
 - v1.43.0 — **远程执行工具改名 + 扩展**：`tools/remote_batch.sh` → **`tools/remote_run.sh`**（批量运维 → 远程执行）；新增 `--script <本地脚本>`（推送+执行，化解 --push/-c 互斥）与 `--pull-logs <远端路径>`（tar-over-ssh 回拉过程日志到 `<outdir>/<host>_logs/`，复用 remote_collect 回拉范式）；输出目录默认 `run_output/`；Windows 对应 `tools/win/ssh_batch.ps1/.bat` → `remote_run.ps1/.bat`（去掉 BatchMode=yes 对齐交互密码立场；--script/--pull-logs Windows 二期）；全仓引用同步
 - v1.42.0 — **远程采集 --install 扩展**（远程冷启动一条龙）：`remote_collect.sh --install <1,2,...>` 推送后先远端非交互装依赖（`install_tool.sh -c <列表> -y` 新增非交互参数，跳过菜单/确认）再采集；普通用户时安装+采集合并一条 `-t` 命令（同 tty sudo 密码只输一次），安装失败 `&&` 短路中止；`-c` 非法项快速失败；Windows `remote_collect.ps1 -InstallItems`（v1.42.1）
@@ -77,4 +97,4 @@
 
 ---
 
-*最近更新: 2026-08-24 · 版本: v1.43.1*
+*最近更新: 2026-08-30 · 版本: v1.48.19*
