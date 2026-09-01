@@ -192,6 +192,29 @@ fi
 # GPU 序列号列表（资产追踪；消费卡 serial=0 时忽略）
 GPU_SERIALS=$(grep -v "^#" "$GPU_CSV" 2>/dev/null | tail -n +2 | awk -F',' '{gsub(/^ +/,"",$3); gsub(/ +$/,"",$3); if($3!="" && $3!="0" && $3!="[N/A]") print $3}' | tr '\n' ',' | sed 's/,$//')
 
+# ─── v1.48.24：从 pcie_full.log（lspci -vvv 全量）按 BDF 提取 GPU 卡 PCIe 协商链路 ───
+# 输出 "gen_cur|width_cur|gen_max|width_max"（N/A 缺省；2.5/5/8/16/32/64GT/s → Gen1-6）
+# 报告端只读日志（零新采集）；AMD/昇腾/国产等非 NVIDIA CSV 路径的 per-card PCIe 补填用
+_gpu_pcie_from_full() {
+    local b="$1" blk cap sta
+    [ -z "$b" ] || [ ! -f "${pcie_full:-}" ] && { echo "N/A|N/A|N/A|N/A"; return; }
+    b=$(echo "$b" | tr 'A-F' 'a-f')   # gpu_amd_full.log 的 PCI Bus 大写（C6:00.0），pcie_full 小写 → 统一小写匹配
+    blk=$(awk -v b="$b" 'BEGIN{RS="\n\n"} index($0, b " ") || index($0, b "\t") {print; exit}' "${pcie_full}" 2>/dev/null)
+    [ -z "$blk" ] && { echo "N/A|N/A|N/A|N/A"; return; }
+    cap=$(echo "$blk" | grep -m1 "LnkCap:")
+    sta=$(echo "$blk" | grep -m1 "LnkSta:")
+    local gc gw sc sw g1 w1 g2 w2
+    gc=$(echo "$cap" | grep -oE "[0-9.]+GT/s" | head -1)
+    gw=$(echo "$cap" | grep -oE "x[0-9]+" | head -1 | tr -d 'x')
+    sc=$(echo "$sta" | grep -oE "[0-9.]+GT/s" | head -1)
+    sw=$(echo "$sta" | grep -oE "x[0-9]+" | head -1 | tr -d 'x')
+    g1="N/A"; g2="N/A"; w1="N/A"; w2="N/A"
+    case "$gc" in 2.5GT/s) g2=1;; 5GT/s) g2=2;; 8GT/s) g2=3;; 16GT/s) g2=4;; 32GT/s) g2=5;; 64GT/s) g2=6;; esac
+    case "$sc" in 2.5GT/s) g1=1;; 5GT/s) g1=2;; 8GT/s) g1=3;; 16GT/s) g1=4;; 32GT/s) g1=5;; 64GT/s) g1=6;; esac
+    [ -n "$gw" ] && w2="$gw"; [ -n "$sw" ] && w1="$sw"
+    echo "${g1}|${w1}|${g2}|${w2}"
+}
+
 # ─── AMD GPU 解析（v1.46.1，ROCm）：nvidia GPU_CSV 无数据但 gpu_amd_inventory.json 存在时 ───
 load_manifest "${GPU_DIR}" gpu_amd_inventory "gpu_amd_inventory.json"
 if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
@@ -225,6 +248,15 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
         GPU_NAMES=$(grep -oE '"(Product Name|Card Series)": "[^"]*"' "${AMD_JSON}" | sort -u | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//')
         GPU_MEM=$(grep -oE '"VRAM Total Memory \(B\)": "[0-9]+"' "${AMD_JSON}" | grep -oE '[0-9]+' | awk '{s+=$1} END{printf "%.0f GiB", s/1024/1024/1024}')
         GPU_DETAILS=""
+        # v1.48.24：数据源 gpu_amd_full.log（--showallinfo）——每卡 BDF/VBIOS/Max Power + system 驱动版本
+        load_manifest "${GPU_DIR}" gpu_amd_full "gpu_amd_full.log"
+        _amd_bdfs=""; _amd_vbios=""
+        if [ -f "${gpu_amd_full}" ] 2>/dev/null; then
+            _amd_bdfs=$(grep -oE '"PCI Bus": "[0-9a-fA-F:.]+"' "${gpu_amd_full}" | grep -oE '[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]')
+            _amd_vbios=$(grep -oE '"VBIOS version": "[^"]*"' "${gpu_amd_full}" | cut -d'"' -f4)
+            # 单行 JSON：必须按 key 锚定取值（整行 grep -oE 会取到首卡 SMC 固件 00.85.117 而非驱动版本——v1.48.24 实测）
+            GPU_DRIVER=$(grep -oE '"Driver version": "[0-9.]+"' "${gpu_amd_full}" 2>/dev/null | head -1 | cut -d'"' -f4)
+        fi
         _ai=0
         while IFS='|' read -r _cardn _an _auid _amem _atmp _apwr _autl; do
             [ -z "$_cardn" ] && continue
@@ -239,8 +271,23 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
                     [ -n "$VERIFY_MEM_NOTE" ] && GPU_AMD_SUSPECT="${GPU_AMD_SUSPECT}卡${_cardn}(${_an} ${VERIFY_MEM_NOTE}); "
                 fi
             fi
+            # v1.48.24：汇总额定显存取首卡规格（188GB → GPU_MEM_SPEC，配置单不再 "N/A HBM"）
+            [ -z "$GPU_MEM_SPEC" ] && [ -n "$_aspec" ] && GPU_MEM_SPEC="${_aspec}GB/卡"
             _amem_gb=$(awk -v b="$_amem" 'BEGIN{printf "%.0f", b/1024/1024/1024}')
-            GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_auid:-N/A}|${_amem_gb}GB${_aspec:+/$_aspec}|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|N/A|N/A|N/A|N/A|N/A"$'\n'
+            # v1.48.24：per-card PCIe（pcie_full.log 按 BDF）+ 每卡 VBIOS（gpu_amd_full.log，真实 VBIOS 非 SMC）
+            _gbdf=$(echo "$_amd_bdfs" | sed -n "$((_ai + 1))p")
+            _gvb=$(echo "$_amd_vbios" | sed -n "$((_ai + 1))p")
+            _gpcie="N/A"; _gpciemax="N/A"
+            if [ -n "$_gbdf" ]; then
+                IFS='|' read -r _gp _gw _gmx _gwm <<< "$(_gpu_pcie_from_full "$_gbdf")"
+                if [ "$_gp" != "N/A" ] && [ "$_gw" != "N/A" ]; then _gpcie="${_gp}x${_gw}"; fi
+                if [ "$_gmx" != "N/A" ] && [ "$_gwm" != "N/A" ]; then _gpciemax="${_gmx}x${_gwm}"; fi
+                # 降宽/降速检测（对齐 NVIDIA 分支：宽度降即标记 → 验收 GPU PCIe 项可判）
+                if [ "$_gw" != "N/A" ] && [ "$_gwm" != "N/A" ] && [ "$_gw" -lt "$_gwm" ] 2>/dev/null; then
+                    GPU_DEGRADED="${GPU_DEGRADED}GPU${_ai}: PCIe ${_gpcie} (期望 ${_gpciemax}),"
+                fi
+            fi
+            GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_auid:-N/A}|${_amem_gb}GB${_aspec:+/$_aspec}|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|${_gpcie}|${_gpciemax}|N/A|N/A|${_gvb:-N/A}"$'\n'
             _ai=$((_ai + 1))
         done <<< "$_amd_rows"
         GPU_DETAILS=$(printf '%s' "$GPU_DETAILS" | sed '/^$/d')
@@ -249,11 +296,31 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
 ' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$6); if($6+0>mx)mx=$6+0} END{if(mx>0) printf "%d°C", mx; else print "N/A"}')
         GPU_POWER=$(printf '%s
 ' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$5); s+=$5} END{if(s>0) printf "%d W", s; else print "N/A"}')
+        # v1.48.24：额定功耗改 Max Graphics Package Power（750W/卡取最大）——原实现把当前功耗求和当"额定"（误导）
+        if [ -f "${gpu_amd_full}" ] 2>/dev/null; then
+            _pmax=$(grep -oE '"Max Graphics Package Power \(W\)": "[0-9.]+"' "${gpu_amd_full}" | grep -oE '[0-9.]+' | awk 'BEGIN{m=0}{if($1+0>m+0)m=$1}END{if(m>0)printf "%.0f W", m}')
+            [ -n "$_pmax" ] && GPU_POWER="$_pmax"
+        fi
+        # v1.48.24：额定显存总量（188×8=1504GB）
+        if [ -n "$GPU_MEM_SPEC" ]; then
+            _spec_num=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+" | head -1)
+            [ -n "$_spec_num" ] && GPU_MEM_SPEC_TOTAL=$(awk "BEGIN{printf \"%.0fGB\", ${_spec_num}*${GPU_COUNT}}" < /dev/null)
+        fi
+        # v1.48.24：VBIOS 用真实 VBIOS version（113-M3000100-103）；SMC 固件仅作旧采集兜底
+        if [ -n "$_amd_vbios" ]; then
+            _vb_n=$(printf '%s\n' "$_amd_vbios" | sed '/^$/d' | sort -u | wc -l)
+            if [ "$_vb_n" -eq 1 ]; then
+                GPU_VBIOS=$(printf '%s\n' "$_amd_vbios" | sort -u | head -1)
+            elif [ "$_vb_n" -gt 1 ]; then
+                GPU_VBIOS="⚠️ 不一致（${_vb_n} 种 VBIOS 版本）"
+            fi
+        fi
         GPU_PLATFORM="amd"
         # v1.48.23：AMD VBIOS/固件一致性（gpu_amd_fw.log --showfwinfo；8 卡 SMC 等固件版本一致 → PASS）
         # 用 load_manifest 定位（GPU_DIR 可能为空——load_manifest 有 fallback 推导）
+        # v1.48.24：仅当上面真实 VBIOS 未取到时兜底（旧采集无 gpu_amd_full.log）
         load_manifest "${GPU_DIR}" gpu_amd_fw "gpu_amd_fw.log"
-        if [ -n "$gpu_amd_fw" ] && [ -f "$gpu_amd_fw" ] 2>/dev/null; then
+        if [ -z "$GPU_VBIOS" ] && [ -n "$gpu_amd_fw" ] && [ -f "$gpu_amd_fw" ] 2>/dev/null; then
             _fw_vers=$(grep -oE '"SMC firmware version": "[^"]*"' "$gpu_amd_fw" | sort -u)
             _fw_n=$(printf '%s\n' "$_fw_vers" | sed '/^$/d' | wc -l)
             if [ "$_fw_n" -eq 1 ]; then
