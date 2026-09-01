@@ -86,6 +86,11 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **推送失败处理纪律（v1.45.9 立规，防浪费 token/积分）**：git_push 输出 `[PAUSE]` 指令后**禁止自动重试**——网络不通是用户侧问题（代理节点/网络状态），盲目重试每轮空转烧 token。失败后：① 停止推送尝试 ② 把失败原因**上报用户**（"推送失败，请检查代理节点/网络，确认后我再推"）③ 等用户明确说『推送/重试』或确认网络恢复后才重新运行。git_push 已内置 4s 网络预检 + 连续 3 次失败 5 分钟熔断冷却（冷却期内调用秒败）
 - **提交后**跑 `bash tools/agent/agent_sync.sh --mark`（本地状态文件 AGENT_STATE.md 标记未推送提交；该文件 gitignore，仅单机多会话协调用，不承担跨机器——跨机器以 fetch 为准）
 - **多机器提示**：换机器开工同样先 agent_sync（fetch 到该机最新）；禁止"我以为远程是 vX"——以 agent_sync 输出为准
+- **历史重写后同步（v1.48.28 立规，SN 泄漏清除等 force-push 重写历史场景）**：远程历史被重写后，所有旧 clone 本地历史分叉——`git pull`/`git push`/git_push 的 rebase 全部失败（报"不会快进"/分叉）。**其他机器以同步远程为主（无本地独特未推提交）时，统一一次性处理**：
+  ```bash
+  git fetch --force origin && git reset --hard origin/main && git log --oneline -1
+  ```
+  重置后文件内容与远程一致（重写只改 commit hash 不变内容）；若本地确有未推独特提交，先 `git branch backup-$(date +%s)` 备份再 reset，需要时 cherry-pick 搬回
 - 提交前 `git status` 审查只 add 本会话文件（禁 add -A，见安全约定）
 
 ## 环境故障止损纪律（v1.45.11 立规，Windows/git-bash 实测教训）
