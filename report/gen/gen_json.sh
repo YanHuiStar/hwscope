@@ -109,9 +109,9 @@ gen_json() {
         done < <(printf '%s\n' "$FAN_DETAILS")
         fan_details_json=$(printf '%s' "$fan_details_json" | sed '$ s/,$//')
     fi
-    # 固件合规 JSON 数组（component|device|current|baseline|status|note）
+    # 固件合规 JSON 数组（component|device|current|baseline|status|note）；未启用基线（全未知）→ 空数组
     local fw_details_json=""
-    if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
+    if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
         fw_details_json=$(printf '%s' "$FW_COMPLIANCE_DETAILS" | awk -F'|' '
             $1 != "" {
                 for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }

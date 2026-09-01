@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=393
+  table_rows=382
 [gpu]
   gpu_detail_rows=8
   model:  NVIDIA A100-SXM4-80GB
@@ -19,13 +19,13 @@
   nic_rows=8
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |
 [json]
-  json_bytes=53041
+  json_bytes=51269
         1 "disk_count"
         1 "platform"
 [html]
-  html_table_open=25
-  html_table_close=25
-  html_bytes=56023
+  html_table_open=24
+  html_table_close=24
+  html_bytes=53936
 [acceptance]
         5 N/A
         9 PASS
