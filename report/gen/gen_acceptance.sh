@@ -53,7 +53,11 @@ gen_acceptance() {
                   *)    if [ "$HEAD_NODE" -eq 1 ]; then
                             add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）" 1
                         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-                            add_item "NVLink 互联" "WARN" "检测到 NVIDIA GPU 但驱动异常，NVLink 状态不可用"
+                            # v1.48.22：文案按 lspci 层厂商区分（原写死 NVIDIA）
+                            case "${GPU_PCI_VENDOR:-}" in
+                                AMD) add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（xGMI/Infinity Fabric 互联，拓扑日志已采集；链路健康判定待真机校准）" 1 ;;
+                                *)   add_item "NVLink 互联" "WARN" "检测到 NVIDIA GPU 但驱动异常，NVLink 状态不可用" ;;
+                            esac
                         elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
                             add_item "NVLink 互联" "N/A" "无 GPU" 1
                         else
@@ -73,7 +77,11 @@ gen_acceptance() {
                   *)    if [ "$HEAD_NODE" -eq 1 ]; then
                             add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）" 1
                         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-                            add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行"
+                            # v1.48.22：文案按 lspci 层厂商区分（原写死 NVIDIA）
+                            case "${GPU_PCI_VENDOR:-}" in
+                                AMD) add_item "DCGM 诊断" "N/A" "AMD 平台无 DCGM（ROCm 诊断：rocminfo + amd-smi ras 见 GPU 段附录）" 1 ;;
+                                *)   add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行" ;;
+                            esac
                         elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
                             add_item "DCGM 诊断" "N/A" "无 GPU" 1
                         else
@@ -85,7 +93,11 @@ gen_acceptance() {
     # 4. GPU VBIOS 版本一致（混插固件是交付要记录的固件一致性问题）
     if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         if [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-            add_item "GPU VBIOS 版本一致" "WARN" "检测到 NVIDIA GPU 但驱动异常，VBIOS 不可读"
+            # v1.48.22：文案按 lspci 层厂商区分（原写死 NVIDIA——AMD 平台误报）
+            case "${GPU_PCI_VENDOR:-}" in
+                AMD) add_item "GPU VBIOS 版本一致" "WARN" "检测到 ${GPU_PCI_PRESENT} 个 AMD GPU 但管理工具无数据（驱动异常或 ROCm 采集失败），VBIOS 不可读" ;;
+                *)   add_item "GPU VBIOS 版本一致" "WARN" "检测到 NVIDIA GPU 但驱动异常，VBIOS 不可读" ;;
+            esac
         else
             add_item "GPU VBIOS 版本一致" "N/A" "无 GPU" 1
         fi

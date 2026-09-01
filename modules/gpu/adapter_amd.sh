@@ -15,6 +15,12 @@ run_gpu_amd() {
     # 脚本/非交互执行默认找不到——check_cmd_flex 三阶降级兜底（替代 v1.48.14 的裸 source 逻辑）
     if check_cmd_flex amd-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
         amd_smi_cmd="${CMD_FLEX_PATH:-amd-smi}"
+        # v1.48.22：amd-smi 新版（ROCm 7+）改子命令格式（list/static/metric/...），老式扁平参数被拒
+        # （AmdSmiInvalidSubcommandException）→ 探测老式参数；失败降级 rocm-smi（老式参数仍兼容平铺 JSON）
+        if ! "${amd_smi_cmd}" --showproductname --json 2>/dev/null | grep -qiE '"card[0-9]+"'; then
+            amd_smi_cmd=""
+            check_cmd_flex rocm-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin && amd_smi_cmd="${CMD_FLEX_PATH:-rocm-smi}"
+        fi
     elif check_cmd_flex rocm-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
         amd_smi_cmd="${CMD_FLEX_PATH:-rocm-smi}"
     else
