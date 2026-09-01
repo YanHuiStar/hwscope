@@ -15,6 +15,14 @@ if [ -f "${fw_compliance}" ]; then
     }')
     FW_SUMMARY=$(grep "^summary:" "${fw_compliance}" 2>/dev/null | sed 's/^summary:[[:space:]]*//')
 fi
+# v1.48.25：固件合规"功能启用"判定——fw_required.txt 有真实基线（判定含 合规/落后/较新）才有展示意义；
+# 默认全注释基线 → 全"未知"行 → 报告固件合规段隐藏（避免每份报告带"无基线"噪音），录入基线后自动显示
+FW_COMPLIANCE_ACTIVE=0
+if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
+    if printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -qE "\|(合规|落后|较新)\|"; then
+        FW_COMPLIANCE_ACTIVE=1
+    fi
+fi
 
 # ─── 能耗台账（16_power 模块输出；无数据段隐藏） ───
 PWR_DIR="${OUT}/power"

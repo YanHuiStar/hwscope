@@ -302,7 +302,7 @@ $(if [ -n "$nvs_md" ]; then
     printf '%s' "$nvs_md"
 fi)
 
-$(if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
+$(if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
     echo ""
     echo "## 固件合规"
     echo "> 对照 conf/fw_required.txt（厂商推荐版本基线）逐项判定；无基线条目判未知（仅记录）"
