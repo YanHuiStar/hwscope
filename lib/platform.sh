@@ -188,8 +188,8 @@ detect_gpu_vendors() {
 
 # ─── 设备形态分类（v1.46.2）───
 # 设置全局变量：MACHINE_CLASS（laptop/aio/desktop/workstation-consumer/workstation-server/
-#   server-traditional/server-nvidia-gpu/server-amd-gpu/server-gpu-other/server-gb300/unknown）
-# 信号优先级：BMC 存在 > dmidecode Chassis Type > CPU ECC > GPU 类型/厂商 > GPU 数量
+#   server-traditional/server-nvidia-gpu/server-amd-gpu/server-gpu-other/server-gpu-head/server-gb300/unknown）
+# 信号优先级：BMC 存在 > dmidecode Chassis Type > CPU ECC > GPU 类型/厂商 > GPU 数量 > PCIe Fabric Switch（机头）
 # 参数 $1（可选）：输出目录——报告端传此参（只读日志：motherboard/dmidecode_chassis.log 等 + BMC_PRESENT）；
 #   采集端不传（实时 dmidecode/ipmitool 探测）
 classify_machine() {
@@ -221,6 +221,14 @@ classify_machine() {
     local _gpu_cnt=0
     [ -n "${GPU_PCI_PRESENT:-}" ] && _gpu_cnt=$GPU_PCI_PRESENT
     local _gpu_plat="${GPU_PLATFORM:-none}"
+    # v1.48.26：PCIe Gen5 Fabric Switch（PEX89xxx/PEX97xxx/Switchtec）——8-GPU HGX 底座的机头特征
+    # 无 GPU 但有 Fabric = HGX 机头（GPU 模组未装/待装/另采），非传统服务器（真机 AMAX ESC N8-E11V 误判教训）
+    local _fabric=0
+    if [ -n "$_dir" ]; then
+        [ -f "$_dir/pcie/lspci_all.log" ] && grep -qiE "PEX89|PEX97|Switchtec" "$_dir/pcie/lspci_all.log" && _fabric=1
+    elif check_cmd lspci; then
+        lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec" && _fabric=1
+    fi
 
     case "$_chassis" in
         *Portable*|*Notebook*|*Laptop*|*"Sub Notebook"*|*Tablet*)
@@ -228,13 +236,15 @@ classify_machine() {
         *"All in One"*|*"All-in-One"*)
             MACHINE_CLASS="aio" ;;
         *Rack*|*Blade*|*"Main Server"*|*"Multi-system"*)
-            # 机架/刀片 → 服务器（按 GPU 类型细分）
+            # 机架/刀片 → 服务器（按 GPU 类型细分；v1.48.26 无 GPU 但有 Fabric Switch = HGX 机头）
             if [ "$_gpu_cnt" -gt 0 ] 2>/dev/null; then
                 case "$_gpu_plat" in
                     nvidia) MACHINE_CLASS="server-nvidia-gpu" ;;
                     amd)    MACHINE_CLASS="server-amd-gpu" ;;
                     *)      MACHINE_CLASS="server-gpu-other" ;;
                 esac
+            elif [ "$_fabric" -eq 1 ]; then
+                MACHINE_CLASS="server-gpu-head"
             else
                 MACHINE_CLASS="server-traditional"
             fi ;;
@@ -250,7 +260,7 @@ classify_machine() {
                 MACHINE_CLASS="desktop"
             fi ;;
         *)
-            # Chassis 未知：BMC+GPU → GPU 服务器；仅 BMC → 传统服务器；GPU+ECC → 工作站；其余按 GPU 兜底
+            # Chassis 未知：BMC+GPU → GPU 服务器；仅 BMC → Fabric 判定（机头）否则传统；GPU+ECC → 工作站；其余按 GPU 兜底
             if [ "$_bmc" -eq 1 ] && [ "$_gpu_cnt" -gt 0 ] 2>/dev/null; then
                 case "$_gpu_plat" in
                     nvidia) MACHINE_CLASS="server-nvidia-gpu" ;;
@@ -258,7 +268,7 @@ classify_machine() {
                     *)      MACHINE_CLASS="server-gpu-other" ;;
                 esac
             elif [ "$_bmc" -eq 1 ]; then
-                MACHINE_CLASS="server-traditional"
+                [ "$_fabric" -eq 1 ] && MACHINE_CLASS="server-gpu-head" || MACHINE_CLASS="server-traditional"
             elif [ "$_ecc" -eq 1 ]; then
                 MACHINE_CLASS="workstation-server"
             elif [ "$_gpu_cnt" -gt 0 ] 2>/dev/null; then
@@ -289,6 +299,7 @@ classify_machine() {
         server-nvidia-gpu) MACHINE_CLASS_LABEL="NVIDIA GPU 服务器" ;;
         server-amd-gpu) MACHINE_CLASS_LABEL="AMD GPU 服务器" ;;
         server-gpu-other) MACHINE_CLASS_LABEL="其他 GPU 服务器" ;;
+        server-gpu-head) MACHINE_CLASS_LABEL="HGX 机头（PCIe Fabric 底座，GPU 模组另采）" ;;
         server-gb300) MACHINE_CLASS_LABEL="GB300 机架服务器" ;;
         *) MACHINE_CLASS_LABEL="" ;;
     esac
