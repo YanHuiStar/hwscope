@@ -198,27 +198,28 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
     AMD_JSON="${gpu_amd_inventory}"
     _amd_cards=$(grep -oE '"card[0-9]+"' "${AMD_JSON}" 2>/dev/null | sort -u)
     if [ -n "$_amd_cards" ]; then
-        # v1.46.3+ 修复（v1.48.1 加固）：awk 逐卡提取——缓冲累积法，rocm-smi（每卡单行紧凑）与
-        # amd-smi（ROCm 7+，pretty 多行）两种 JSON 格式都兼容：card 行起累积缓冲至下一 card 行
-        # （或 EOF）后从缓冲整体提取字段（此前按"cardN 与字段同行"硬编码，amd-smi pretty 时字段全空）
-        # v1.48.22 加固：rocm-smi 输出是"单行全卡"（8 卡 1 行紧凑 JSON）——先按 "cardN" 分隔成每卡一行
-        # （amd-smi pretty 多行时 card 已换行，sed 的 ,"card 前缀不命中不破坏；v1.46.3 注释"每卡单行"系误判）
-        _amd_rows=$(sed 's/,[[:space:]]*"card/\n"card/g' "${AMD_JSON}" | awk '
-            function emit() {
-                if (buf == "") return
-                cn=buf; sub(/.*"card/,"",cn); sub(/".*/,"",cn)
-                an=buf; sub(/.*"(Product Name|Card Series)":[[:space:]]*"/,"",an); sub(/".*/,"",an)
-                uid=buf; sub(/.*"Unique ID":[[:space:]]*"/,"",uid); sub(/".*/,"",uid)
-                mem=buf; sub(/.*"VRAM Total Memory \(B\)":[[:space:]]*"/,"",mem); sub(/".*/,"",mem)
-                tmp=buf; sub(/.*"Temperature \(Sensor (edge|junction|memory)\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp)
-                pwr=buf; sub(/.*"(Average Graphics Package Power Consumption|Current Socket Graphics Package Power) \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr)
-                utl=buf; sub(/.*"GPU use \(%\)":[[:space:]]*"/,"",utl); sub(/".*/,"",utl)
-                printf "%s|%s|%s|%s|%s|%s|%s\n", cn, an, uid, mem, tmp, pwr, utl
-                buf=""
+        # v1.48.23：awk while 循环逐卡提取（match/RLENGTH 定位每张卡，本卡字段=到下一 card 前文本）——
+        # 不依赖 sed 换行分隔（sed 替换 \n 在部分 sed 环境不可靠，单行全卡时只解析出最后一张卡），
+        # rocm-smi 单行全卡 / amd-smi pretty 多行两种格式都兼容
+        _amd_rows=$(awk '
+            {
+                line = $0
+                while (match(line, /"card[0-9]+"/)) {
+                    cardtok = substr(line, RSTART, RLENGTH)
+                    tail = substr(line, RSTART + RLENGTH)
+                    n = match(tail, /"card[0-9]+"/)
+                    if (n > 0) { fields = substr(tail, 1, n - 1); line = tail }
+                    else       { fields = tail; line = "" }
+                    cn = cardtok; gsub(/"/, "", cn)
+                    an = fields; sub(/.*"(Product Name|Card Series)":[[:space:]]*"/,"",an); sub(/".*/,"",an)
+                    uid = fields; sub(/.*"Unique ID":[[:space:]]*"/,"",uid); sub(/".*/,"",uid)
+                    mem = fields; sub(/.*"VRAM Total Memory \(B\)":[[:space:]]*"/,"",mem); sub(/".*/,"",mem)
+                    tmp = fields; sub(/.*"Temperature \(Sensor (edge|junction|memory)\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp)
+                    pwr = fields; sub(/.*"(Average Graphics Package Power Consumption|Current Socket Graphics Package Power) \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr)
+                    utl = fields; sub(/.*"GPU use \(%\)":[[:space:]]*"/,"",utl); sub(/".*/,"",utl)
+                    printf "%s|%s|%s|%s|%s|%s|%s\n", cn, an, uid, mem, tmp, pwr, utl
+                }
             }
-            /"card[0-9]+"/ { emit(); buf=$0; next }
-            { if (buf != "") buf = buf " " $0 }
-            END { emit() }
         ' "${AMD_JSON}")
         GPU_COUNT=$(printf '%s\n' "$_amd_rows" | grep -c '|')
         GPU_NAMES=$(grep -oE '"(Product Name|Card Series)": "[^"]*"' "${AMD_JSON}" | sort -u | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//')
@@ -249,6 +250,18 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
         GPU_POWER=$(printf '%s
 ' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$5); s+=$5} END{if(s>0) printf "%d W", s; else print "N/A"}')
         GPU_PLATFORM="amd"
+        # v1.48.23：AMD VBIOS/固件一致性（gpu_amd_fw.log --showfwinfo；8 卡 SMC 等固件版本一致 → PASS）
+        # 用 load_manifest 定位（GPU_DIR 可能为空——load_manifest 有 fallback 推导）
+        load_manifest "${GPU_DIR}" gpu_amd_fw "gpu_amd_fw.log"
+        if [ -n "$gpu_amd_fw" ] && [ -f "$gpu_amd_fw" ] 2>/dev/null; then
+            _fw_vers=$(grep -oE '"SMC firmware version": "[^"]*"' "$gpu_amd_fw" | sort -u)
+            _fw_n=$(printf '%s\n' "$_fw_vers" | sed '/^$/d' | wc -l)
+            if [ "$_fw_n" -eq 1 ]; then
+                GPU_VBIOS=$(printf '%s\n' "$_fw_vers" | head -1 | cut -d'"' -f4)
+            elif [ "$_fw_n" -gt 1 ]; then
+                GPU_VBIOS="⚠️ 不一致（${_fw_n} 种 SMC 固件版本）"
+            fi
+        fi
         GPU_PCI_VENDOR="AMD"
     fi
 fi

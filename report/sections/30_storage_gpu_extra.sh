@@ -147,7 +147,9 @@ if [ -f "${gpu_remapped_rows}" ]; then
 fi
 
 # VBIOS 版本（每卡 detail 聚合去重；混插时标不一致而非只取第一张卡）
-GPU_VBIOS="N/A"
+# v1.48.23：不再无条件重置——AMD 平台 GPU_VBIOS 已在 20_gpu 设置（SMC 固件一致性），
+# 仅 NVIDIA detail map 非空时聚合覆盖；AMD 平台走 20_gpu 的值（此处 N/A 覆盖会误清）
+GPU_VBIOS="${GPU_VBIOS:-N/A}"
 if [ "${#GPU_VBIOS_MAP[@]}" -gt 0 ]; then
     _vbios_agg=$(for _k in "${!GPU_VBIOS_MAP[@]}"; do echo "${GPU_VBIOS_MAP[$_k]}"; done | sort | uniq -c | sort -rn)
     _vbios_uniq=$(printf '%s\n' "$_vbios_agg" | wc -l)
