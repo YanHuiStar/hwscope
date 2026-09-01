@@ -22,8 +22,16 @@ for _cand in "/mnt/c/Users/yanhu/Desktop" "/c/Users/yanhu/Desktop" "C:/Users/yan
 done
 [ -z "$DESKTOP" ] && DESKTOP="${DESKTOP_OVERRIDE:-}"
 
-# 默认桌面样本（6 份：5 NVIDIA + 1 AMD MI300X OAM）
-DEFAULT_SN="headless-sample b200-sample h200-sample b300-sample a100-sample amd-oam-sample"
+# v1.48.27：默认自动发现（隐私红线：真实 SN 不进 git——不硬编码样本 SN；
+# 无参数时扫描桌面根下含 hwscope_report.md 的采集目录，或 --samples 指定）
+discover_samples() {
+    local root="${1:-$DESKTOP}" d
+    for d in "$root"/*/; do
+        [ -d "$d" ] || continue
+        [ -f "${d}hwscope_report.md" ] || [ -d "${d}gpu" ] && echo "${d%/}"
+    done 2>/dev/null
+}
+DEFAULT_SN=""
 
 REGRESSION=0; UPDATE=0; SAMPLES=""
 
@@ -37,7 +45,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# ─── 样本目录解析：参数目录 > --samples SN > 桌面默认 ───
+# ─── 样本目录解析：参数目录 > --samples SN > 桌面默认（自动发现）───
 declare -a TARGETS=()
 if [ "${#dirs[@]}" -gt 0 ]; then
     TARGETS=("${dirs[@]}")
@@ -46,6 +54,7 @@ elif [ -n "$SAMPLES" ]; then
         [ -d "${DESKTOP}/${sn}" ] && TARGETS+=("${DESKTOP}/${sn}") || echo "[WARN] 样本不存在: ${DESKTOP}/${sn}"
     done
 else
+    DEFAULT_SN="$(discover_samples "$DESKTOP" | while read -r d; do basename "$d"; done | tr '\n' ' ')"
     for sn in $DEFAULT_SN; do
         [ -d "${DESKTOP}/${sn}" ] && TARGETS+=("${DESKTOP}/${sn}") || echo "[WARN] 样本不存在: ${DESKTOP}/${sn}"
     done
