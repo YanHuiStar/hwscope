@@ -32,6 +32,26 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# v1.48.27：SN→平台语义名映射（隐私红线：真实 SN 不进 git——基线文件按语义名命名
+# h200/a100/b200/b300/amd_oam/headless，脚本内零硬编码 SN；采集目录名仍可作参数）
+sn_to_semantic() {
+    local dir="$1" json model cnt
+    json="${dir}/hwscope_report.json"
+    [ -f "$json" ] && {
+        model=$(grep -oE '"models": "[^"]*"' "$json" 2>/dev/null | head -1 | cut -d'"' -f4)
+        cnt=$(awk '/"gpu":[[:space:]]*\{/{f=1;next} f&&/"count":[[:space:]]*"/{s=$0; sub(/.*"count":[[:space:]]*"/,"",s); sub(/".*/,"",s); print s+0; exit}' "$json" 2>/dev/null)
+    }
+    [ -z "$model" ] && [ -f "${dir}/gpu/gpu_inventory.csv" ] && model=$(grep -m1 -iE "H200|A100|B200|B300|MI300|MI250" "${dir}/gpu/gpu_inventory.csv" 2>/dev/null | head -c 200)
+    case "$model" in
+        *H200*)   echo "h200" ;;
+        *B200*)   echo "b200" ;;
+        *B300*)   echo "b300" ;;
+        *A100*)   echo "a100" ;;
+        *MI300*|*MI250*|*MI325*|*AMD*) echo "amd_oam" ;;
+        *) echo "headless" ;;
+    esac
+}
+
 # ─── 指标提取：从生成报告提取关键指标（一行一项，可 diff 比对）───
 extract_metrics() {
     local dir="$1"
@@ -118,9 +138,10 @@ extract_metrics() {
 run_one() {
     local sample="$1" rc=0
     [ -d "$sample" ] || { echo "[ERROR] 目录不存在: $sample"; return 1; }
-    local sn
+    local sn sem
     sn=$(basename "$sample")
-    echo "样本: ${sn}"
+    sem=$(sn_to_semantic "$sample")
+    echo "样本: ${sn}（语义: ${sem}）"
 
     # 样本零污染：只备份/恢复报告文件（不复制整个采集目录——数百日志文件在 Windows 下
     # cp -r 极慢，实测 180s 都跑不完；报告文件仅 6 个，秒级完成）
@@ -143,7 +164,7 @@ run_one() {
     for f in "${bak}"/*; do
         [ -f "$f" ] && cp "$f" "${sample}/$(basename "$f")" 2>/dev/null
     done
-    local base="${BASELINE_DIR}/${sn}.txt"
+    local base="${BASELINE_DIR}/${sem}.txt"
 
     if [ "$UPDATE" -eq 1 ]; then
         mkdir -p "$BASELINE_DIR"
@@ -162,7 +183,7 @@ run_one() {
         rc=2
     fi
 
-    [ "$KEEP" -eq 1 ] && cp "$cur" "${BASELINE_DIR}/${sn}.candidate.txt" 2>/dev/null
+    [ "$KEEP" -eq 1 ] && cp "$cur" "${BASELINE_DIR}/${sem}.candidate.txt" 2>/dev/null
     [ "$KEEP" -eq 1 ] || rm -rf "$tmp"
     return $rc
 }
