@@ -378,7 +378,7 @@ gen_acceptance() {
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             echo "| GPU模组 | 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} 加速卡（无对应管理工具，仅 PCI 存在性） | 张 | ${GPU_PCI_PRESENT} |"
         else
-            echo "| GPU模组 | 无（${PLATFORM_LABEL:-N/A} 平台） | — | — |"
+            echo "| GPU模组 | 无（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
         fi
         if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
             echo "| 计算网卡 | ${ACC_NIC_IB:-N/A}（IB ${IB_NOMINAL:-N/A}） | 张 | ${ACC_NIC_IB_COUNT} |"
