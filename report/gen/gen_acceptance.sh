@@ -103,7 +103,7 @@ gen_acceptance() {
         fi
     elif [ "$GPU_VBIOS" = "N/A" ]; then
         if [ "${GPU_PLATFORM:-}" = "amd" ]; then
-            add_item "GPU VBIOS 版本一致" "N/A" "无固件数据（ROCm 工具缺失，generic 降级）"
+            add_item "GPU VBIOS 版本一致" "N/A" "无固件数据（AMD 固件日志缺失或解析失败，见 GPU 段附录）"
         else
             add_item "GPU VBIOS 版本一致" "N/A" "无 VBIOS 数据（旧采集或驱动不可用）"
         fi
