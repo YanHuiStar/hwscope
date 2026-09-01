@@ -201,15 +201,17 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
         # v1.46.3+ 修复（v1.48.1 加固）：awk 逐卡提取——缓冲累积法，rocm-smi（每卡单行紧凑）与
         # amd-smi（ROCm 7+，pretty 多行）两种 JSON 格式都兼容：card 行起累积缓冲至下一 card 行
         # （或 EOF）后从缓冲整体提取字段（此前按"cardN 与字段同行"硬编码，amd-smi pretty 时字段全空）
-        _amd_rows=$(awk '
+        # v1.48.22 加固：rocm-smi 输出是"单行全卡"（8 卡 1 行紧凑 JSON）——先按 "cardN" 分隔成每卡一行
+        # （amd-smi pretty 多行时 card 已换行，sed 的 ,"card 前缀不命中不破坏；v1.46.3 注释"每卡单行"系误判）
+        _amd_rows=$(sed 's/,[[:space:]]*"card/\n"card/g' "${AMD_JSON}" | awk '
             function emit() {
                 if (buf == "") return
                 cn=buf; sub(/.*"card/,"",cn); sub(/".*/,"",cn)
-                an=buf; sub(/.*"Product Name":[[:space:]]*"/,"",an); sub(/".*/,"",an)
+                an=buf; sub(/.*"(Product Name|Card Series)":[[:space:]]*"/,"",an); sub(/".*/,"",an)
                 uid=buf; sub(/.*"Unique ID":[[:space:]]*"/,"",uid); sub(/".*/,"",uid)
                 mem=buf; sub(/.*"VRAM Total Memory \(B\)":[[:space:]]*"/,"",mem); sub(/".*/,"",mem)
-                tmp=buf; sub(/.*"Temperature \(Sensor edge\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp)
-                pwr=buf; sub(/.*"Average Graphics Package Power Consumption \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr)
+                tmp=buf; sub(/.*"Temperature \(Sensor (edge|junction|memory)\) \(C\)":[[:space:]]*"/,"",tmp); sub(/".*/,"",tmp)
+                pwr=buf; sub(/.*"(Average Graphics Package Power Consumption|Current Socket Graphics Package Power) \(W\)":[[:space:]]*"/,"",pwr); sub(/".*/,"",pwr)
                 utl=buf; sub(/.*"GPU use \(%\)":[[:space:]]*"/,"",utl); sub(/".*/,"",utl)
                 printf "%s|%s|%s|%s|%s|%s|%s\n", cn, an, uid, mem, tmp, pwr, utl
                 buf=""
@@ -219,7 +221,7 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
             END { emit() }
         ' "${AMD_JSON}")
         GPU_COUNT=$(printf '%s\n' "$_amd_rows" | grep -c '|')
-        GPU_NAMES=$(grep -oE '"Product Name": "[^"]*"' "${AMD_JSON}" | sort -u | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//')
+        GPU_NAMES=$(grep -oE '"(Product Name|Card Series)": "[^"]*"' "${AMD_JSON}" | sort -u | head -3 | cut -d'"' -f4 | tr '\n' ',' | sed 's/,$//')
         GPU_MEM=$(grep -oE '"VRAM Total Memory \(B\)": "[0-9]+"' "${AMD_JSON}" | grep -oE '[0-9]+' | awk '{s+=$1} END{printf "%.0f GiB", s/1024/1024/1024}')
         GPU_DETAILS=""
         _ai=0
