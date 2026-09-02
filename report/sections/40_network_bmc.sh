@@ -117,12 +117,35 @@ BMC_DIR="${OUT}/bmc"
 load_manifest "${BMC_DIR}" ipmi_fru_summary "ipmi_fru_summary.log"
 load_manifest "${BMC_DIR}" ipmi_mc "ipmi_mc.log"
 load_manifest "${BMC_DIR}" ipmi_lan1 "ipmi_lan1.log"
+load_manifest "${BMC_DIR}" ipmi_lan_all "ipmi_lan_all.log"
 load_manifest "${BMC_DIR}" ipmi_sel_elist "ipmi_sel_elist.log"
 load_manifest "${BMC_DIR}" redfish_system "redfish_system.log"
 BMC_FRU=$(extract "Product Name|Product Part Number" "${ipmi_fru_summary}" | head -c 80)
 BMC_FW=$(extract "Firmware Revision" "${ipmi_mc}")
-BMC_IP=$(grep "IP Address" "${ipmi_lan1}" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | head -1)
-BMC_MAC=$(grep -m1 "MAC Address" "${ipmi_lan1}" 2>/dev/null | awk '{print $NF}')
+# v1.48.31：BMC 管理 IP 多通道——lan print 1 可能是 Shared 口（DHCP 未接=0.0.0.0），Dedicated 管理口
+# 通道不定（Compal/AMI 常见通道 8；lan_all 遍历 1-14）——取首个有效地址（非 0.0.0.0/非 169.254 APIPA）
+BMC_IP="0.0.0.0"; BMC_MAC=""
+for _lf in "${ipmi_lan1}" "${ipmi_lan2}" "${ipmi_lan_all}"; do
+    [ -f "$_lf" ] || continue
+    # 有效管理地址（非 0.0.0.0/非 169.254 APIPA）→ 采用并结束；仅 0.0.0.0/APIPA → 记录但不结束（继续找 Dedicated 通道）
+    _lip=$(grep "IP Address " "$_lf" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | grep -vE "^(0\.0\.0\.0|169\.254\.)" | head -1)
+    if [ -n "$_lip" ]; then
+        BMC_IP="$_lip"
+        # MAC 取 _lip 所在通道段（lan_all 多通道：=== Channel 8 === 段内 MAC；单通道文件直接取首个）
+        _lm=$(awk -v ip="$_lip" '/=== Channel/{inseg=0} $0 ~ ip {inseg=1} inseg && /MAC Address/{print $NF; exit}' "$_lf" 2>/dev/null)
+        [ -z "$_lm" ] && _lm=$(grep -m1 "MAC Address" "$_lf" 2>/dev/null | awk '{print $NF}')
+        [ -n "$_lm" ] && BMC_MAC="$_lm"
+        break
+    elif [ "$BMC_IP" = "0.0.0.0" ]; then
+        _lip0=$(grep "IP Address " "$_lf" 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | head -1)
+        if [ -n "$_lip0" ]; then
+            BMC_IP="$_lip0"
+            _lm=$(awk -v ip="$_lip0" '/=== Channel/{inseg=0} $0 ~ ip {inseg=1} inseg && /MAC Address/{print $NF; exit}' "$_lf" 2>/dev/null)
+            [ -z "$_lm" ] && _lm=$(grep -m1 "MAC Address" "$_lf" 2>/dev/null | awk '{print $NF}')
+            [ -n "$_lm" ] && BMC_MAC="$_lm"
+        fi
+    fi
+done
 # SEL 数据有效性（采集失败时统计全为 0，验收不能判 PASS，须区分"无数据"）
 SEL_DATA_VALID=0
 if [ -f "${ipmi_sel_elist}" ]; then
