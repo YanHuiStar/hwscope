@@ -51,15 +51,21 @@ $TtyOpt = if ($Sudo) { " -t" } else { "" }
 #       Tee-Object -Variable 是覆盖非追加（多行只留最后一行）
 function Invoke-SSHRetry {
     param([string]$Desc, [scriptblock]$Action, [int]$MaxTries = 3)
+    # v1.48.24：native 命令（scp/ssh）写 stderr 的 Warning（如 host key "Permanently added"）在
+    # $ErrorActionPreference="Stop" 下会抛 NativeCommandError 中断脚本——即使 exit code=0。
+    # 此处临时降级为 Continue，成败只信 $LASTEXITCODE（连接/认证失败 exit≠0 仍会被捕获重试）
+    $oldEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     for ($i = 1; $i -le $MaxTries; $i++) {
         $out = @()
         & $Action 2>&1 | ForEach-Object { $out += $_; $_ } | Out-Host
         $code = $LASTEXITCODE
-        if ($code -eq 0) { return 0 }
+        if ($code -eq 0) { $ErrorActionPreference = $oldEAP; return 0 }
         $authFail = (($out -join "`n") -match "Permission denied|password.*incorrect|Authentication failed")
-        if (-not $authFail -or $i -ge $MaxTries) { return $code }
+        if (-not $authFail -or $i -ge $MaxTries) { $ErrorActionPreference = $oldEAP; return $code }
         Write-Host "[WARN] $Desc 认证失败（密码错误？），重试 $i/$MaxTries ..." -ForegroundColor Yellow
     }
+    $ErrorActionPreference = $oldEAP
     return $code
 }
 
