@@ -64,6 +64,34 @@ if [ -f "$_fru_src" ]; then
     # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）
     # v1.48.24：加 PSU_FRU[0-9] 匹配——"PSU_FRU_1"（下划线）此前被 PSU[0-9] 滤掉 → 8 电源显示 0（真机 G7768 M6 实测）
     PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|PSU_FRU[0-9]|Power Supply")
+    # v1.48.30：FRU 有 PSU 条目时功耗列也补全（原功耗补全仅在 76 行 FRU 空占位路径跑——
+    # FRU 路径（PSU_FRU_1 描述）功耗恒 N/A；数据源同为 ipmi_psu_sensors.log 的 PSU_PIN_0N/PS*_Pin）
+    psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
+    psu_power_csv2="${BMC_DIR}/ipmi_sensors_power.log"
+    load_manifest "${PSU_DIR}" ipmi_psu_sensors "ipmi_psu_sensors.log"
+    load_manifest "${BMC_DIR}" ipmi_sensors_power "ipmi_sensors_power.log"
+    [ -f "${ipmi_psu_sensors}" ] && psu_power_csv="${ipmi_psu_sensors}"
+    [ -f "${ipmi_sensors_power}" ] && psu_power_csv2="${ipmi_sensors_power}"
+    _pin_src=""
+    [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+ power in|psu_pin_[0-9]+" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
+    [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
+    if [ -n "$_pin_src" ] && [ -n "$PSU_DETAILS" ]; then
+        _pin_map=$(grep -v "^#" "$_pin_src" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+_Pin|^PSU[0-9]+ Power In|^PSU_PIN_[0-9]+/ { n=$1; gsub(/[^0-9]/, "", n); sub(/^0+/, "", n); v=$2; gsub(/ /, "", v); printf "%s:%sW ", n, v }')
+        if [ -n "$_pin_map" ]; then
+            PSU_DETAILS=$(while IFS= read -r _pline; do
+                [ -z "$_pline" ] && continue
+                # 编号：PSU_FRU_1 / PSU1 / PSU01 → 1（grep -oE 提取 + 去前导零）
+                _pnum=$(echo "$_pline" | cut -d'|' -f1 | grep -oE '[0-9]+' | head -1 | sed 's/^0*//')
+                _pval=$(echo "$_pin_map" | tr ' ' '\n' | grep -E "^${_pnum}:" | cut -d: -f2)
+                if [ -n "$_pval" ]; then
+                    # 行补到 6 字段（额定列 N/A + 当前功耗=val）；已 6 字段则只覆盖 $6
+                    echo "$_pline" | awk -v val="$_pval" -F'|' 'BEGIN{OFS="|"} { if (NF < 6) $5="N/A"; $6=val; print }'
+                else
+                    echo "$_pline"
+                fi
+            done <<< "$PSU_DETAILS")
+        fi
+    fi
     # 辅助日志走 manifest 解耦（模块 10 已声明 ipmi_psu_sensors/dmidecode_psu；BMC 模块声明 ipmi_sensors_power）
     psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
     psu_power_csv2="${BMC_DIR}/ipmi_sensors_power.log"   # 含 PS*_Pin（Inventec 等平台，psu 日志可能只有 Temp）
@@ -86,9 +114,9 @@ if [ -f "$_fru_src" ]; then
         if [ -n "$_temp_src" ]; then
             PSU_DETAILS=$(grep -v "^#" "$_temp_src" 2>/dev/null | awk -F'|' '
                 tolower($1) ~ /psu[0-9]+_temp|psu_pin_[0-9]+|ps[0-9]+_pin|psu[0-9]+ power in/ {
-                    num=$1; gsub(/[^0-9]/, "", num)
+                    num=$1; gsub(/[^0-9]/, "", num); sub(/^0+/, "", num)
                     if(num!="" && !seen[num]++) printf "PSU%s|N/A|N/A|N/A|N/A|N/A\n", num
-                }')
+                }' )
             # 功耗补全（PS*_Pin / PSU* Power In → PSU 行当前功耗）：先收集 pin 映射，再逐行追加
             if [ -n "$_pin_src" ] && [ -n "$PSU_DETAILS" ]; then
                 # 构建 "编号:功耗" 列表（如 "6:427W 7:448W"）
@@ -98,7 +126,7 @@ if [ -f "$_fru_src" ]; then
                 if [ -n "$_pin_map" ]; then
                     PSU_DETAILS=$(while IFS= read -r _pline; do
                         [ -z "$_pline" ] && continue
-                        _pnum=$(echo "$_pline" | cut -d'|' -f1 | sed 's/^PSU//')
+                        _pnum=$(echo "$_pline" | cut -d'|' -f1 | sed 's/^PSU//; s/^0*//')
                         _pval=$(echo "$_pin_map" | tr ' ' '\n' | grep -E "^${_pnum}:" | cut -d: -f2)
                         if [ -n "$_pval" ]; then
                             echo "$_pline" | awk -v val="$_pval" -F'|' 'BEGIN{OFS="|"} {$6=val; print}'
@@ -133,7 +161,7 @@ if [ -f "$_fru_src" ]; then
                     *Handle*)
                         # 段落结束（下一个 Handle 行）——此时 Location/Name/PN/容量/Revision 已读全
                         if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
-                            _dnum=$(echo "$_dloc" | sed 's/^PSU//')
+                            _dnum=$(echo "$_dloc" | sed 's/^PSU//; s/^0*//')
                             # 型号列合并厂商+Revision（如 "DELTA DPS-3000AB-25 C Rev 01F"），PN/SN/容量独立列
                             _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
                             PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
@@ -144,7 +172,7 @@ if [ -f "$_fru_src" ]; then
             done < <(grep -v "^#" "${dmidecode_psu}" 2>/dev/null)
             # 最后一段（文件尾无空行）
             if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
-                _dnum=$(echo "$_dloc" | sed 's/^PSU//')
+                _dnum=$(echo "$_dloc" | sed 's/^PSU//; s/^0*//')
                 _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
                 PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
             fi
