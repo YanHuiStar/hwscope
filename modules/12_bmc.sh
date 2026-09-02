@@ -32,6 +32,7 @@ run_bmc() {
             "ipmitool chassis power status 2>&1" "${dir}/ipmi_power.log" \
             "ipmitool lan print 1 2>&1" "${dir}/ipmi_lan1.log" \
             "ipmitool lan print 2 2>&1" "${dir}/ipmi_lan2.log" \
+            "for ch in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do echo \"=== Channel \$ch ===\"; ipmitool lan print \\$ch 2>&1 | grep -E 'IP Address |MAC Address|IP Address Source' ; done" "${dir}/ipmi_lan_all.log" \
             "ipmitool bmc guid 2>&1" "${dir}/ipmi_bmc_guid.log" \
             "ipmitool user list 2>&1" "${dir}/ipmi_users.log" \
             "ipmitool fru print 2>&1" "${dir}/ipmi_fru_all.log" \
@@ -108,6 +109,7 @@ write_manifest "${dir}/manifest.txt" \
         "ipmi_power" "ipmi_power.log" \
         "ipmi_lan1" "ipmi_lan1.log" \
         "ipmi_lan2" "ipmi_lan2.log" \
+        "ipmi_lan_all" "ipmi_lan_all.log" \
         "ipmi_bmc_guid" "ipmi_bmc_guid.log" \
         "ipmi_users" "ipmi_users.log" \
         "ipmi_fru_all" "ipmi_fru_all.log" \
