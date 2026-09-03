@@ -63,9 +63,10 @@ if [ -f "${disk_inventory}" ]; then
             *MZIL23T8*) dspec="额定3.2TB" ;;
             *MZIL27T6*) dspec="额定6.4TB" ;;
             *)
-                # Micron 型号规则: MTFDKBA480TFR / MTFDHBE960TFR → 数字=容量GB（T 是家族代号非 TB）
-                if echo "$dmodel" | grep -qE 'MTFD[KHC][A-Z]{2}[0-9]{3,4}TFR'; then
-                    micap=$(echo "$dmodel" | grep -oE '[0-9]{3,4}TFR' | head -1 | grep -oE '[0-9]+')
+                # Micron 型号规则: MTFDKBA480TFR / MTFDHBE960TFR / MTFDKCC960TGP → 数字=容量GB（T 是家族代号非 TB）
+                # v1.48.34：TFR 后缀扩展为 T+家族字母（TGP 等系列——960TGP 曾落通用提取被当 960TB）
+                if echo "$dmodel" | grep -qE 'MTFD[KHC][A-Z]{2}[0-9]{3,4}T[A-Z]{1,2}'; then
+                    micap=$(echo "$dmodel" | grep -oE '[0-9]{3,4}T[A-Z]{1,2}' | head -1 | grep -oE '[0-9]+')
                     [ -n "$micap" ] && dspec="额定${micap}GB"
                 # Micron N-T-N 结构（3T8=3.84TB 等；通用提取会把 "3T" 误判为 3TB）
                 elif echo "$dmodel" | grep -qE 'MTFD[KHC][A-Z]{2}[0-9]T[0-9]TFR'; then
