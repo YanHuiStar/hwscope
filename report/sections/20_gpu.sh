@@ -254,6 +254,9 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
         if [ -f "${gpu_amd_full}" ] 2>/dev/null; then
             _amd_bdfs=$(grep -oE '"PCI Bus": "[0-9a-fA-F:.]+"' "${gpu_amd_full}" | grep -oE '[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]')
             _amd_vbios=$(grep -oE '"VBIOS version": "[^"]*"' "${gpu_amd_full}" | cut -d'"' -f4)
+            # v1.48.33：真实 SN（--showallinfo 的 Serial Number 字段——rocm-smi 每卡唯一资产号；
+            # Unique ID 仅板级标识非 SN——此前明细 SN 列误显示 UID）
+            _amd_sns=$(grep -oE '"Serial Number": "[^"]*"' "${gpu_amd_full}" | cut -d'"' -f4)
             # 单行 JSON：必须按 key 锚定取值（整行 grep -oE 会取到首卡 SMC 固件 00.85.117 而非驱动版本——v1.48.24 实测）
             GPU_DRIVER=$(grep -oE '"Driver version": "[0-9.]+"' "${gpu_amd_full}" 2>/dev/null | head -1 | cut -d'"' -f4)
         fi
@@ -277,6 +280,7 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
             # v1.48.24：per-card PCIe（pcie_full.log 按 BDF）+ 每卡 VBIOS（gpu_amd_full.log，真实 VBIOS 非 SMC）
             _gbdf=$(echo "$_amd_bdfs" | sed -n "$((_ai + 1))p")
             _gvb=$(echo "$_amd_vbios" | sed -n "$((_ai + 1))p")
+            _gsn=$(echo "$_amd_sns" | sed -n "$((_ai + 1))p")
             _gpcie="N/A"; _gpciemax="N/A"
             if [ -n "$_gbdf" ]; then
                 IFS='|' read -r _gp _gw _gmx _gwm <<< "$(_gpu_pcie_from_full "$_gbdf")"
@@ -287,7 +291,7 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
                     GPU_DEGRADED="${GPU_DEGRADED}GPU${_ai}: PCIe ${_gpcie} (期望 ${_gpciemax}),"
                 fi
             fi
-            GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_auid:-N/A}|${_amem_gb}GB${_aspec:+/$_aspec}|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|${_gpcie}|${_gpciemax}|N/A|N/A|${_gvb:-N/A}"$'\n'
+            GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_gsn:-N/A}|${_amem_gb}GB|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|${_gpcie}|${_gpciemax}|N/A|N/A|${_gvb:-N/A}"$'\n'
             _ai=$((_ai + 1))
         done <<< "$_amd_rows"
         GPU_DETAILS=$(printf '%s' "$GPU_DETAILS" | sed '/^$/d')
