@@ -269,8 +269,16 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
     fi
     echo "| 额定功耗 | ${GPU_POWER:-N/A} |"
     echo "| 温度 | ${GPU_TEMP:-N/A} |"
-    echo "| ECC | ${GPU_ECC:-N/A} |"
-    echo "| 退役行 | ${GPU_REMAP:-N/A} |"
+    # v1.48.36: 厂商感知字段——NVIDIA 显示 ECC/退役行（nvidia-smi 字段），AMD 显示 RAS（ECC 对应物），其余平台隐藏（NVIDIA 专属概念）
+    case "${GPU_PLATFORM:-}" in
+        amd)
+            echo "| RAS | ${GPU_RAS:-N/A} |"
+            ;;
+        nvidia)
+            echo "| ECC | ${GPU_ECC:-N/A} |"
+            echo "| 退役行 | ${GPU_REMAP:-N/A} |"
+            ;;
+    esac
     echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
         if [ -n "${GPU_ASCEND_NOTE:-}" ]; then
             echo "| 昇腾 | ${GPU_ASCEND_NOTE} |"

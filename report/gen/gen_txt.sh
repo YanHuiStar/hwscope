@@ -215,8 +215,15 @@ else
    fi
     echo "  功耗   : ${GPU_POWER:-N/A}（额定）"
     echo "  温度   : ${GPU_TEMP:-N/A}"
-    echo "  ECC    : ${GPU_ECC:-N/A}"
-    echo "  退役行 : ${GPU_REMAP:-N/A}"
+    case "${GPU_PLATFORM:-}" in
+        amd)
+            echo "  RAS    : ${GPU_RAS:-N/A}"
+            ;;
+        nvidia)
+            echo "  ECC    : ${GPU_ECC:-N/A}"
+            echo "  退役行 : ${GPU_REMAP:-N/A}"
+            ;;
+    esac
     echo "  VBIOS  : ${GPU_VBIOS:-N/A}"
     if [ -n "${GPU_ASCEND_NOTE:-}" ]; then
         echo "  昇腾   : ${GPU_ASCEND_NOTE}"
