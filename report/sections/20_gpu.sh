@@ -7,9 +7,19 @@
 # ─── GPU（解析 inventory.csv；列: 1=idx 2=name 3=serial 4=bdf 5=uuid 6=mem.total 7=mem.used 8=power.limit 9=power.draw 10=temp 11=util 12-13=clocks 14=ecc.mode 15=gen.cur 16=width.cur 17=gen.max 18=width.max） ───
 load_manifest "${GPU_DIR}" gpu_inventory "gpu_inventory.csv"
 load_manifest "${GPU_DIR}" gpu_ecc_inventory "gpu_ecc_inventory.csv"
+load_manifest "${GPU_DIR}" gpu_amd_ras "gpu_amd_ras.log"
 GPU_CSV="${gpu_inventory}"
 GPU_ECC_CSV="${gpu_ecc_inventory}"
-GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""; GPU_AMD_SUSPECT=""
+GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""; GPU_AMD_SUSPECT=""; GPU_RAS=""
+# v1.48.36: AMD RAS 解析（ECC 对应物——NVIDIA 的 ECC/退役行语义在 AMD 由 amd-smi ras 承载）
+if [ -n "${gpu_amd_ras:-}" ] && [ -f "$gpu_amd_ras" ]; then
+    if grep -qi "No JSON data to report" "$gpu_amd_ras" 2>/dev/null; then
+        GPU_RAS="无返回数据（amd-smi ras 空——驱动/平台未暴露 RAS 接口）"
+    else
+        _ras_rec=$(grep -c '"' "$gpu_amd_ras" 2>/dev/null)
+        GPU_RAS="已采集（${_ras_rec:-0} 条记录，详见 gpu_amd_ras.log）"
+    fi
+fi
 if [ -f "$GPU_CSV" ]; then
     # 有效性守卫：nvidia-smi 失败时 csv 只有报错行（如 "NVIDIA-SMI has failed..."），不算 GPU 数据
     if grep -v "^#" "$GPU_CSV" | grep -qiE "NVIDIA-SMI has failed|couldn't communicate|No devices were found"; then

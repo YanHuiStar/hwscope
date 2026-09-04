@@ -244,6 +244,7 @@ ${dimms_json}
     "temp": "${GPU_TEMP:-N/A}",
     "ecc": "${GPU_ECC:-N/A}",
     "remapped_rows": "${GPU_REMAP:-N/A}",
+    "ras": "${GPU_RAS:-N/A}",
     "vbios": "${GPU_VBIOS:-N/A}",
     "ascend_note": "${GPU_ASCEND_NOTE:-}",
     "xgmi": "${GPU_XGMI_SUMMARY:-}",
