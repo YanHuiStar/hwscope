@@ -52,6 +52,22 @@ run_gpu_amd() {
     fi
     run_and_log_parallel 6 "${amd_jobs[@]}"
 
+    # v1.48.37：RAS/ECC 专项兜底——rocm-smi --showrasinfo 在 MI300X 常空（"No JSON data to report"，
+    # deprecated 工具支持不全）；ROCm 7+ 的 amd-smi 新版用子命令 metric -e -P（表格：
+    # GPU/XCP/SINGLE_ECC/DOUBLE_ECC/PCIE_REPLAY），rocm-smi 有效参数为 --query-ecc。先探测是否已拿到
+    # 有效 RAS 数据，无则逐候选覆盖落盘（全量日志保留为 .ras_orig，专项提取并存不截断）
+    if ! grep -qiE "SINGLE_ECC|DOUBLE_ECC|Correctable|Uncorrectable|corr_err|total_err" "${dir}/gpu_amd_ras.log" 2>/dev/null; then
+        [ -f "${dir}/gpu_amd_ras.log" ] && cp "${dir}/gpu_amd_ras.log" "${dir}/gpu_amd_ras.orig.log" 2>/dev/null
+        if check_cmd_flex amd-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
+            "${CMD_FLEX_PATH:-amd-smi}" metric -e -P > "${dir}/gpu_amd_ras.log" 2>&1 || true
+        fi
+        if ! grep -qiE "SINGLE_ECC|DOUBLE_ECC|Correctable|Uncorrectable" "${dir}/gpu_amd_ras.log" 2>/dev/null; then
+            if check_cmd rocm-smi; then
+                rocm-smi --query-ecc > "${dir}/gpu_amd_ras.log" 2>&1 || true
+            fi
+        fi
+    fi
+
     # 每卡明细（按卡数循环）
     local amd_count
     amd_count=$("${amd_smi_cmd}" --showuniqueid --json 2>/dev/null | grep -c "unique_id\|uniqueid" || true)

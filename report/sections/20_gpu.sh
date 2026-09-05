@@ -11,13 +11,21 @@ load_manifest "${GPU_DIR}" gpu_amd_ras "gpu_amd_ras.log"
 GPU_CSV="${gpu_inventory}"
 GPU_ECC_CSV="${gpu_ecc_inventory}"
 GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""; GPU_AMD_SUSPECT=""; GPU_RAS=""
-# v1.48.36: AMD RAS 解析（ECC 对应物——NVIDIA 的 ECC/退役行语义在 AMD 由 amd-smi ras 承载）
+# v1.48.36/37: AMD RAS 解析（ECC 对应物——NVIDIA 的 ECC/退役行语义在 AMD 由 amd-smi ras/metric 承载；
+# v1.48.37 适配多格式：amd-smi metric 表格（SINGLE_ECC/DOUBLE_ECC/PCIE_REPLAY）、rocm-smi --query-ecc、
+# 老式 --showrasinfo JSON——有实际错误计数则摘要，空/无接口如实标注）
 if [ -n "${gpu_amd_ras:-}" ] && [ -f "$gpu_amd_ras" ]; then
-    if grep -qi "No JSON data to report" "$gpu_amd_ras" 2>/dev/null; then
-        GPU_RAS="无返回数据（amd-smi ras 空——驱动/平台未暴露 RAS 接口）"
+    if grep -qiE "No JSON data to report|unable to|not supported|not found" "$gpu_amd_ras" 2>/dev/null; then
+        GPU_RAS="无返回数据（驱动/工具未暴露 RAS——详见 gpu_amd_ras.log）"
     else
-        _ras_rec=$(grep -c '"' "$gpu_amd_ras" 2>/dev/null)
-        GPU_RAS="已采集（${_ras_rec:-0} 条记录，详见 gpu_amd_ras.log）"
+        _ras_single=$(grep -oE "SINGLE_ECC[[:space:]]+[0-9]+|Correctable[^0-9]*[=: ]+[0-9]+" "$gpu_amd_ras" 2>/dev/null | grep -oE "[0-9]+$" | awk '{s+=$1} END{print s+0}')
+        _ras_double=$(grep -oE "DOUBLE_ECC[[:space:]]+[0-9]+|Uncorrectable[^0-9]*[=: ]+[0-9]+" "$gpu_amd_ras" 2>/dev/null | grep -oE "[0-9]+$" | awk '{s+=$1} END{print s+0}')
+        _ras_replay=$(grep -oE "PCIE_REPLAY[[:space:]]+[0-9]+|PCIE.*[Rr]eplay[^0-9]*[=: ]+[0-9]+" "$gpu_amd_ras" 2>/dev/null | grep -oE "[0-9]+$" | awk '{s+=$1} END{print s+0}')
+        if [ -n "${_ras_single:-}" ] || [ -n "${_ras_double:-}" ] || [ -n "${_ras_replay:-}" ]; then
+            GPU_RAS="单比特(CE): ${_ras_single:-0} · 双比特(UE): ${_ras_double:-0} · PCIe 重放: ${_ras_replay:-0}"
+        else
+            GPU_RAS="已采集（$(grep -vcE '^#|^$' "$gpu_amd_ras" 2>/dev/null) 行内容，详见 gpu_amd_ras.log）"
+        fi
     fi
 fi
 if [ -f "$GPU_CSV" ]; then
