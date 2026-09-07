@@ -26,6 +26,26 @@
   - 依赖：`power_monitor.sh`（v1.31.0 已产出 CSV/聚合）+ report.sh 解析
   - 验收标准：一份报告同时含单点快照与持续采样曲线数据
 
+## 诊断层（diagnostic/，规划中）
+
+> 定位：**主动健康诊断**——介于只读采集（modules/，零负载）与性能压测（test/，重负载）之间。
+> 参考业界公认诊断工具实现：NVIDIA **DCGM diagnostics**（dcgmi diag 分级）、**Field Level Diagnostics**（DGX 出厂诊断 / OneDiag-partnerdiag 生态）、AMD ROCm 诊断。
+> 架构仿 test/：`diag_all.sh` 聚合入口（菜单/--all）+ 单项脚本独立执行 + manifest 落盘对接报告段。
+> 安全边界：诊断带轻-中负载（GPU 短时压测/内存模式测试），**Level 2+ 执行前必须用户确认**（破坏 modules/ 只读约束的都放这层）。
+
+- [ ] **[P0] 一期：DCGM diag 封装** — `diagnostic/gpu_dcgm_diag.sh`：`dcgmi diag -r <1|2|3>` 分级执行（Level 1 只读速检 / 2 短时负载 / 3 全面），全量日志落盘 + 报告新增 DCGM 诊断段（逐测试项 PASS/FAIL/WARN 明细 + 耗时）；验收清单"DCGM 诊断"项从"数据缺失 WARN"升级为真诊断结果
+  - 依赖：DCGM（模块 14 已支持检测；诊断级别参数化 + 交互确认 Level 2+）
+  - 验收标准：`bash diagnostic/gpu_dcgm_diag.sh 1` 一条命令出诊断报告段；Level 3 结果与 `dcgmi diag` 原始输出逐项一致
+- [ ] **[P1] 二期：FLD 日志联动** — 现场已跑 NVIDIA Field Diagnostic 的日志目录自动发现（DGX 标准 logs-<TS>/ 路径 + 手动指定），对接报告已有的 `--fld-dir` 解析段（run.log 进度行/矩阵行/unified_summary.json——v1.37.0 已实现解析，缺的是采集侧入口）
+  - 依赖：report/sections/90_test_baseline.sh 已有 FLD 解析；诊断目录约定文档
+  - 验收标准：现场 FLD 跑完后 `report.sh <采集目录> --fld-dir <日志目录>` 零手工整理直接出组件级明细
+- [ ] **[P1] 三期：AMD ROCm 诊断对位** — `diagnostic/gpu_amd_diag.sh`：amd-smi diagnostic / rocminfo 设备校验 / RAS 状态核查（对标 DCGM diag 的 AMD 路径，与 GPU RAS 采集段互补）
+  - 依赖：真机 AMD OAM 样本（基线已有）+ ROCm 诊断工具输出格式调研
+  - 验收标准：AMD 平台诊断结果入报告，与 DCGM 诊断段同表渲染（跨厂商统一）
+- [ ] **[P2] 平台层自检** — BMC/Redfish SelfTest、NVSM 健康诊断（HGX nvsm diag health）、IPMI SEL 自检判定，汇总进验收清单"平台自检"项
+  - 依赖：Redfish API（模块 12 已有基础）+ NVSM（模块 13 已采集）
+  - 验收标准：诊断层跑完，验收清单含 GPU + 平台两层自检结论
+
 ## 报告层（report/ 模块；入口 report/report.sh）
 
 - [ ] **[P2] 报告图表化（HTML）** — md2html.awk 输出 HTML 内嵌轻量图表（SVG 能耗曲线/内存占比/温度趋势），零 JS 依赖
