@@ -234,6 +234,7 @@ if [ -f "${nic_inventory}" ]; then
         [ -z "$nmac" ] && nmac="—"
         [ -z "$npcie_cap" ] && npcie_cap="—"
         # v1.45.15：端口 Link 状态——IB 口从 ibstat State（经 NETDEV_CA 映射），以太口从 ethtool Link detected
+        # v1.48.39：统一语义——IB Active/以太 yes → Up，IB Down/以太 no → Down（中间态 Init/Armed 保留原文如实）
         nlink="—"
         if [ -n "${NETDEV_CA[$nnic]:-}" ]; then
             nlink="${CA_STATE[${NETDEV_CA[$nnic]}]:-—}"
@@ -242,6 +243,10 @@ if [ -f "${nic_inventory}" ]; then
             _ld=$(grep -m1 "Link detected" "${NET_DIR}/ethtool_${nnic}.log" 2>/dev/null | cut -d: -f2- | xargs)
             [ -n "$_ld" ] && nlink="$_ld"
         fi
+        case "$nlink" in
+            Active|yes|up|Up|YES|Yes) nlink="Up" ;;
+            no|NO|No|down|Down)       nlink="Down" ;;
+        esac
         # 物理口序号：同卡第 N 口/共 M 口（USB/非 PCIe 接口已在上方排除；明细行序 = BDF 升序，同卡相邻）
         nport="—"
         _bd_pre="${nnbdf%%.*}"
