@@ -9,17 +9,26 @@ gen_acceptance() {
     local n=0 pass=0 fail=0 warn=0 na=0
     local rows="" st=""
     local verdict="合格"
+    NA_INHERENT=""   # v1.48.41：平台固有 N/A 项名收集（表尾汇总；不渲染行避免满表 N/A）
 
     # 逐项评估函数：add_item "名称" "状态" "说明" [不计入N/A=1]
-    # 第4参数=1 时 N/A 不计数（机头 GPU 项：无 GPU 是平台固有形态，非数据缺失，不计入"数据不足"判定）
+    # 第4参数=1 时 N/A 为平台固有（不计数、不渲染行——折叠到表尾汇总，避免消费台式等平台满表 N/A 噪音）
     add_item() {
-        n=$((n + 1))
         case "$2" in
             PASS) pass=$((pass + 1)); st="✅ PASS" ;;
             FAIL) fail=$((fail + 1)); st="❌ FAIL" ;;
             WARN) warn=$((warn + 1)); st="⚠️ WARN" ;;
-            *)    [ "${4:-0}" != "1" ] && na=$((na + 1)); st="— N/A" ;;
+            *)
+                st="— N/A"
+                if [ "${4:-0}" = "1" ]; then
+                    # v1.48.41：平台固有 N/A——不计入 na、不渲染行（表尾汇总），序号不占位
+                    NA_INHERENT="${NA_INHERENT}${1}|"
+                    return 0
+                fi
+                na=$((na + 1))
+                ;;
         esac
+        n=$((n + 1))
         rows="${rows}| ${n} | $1 | ${st} | $3 |"$'\n'
     }
 
@@ -451,6 +460,9 @@ gen_acceptance() {
         echo ""
         echo "## 验收信息"
         echo ""
+        # v1.48.41：验收口径声明——平台形态 + 适用项计数（固有 N/A 折叠后客户一眼看懂按什么口径验收）
+        _na_n=$(printf '%s' "$NA_INHERENT" | tr -cd '|' | wc -c)
+        echo "- 验收口径: ${MACHINE_CLASS_LABEL:-N/A}（GPU 平台: ${GPU_PLATFORM:-none}；${_na_n:-0} 项平台固有 N/A 不适用，下表 ${n} 项为实际判定项）"
         echo "- 生成时间: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "- 采集版本: ${VERSION:-unknown} / 报告版本: ${REPORT_VERSION:-unknown}"
         echo ""
@@ -459,6 +471,10 @@ gen_acceptance() {
         echo "| # | 检查项 | 结果 | 说明 |"
         echo "|---|--------|------|------|"
         printf '%s' "$rows"
+        if [ -n "$NA_INHERENT" ]; then
+            echo ""
+            echo "> 本平台固有/宽容 N/A（不计入数据不足，共 ${_na_n:-0} 项）：$(printf '%s' "$NA_INHERENT" | sed 's/|$//; s/|/、/g')"
+        fi
         echo ""
         echo "## 结论"
         echo ""
