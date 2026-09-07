@@ -8,7 +8,7 @@
 
 - **组件级采集**：主板/CPU/内存/GPU/NVSwitch/PCIe/网络/存储/RAID/HBA/电源/风扇/BMC/NVSM/DCGM/固件合规/能耗/OS 共 17 类模块，自动识别平台（SXM/PCIe/机头/传统）
 - **报告四件套**：JSON + Markdown + TXT + **HTML**（浏览器交付版，零依赖）
-- **验收清单**：15 项判定（含固件合规/OS-BMC 一致性/风扇冗余/PCIe 链路），条件驱动 N/A 计数，硬件概览自动生成配置单
+- **验收清单**：18 项判定（含固件合规/OS-BMC 一致性/风扇冗余/PCIe 链路/CPU·内存自洽校验），条件驱动 N/A 计数，硬件概览自动生成配置单
 - **GPU 魔改识别**：内置 60+ NVIDIA + AMD Instinct + 昇腾/Intel/国产型号额定显存规格库，检测值交叉验证，魔改/伪装卡自动 `⚠️` 提示
 - **远程采集**：tar 推送执行回拉，Linux/WSL + **Windows 原生**均支持（交互式密码，不落盘）
 - **只读无害**：采集不写硬件、报告不重新采集；GPU 健康诊断 NVIDIA=DCGM Level 1、AMD=ROCm、昇腾=npu-smi（v1.47.0 适配器框架，多厂商统一 CSV）
@@ -40,7 +40,7 @@ tools\win\remote_collect.bat -H root@10.0.0.1   # Windows 运维机
 | [docs/QUICKSTART.md](docs/QUICKSTART.md) | 快速开始：采集/报告/远程采集 |
 | [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) | 依赖环境安装：全景依赖表/厂商工具/发行版差异 |
 | [docs/USAGE.md](docs/USAGE.md) | 使用指南：全部命令/运维工具/压测 |
-| [docs/REPORT.md](docs/REPORT.md) | 报告与验收体系：四件套/15 项判定/条件驱动 N/A |
+| [docs/REPORT.md](docs/REPORT.md) | 报告与验收体系：四件套/18 项判定/条件驱动 N/A |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构：目录结构/模块/平台兼容/安全约定 |
 | [docs/TOOLS.md](docs/TOOLS.md) | 配套工具（test/ + tools/，Linux/WSL） |
 | [docs/WIN_TOOLS.md](docs/WIN_TOOLS.md) | Windows 运维机工具（tools/win/，12 个） |

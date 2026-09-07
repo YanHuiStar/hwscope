@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# HwScope - 验收清单生成器 gen_acceptance（15 项判定 + 配置单）
+# HwScope - 验收清单生成器 gen_acceptance（18 项判定 + 配置单）
 # report/gen/gen_acceptance.sh
 # 拆分自原 tools/report.sh（v1.35.0 refactor，行为不变）；由 report/report.sh source 装配
 # =============================================================================
