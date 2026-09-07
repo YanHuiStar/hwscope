@@ -101,7 +101,9 @@ gen_acceptance() {
                                 AMD) add_item "DCGM 诊断" "N/A" "AMD 平台无 DCGM（ROCm 诊断：rocminfo + amd-smi ras 见 GPU 段附录）" 1 ;;
                                 *)   case "${GPU_NAMES:-}" in
                                          # v1.48.40：消费级 NVIDIA 无 DCGM 支持 → N/A；数据中心卡无数据 → WARN（真异常）
-                                         *GeForce*|*RTX*|*GTX*) add_item "DCGM 诊断" "N/A" "消费级 GPU 无 DCGM 支持（DCGM 面向数据中心 GPU，诊断走 GPU 段明细）" 1 ;;
+                                         # v1.48.42 修正：匹配模式去掉裸 *RTX*——nvidia-smi 输出消费卡带 GeForce 前缀（GeForce RTX 4090）、
+                                         # 专业/数据中心卡不带（RTX 6000 Ada / RTX A6000 支持 DCGM），裸 RTX 会把专业卡误判消费级
+                                         *GeForce*|*GTX*|*GeForce\ RTX*) add_item "DCGM 诊断" "N/A" "消费级 GPU 无 DCGM 支持（DCGM 面向数据中心 GPU，诊断走 GPU 段明细）" 1 ;;
                                          *) add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行" ;;
                                      esac ;;
                             esac
@@ -345,7 +347,8 @@ gen_acceptance() {
         # 按行计数（size 值含空格如 "64 GB"——不能用 wc -w 空格分词；空槽 "No Module Installed" 排除）
         _mem_sizes=$(printf '%s\n' "$MEM_DIMMS" | awk -F'|' '$2!="" && $2!="N/A" && $2 !~ /No Module/{print $2}' | sort -u)
         _mem_kind=$(printf '%s\n' "$_mem_sizes" | grep -c .)
-        _mem_cnt=$(printf '%s\n' "$MEM_DIMMS" | grep -c '|')
+        # v1.48.42 修复：已插条数排除空槽（原 grep -c '|' 数全部行——32 槽插 16 条报"已插 32 条"）
+        _mem_cnt=$(printf '%s\n' "$MEM_DIMMS" | awk -F'|' '$2!="" && $2!="N/A" && $2 !~ /No Module/{c++} END{print c+0}')
         if [ "${_mem_kind:-0}" -eq 0 ] 2>/dev/null; then
             add_item "内存容量一致" "N/A" "无容量数据（采集缺失）"
         elif [ "$_mem_kind" -le 1 ] 2>/dev/null; then

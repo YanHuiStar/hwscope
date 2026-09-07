@@ -246,6 +246,18 @@ if [ -f "${nic_inventory}" ]; then
         case "$nlink" in
             Active|yes|up|Up|YES|Yes) nlink="Up" ;;
             no|NO|No|down|Down)       nlink="Down" ;;
+            # v1.48.42：多口 CA 聚合值（v1.45.17 CA_STATE 集合式，如 "Active,Down"）逐词归一
+            *,*)
+                _norm=""
+                IFS=',' read -ra _nl_parts <<< "$nlink"
+                for _np in "${_nl_parts[@]}"; do
+                    case "$_np" in
+                        Active|yes|up|Up)   _np="Up" ;;
+                        no|NO|No|down|Down) _np="Down" ;;
+                    esac
+                    _norm="${_norm}${_norm:+,}${_np}"
+                done
+                nlink="$_norm" ;;
         esac
         # 物理口序号：同卡第 N 口/共 M 口（USB/非 PCIe 接口已在上方排除；明细行序 = BDF 升序，同卡相邻）
         nport="—"
