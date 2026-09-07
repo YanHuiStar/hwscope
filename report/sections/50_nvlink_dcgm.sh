@@ -13,6 +13,22 @@ else
     nvlink_is_healthy || NVLINK_HEALTH="异常"
 fi
 
+# v1.48.40：NVLink 能力探测——gpu_nvlink_cap.log（nvidia-smi nvlink --capabilities）有 "Link N," 行 = 卡
+# 具备 NVLink（数据中心 SXM 必有）；RTX/GeForce 消费卡与 A100-PCIe 无桥形态输出 NOT_SUPPORTED/空——
+# 但 nvidia-smi topo -m 矩阵对单卡也输出 GPU0 行 → 旧逻辑会把"无 NVLink 能力"误判 PASS/WARN，需能力前置修正
+# （注：gpu_full.log 的 nvidia-smi -q 不保证含 NVLink 段——实测 A100-SXM 样本也无，故不用它作信号源）
+NVLINK_CAPABLE=0
+load_manifest "${GPU_DIR}" gpu_nvlink_cap "gpu_nvlink_cap.log"
+if [ -f "${gpu_nvlink_cap}" ] && grep -qE "^[[:space:]]*Link [0-9]+," "${gpu_nvlink_cap}" 2>/dev/null; then
+    NVLINK_CAPABLE=1
+fi
+# 旧采集无 cap 日志兜底：topo -m 矩阵含 NV1/NV2/NV4 连接类型 = 卡间真实 NVLink 互联（消费卡单卡只有 X/SYS）
+if [ "${NVLINK_CAPABLE:-0}" -eq 0 ] && [ -f "${GPU_DIR}/gpu_topo.log" ]; then
+    if grep -v "^#" "${GPU_DIR}/gpu_topo.log" 2>/dev/null | grep -qE "\bNV[0-9]\b"; then
+        NVLINK_CAPABLE=1
+    fi
+fi
+
 # ─── DCGM 诊断结果（dcgmi_diag_level1.log：区分硬件 Fail 与配置类 Fail） ───
 # Persistence Mode 未开启是环境配置问题（8 卡全 Fail 时常见），不属硬件故障，单独标注
 DCGM_SUMMARY="N/A"

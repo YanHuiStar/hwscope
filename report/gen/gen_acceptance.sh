@@ -41,7 +41,12 @@ gen_acceptance() {
 
     # 2. NVLink 互联
     case "${NVLINK_HEALTH:-N/A}" in
-        OK)   add_item "NVLink 互联" "PASS" "全互联无降级链路" ;;
+        OK)   if [ "${NVLINK_CAPABLE:-0}" -eq 0 ] 2>/dev/null; then
+                  # v1.48.40：消费卡/无桥 PCIe 的 topo -m 矩阵也有 GPU0 行 → 假 OK；无 NVLink 能力判 N/A 而非 PASS
+                  add_item "NVLink 互联" "N/A" "该 GPU 无 NVLink 能力（消费级 GeForce/RTX 或 A100-PCIe 无桥形态——topo 矩阵非 NVLink 数据）" 1
+              else
+                  add_item "NVLink 互联" "PASS" "全互联无降级链路"
+              fi ;;
         异常) add_item "NVLink 互联" "FAIL" "存在降级链路${NVLINK_CRC:+，且有非零 CRC 错误}" ;;
         *)    case "${GPU_PLATFORM:-}" in
                   amd) if [ -n "${GPU_XGMI_SUMMARY:-}" ]; then
@@ -56,7 +61,12 @@ gen_acceptance() {
                             # v1.48.22：文案按 lspci 层厂商区分（原写死 NVIDIA）
                             case "${GPU_PCI_VENDOR:-}" in
                                 AMD) add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（xGMI/Infinity Fabric 互联，拓扑日志已采集；链路健康判定待真机校准）" 1 ;;
-                                *)   add_item "NVLink 互联" "WARN" "检测到 NVIDIA GPU 但驱动异常，NVLink 状态不可用" ;;
+                                *)   if [ "${NVLINK_CAPABLE:-0}" -eq 0 ] 2>/dev/null; then
+                                         # v1.48.40：无 NVLink 能力（消费卡）→ N/A 而非 WARN"驱动异常"
+                                         add_item "NVLink 互联" "N/A" "该 GPU 无 NVLink 能力（消费级或无 NVLink 桥接的 PCIe 形态）" 1
+                                     else
+                                         add_item "NVLink 互联" "WARN" "检测到 NVIDIA GPU 但驱动异常，NVLink 状态不可用"
+                                     fi ;;
                             esac
                         elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
                             add_item "NVLink 互联" "N/A" "无 GPU" 1
@@ -80,7 +90,11 @@ gen_acceptance() {
                             # v1.48.22：文案按 lspci 层厂商区分（原写死 NVIDIA）
                             case "${GPU_PCI_VENDOR:-}" in
                                 AMD) add_item "DCGM 诊断" "N/A" "AMD 平台无 DCGM（ROCm 诊断：rocminfo + amd-smi ras 见 GPU 段附录）" 1 ;;
-                                *)   add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行" ;;
+                                *)   case "${GPU_NAMES:-}" in
+                                         # v1.48.40：消费级 NVIDIA 无 DCGM 支持 → N/A；数据中心卡无数据 → WARN（真异常）
+                                         *GeForce*|*RTX*|*GTX*) add_item "DCGM 诊断" "N/A" "消费级 GPU 无 DCGM 支持（DCGM 面向数据中心 GPU，诊断走 GPU 段明细）" 1 ;;
+                                         *) add_item "DCGM 诊断" "WARN" "检测到 NVIDIA GPU 但驱动异常，DCGM 无法运行" ;;
+                                     esac ;;
                             esac
                         elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
                             add_item "DCGM 诊断" "N/A" "无 GPU" 1
@@ -299,6 +313,51 @@ gen_acceptance() {
     else
         add_item "PCIe 链路完整" "N/A" "无链路数据（旧采集无 pcie_full 全量日志，链路检测需重新采集）" 1
     fi
+
+    # 16. CPU 配置一致（v1.48.40 类A 自洽校验：多颗 CPU 型号/Stepping/核数混插是交付大忌）
+    if [ -n "$CPU_DETAILS" ]; then
+        _cpu_n=$(printf '%s\n' "$CPU_DETAILS" | grep -c '|')
+        if [ "$_cpu_n" -gt 1 ] 2>/dev/null; then
+            _cpu_var=$(printf '%s\n' "$CPU_DETAILS" | awk -F'|' '{print $2"|step"$7"|"$3"核"}' | sort -u | wc -l)
+            if [ "$_cpu_var" -gt 1 ] 2>/dev/null; then
+                add_item "CPU 配置一致" "FAIL" "多颗 CPU 型号/Stepping/核数不一致（$(printf '%s\n' "$CPU_DETAILS" | awk -F'|' '{print $1": "$2" step"$7" "$3"核"}' | tr '\n' '; ')）"
+            else
+                add_item "CPU 配置一致" "PASS" "${_cpu_n} 颗 CPU 型号/Stepping/核数一致"
+            fi
+        else
+            add_item "CPU 配置一致" "N/A" "单颗 CPU（无对称性可判）" 1
+        fi
+    else
+        add_item "CPU 配置一致" "N/A" "无 CPU 明细数据（采集缺失）"
+    fi
+
+    # 17. 内存容量一致（类A 自洽校验：全槽同容量为对称配置；混插 WARN 提示）
+    if [ -n "$MEM_DIMMS" ]; then
+        # 按行计数（size 值含空格如 "64 GB"——不能用 wc -w 空格分词；空槽 "No Module Installed" 排除）
+        _mem_sizes=$(printf '%s\n' "$MEM_DIMMS" | awk -F'|' '$2!="" && $2!="N/A" && $2 !~ /No Module/{print $2}' | sort -u)
+        _mem_kind=$(printf '%s\n' "$_mem_sizes" | grep -c .)
+        _mem_cnt=$(printf '%s\n' "$MEM_DIMMS" | grep -c '|')
+        if [ "${_mem_kind:-0}" -eq 0 ] 2>/dev/null; then
+            add_item "内存容量一致" "N/A" "无容量数据（采集缺失）"
+        elif [ "$_mem_kind" -le 1 ] 2>/dev/null; then
+            add_item "内存容量一致" "PASS" "已插 ${_mem_cnt} 条同容量（$(printf '%s\n' "$_mem_sizes" | head -1)）"
+        else
+            add_item "内存容量一致" "WARN" "容量混插（$(printf '%s\n' "$_mem_sizes" | tr '\n' '|' | sed 's/|$//')）——建议对称配置"
+        fi
+    else
+        add_item "内存容量一致" "N/A" "无内存明细（采集缺失）"
+    fi
+
+    # 18. 内存 ECC 类型（类A 自洽校验：有 ECC 纠错即 PASS 并注明类型；无 ECC/未知 WARN 提示——服务器平台应 ECC）
+    case "${MEM_ECC_TYPE:-}" in
+        *Multi-bit*|*multibit*) add_item "内存 ECC" "PASS" "${MEM_ECC_TYPE}（服务器标准，多比特纠错）" ;;
+        *ECC*)  add_item "内存 ECC" "PASS" "${MEM_ECC_TYPE}（ECC 纠错已启用）" ;;
+        *)      if [ -n "$MEM_DIMMS" ]; then
+                    add_item "内存 ECC" "WARN" "ECC 类型未知或无 ECC（${MEM_ECC_TYPE:-未检测到}）——服务器平台应 ECC，消费平台属正常"
+                else
+                    add_item "内存 ECC" "N/A" "无内存数据"
+                fi ;;
+    esac
 
     # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
     if [ "$fail" -gt 0 ]; then
