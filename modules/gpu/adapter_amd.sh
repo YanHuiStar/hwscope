@@ -62,8 +62,10 @@ run_gpu_amd() {
             "${CMD_FLEX_PATH:-amd-smi}" metric -e -P > "${dir}/gpu_amd_ras.log" 2>&1 || true
         fi
         if ! grep -qiE "SINGLE_ECC|DOUBLE_ECC|Correctable|Uncorrectable" "${dir}/gpu_amd_ras.log" 2>/dev/null; then
-            if check_cmd rocm-smi; then
-                rocm-smi --query-ecc > "${dir}/gpu_amd_ras.log" 2>&1 || true
+            # v1.48.38：裸 check_cmd 只查 PATH——rocm-smi 常装 /opt/rocm/bin 非标准目录（v1.48.16 场景），
+            # 与 61 行 amd-smi 探测一致用 check_cmd_flex 三阶降级
+            if check_cmd_flex rocm-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
+                "${CMD_FLEX_PATH:-rocm-smi}" --query-ecc > "${dir}/gpu_amd_ras.log" 2>&1 || true
             fi
         fi
     fi
