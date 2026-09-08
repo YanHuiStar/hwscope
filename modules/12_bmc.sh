@@ -91,9 +91,12 @@ run_bmc() {
         chmod 600 "$NETRC_TMP"
         trap 'rm -f "$NETRC_TMP"' EXIT INT TERM
         printf 'machine %s login %s password %s\n' "$BMC_IP" "$BMC_USER" "$BMC_PASS" > "$NETRC_TMP"
+        # ─── FirmwareInventory（v1.48.46）：AMI BMC 固件完整版——ipmitool mc info 只给主次（1.01），
+        # FirmwareInventory 给完整号（1.01.00）；BIOS/CPLD/PSU 成员 Version 空 = AMI 实现不填——如实采集不伪造
         run_and_log_parallel 4 \
             "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Systems/System.Embedded.1 2>&1" "${dir}/redfish_system.log" \
-            "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Managers 2>&1" "${dir}/redfish_managers.log" 
+            "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Managers 2>&1" "${dir}/redfish_managers.log" \
+            "for _m in BIOS BMCImage1 BMCImage2 CPLD PSU; do printf '%s|' \"\$_m\"; curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/UpdateService/FirmwareInventory/\$_m 2>&1 | grep -o '\"Version\":\"[^\"]*\"' | head -1 | cut -d'\"' -f4; done" "${dir}/redfish_fw_versions.log"
         rm -f "$NETRC_TMP"
         trap - EXIT INT TERM
     fi
@@ -127,7 +130,8 @@ write_manifest "${dir}/manifest.txt" \
         "hgx_bmc_sensors" "hgx_bmc_sensors.log" \
         "hgx_bmc_sdr" "hgx_bmc_sdr.log" \
         "redfish_system" "redfish_system.log" \
-        "redfish_managers" "redfish_managers.log"
+        "redfish_managers" "redfish_managers.log" \
+        "redfish_fw_versions" "redfish_fw_versions.log"
 
     module_end "$MODULE_NAME"
 }
