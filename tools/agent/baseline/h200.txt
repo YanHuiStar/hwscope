@@ -22,9 +22,9 @@
         1 "disk_count"
         1 "platform"
 [html]
-  html_table_open=22
-  html_table_close=22
-  html_bytes=22857
+  html_table_open=23
+  html_table_close=23
+  html_bytes=22903
 [acceptance]
         7 N/A
        11 PASS
