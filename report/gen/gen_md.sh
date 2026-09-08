@@ -463,6 +463,12 @@ fi)
 |----|----|
 | 型号 | ${BMC_FRU:-N/A} |
 | 固件 | ${BMC_FW:-N/A} |
+$(rf_line=""
+[ -n "${RF_FW_BIOS:-}" ] && rf_line="${rf_line}BIOS=${RF_FW_BIOS}, "
+[ -n "${RF_FW_CPLD:-}" ] && rf_line="${rf_line}CPLD=${RF_FW_CPLD}, "
+[ -n "${RF_FW_PSU:-}" ] && rf_line="${rf_line}PSU=${RF_FW_PSU}, "
+[ -n "${RF_FW_OTHER:-}" ] && rf_line="${rf_line}${RF_FW_OTHER}"
+if [ -n "$rf_line" ]; then echo "| Redfish 固件明细 | $(echo "$rf_line" | sed 's/, $//') |"; fi)
 | IP | ${BMC_IP:-N/A} |
 | MAC | ${BMC_MAC:-N/A} |
 | SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0}（Critical ${SEL_CRIT:-0}）"; else echo "⚠️ 数据不可用"; fi) |

@@ -122,6 +122,25 @@ load_manifest "${BMC_DIR}" ipmi_sel_elist "ipmi_sel_elist.log"
 load_manifest "${BMC_DIR}" redfish_system "redfish_system.log"
 BMC_FRU=$(extract "Product Name|Product Part Number" "${ipmi_fru_summary}" | head -c 80)
 BMC_FW=$(extract "Firmware Revision" "${ipmi_mc}")
+# v1.48.46：Redfish FirmwareInventory——AMI BMC 固件完整版（ipmitool mc info 只给主次 1.01，
+# FirmwareInventory 给完整号如 1.01.00）；BIOS/CPLD/PSU 成员 Version 空 = AMI 实现不填——如实标注不伪造
+load_manifest "${BMC_DIR}" redfish_fw_versions "redfish_fw_versions.log"
+RF_FW_BMC=""; RF_FW_BIOS=""; RF_FW_CPLD=""; RF_FW_PSU=""; RF_FW_OTHER=""
+if [ -f "${redfish_fw_versions}" ]; then
+    while IFS='|' read -r _rfname _rfver; do
+        [ -z "$_rfname" ] && continue
+        _rfver=$(echo "$_rfver" | tr -d ' \r')
+        case "$_rfname" in
+            BMCImage*) [ -n "$_rfver" ] && RF_FW_BMC="$_rfver" ;;
+            BIOS)      [ -n "$_rfver" ] && RF_FW_BIOS="$_rfver" ;;
+            CPLD)      [ -n "$_rfver" ] && RF_FW_CPLD="$_rfver" ;;
+            PSU)       [ -n "$_rfver" ] && RF_FW_PSU="$_rfver" ;;
+            *)         [ -n "$_rfver" ] && RF_FW_OTHER="${RF_FW_OTHER}${_rfname}=${_rfver}, " ;;
+        esac
+    done < "${redfish_fw_versions}"
+fi
+# Redfish 完整版优先（比 ipmitool 主次号信息量大）；空则回退 ipmitool
+[ -n "$RF_FW_BMC" ] && BMC_FW="$RF_FW_BMC"
 # v1.48.31：BMC 管理 IP 多通道——lan print 1 可能是 Shared 口（DHCP 未接=0.0.0.0），Dedicated 管理口
 # 通道不定（Compal/AMI 常见通道 8；lan_all 遍历 1-14）——取首个有效地址（非 0.0.0.0/非 169.254 APIPA）
 BMC_IP="0.0.0.0"; BMC_MAC=""
