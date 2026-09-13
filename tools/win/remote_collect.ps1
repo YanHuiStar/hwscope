@@ -72,14 +72,25 @@ function Invoke-SSHRetry {
     $ErrorActionPreference = "Continue"
     for ($i = 1; $i -le $MaxTries; $i++) {
         $out = @()
-        # v1.48.47：内层 scriptblock 再设一次 EAP——PowerShell 脚本块作用域下仅函数级赋值对 native
-        # 命令（scp/ssh）的 stderr 抛错不生效（实测首连 host key Warning 仍中断，v1.48.29 的修复
-        # 未覆盖此前直调路径）；此处与 native 调用同作用域，确保 Continue 生效
-        & { $ErrorActionPreference = "Continue"; & $Action 2>&1 } | ForEach-Object { $out += $_; $_ } | Out-Host
+        # v1.48.51：stderr（ErrorRecord）只累积用于判定，不显示——输错密码时原样输出会打出
+        # PowerShell 的 NativeCommandError 红块（功能正常但观感吓人）；密码提示走 tty 不受影响
+        $raw = & { $ErrorActionPreference = "Continue"; & $Action 2>&1 }
+        $raw | ForEach-Object {
+            $out += "$_"
+            if ($_ -isnot [System.Management.Automation.ErrorRecord]) { $_ }   # 仅 stdout/正常输出显示
+        } | Out-Host
         $code = $LASTEXITCODE
         if ($code -eq 0) { $ErrorActionPreference = $oldEAP; return 0 }
         $authFail = (($out -join "`n") -match "Permission denied|password.*incorrect|Authentication failed")
-        if (-not $authFail -or $i -ge $MaxTries) { $ErrorActionPreference = $oldEAP; return $code }
+        if (-not $authFail -or $i -ge $MaxTries) {
+            $ErrorActionPreference = $oldEAP
+            # v1.48.51：非认证类失败（或重试用尽）时给出 stderr 摘要——平时抑制避免 NativeCommandError 红块，
+            # 真失败时保留可诊断性（认证失败重试中不打印，最终失败才提示）
+            if ($code -ne 0 -and $out.Count -gt 0) {
+                Write-Host "  [原因] $(($out | Where-Object { $_ } | Select-Object -First 2) -join ' / ')" -ForegroundColor DarkGray
+            }
+            return $code
+        }
         Write-Host "[WARN] $Desc 认证失败（密码错误？），重试 $i/$MaxTries ..." -ForegroundColor Yellow
     }
     $ErrorActionPreference = $oldEAP
