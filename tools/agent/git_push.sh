@@ -224,10 +224,12 @@ fi
 try_push() {   # $1=proxy(可空)；WSL 用 Windows git.exe（127.0.0.1 可达 Windows 代理）；timeout+connectTimeout 防挂起
     local proxy="${1:-}" gcmd
     gcmd="$(pick_git)"
+    # v1.48.52：timeout 30 → 180——推送首个连接 + 传输多提交常超 30s，超时被 kill 会误判为网络失败
+    #（挂起保护靠 git 自身 -c http.connectTimeout=6——连接阶段 6s 无响应即失败）
     if [ -n "$proxy" ]; then
-        timeout 30 env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" "$gcmd" -c http.connectTimeout=6 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
+        timeout 180 env HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" "$gcmd" -c http.connectTimeout=6 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
     else
-        timeout 30 "$gcmd" -c http.connectTimeout=6 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
+        timeout 180 "$gcmd" -c http.connectTimeout=6 push "$REMOTE" "$BRANCH" 2>&1 | tail -3
     fi
     return "${PIPESTATUS[0]:-1}"
 }
@@ -258,11 +260,13 @@ push_main() {
     #     预检失败也计入失败计数（连续 3 次仍触发熔断冷却） ───
     local pre_ok=0
     if command -v curl >/dev/null 2>&1; then
-        curl -sI --max-time 3 https://github.com >/dev/null 2>&1 && pre_ok=1
+        # v1.48.52：预检超时 3s → 5s——网络慢时 3s 会误判断网（实测多次"预检失败但实际可推"），
+        # 5s 仍远低于直连失败的 21s 默认超时，兼顾快速判定与准确性
+        curl -sI --max-time 5 https://github.com >/dev/null 2>&1 && pre_ok=1
         if [ "$pre_ok" -eq 0 ]; then
             local pre_proxy
             pre_proxy="$(detect_proxy)"
-            [ -n "$pre_proxy" ] && curl -x "$pre_proxy" -sI --max-time 3 https://github.com >/dev/null 2>&1 && pre_ok=1
+            [ -n "$pre_proxy" ] && curl -x "$pre_proxy" -sI --max-time 5 https://github.com >/dev/null 2>&1 && pre_ok=1
         fi
         if [ "$pre_ok" -eq 0 ]; then
             local fc0=0
@@ -299,11 +303,16 @@ push_main() {
     if [ -n "$proxy" ]; then
         info "发现代理 ${proxy}，验证连通性..."
         if command -v curl >/dev/null 2>&1; then
-            if curl -x "$proxy" -sI --max-time 6 https://github.com -o /dev/null; then
+            if curl -x "$proxy" -sI --max-time 10 https://github.com -o /dev/null; then
                 info "代理连通 ✓，走代理推送..."
-                out="$(try_push "$proxy")"
-                if [ $? -eq 0 ]; then rm -f "$fail_count_file" "$cooldown_file"; return 0; fi
-                echo "$out" | sed 's/^/    /'
+                # v1.48.52：代理推送尝试 2 次（推首个连接易受网络抖动影响）
+                local ptry
+                for ptry in 1 2; do
+                    out="$(try_push "$proxy")"
+                    if [ $? -eq 0 ]; then rm -f "$fail_count_file" "$cooldown_file"; return 0; fi
+                    echo "$out" | sed 's/^/    /'
+                    [ "$ptry" -lt 2 ] && sleep 3
+                done
             else
                 warn "代理端口在监听但节点未连通（代理未连上节点/协议不匹配）"
             fi
