@@ -192,11 +192,23 @@ run_one() {
 if [ "$ALL" -eq 1 ]; then
     root="${HWSCOPE_SAMPLE_ROOT:-${PROJECT_DIR}/output}"
     found=0; fail=0
+    # v1.48.50：同语义名去重——多台同机型机器（如桌面两台 MI300X）经 sn_to_semantic 映射到同一
+    # 基线文件，逐台比对会把机器间固有差异（网卡/盘数不同）当成解析回归误报；本次只比对首台，
+    # 后续同名样本跳过并提示（要单独验证某台用 --samples <SN> 显式指定）
+    _seen_sem=""
     for d in "${root}"/*/; do
         [ -d "$d" ] || continue
         if [ ! -d "${d}gpu" ] && [ ! -d "${d}motherboard" ] && [ ! -f "${d}hwscope_report.md" ]; then
             continue
         fi
+        _sem_cur=$(sn_to_semantic "${d%/}")
+        case ",${_seen_sem}," in
+            *",${_sem_cur},"*)
+                echo "样本: $(basename "${d%/}")（语义: ${_sem_cur}）—— 同名样本跳过（该语义基线已在本次由首台覆盖；要单独验证请用 --samples）"
+                echo ""
+                continue ;;
+        esac
+        _seen_sem="${_seen_sem}${_seen_sem:+,}${_sem_cur}"
         found=$((found+1))
         run_one "${d%/}" || fail=$((fail+1))
         echo ""
