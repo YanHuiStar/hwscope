@@ -42,7 +42,7 @@ usage() {
 }
 
 HOSTS=(); CMD=""; PUSH_LOCAL=""; PUSH_REMOTE=""; SCRIPT_FILE=""; PULL_LOGS=""; OUT_DIR=""
-SSH_OPTS="-o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_run_%r@%h -o ControlPersist=300"
+SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_run_%r@%h -o ControlPersist=300"
 while [ $# -gt 0 ]; do
     case "$1" in
         -H) [ $# -ge 2 ] || { echo -e "\033[0;31m[ERROR] -H 缺少主机列表\033[0m"; exit 1; }; for h in $2; do HOSTS+=("$h"); done; shift 2 ;;

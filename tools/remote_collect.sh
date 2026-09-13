@@ -39,7 +39,7 @@ usage() {
     echo "  bash $0 -H root@10.0.0.1 --install 1,2         # 先装基础+压测依赖再采集"
 }
 
-HOST=""; SUDO="sudo"; LOCAL_OUT=""; INSTALL_ITEMS=""; SSH_OPTS="-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
+HOST=""; SUDO="sudo"; LOCAL_OUT=""; INSTALL_ITEMS=""; SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
 # 清理残留 ControlMaster socket：上次运行 ssh -O exit 后 socket 文件可能残留，
 # 新 ssh 尝试复用已死 master → "Shared connection closed" / 回拉非 gzip（v1.43.4 实测）
 rm -f /tmp/ssh_hwscope_mux_* 2>/dev/null || true

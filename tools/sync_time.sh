@@ -26,7 +26,7 @@ usage() {
 
 [ $# -eq 0 ] && { usage; exit 1; }
 
-SSH_OPTS="-o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
+SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
 rm -f /tmp/ssh_hwscope_mux_* 2>/dev/null || true
 
 EPOCH=$(date +%s)

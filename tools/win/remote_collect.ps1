@@ -40,7 +40,7 @@ $RemoteDir = "/tmp/hwscope_remote_$TS"
 $RemoteOut = "$RemoteDir/remote_output"
 # Windows OpenSSH 不支持 ControlMaster multiplexing（ControlPath=/tmp 无效会报 getsockname failed），
 # 故合并 ssh 调用：推送一次、执行一次、回拉一次（共 3 次密码提示，每次认证失败自动重试最多 3 次）
-$SSHOpts = "-o ConnectTimeout=10"
+$SSHOpts = "-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR"
 # root 用户自动免 sudo（root 登录无需提权）；普通用户 + sudo 步骤需要 tty（-t）才能交互输 sudo 密码
 $IsRoot = $H -like "root@*"
 $Sudo = if ($NoSudo -or $IsRoot) { "" } else { "sudo" }
@@ -58,7 +58,10 @@ function Invoke-SSHRetry {
     $ErrorActionPreference = "Continue"
     for ($i = 1; $i -le $MaxTries; $i++) {
         $out = @()
-        & $Action 2>&1 | ForEach-Object { $out += $_; $_ } | Out-Host
+        # v1.48.47：内层 scriptblock 再设一次 EAP——PowerShell 脚本块作用域下仅函数级赋值对 native
+        # 命令（scp/ssh）的 stderr 抛错不生效（实测首连 host key Warning 仍中断，v1.48.29 的修复
+        # 未覆盖此前直调路径）；此处与 native 调用同作用域，确保 Continue 生效
+        & { $ErrorActionPreference = "Continue"; & $Action 2>&1 } | ForEach-Object { $out += $_; $_ } | Out-Host
         $code = $LASTEXITCODE
         if ($code -eq 0) { $ErrorActionPreference = $oldEAP; return 0 }
         $authFail = (($out -join "`n") -match "Permission denied|password.*incorrect|Authentication failed")

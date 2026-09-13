@@ -39,7 +39,7 @@ $jobs = @()
 foreach ($t in $targets) {
     $jobs += Start-Job -ScriptBlock {
         param($hostStr, $cmd, $timeout)
-        $out = & ssh -o ConnectTimeout=$timeout -o StrictHostKeyChecking=no $hostStr $cmd 2>&1
+        $out = & ssh -o ConnectTimeout=$timeout -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR $hostStr $cmd 2>&1
         [PSCustomObject]@{ Host = $hostStr; Exit = $LASTEXITCODE; Output = ($out -join "`n") }
     } -ArgumentList $t, $Command, $Timeout
 }
