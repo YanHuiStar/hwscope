@@ -2,7 +2,8 @@
 # remote_collect.ps1 — Windows 原生远程采集（等价 tools/remote_collect.sh）
 # 功能: 从 Windows 运维机 SSH 远程执行 HwScope 采集并回拉结果
 #   1. tar 推送项目（排除 output/logs/.git）→ 2. 远端执行 hwscope.sh → 3. 结果回拉 → 4. 清理远端
-# 依赖: Windows 自带 OpenSSH 客户端 (ssh/scp) + tar (bsdtar, Win10 1803+)——零新依赖
+# 依赖: Windows 自带 OpenSSH 客户端 (ssh/scp) + tar (bsdtar, Win10 1803+；v1.48.48 起显式
+#       调用 System32 bsdtar——PATH 里的 Git for Windows GNU tar 会把 C:\ 盘符当远程主机致打包失败)——零新依赖
 # 凭据（安全立场）: 默认交互式密码（每次登录输入，不落盘）——生产环境标准做法；
 #   SSH key 免密仅建议受信内部网络使用（私钥泄露=所有配置了公钥的主机失守，风险扩散）。
 # 用法:
@@ -41,6 +42,10 @@ $RemoteOut = "$RemoteDir/remote_output"
 # Windows OpenSSH 不支持 ControlMaster multiplexing（ControlPath=/tmp 无效会报 getsockname failed），
 # 故合并 ssh 调用：推送一次、执行一次、回拉一次（共 3 次密码提示，每次认证失败自动重试最多 3 次）
 $SSHOpts = "-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR"
+# v1.48.48：显式用 Windows 自带 bsdtar（System32，Win10 1803+）——PowerShell 的 `tar` 可能解析到
+# Git for Windows 的 GNU tar，它把 "C:\..." 的盘符冒号当远程主机语法（报 "Cannot connect to C:
+# resolve failed"）导致本地打包/解包静默失败；无自带 bsdtar 的老系统回退 PATH 的 tar
+$TarExe = if (Test-Path "$env:SystemRoot\System32\tar.exe") { "$env:SystemRoot\System32\tar.exe" } else { "tar" }
 # root 用户自动免 sudo（root 登录无需提权）；普通用户 + sudo 步骤需要 tty（-t）才能交互输 sudo 密码
 $IsRoot = $H -like "root@*"
 $Sudo = if ($NoSudo -or $IsRoot) { "" } else { "sudo" }
@@ -49,6 +54,15 @@ $TtyOpt = if ($Sudo) { " -t" } else { "" }
 # SSH 认证重试（最多 3 次）：仅对认证/连接类失败重试（输出含 Permission denied/密码错误），其他错误直接返回
 # 注意：ForEach-Object 累积捕获 + Out-Host 强制显示——`$out = @( ... | Tee-Object )` 赋值上下文截获管道，
 #       Tee-Object -Variable 是覆盖非追加（多行只留最后一行）
+# v1.48.48：native 命令（tar/ssh/scp）写 stderr 在 $ErrorActionPreference="Stop" 下会抛
+# NativeCommandError 中断脚本（即使 exit code=0，如 tar 的 "file changed as we read it" 警告）。
+# 统一包装：内层作用域设 Continue（与 native 调用同作用域，函数级赋值对脚本块不生效），成败只信退出码
+function Invoke-Native {
+    param([scriptblock]$Action)
+    & { $ErrorActionPreference = "Continue"; & $Action 2>&1 } | Out-Host
+    return $LASTEXITCODE
+}
+
 function Invoke-SSHRetry {
     param([string]$Desc, [scriptblock]$Action, [int]$MaxTries = 3)
     # v1.48.24：native 命令（scp/ssh）写 stderr 的 Warning（如 host key "Permanently added"）在
@@ -82,8 +96,8 @@ try {
     $pushFile = Join-Path $env:TEMP "hwscope_push_$TS.tgz"
     $hwArgs = ""
     if ($Modules) { $hwArgs = " --modules $Modules" }
-    & tar czf $pushFile -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp .
-    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 本地打包失败" -ForegroundColor Red; exit 1 }
+    $rcTar = Invoke-Native { & $TarExe czf $pushFile -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp . }
+    if ($rcTar -ne 0) { Write-Host "[ERROR] 本地打包失败" -ForegroundColor Red; exit 1 }
 
     # ─── 2. scp 推送（认证失败自动重试） ───
     $rc = Invoke-SSHRetry "scp 推送" { & scp $SSHOpts.Split(" ") $pushFile "${H}:${RemoteDir}.tgz" }
@@ -115,8 +129,8 @@ try {
     if ($rc -ne 0) { Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
     $remoteOutDir = Join-Path $OutDir "remote_output"
     New-Item -ItemType Directory -Force -Path $remoteOutDir | Out-Null
-    & tar xzf $pullFile -C $remoteOutDir
-    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
+    $rcUntar = Invoke-Native { & $TarExe xzf $pullFile -C $remoteOutDir }
+    if ($rcUntar -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
 
     # 归档包移到 logs\remote_logs\（与本地采集日志区分；远端 logs/ 解包到了 remote_output\logs）

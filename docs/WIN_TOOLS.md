@@ -15,7 +15,7 @@ tools\win\unblock_ps.bat        # 解除 .ps1 运行限制（当前用户，无�
 
 | 工具 | 场景 | 说明 |
 |------|------|------|
-| `remote_collect.ps1/.bat` | 远程采集 | Windows 原生远程采集（等价 remote_collect.sh：推送→远端执行→回拉 `output\remote_output\<机器ID>\`）；`-InstallItems 1,2` 先远端非交互装依赖再采集（v1.42.1，等价 Linux `--install`）；交互式密码，每步认证失败自动重试 3 次（Windows OpenSSH 无 ControlMaster，共 3 次密码输入）；首次连接免交互（v1.48.47：StrictHostKeyChecking=accept-new + LogLevel=ERROR——免 host key yes/no 确认、抑制 stderr Warning 致 NativeCommandError 中断） |
+| `remote_collect.ps1/.bat` | 远程采集 | Windows 原生远程采集（等价 remote_collect.sh：推送→远端执行→回拉 `output\remote_output\<机器ID>\`）；`-InstallItems 1,2` 先远端非交互装依赖再采集（v1.42.1，等价 Linux `--install`）；交互式密码，每步认证失败自动重试 3 次（Windows OpenSSH 无 ControlMaster，共 3 次密码输入）；首次连接免交互（v1.48.47：StrictHostKeyChecking=accept-new + LogLevel=ERROR——免 host key yes/no 确认、抑制 stderr Warning 致 NativeCommandError 中断）；v1.48.48：显式调用 System32 bsdtar（PATH 的 Git GNU tar 把 C:\ 当远程主机致打包失败）+ tar 调用统一错误容忍包装 |
 | `fetch_report.ps1/.bat` | 巡检汇总 | 拉取各机报告三件套（json/md/txt），按主机名归档 |
 | `remote_run.ps1/.bat` | 远程执行 | 对多台服务器执行同一命令（v1.43.0 由 ssh_batch 改名；Linux 对应 remote_run.sh；--script/--pull-logs Windows 二期） |
 

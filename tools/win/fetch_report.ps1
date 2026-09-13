@@ -40,7 +40,7 @@ foreach ($t in $targets) {
     $hostShort = ($t -split '@')[-1]
     # 找服务器上最新输出目录
     $find = "ls -dt ${HwscopeDir}/output/*/ 2>/dev/null | head -1"
-    $latestDir = (& ssh -o ConnectTimeout=$Timeout -o BatchMode=yes -o StrictHostKeyChecking=no $t $find 2>&1 | Out-String).Trim()
+    $latestDir = (& ssh -o ConnectTimeout=$Timeout -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR $t $find 2>&1 | Out-String).Trim()
     if (-not $latestDir -or $latestDir -match 'No such|connect|refused|denied') {
         Write-Host "✗ $hostShort  无法定位输出目录: $latestDir" -ForegroundColor Red
         continue
