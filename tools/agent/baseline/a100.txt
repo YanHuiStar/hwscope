@@ -23,9 +23,9 @@
         1 "disk_count"
         1 "platform"
 [html]
-  html_table_open=24
-  html_table_close=24
-  html_bytes=54136
+  html_table_open=25
+  html_table_close=25
+  html_bytes=54182
 [acceptance]
         2 N/A
        12 PASS

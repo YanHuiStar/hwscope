@@ -96,7 +96,7 @@ run_bmc() {
         run_and_log_parallel 4 \
             "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Systems/System.Embedded.1 2>&1" "${dir}/redfish_system.log" \
             "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Managers 2>&1" "${dir}/redfish_managers.log" \
-            "for _m in BIOS BMCImage1 BMCImage2 CPLD PSU; do printf '%s|' \"\$_m\"; curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/UpdateService/FirmwareInventory/\$_m 2>&1 | grep -o '\"Version\":\"[^\"]*\"' | head -1 | cut -d'\"' -f4; done" "${dir}/redfish_fw_versions.log"
+            "for _m in BIOS BMCImage1 BMCImage2 CPLD PSU; do printf '%s|' \"\$_m\"; curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/UpdateService/FirmwareInventory/\$_m 2>&1 | grep -oE '\"Version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' | head -1 | cut -d'\"' -f4; done" "${dir}/redfish_fw_versions.log"
         rm -f "$NETRC_TMP"
         trap - EXIT INT TERM
     fi
