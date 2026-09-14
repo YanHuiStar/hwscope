@@ -21,7 +21,7 @@
 | **05 NVSwitch** | `nvswitch` | NVIDIA 平台包（见 §3.4）| SXM 平台 |
 | | `nvidia-fabricmanager` | NVIDIA 平台包 | SXM 平台 |
 | **06 PCIe** | `lspci`（同核心）| `pciutils` | 必需 |
-| **07 网络** | `ethtool` | `ethtool` | 必需 |
+| **07 网络** | `ethtool` | `ethtool` | 必需（`ethtool -i` 的 firmware-version 括号值即 Mellanox PSID——v1.48.56 起的权威来源）|
 | | `ip`/`devlink` | `iproute2` | 必需（`devlink dev info` 读固件信息含 `fw.psid`——MST/mstflint 在新平台不可用时的 PSID 来源，v1.48.54）|
 | | `ibstat`/`ibstatus` | `infiniband-diags` | IB 机器 |
 | | `ibv_devinfo` | `rdma-core` | IB 机器 |

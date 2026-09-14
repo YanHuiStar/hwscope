@@ -103,6 +103,9 @@ run_network() {
     # ─── 网卡一览清单（dev|bdf|mac|sn|pn|fw|speed|width|psid|cap_speed|cap_width）───
     local nic_pcie_jobs=()
     {
+        # v1.48.56：同卡 PSID 共享表（BDF 去功能号 → PSID）——多口卡 MST 只注册 function 0，
+        # 其余口 mstflint 取不到；同卡 PSID 本相同，可安全继承
+        declare -A nic_psid_by_card
         echo "# nic inventory: dev|bdf|mac|serial|part_number|firmware|speed|width|psid|cap_speed|cap_width"
         for ndev_path in /sys/class/net/*/; do
             [ -e "$ndev_path" ] || continue   # 无匹配时 glob 原样返回，跳过
@@ -184,15 +187,45 @@ run_network() {
                         /PCI Device Name:/ { dev=$NF; sub(/^0000:/, "", dev) }
                         dev==bdf && /Part Number:/ { sub(/.*Part Number:[[:space:]]*/, ""); print; exit }
                     ' "${dir}/mlxfwmanager.log" 2>/dev/null)
-                    [ -n "$fw_psid" ] && fw_psid="PN:${fw_psid}"
+                    # v1.48.56：Part Number 为占位符（"--"/"-"）时不采用——原逻辑只判非空，
+                    # 会把空值变成 "PN:--" 污染 PSID 列（实测 B300-sample 出现）
+                    case "$fw_psid" in
+                        ""|"--"|"-"|"N/A") fw_psid="" ;;
+                        *) fw_psid="PN:${fw_psid}" ;;
+                    esac
                 fi
-                [ -n "$fw_psid" ] && npsid="$fw_psid"
+                case "$fw_psid" in
+                    ""|"--"|"-"|"N/A") ;;
+                    *) npsid="$fw_psid" ;;
+                esac
             fi
             local nfw="N/A"
             if check_cmd ethtool; then
                 # 固件是多段字符串（如 "9.00 0x8000d9a8 1.3256.0" / "0x00012b2c, 1.3429.0"），
                 # 取冒号后全部（awk 只取第一段会丢 NVM 版本且带逗号）
                 nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | cut -d: -f2- | xargs)
+            fi
+            # v1.48.56：ethtool PSID（权威来源）——Mellanox ethtool -i 的 firmware-version 形如
+            # "40.46.5500 (NVD0000000072)"，括号内即 PSID。零额外命令（nfw 已取）、每卡每口都有，
+            # 且由内核按 netdev 提供——不像 mstflint 经 MST 设备（实测多口卡/新平台下残缺，
+            # 甚至 MST 设备↔BDF 误配读到他卡 PSID：CX7 卡读出 CX8 的 NVD0000000072）
+            local _eth_psid=""
+            case "$nfw" in
+                *"("*")"*)
+                    case "$ndev" in
+                        ib*|*mlx*|*MLX*|*ConnectX*)
+                            _eth_psid=$(printf '%s' "$nfw" | sed -n 's/.*(\([^)]*\)).*/\1/p')
+                            case "$_eth_psid" in ""|"--"|"N/A") _eth_psid="" ;; esac ;;
+                    esac ;;
+            esac
+            [ -n "$_eth_psid" ] && npsid="$_eth_psid"
+            # v1.48.56：同卡共享——同卡（同 BDF 去功能号）任一口已有 PSID 时继承（多口卡补齐）
+            _card_key="${nbdf%%.*}"
+            if [ -n "${nic_psid_by_card[$_card_key]:-}" ] && { [ "$npsid" = "N/A" ] || [ -z "$npsid" ]; }; then
+                npsid="${nic_psid_by_card[$_card_key]}"
+            fi
+            if [ -n "$npsid" ] && [ "$npsid" != "N/A" ] && [ "$npsid" != "PN:"* ]; then
+                nic_psid_by_card[$_card_key]="$npsid"
             fi
             local nspd="N/A" nwd="N/A" ncap_spd="N/A" ncap_wd="N/A"
             if check_cmd lspci; then

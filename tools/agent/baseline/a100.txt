@@ -17,15 +17,15 @@
   disk_rows=6
 [nic]
   nic_rows=8
-  header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |
+  header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=51287
+  json_bytes=51757
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=25
   html_table_close=25
-  html_bytes=54182
+  html_bytes=54452
 [acceptance]
         2 N/A
        12 PASS
