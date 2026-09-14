@@ -108,7 +108,7 @@
 
 > 按版本倒序排列；同一主版本的多轮迭代合并为一条。
 
-- v1.48.x — **全 GPU 厂商生态 + 质量工程**：多厂商适配器框架（v1.47.0：adapter_nvidia/amd/ascend/intel/国产×5/generic，统一 18 列 CSV 报告端零改动）；AMD OAM 模组识别（v1.48.0：x86_64_OAM 平台 + device ID 判定 + xGMI 拓扑）；报告解析回归测试体系（v1.48.3：10 指标组 vs 基线，抓出 29 处表格错位/AMD 多卡失真；`tools/agent/report_regression.sh` + 6 份真实样本基线）；OFED 冲突 ROCm 环境（amd-smi/rocm-smi bashrc 环境自动补加载，v1.48.14）；check_cmd_flex 通用工具检测（PATH → 候选目录试跑 → bashrc，v1.48.16）；WSL 实测修复（并行子进程函数继承 + nvidia-smi 兜底，v1.48.17）；regen_reports.sh agent 批量报告重生成（v1.48.18）；CUDA 行非 NVIDIA 平台隐藏（v1.48.19）；平台分类修复（Processing accelerators [1200] 类目码）+ GPU 型号规范化（lspci [营销名]）+ generic 额定显存兜底（v1.48.15）
+- v1.48.x — **全 GPU 厂商生态 + 质量工程**：多厂商适配器框架（v1.47.0：adapter_nvidia/amd/ascend/intel/国产×5/generic，统一 18 列 CSV 报告端零改动）；AMD OAM 模组识别（v1.48.0：x86_64_OAM 平台 + device ID 判定 + xGMI 拓扑）；报告解析回归测试体系（v1.48.3：10 指标组 vs 基线，抓出 29 处表格错位/AMD 多卡失真；`tools/agent/report_regression.sh` + 6 份真实样本基线）；OFED 冲突 ROCm 环境（amd-smi/rocm-smi bashrc 环境自动补加载，v1.48.14）；check_cmd_flex 通用工具检测（PATH → 候选目录试跑 → bashrc，v1.48.16）；WSL 实测修复（并行子进程函数继承 + nvidia-smi 兜底，v1.48.17）；regen_reports.sh agent 批量报告重生成（v1.48.18）；CUDA 行非 NVIDIA 平台隐藏（v1.48.19）；平台分类修复（Processing accelerators [1200] 类目码）+ GPU 型号规范化（lspci [营销名]）+ generic 额定显存兜底（v1.48.15）；**隐私红线清理**（v1.48.27：真实 SN 全史清除 + 回归基线语义化命名，force push 重写历史 + 多机同步规则入 AGENTS）；**Windows 远程采集链修复**（v1.48.47/48/51/53：首连 host key 免交互、NativeCommandError 噪音抑制、显式 System32 bsdtar 防 GNU tar 静默失败、恢复管道流式输出）；**厂商感知 GPU 字段**（v1.48.36/37：NVIDIA ECC/退役行 vs AMD RAS，RAS 命令链修正为 `amd-smi metric -e -P`）；**NIC Link 状态归一**（v1.48.39：Up/Down + 表尾附注）；**验收体系 15→18 项 + 平台感知展示**（v1.48.40/41/42：CPU 配置一致/内存容量一致/内存 ECC；消费级 GPU 能力感知判 N/A；口径行 + 固有 N/A 折叠）；**回归体系稳定化**（v1.48.35/50：语义名基线 + `--all` 同名去重 + 样本集自动发现）；**PSID 采集修复**（v1.48.54：新增 `devlink dev info`——MST/mstflint 在新平台（CX8/NV access）不可用时的固件信息源，回退链 devlink→mstflint→mlxfwmanager）；**网卡物理位置列**（v1.48.54：SMBIOS Type 9 槽位表 + PCIe 上游桥链上溯——GPU 直连卡标注 SXM*_GPU* 物理落点，标准卡 SLOTn/LAN）；**推送纪律工程化**（v1.48.52：git_push 假失败修复——推送超时 30s→180s、预检 3s→5s、代理重试）
 - v1.46.x — **多厂商 GPU 检测 + 函数化 + 设备形态**：厂商无关 GPU 检测（v1.46.0：AMD/Intel 卡不再误报无 GPU，无 GPU 段隐藏）；AMD/ROCm 全链路（v1.46.1：rocm-smi/amd-smi 采集 + JSON 解析 + MI 系列显存规格库 + 魔改检测 + 验收适配）；detect_gpu_vendors/verify_gpu_mem 函数化单一实现 + 设备形态分类（v1.46.2：chassis/ECC/BMC/GPU 信号 → 笔记本~GB300 10 类）
 - v1.45.x — **测试报告生成器 + 目录语义 + 报告完善 + 推送纪律**：`test/report.sh` 压测报告生成器（v1.45.0：STREAM 理论峰值 = 通道×速率×8B，利用率判定）；磁盘测默认屏蔽系统盘（v1.45.1）；logs/test/<SN>/ 稳定累积 + 采集默认覆盖 --stamp（v1.45.5-6）；DIMM 位宽列（v1.45.13：部件号推断 x4/x8 + 动态隐藏）；NIC PCIe 通路设计注（v1.45.14）；网卡 Link 状态列（v1.45.15）；整机温度 OS 侧 lm-sensors 兜底（v1.45.16）；git_push 防死循环三层防线（v1.45.8-10：4s 预检 + 熔断冷却 + [PAUSE] 纪律）
 - v1.44.x — **报告数据完善**：PSU dmidecode Type39 独立源（无 FRU 平台出 PSU 明细）；PCIe 全链路表（3 态判定 + 附录）；NIC 端口列（BDF 聚合）+ GPU 直连列动态隐藏；nvidia-persistenced 临时开关围绕 DCGM（v1.44.2）；PCIe 链路判定修正（bridge 端口不判异常，端点才判）
@@ -137,4 +137,4 @@
 
 ---
 
-*最近更新: 2026-09-05 · 版本: v1.48.45*
+*最近更新: 2026-09-15 · 版本: v1.48.54*

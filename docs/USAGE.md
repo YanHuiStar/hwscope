@@ -31,7 +31,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 | 04 | gpu | GPU 信息 | nvidia-smi / amd-smi·rocm-smi / npu-smi / xpu-smi / 国产 SMI（v1.47.0 适配器框架，v1.48.0 AMD OAM 模组标记，见 §采集说明）| `MODULE_GPU` |
 | 05 | nvswitch | NVSwitch 信息 | nvswitch + fabric-manager | `MODULE_NVSWITCH` |
 | 06 | pcie | PCIe 拓扑/速率 | lspci | `MODULE_PCIE` |
-| 07 | network | 网络/IB/光模块 | ibstat + mlxlink + ethtool | `MODULE_NETWORK` |
+| 07 | network | 网络/IB/光模块 | ibstat + mlxlink + ethtool + devlink（PSID/固件）| `MODULE_NETWORK` |
 | 08 | storage | 存储设备(SATA/SAS/NVMe/SMART) | lsblk + smartctl | `MODULE_STORAGE` |
 | 09 | raid | RAID/HBA 卡信息 | storcli64 / sas3ircu | `MODULE_RAID` |
 | 10 | psu | 电源 (PSU) 信息 | IPMI + sysfs | `MODULE_PSU` |
