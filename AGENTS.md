@@ -167,6 +167,9 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
   - 每个 .ps1 在 param 块后加 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`（管道/重定向中文不乱码）
 - 新增/修改 .ps1 后必须 PowerShell 语法校验：
   `powershell -NoProfile -Command "[System.Management.Automation.Language.Parser]::ParseFile('<path>',[ref]$null,[ref]$e) > $null; $e.Count"`（输出 0 = 无错误）
+- **native 输出必须流式（v1.48.53 立规，输出时机回归教训）**：ps1 中调用 native 命令（ssh/scp/tar）**禁止 `$x = & $cmd` 形式先把输出整体捕获到变量再处理**——PowerShell 会**消费完 native 全部输出才赋值**，把"逐行实时"变成"命令结束才一次性显示"；远程采集场景表现为**长时间无输出 → 用户误判卡死**（v1.48.51 修 stderr 红字噪音时误引入，v1.48.53 修复）。需过滤/累积输出时**保持管道流式**：
+  `& { $ErrorActionPreference = "Continue"; & $Action 2>&1 } | ForEach-Object { $out += "$_"; if ($_ -isnot [System.Management.Automation.ErrorRecord]) { $_ } } | Out-Host`
+  **验证铁律**：改输出相关代码后必须验证**输出的时机**（逐行实时到达），不能只验"最终有没有输出"——v1.48.51 的 mock 只验了后者，漏掉了实时性回归，真机才暴露
 - 交互式脚本尽量零依赖（纯 .NET/PowerShell 内置）；需要管理员权限的操作在脚本内自检并提示提升方式
 - 每个工具提供同名 .bat 启动器（chcp 65001 + ExecutionPolicy Bypass + 管理员提升/参数透传）
 

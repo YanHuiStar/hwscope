@@ -74,8 +74,10 @@ function Invoke-SSHRetry {
         $out = @()
         # v1.48.51：stderr（ErrorRecord）只累积用于判定，不显示——输错密码时原样输出会打出
         # PowerShell 的 NativeCommandError 红块（功能正常但观感吓人）；密码提示走 tty 不受影响
-        $raw = & { $ErrorActionPreference = "Continue"; & $Action 2>&1 }
-        $raw | ForEach-Object {
+        # v1.48.53 修复：v1.48.51 误用 `$raw = & $Action` 先整体捕获——PowerShell 会消费完 native
+        # 全部输出才赋值，导致远端采集"全部完成才输出"（用户误判卡死）。必须保持管道流式：
+        # native 输出逐行进入 ForEach-Object 即时显示（下同：勿再引入 `$x = & $cmd` 形式的捕获）
+        & { $ErrorActionPreference = "Continue"; & $Action 2>&1 } | ForEach-Object {
             $out += "$_"
             if ($_ -isnot [System.Management.Automation.ErrorRecord]) { $_ }   # 仅 stdout/正常输出显示
         } | Out-Host
