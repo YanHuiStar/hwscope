@@ -79,16 +79,31 @@ gen_md() {
         local nn=0
         local _gd_col=0
         [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ] && _gd_col=1
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport nlink; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport nlink nloc; do
             [ -z "$nnic" ] && continue
             nn=$((nn + 1))
             if [ "$_gd_col" -eq 1 ]; then
                 # v1.45.17 修复：去掉尾部重复的 nlink 列（表头 13 列对齐——Link 状态仅 GPU直连 前一列）
-                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} | ${ngd:-} |"$'\n'
+                # v1.48.53：尾部追加物理位置列（槽位表上溯——SXM*_GPU*/SLOTn/LAN）
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} | ${ngd:-} | ${nloc:-—} |"$'\n'
             else
-                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} |"$'\n'
+                nic_details_md="${nic_details_md}| ${nn} | ${nnic} | ${nnbdf} | ${nport:-—} | ${nmac} | ${nsn} | ${npn} | ${nchip:-} | ${nfw} | ${npcie} | ${npsid} | ${nlink:-—} | ${nloc:-—} |"$'\n'
             fi
         done < <(printf '%s\n' "$NIC_DETAILS")
+    fi
+    # v1.48.53：NIC 表尾注——必须在函数内计算：nic_details_md 是 local，函数外的大 heredoc
+    # 读不到（v1.45.15/v1.48.39 的注直接引用它 → 从未显示）；结果存入非 local 的 NIC_TAILNOTES
+    NIC_TAILNOTES=""
+    if [ -n "$nic_details_md" ]; then
+        if printf '%s\n' "$nic_details_md" | grep -q "能力 "; then
+            NIC_TAILNOTES="${NIC_TAILNOTES}> 注：PCIe(协商) 标注 \`(能力 …)\` 表示卡能力高于当前协商——多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障；如疑可对照板卡规格确认"$'\n'
+        fi
+        if printf '%s\n' "$nic_details_md" | grep -qE '\| (Down|—) \| [^|]*\|$'; then
+            NIC_TAILNOTES="${NIC_TAILNOTES}> 注：Link 状态 = 端口物理链路——Up=已连接；Down=未插线缆或对端关闭（交付场景 IB 卡未接线属预期形态，非故障；插线后应转 Up）"$'\n'
+        fi
+        if printf '%s\n' "$nic_details_md" | grep -qE '\| (SXM[0-9]+_GPU[0-9]+|SLOT[0-9]+|LAN|M2_[0-9]+) \|$'; then
+            NIC_TAILNOTES="${NIC_TAILNOTES}> 注：物理位置 = 主板 SMBIOS 槽位表（Type 9）+ PCIe 上游桥链上溯所得——\`SXM<n>_GPU<m>\` 表示该网卡位于第 n 组 SXM 的第 m 号 GPU 模块处（板级物理位置名，非 nvidia-smi 逻辑编号），即「GPU 直连」的物理落点；\`SLOTn\`/\`LAN\`/\`M2_x\` 为标准槽位名"$'\n'
+        fi
     fi
     # NVSwitch Markdown 表
     local nvs_md=""
@@ -419,22 +434,17 @@ $(net_extra_md)
 $(if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -eq 0 ]; then
     echo "> GPU直连 列已隐藏：本机无 GPU 直连网卡（网卡均不与 GPU 同 PCIe Switch；H200/B200 类 1:1 直连或 B300 板载网卡形态才会标记）"
     echo ""
-    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |"
-    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|"
-elif [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ]; then
-    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 |"
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |"
     echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|"
+elif [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ]; then
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | 物理位置 |"
+    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|-----------|"
 else
-    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 |"
-    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|"
+    echo "| # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |"
+    echo "|---|------|-----|------|-----|----|------|------|-----------|------|------|------|-----------|"
 fi)
 $(printf '%s' "$nic_details_md")
-$(if printf '%s\n' "$nic_details_md" | grep -q "能力 " 2>/dev/null; then
-    echo "> 注：PCIe(协商) 标注 \`(能力 …)\` 表示卡能力高于当前协商——多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障；如疑可对照板卡规格确认"
-fi)
-$(if printf '%s\n' "$nic_details_md" | grep -qE '\| (Down|—) \|$' 2>/dev/null; then
-    echo "> 注：Link 状态 = 端口物理链路——Up=已连接；Down=未插线缆或对端关闭（交付场景 IB 卡未接线属预期形态，非故障；插线后应转 Up）"
-fi)
+$(printf '%s' "$NIC_TAILNOTES")
 $(if [ -z "$nic_details_md" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
     echo "### 网络适配器明细（NIC，ibstat 回退，旧采集无 nic_inventory）"
     echo "| # | CA | 型号 | Node GUID | Link 状态 |"

@@ -28,6 +28,12 @@ run_network() {
     check_cmd ibstatus     && ib_jobs+=("ibstatus" "${dir}/ibstatus.log")
     check_cmd ibv_devinfo  && ib_jobs+=("ibv_devinfo" "${dir}/ibv_devinfo.log")
     check_cmd ibdev2netdev && ib_jobs+=("ibdev2netdev" "${dir}/ibdev2netdev.log")
+    # v1.48.53：ibdev2netdev -v（verbose 含 PCI BDF）——mlx5_X ↔ 接口名 ↔ BDF 三方对齐，
+    # 供物理槽位标注（mlxlink/mlxconfig 按 mlx5_X、槽位表按 BDF）与 PSID 解析交叉校验
+    check_cmd ibdev2netdev && ib_jobs+=("ibdev2netdev -v" "${dir}/ibdev2netdev_v.log")
+    # v1.48.53：devlink 固件信息（内核标准接口）——取 fw.psid（PSID）；MST/mstflint 在新平台
+    # （CX8/NV access）不可用时 devlink 仍可用，作为 PSID 主来源（回退链 devlink → mstflint → mlxfwmanager）
+    check_cmd devlink && ib_jobs+=("devlink dev info" "${dir}/devlink_dev_info.log")
     check_cmd mlxfwmanager && ib_jobs+=("mlxfwmanager" "${dir}/mlxfwmanager.log")
     if check_cmd mlxconfig; then
         ib_jobs+=("mlxconfig query" "${dir}/mlxconfig.log")
@@ -226,6 +232,8 @@ run_network() {
         "ibstatus" "ibstatus.log" \
         "ibv_devinfo" "ibv_devinfo.log" \
         "ibdev2netdev" "ibdev2netdev.log" \
+        "ibdev2netdev_v" "ibdev2netdev_v.log" \
+        "devlink_dev_info" "devlink_dev_info.log" \
         "mlxfwmanager" "mlxfwmanager.log" \
         "mlxconfig" "mlxconfig.log" \
         "ip_addr" "ip_addr.log" \

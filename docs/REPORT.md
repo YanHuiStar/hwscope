@@ -23,6 +23,8 @@
 - **PSU 多数据源（v1.44.0+）**：明细按 IPMI FRU → 传感器占位 → SMBIOS Type 39（dmidecode）三级回退生成；Supermicro 等无单电源 FRU/功率传感器的平台由 Type 39 补全型号/SN/额定容量并附平台说明，PS<N> Status 传感器佐证在位状态
 - **NIC 端口列（v1.44.0+）**：按 BDF 总线聚合显示同卡第 N 口/共 M 口（如 CX5 双口卡 `1/2`、`2/2`）；SXM 平台 GPU 明细链路列显示为 NVLink(协商)
 - **NIC Link 状态列（v1.45.15+）**：IB 口取 ibstat State（多口状态不一致时聚合显示如 `Active,Down`），以太口取 ethtool Link detected，全报告统一
+- **NIC 物理位置列（v1.48.53+）**：主板 SMBIOS 槽位表（Type 9）+ PCIe 上游桥链上溯——`SXM<n>_GPU<m>`=该网卡所在 SXM GPU 模块位（板级物理位置名，非 nvidia-smi 逻辑编号），即 GPU 直连网卡的物理落点；`SLOTn`/`LAN`/`M2_x`=标准槽位名
+- **NIC PSID 来源（v1.48.53+）**：回退链 `devlink`（内核标准接口，`versions.fixed.fw.psid`）→ `mstflint`（需 MST 服务）→ `mlxfwmanager`——新平台（CX8/NV access）MST 路径常不可用，devlink 无依赖可读
 - **多厂商 GPU（v1.46.0–v1.48.0）**：统一 `gpu_inventory.csv`（18 列对齐 nvidia-smi schema）驱动——NVIDIA/AMD/昇腾/Intel/国产卡明细同表渲染（型号/SN/BDF/显存/功耗/温度/利用率/PCIe 链路），显存魔改检测与验收 GPU PCIe 项跨厂商生效；AMD OAM 模组平台标记 `x86_64_OAM` + xGMI 拓扑章节（对标 NVLink 拓扑）；昇腾 Atlas 附 HCCS 拓扑日志（解析待真机校准）
 - **设备形态行（v1.46.2+）**：报告头部按 chassis/ECC/BMC/GPU 信号自动分类（笔记本/一体机/台式机/工作站（消费版·服务器版）/传统服务器/NVIDIA·AMD·其他 GPU 服务器/GB300 机架），JSON 同步输出 `machine_class` 字段
 

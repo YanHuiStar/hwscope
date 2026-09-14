@@ -112,6 +112,53 @@ if [ -n "$GPU_TOPO_FILE" ]; then
     fi
 fi
 if [ -f "${nic_inventory}" ]; then
+    # ─── v1.48.53：物理槽位映射（dmidecode Type 9 槽位表 + PCIe 上游桥链上溯）───
+    # 数据链：网卡 BDF → 沿 pcie_full 桥链（primary/secondary）逐级上溯 → 命中槽位 Bus Address → 槽位名
+    # （B300 HGX 的 IB 卡多挂在 SXM*_GPU* 槽位下 = GPU 直连域的物理含义；标准卡命中 SLOTn/LAN 等）
+    declare -A SLOT_BY_BUS PCIE_UPSTREAM
+    NIC_SLOT_AVAIL=0
+    _slots_file="${MB_DIR:-${OUT}/motherboard}/dmidecode_slot.log"
+    if [ ! -f "$_slots_file" ]; then
+        load_manifest "${MB_DIR:-${OUT}/motherboard}" dmidecode_slot "dmidecode_slot.log" 2>/dev/null
+        _slots_file="${dmidecode_slot:-$_slots_file}"
+    fi
+    if [ -f "$_slots_file" ]; then
+        while IFS='|' read -r _sd _sa; do
+            [ -z "$_sd" ] && continue
+            _sbus=$(printf '%s' "$_sa" | sed 's/^[0-9a-fA-F]*://; s/:.*//')
+            [ -n "$_sbus" ] && SLOT_BY_BUS[$_sbus]="$_sd"
+        done < <(awk '
+            /^System Slot Information/ {d=""; inslot=1; next}
+            inslot && /Designation:/ {sub(/.*: /,""); d=$0}
+            inslot && /Bus Address:/ {sub(/.*: /,""); printf "%s|%s\n", d, $0; inslot=0}
+        ' "$_slots_file" 2>/dev/null)
+        [ "${#SLOT_BY_BUS[@]}" -gt 0 ] && NIC_SLOT_AVAIL=1
+    fi
+    if [ "$NIC_SLOT_AVAIL" -eq 1 ] && [ -f "${pcie_full:-}" ]; then
+        while IFS='|' read -r _s _p; do
+            [ -n "$_s" ] && PCIE_UPSTREAM[$_s]="$_p"
+        done < <(awk '
+            /^[0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]\.[0-9a-fA-F] / {next}
+            /Bus: primary=/ {
+                match($0, /primary=[0-9a-fA-F]+/); p=substr($0, RSTART+8, RLENGTH-8)
+                match($0, /secondary=[0-9a-fA-F]+/); s=substr($0, RSTART+10, RLENGTH-10)
+                if (s != "" && p != "") printf "%s|%s\n", s, p
+            }
+        ' "${pcie_full}" 2>/dev/null | sort -u)
+    fi
+    # BDF → 槽位名（逐级上溯，最多 8 级防环）
+    nic_slot_name() {
+        local _bdf="$1" _bus _depth=0
+        _bus=$(printf '%s' "$_bdf" | sed 's/:.*//')
+        while [ -n "$_bus" ] && [ "$_depth" -lt 8 ]; do
+            if [ -n "${SLOT_BY_BUS[$_bus]:-}" ]; then
+                printf '%s' "${SLOT_BY_BUS[$_bus]}"
+                return
+            fi
+            _bus="${PCIE_UPSTREAM[$_bus]:-}"
+            _depth=$((_depth + 1))
+        done
+    }
     # 物理口聚合（v1.44.0）：同卡多口共享总线号（11:00.0/11:00.1 = 同一物理卡两个功能），
     # 按 BDF 前缀（去功能号）统计每卡接口数——比 SN 聚合可靠（非 Mellanox 卡 SN 不保证同卡唯一）
     declare -A NIC_PORT_TOTAL
@@ -132,6 +179,15 @@ if [ -f "${nic_inventory}" ]; then
             nusb=1
             USB_NICS="${USB_NICS}${nnic}|${nmac}|${npn}|${nfw}"$'\n'
             continue
+        fi
+        # v1.48.53：devlink 回查（内核标准接口——MST/mstflint 在新平台不可用时仍可取 PSID；
+        # devlink dev info 输出 pci/0000:XX:YY.Z 段内 versions.fixed.fw.psid）
+        if [ "$npsid" = "N/A" ] && [ -f "${devlink_dev_info:-}" ]; then
+            dvl_psid=$(awk -v bdf="${nnbdf%% (USB)*}" '
+                /^pci\/0000:/ { dev=$0; sub(/^pci\/0000:/, "", dev); sub(/:$/, "", dev) }
+                dev==bdf && /fw\.psid:/ { sub(/.*fw\.psid:[[:space:]]*/, ""); print; exit }
+            ' "${devlink_dev_info}" 2>/dev/null)
+            [ -n "$dvl_psid" ] && npsid="$dvl_psid"
         fi
         # PSID 回查：nic_inventory 中 PSID=N/A 时，从 mlxfwmanager.log 按 BDF 补 PSID/Part Number
         # （采集端 mstflint 失败或 mlxfwmanager 无 PSID 字段时；报告端日志已就绪，无竞态）
@@ -266,7 +322,11 @@ if [ -f "${nic_inventory}" ]; then
             NIC_PORT_IDX[$_bd_pre]=$(( ${NIC_PORT_IDX[$_bd_pre]:-0} + 1 ))
             nport="${NIC_PORT_IDX[$_bd_pre]}/${NIC_PORT_TOTAL[$_bd_pre]}"
         fi
-        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}|${nport}|${nlink}"$'\n'
+        # 物理位置（v1.48.53）：槽位表上溯（GPU 直连卡命中 SXM*_GPU* 槽位；标准卡命中 SLOTn/LAN）
+        nloc=""
+        [ "$NIC_SLOT_AVAIL" -eq 1 ] && nloc="$(nic_slot_name "${nnbdf%%.*}")"
+        [ -z "$nloc" ] && nloc="—"
+        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}|${nport}|${nlink}|${nloc}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
 # 网卡明细回退：nic_inventory.csv 空但 ibstat 有 CA（旧采集 v1.x 未生成 csv）→ 从 ibstat 构建简化明细

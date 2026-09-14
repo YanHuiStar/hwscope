@@ -392,7 +392,7 @@ gen_acceptance() {
     fi
     ACC_NIC_IB="N/A"; ACC_NIC_IB_COUNT=0; ACC_NIC_ETH="N/A"; ACC_NIC_ETH_COUNT=0
     if [ -n "$NIC_DETAILS" ]; then
-        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport; do
+        while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport nlink nloc; do
             [ -z "$nnic" ] && continue
             # v1.43.10 修正：按接口名归类（ibp*/ib* = IB 计算网卡；en*/eth* = 以太）。
             # 原按 ConnectX|MCX 前缀归类会把 CX5 以太（MCX556A）误入 IB——实测 6 张假 IB（2 以太+4 IB）

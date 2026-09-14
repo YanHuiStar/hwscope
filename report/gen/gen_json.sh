@@ -63,7 +63,7 @@ gen_json() {
         nic_details_json=$(printf '%s' "$NIC_DETAILS" | awk -F'|' '
             $1 != "" {
                 for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
-                printf "      {\"dev\": \"%s\", \"bdf\": \"%s\", \"mac\": \"%s\", \"serial\": \"%s\", \"pn\": \"%s\", \"chip\": \"%s\", \"firmware\": \"%s\", \"pcie\": \"%s\", \"psid\": \"%s\", \"gpu_direct\": \"%s\", \"ports\": \"%s\"},\n", $1, $2, $3, $4, $5, $10, $6, $7, $8, $9, ($11 != "" ? $11 : "N/A"), ($12 != "" ? $12 : "N/A")
+                printf "      {\"dev\": \"%s\", \"bdf\": \"%s\", \"mac\": \"%s\", \"serial\": \"%s\", \"pn\": \"%s\", \"chip\": \"%s\", \"firmware\": \"%s\", \"pcie\": \"%s\", \"psid\": \"%s\", \"gpu_direct\": \"%s\", \"ports\": \"%s\", \"link_state\": \"%s\", \"location\": \"%s\"},\n", $1, $2, $3, $4, $5, $10, $6, $7, $8, $9, ($11 != "" ? $11 : "N/A"), ($12 != "" ? $12 : "N/A"), ($13 != "" ? $13 : "N/A")
             }' | sed '$ s/,$//')
     elif [ -n "$NIC_FALLBACK_DETAILS" ]; then
         # 回退（旧采集无 nic_inventory）：ca|type|guid|state
