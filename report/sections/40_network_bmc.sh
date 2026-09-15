@@ -24,14 +24,18 @@ if [ -n "$IB_CA_LIST" ]; then
         BEGIN { n=split(cas, arr, ","); for (i=1; i<=n; i++) want[arr[i]]=1 }
         /^CA / { ca=substr($2, 2, length($2)-2); inib=(ca in want); if (inib) total++; next }
         inib && /State: Active/{active++}
+        # v1.48.58：补 Initializing（IB 链路协商中，既非 Active 也非 Down）——此前漏计导致
+        # "Active N / Down 0" 摘要与实际不符（其余口状态消失，易误读为仅 N 口有问题）
+        inib && /State: Initializing/{init++}
         inib && /State: Down/{down++}
-        END { printf "%d %d %d", total+0, active+0, down+0 }
+        END { printf "%d %d %d %d", total+0, active+0, init+0, down+0 }
     ' "${ibstat}" 2>/dev/null)
-    read -r IB_COUNT IB_ACTIVE IB_LINK_DOWN <<< "${_ib_stats:-0 0 0}"
+    read -r IB_COUNT IB_ACTIVE IB_INITIALIZING IB_LINK_DOWN <<< "${_ib_stats:-0 0 0 0}"
     # 未插线缆统计同样限定 IB CA（CX5 以太口 mlxlink "unplugged" 不算 IB 线缆缺失）
+    # 排除 *_module.log / *_counters.log（同前缀的伴随文件，非链路主输出）
     IB_UNPLUGGED=$(for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do
         [ -f "$f" ] || continue
-        case "$f" in *_module.log) continue;; esac
+        case "$f" in *_module.log|*_counters.log) continue;; esac
         _ca=$(basename "$f" .log | sed 's/^mlxlink_//')
         echo ",${IB_CA_LIST}," | grep -q ",${_ca}," || continue
         grep -c "Cable is unplugged" "$f" 2>/dev/null
@@ -39,10 +43,14 @@ if [ -n "$IB_CA_LIST" ]; then
 else
     IB_COUNT=$(grep -c "^CA '" "${ibstat}" 2>/dev/null)
     IB_ACTIVE=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
-    # Link 状态统计：Down（未连）+ 未插线缆（mlxlink Recommendation，排除 module 文件）
+    # v1.48.58：Initializing 单独计数（见上）
+    IB_INITIALIZING=$(grep -c "State: Initializing" "${ibstat}" 2>/dev/null)
+    # Link 状态统计：Down（未连）+ 未插线缆（mlxlink Recommendation，排除 module/counters 文件）
     IB_LINK_DOWN=$(grep -c "State: Down" "${ibstat}" 2>/dev/null)
-    IB_UNPLUGGED=$(for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do [ -f "$f" ] || continue; case "$f" in *_module.log) continue;; esac; grep -c "Cable is unplugged" "$f" 2>/dev/null; done | awk '{s+=$1} END{print s+0}')
+    IB_UNPLUGGED=$(for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do [ -f "$f" ] || continue; case "$f" in *_module.log|*_counters.log) continue;; esac; grep -c "Cable is unplugged" "$f" 2>/dev/null; done | awk '{s+=$1} END{print s+0}')
 fi
+# v1.48.58：Initializing=0 时留空——报告行按需显示（避免 "Initializing 0" 占位）
+[ "${IB_INITIALIZING:-0}" -eq 0 ] 2>/dev/null && IB_INITIALIZING=""
 # 活动口的速率分布（如 "100 Gb/s ×4"；无活动口显示 Down）
 IB_ACTIVE_SPEED=""
 if [ "${IB_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then
@@ -64,6 +72,7 @@ if [ -f "${NET_DIR}/ibdev2netdev.log" ]; then
 fi
 for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do
     [ -f "$f" ] || continue
+    case "$f" in *_module.log|*_counters.log) continue;; esac
     _dev=$(basename "$f" | sed 's/mlxlink_//; s/\.log//')
     if [ -n "$_IB_HCAS" ] && ! echo "$_IB_HCAS" | grep -qw "$_dev"; then continue; fi
     _hex=$(grep -m1 "Enabled Link Speed" "$f" 2>/dev/null | grep -oE "0x[0-9a-fA-F]+" | head -1)
@@ -111,6 +120,41 @@ for f in "${NET_DIR}"/mlxlink_mlx5_*_module.log; do
     fi
 done
 CABLE_SUMMARY=$(echo "$CABLE_SUMMARY" | sed 's/,$//')
+
+# ─── v1.48.58：IB 固件一致性检查（只提示、不判定） ───
+# 动机：同 part_number + 同 PSID 的卡本应固件统一。实测 B300 机器 8 张 MCX75310AAS-NEAT
+# (PSID MT_0000000838) 出现 3 种固件（28.39.4082×5 / 28.41.1000×1 / 28.43.3608×2），
+# 报告中毫无提示。口径刻意保守：仅"同型号+同 PSID"分组内出现多于 1 个固件版本时提示，
+# 措辞为"建议核对"——批次混装/分批升级属正常可能，因此不进验收红绿灯、不作故障判定。
+IB_FW_INCONSISTENT=""
+if [ -f "${NET_DIR}/nic_inventory.csv" ]; then
+    IB_FW_INCONSISTENT=$(grep -v "^#" "${NET_DIR}/nic_inventory.csv" 2>/dev/null | \
+        awk -F'|' '$9 ~ /^MT_/ && $5 != "" && $6 != "" { v=$6; sub(/ \(.*/, "", v); print $5 "|" $9 "|" v }' | \
+        sort -u | \
+        awk -F'|' '{ k=$1 "|" $2; c[k]++; v[k]=v[k] (c[k]>1 ? "、" : "") $3 }
+                   END { for (k in c) if (c[k] > 1) { split(k, p, "|"); printf "%s (%s) %d 种: %s; ", p[1], p[2], c[k], v[k] } }' \
+        2>/dev/null | sed 's/; $//')
+fi
+
+# ─── v1.48.58：IB 链路质量（物理计数器与 BER；仅展示原始数值，不作 pass/fail 判定） ───
+# 数据源：mlxlink -c 的 "Physical Counters and BER Info"（Symbol/Raw Physical BER、Link Down Counter）
+# 说明：Raw Physical BER 含未纠错前的原始误码，NDR 下受 FEC 保护，正常机器也可能非零——
+#       故只呈现数值供对比，不设阈值、不进验收项，避免误判。
+IB_BER_SUMMARY=""
+IB_LINK_DOWN_EVENTS=0
+for f in "${NET_DIR}"/mlxlink_mlx5_*_counters.log; do
+    [ -f "$f" ] || continue
+    _bd=$(basename "$f" | sed 's/^mlxlink_//; s/_counters\.log$//')
+    _ber=$(grep -m1 "Raw Physical BER" "$f" 2>/dev/null | awk -F':' '{print $NF}' | tr -d ' \t')
+    _ldc=$(grep -m1 "Link Down Counter" "$f" 2>/dev/null | awk -F':' '{print $NF}' | tr -d ' \t')
+    # 过滤 mlxlink 无效哨兵：15E-255 为下溢/未初始化占位（非真实误码，避免误读为"极低误码"）；
+    # 通用判据 = 指数 > 40 视为无效
+    _exp=$(printf '%s' "$_ber" | sed -n 's/.*[Ee]-\([0-9]*\)$/\1/p')
+    if [ -n "$_exp" ] && [ "$_exp" -gt 40 ] 2>/dev/null; then _ber=""; fi
+    [ -n "$_ldc" ] && [ "$_ldc" -eq "$_ldc" ] 2>/dev/null && IB_LINK_DOWN_EVENTS=$((IB_LINK_DOWN_EVENTS + _ldc))
+    [ -n "$_ber" ] && [ "$_ber" != "0" ] && IB_BER_SUMMARY="${IB_BER_SUMMARY}${_bd}:${_ber} "
+done
+IB_BER_SUMMARY=$(echo "$IB_BER_SUMMARY" | sed 's/ $//')
 
 # ─── BMC ───
 BMC_DIR="${OUT}/bmc"

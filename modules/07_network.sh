@@ -59,6 +59,9 @@ run_network() {
                 if [ -e "/sys/class/net/mlx5_${dev_num}" ] || ls /sys/class/infiniband/ 2>/dev/null | grep -q "mlx5_${dev_num}"; then
                     mlx_jobs+=("mlxlink -d mlx5_${dev_num}" "${dir}/mlxlink_${dev_num}.log")
                     [ "${NO_MODULE:-0}" -eq 0 ] && mlx_jobs+=("mlxlink -d mlx5_${dev_num} -m" "${dir}/mlxlink_${dev_num}_module.log")
+                    # v1.48.58：物理计数器 + BER（Symbol/Raw Physical BER、Link Down Counter）——链路质量第一手数据，
+                    # 不依赖模块读取（不用 -m），避免与 NO_MODULE 开关冲突
+                    mlx_jobs+=("mlxlink -d mlx5_${dev_num} -c" "${dir}/mlxlink_${dev_num}_counters.log")
                 fi
                 ((dev_num++))
             done
@@ -66,6 +69,8 @@ run_network() {
             while IFS= read -r dev; do
                 mlx_jobs+=("mlxlink -d $dev" "${dir}/mlxlink_${dev}.log")
                 [ "${NO_MODULE:-0}" -eq 0 ] && mlx_jobs+=("mlxlink -d $dev -m" "${dir}/mlxlink_${dev}_module.log")
+                # v1.48.58：物理计数器 + BER（见上）
+                mlx_jobs+=("mlxlink -d $dev -c" "${dir}/mlxlink_${dev}_counters.log")
             done < <(printf '%s\n' "$mlx_devs")
         fi
         [ "${#mlx_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${mlx_jobs[@]}"
@@ -257,7 +262,7 @@ run_network() {
         run_and_log_parallel 8 "${nic_pcie_jobs[@]}"
     fi
 
-# NOTE: mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log,
+# NOTE: mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log, mlxlink_N_counters.log,
     #       ethtool_*.log, ethtool_*_driver.log, ethtool_*_module.log, nic_*_pcie.log
     #       are generated per device
     write_manifest "${dir}/manifest.txt" \
