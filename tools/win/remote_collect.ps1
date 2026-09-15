@@ -112,38 +112,63 @@ try {
     $rcTar = Invoke-Native { & $TarExe czf $pushFile -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp . }
     if ($rcTar -ne 0) { Write-Host "[ERROR] 本地打包失败" -ForegroundColor Red; exit 1 }
 
-    # ─── 2. scp 推送（认证失败自动重试） ───
-    $rc = Invoke-SSHRetry "scp 推送" { & scp $SSHOpts.Split(" ") $pushFile "${H}:${RemoteDir}.tgz" }
-    if ($rc -ne 0) { Write-Host "[ERROR] 项目推送失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
-    Remove-Item $pushFile -Force -ErrorAction SilentlyContinue
-
-    # ─── 3. ssh 解包 + 远端执行（不传 --output：hwscope.sh 默认输出 <远端>/output/<MACHINE_ID>/，对标本地 output/<SN> 结构；普通用户 + sudo 时带 -t 供 sudo 交互输密码；认证失败自动重试） ───
-    # --InstallItems：远端先非交互装依赖（install_tool -c/-y）再采集——安装+采集合并一条 ssh 命令，
-    #   同 tty 内 sudo 密码缓存只输一次；安装失败 && 短路中止不采集（Windows OpenSSH 无 ControlMaster，每步独立密码）
-    $installCmd = ""
-    if ($InstallItems) {
-        $sudoPre = if ($Sudo) { "sudo " } else { "" }
-        $installCmd = "${sudoPre}bash tools/install_tool.sh -c $InstallItems -y && "
-        Write-Host "[INFO] 远端安装依赖: install_tool -c $InstallItems -y（非交互）→ 采集 hwscope.sh$hwArgs（第 2 次密码）" -ForegroundColor Yellow
-    } else {
-        Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs（默认输出 output/<MACHINE_ID>/，第 2 次密码）" -ForegroundColor Yellow
-    }
-    $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs" }
-    if ($rc -ne 0) {
-        if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源网络可达性)" -ForegroundColor Red }
-        else { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red }
-        exit $rc
-    }
-
-    # ─── 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/；解包到 output\remote_output\ 固定层）+ 顺带清理远端（cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析） ───
-    Write-Host "[INFO] 回拉采集结果 + 归档包 → $OutDir\remote_output\（第 3 次密码）" -ForegroundColor Yellow
+    # ─── 2~4. 推送 + 远端执行 + 回拉（v1.48.63：root/免 sudo 走单次认证模式；普通用户 + sudo 保留原三步） ───
     $pullFile = Join-Path $env:TEMP "hwscope_pull_$TS.tgz"
-    $rc = Invoke-SSHRetry "回拉" { & cmd /c ("ssh $SSHOpts$TtyOpt $H `"$Sudo tar czf - --warning=no-timestamp -C $RemoteDir/output . -C $RemoteDir logs 2>/dev/null; rm -rf $RemoteDir`" > `"$pullFile`"") }
-    if ($rc -ne 0) { Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
     $remoteOutDir = Join-Path $OutDir "remote_output"
     New-Item -ItemType Directory -Force -Path $remoteOutDir | Out-Null
     # v1.48.57：回拉前快照 remote_output 已有目录——本次导入的机器目录 = 新增目录（历史多机目录时不可全局搜 json，否则会取到旧机器）
     $dirsBefore = @(Get-ChildItem $remoteOutDir -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+
+    if (-not $Sudo) {
+        # ── 单次认证模式（v1.48.63）：一条 ssh 连接完成 推送 → 采集 → 回拉，全程只输 1 次密码 ──
+        # 做法：本地 tar 经 stdin 送入（远端 `tar xzf -` 直接解包）；远端采集输出重定向到 stderr
+        #       （本地仍逐行实时可见）；结果 tar 从 stdout 回来，由 cmd /c 重定向落盘（二进制安全，
+        #       不经 PowerShell 管道）。对比原三步：不再有三次独立认证（原每步各带 ConnectTimeout=10，
+        #       密码输得慢就容易超时），也没有步骤间的等待。
+        # 限制：stdin 要承载数据，故不能加 -t —— 仅适用于 root/免 sudo 场景（普通用户 + sudo 需 tty
+        #       交互输 sudo 密码，与 stdin 冲突 → 走下方原三步流程）。
+        # 注意：远端脚本只用 ; 连接、不用 &&（cmd 会剥 ssh 命令引号并把 && 当本地分隔符）；
+        #       双引号串内的 $? / $rc 必须用反引号转义，否则会被 PowerShell 本地展开。
+        Write-Host "[INFO] 单次认证模式：一次 ssh 完成 推送 → 采集 → 回拉（只需输 1 次密码）..." -ForegroundColor Yellow
+        $preCmd = ""
+        if ($InstallItems) {
+            $preCmd = "bash tools/install_tool.sh -c $InstallItems -y; rc=`$?; if [ `$rc -ne 0 ]; then rm -rf $RemoteDir; exit `$rc; fi; "
+            Write-Host "[INFO]   远端先非交互安装依赖: install_tool -c $InstallItems -y" -ForegroundColor Gray
+        }
+        $rs = "cd /tmp; rm -rf $RemoteDir; mkdir -p $RemoteDir; tar xzf - -C $RemoteDir; cd $RemoteDir; ${preCmd}bash hwscope.sh$hwArgs >&2; rc=`$?; if [ `$rc -eq 0 ]; then tar czf - --warning=no-timestamp -C $RemoteDir/output . -C $RemoteDir logs; fi; rm -rf $RemoteDir; exit `$rc"
+        $rc = Invoke-SSHRetry "远程采集" { & cmd /c ("ssh $SSHOpts -T $H `"$rs`" < `"$pushFile`" > `"$pullFile`"") }
+        if ($rc -ne 0) {
+            if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源可达性)" -ForegroundColor Red }
+            else { Write-Host "[ERROR] 远程采集失败 (exit=$rc)" -ForegroundColor Red }
+            exit $rc
+        }
+    } else {
+        # ── 原三步模式：普通用户 + sudo（sudo 需 tty 交互输密码，无法与 stdin 传数据共存） ──
+        Write-Host "[INFO] 三步模式（普通用户 + sudo 需 tty）：推送 → 执行 → 回拉（3 次密码）..." -ForegroundColor Yellow
+        # 2. scp 推送（认证失败自动重试）
+        $rc = Invoke-SSHRetry "scp 推送" { & scp $SSHOpts.Split(" ") $pushFile "${H}:${RemoteDir}.tgz" }
+        if ($rc -ne 0) { Write-Host "[ERROR] 项目推送失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
+
+        # 3. ssh 解包 + 远端执行（不传 --output：hwscope.sh 默认输出 <远端>/output/<MACHINE_ID>/，对标本地 output/<SN> 结构）
+        $installCmd = ""
+        if ($InstallItems) {
+            $installCmd = "$Sudo bash tools/install_tool.sh -c $InstallItems -y && "
+        }
+        Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs（默认输出 output/<MACHINE_ID>/）" -ForegroundColor Yellow
+        $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs" }
+        if ($rc -ne 0) {
+            if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源网络可达性)" -ForegroundColor Red }
+            else { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red }
+            exit $rc
+        }
+
+        # 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/）+ 顺带清理远端
+        #    （cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析）
+        $rc = Invoke-SSHRetry "回拉" { & cmd /c ("ssh $SSHOpts$TtyOpt $H `"$Sudo tar czf - --warning=no-timestamp -C $RemoteDir/output . -C $RemoteDir logs 2>/dev/null; rm -rf $RemoteDir`" > `"$pullFile`"") }
+        if ($rc -ne 0) { Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
+    }
+    Remove-Item $pushFile -Force -ErrorAction SilentlyContinue
+
     $rcUntar = Invoke-Native { & $TarExe xzf $pullFile -C $remoteOutDir }
     if ($rcUntar -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
