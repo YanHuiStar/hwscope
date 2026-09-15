@@ -142,6 +142,8 @@ try {
     if ($rc -ne 0) { Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
     $remoteOutDir = Join-Path $OutDir "remote_output"
     New-Item -ItemType Directory -Force -Path $remoteOutDir | Out-Null
+    # v1.48.57：回拉前快照 remote_output 已有目录——本次导入的机器目录 = 新增目录（历史多机目录时不可全局搜 json，否则会取到旧机器）
+    $dirsBefore = @(Get-ChildItem $remoteOutDir -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
     $rcUntar = Invoke-Native { & $TarExe xzf $pullFile -C $remoteOutDir }
     if ($rcUntar -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
@@ -165,9 +167,11 @@ try {
     }
     Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
 
-    # ─── 5. 完成信息（find 报告文件定位——不依赖时间排序，logs 残留不会误选） ───
-    $pulled = Get-ChildItem $remoteOutDir -Recurse -Depth 1 -Filter "hwscope_report.json" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($pulled) { $pulled = $pulled.Directory }   # json 所在目录 = 机器采集目录
+    # ─── 5. 完成信息（v1.48.57：以"回拉前后目录快照的差集"定位本次机器目录——勿全局搜 json：remote_output 下存有多台历史机器时会取到旧机器；覆盖同一台时取最新修改目录兜底） ───
+    $dirsAfter = @(Get-ChildItem $remoteOutDir -Directory -ErrorAction SilentlyContinue)
+    $newDirs = @($dirsAfter | Where-Object { $dirsBefore -notcontains $_.Name })
+    $pulled = if ($newDirs.Count -gt 0) { $newDirs[0] } else { $dirsAfter | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
+    if (-not $pulled) { $pulled = Get-ChildItem $remoteOutDir -Recurse -Depth 1 -Filter "hwscope_report.json" -ErrorAction SilentlyContinue | Select-Object -First 1 | ForEach-Object { $_.Directory } }
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
     Write-Host "  远程采集完成" -ForegroundColor Green
