@@ -206,5 +206,9 @@ try {
     Write-Host "========================================" -ForegroundColor Green
 }
 finally {
-    # 远端清理已在回拉命令内完成（rm -rf 随回拉 ssh 执行）；此处无额外 ssh（避免再要密码）
+    # 远端清理已在执行/回拉命令内完成（rm -rf 随远端脚本执行）；此处无额外 ssh（避免再要密码）
+    # v1.48.65：本地临时包改为无条件清理——原实现只在成功路径 Remove-Item，认证失败/中途 exit 时
+    # 会把 hwscope_push_*.tgz / hwscope_pull_*.tgz 残留在 %TEMP%（实测多次失败后累积）
+    if ($pushFile) { Remove-Item $pushFile -Force -ErrorAction SilentlyContinue }
+    if ($pullFile) { Remove-Item $pullFile -Force -ErrorAction SilentlyContinue }
 }
