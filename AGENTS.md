@@ -182,6 +182,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 5. 每个模块末尾调 `write_manifest "${dir}/manifest.txt" "key1" "file1" ...` 声明输出文件（report.sh 读 manifest 解耦）
 6. 工具不存在用 `check_cmd` 检测后 `[SKIP]`，不中断
 7. 版本号：主=输出不兼容，中=新模块/新功能，补=修复/文档
+8. **采集命令必须实机验证（v1.48.62 立规——四处同源 bug 教训）**：新增或修改任何采集命令，必须在目标平台**实跑一次**，确认 ①输出非空且语义正确 ②退出码符合预期 ③子命令/参数形式正确；**禁止凭文档、记忆或"看起来对"确定命令写法**。工具版本差异（选项不存在、子命令顺序、子系统缺失）只有真机才暴露，而失败会被 `run_and_log` 静默成 `no match`（`[~]`），可长期无人察觉。教训：`dcgmi stats -v`（缺必需参数，stats 须带 `{pid|enable|jstart|...}`）、`mlxconfig query -d <dev>`（子命令须排在 `-d` 之后 → `mlxconfig -d <dev> q`）、`nvidia-smi nvswitch`（该驱动版本无此子命令）、`nvidia-smi nvlink --error_count`（正确选项为 `-e`）——**四处均从未成功采集过**，其中三处还配套写了报告端解析（永久空转）。配套检查：`timeout N cmd | grep ...` **只包住 cmd**，超时码会被管道末端的 grep 吞成 1（=no match），需 `timeout N bash -c "cmd | grep ..."` 才能让超时可见
 
 **新增 test/ 测试脚本规范（v1.38.0）**：`test_init "<名称>"` 后必须紧跟一行
 `bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true`
