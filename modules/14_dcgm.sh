@@ -76,10 +76,17 @@ run_dcgm() {
     fi
 
     # 1~5. DCGM 诊断信息（并行采集；串行模式自动降级）
+    # v1.48.59 命令修正——实测 dcgmi 3.3.9 与 4.4.0 均报 PARSE ERROR，原两个采集项长期为空：
+    #   ① 原 `dcgmi stats -v` → 语法错（stats 必须带 {pid|enable|disable|jstart|jstop|job|...}，
+    #      没有"全量只读视图"）。其看似全量的 `dcgmi stats -a -v` 实测会执行
+    #      "Successfully removed all jobs"（清除 job 记录，有副作用，不可用于采集）→ 移除该采集项
+    #   ② 原 `dcgmi config --list` → 无 --list 参数；正确用法为 `config -g 0 --get`（group 0 =
+    #      DCGM 内建 DCGM_ALL_SUPPORTED_GPUS），输出 Compute Mode / ECC Mode / 应用时钟 / Power Limit，只读
+    #   ③ 新增 `dcgmi group -l`：列出内建 group（含 DCGM_ALL_SUPPORTED_NVSWITCHES），NVSwitch 平台可核对域内交换机
     run_and_log_parallel 5 \
         "dcgmi discovery -l 2>&1" "${dir}/dcgmi_discovery.log" \
-        "dcgmi stats -v 2>&1" "${dir}/dcgmi_stats.log" \
-        "dcgmi config --list 2>&1" "${dir}/dcgmi_config.log" \
+        "dcgmi group -l 2>&1" "${dir}/dcgmi_group.log" \
+        "dcgmi config -g 0 --get 2>&1" "${dir}/dcgmi_config.log" \
         "dcgmi diag -r 1 2>&1" "${dir}/dcgmi_diag_level1.log" \
         "dcgmi --version 2>&1" "${dir}/dcgmi_version.log"
 
@@ -89,7 +96,7 @@ run_dcgm() {
 
 write_manifest "${dir}/manifest.txt" \
         "dcgmi_discovery" "dcgmi_discovery.log" \
-        "dcgmi_stats" "dcgmi_stats.log" \
+        "dcgmi_group" "dcgmi_group.log" \
         "dcgmi_config" "dcgmi_config.log" \
         "dcgmi_diag_level1" "dcgmi_diag_level1.log" \
         "dcgmi_version" "dcgmi_version.log"
