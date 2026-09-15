@@ -105,7 +105,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 
 try {
     # ─── 1. 本地打包项目（PowerShell 直调 bsdtar；避免 cmd /c 管道引号地狱——cmd 会剥 ssh 命令引号并把 && 当本地分隔符） ───
-    Write-Host "[INFO] 打包项目（第 1 次密码提示：scp 推送）..." -ForegroundColor Yellow
+    Write-Host "[INFO] 打包项目..." -ForegroundColor Yellow
     $pushFile = Join-Path $env:TEMP "hwscope_push_$TS.tgz"
     $hwArgs = ""
     if ($Modules) { $hwArgs = " --modules $Modules" }
