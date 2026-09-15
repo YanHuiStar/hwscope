@@ -39,25 +39,22 @@ run_nvswitch() {
         run_and_log "nvswitch --version 2>&1" "${dir}/nvswitch_version.log"
     else
         echo -e "${YELLOW}[SKIP] nvswitch command not found${NC}"
-        # ─── B300/GB300 fallback：NVSwitch 集成在 GPU 模块内，无独立 nvswitch CLI，
-        # 优先级：nvidia-smi nvswitch 子命令（驱动 525+ 内置，无需额外安装）
-        #        → nvidia-smi nvlink 错误计数 → DCGM NVSwitch 查询 ───
+        # ─── 无独立 nvswitch CLI 时的 fallback（v1.48.61 命令修正）───
+        # 原实现四条命令全部无效（驱动 580.105.08 上逐条实测）：
+        #   ① `nvidia-smi nvswitch --status`    → ERROR: Option nvswitch is not recognized
+        #      （nvidia-smi 并无 nvswitch 子命令；原注释"驱动 525+ 内置"系误判）
+        #   ② `nvidia-smi nvswitch --info`      → 同上，同样失败
+        #   ③ `nvidia-smi nvlink --error_count` → Option "--error_count" is not recognized（正确选项为 -e）
+        #   ④ `dcgmi nvswitch -l`               → ERROR: Invalid subsystem（DCGM 4.4.0 无 nvswitch 子系统）
+        # → 三项采集长期为空，而报告端为 ① 的输出格式写了解析（永久空转）。
+        # 改用实测有效、且共同刻画 NVSwitch 域健康的三个数据源：
+        #   nvidia-smi -q        → Fabric 段（State / Status / CliqueId / ClusterUUID）
+        #   nvidia-smi nvlink -R → 各链路对端设备（NVSwitch 连通性；FM 未运行时为 FFFFFFFF）
+        #   nvidia-smi nvlink -e → 逐链路错误计数与流量（v1.48.61 修正原选项名）
         if check_cmd nvidia-smi; then
-            run_and_log "nvidia-smi nvswitch --status 2>&1" "${dir}/nvswitch_smi_status.log"
-            run_and_log "nvidia-smi nvswitch --info 2>&1" "${dir}/nvswitch_smi_info.log"
-            run_and_log "nvidia-smi nvlink --error_count" "${dir}/nvlink_error_count.log"
-        fi
-        if check_cmd dcgmi && dcgmi nvswitch -l >/dev/null 2>&1; then
-            run_and_log "dcgmi nvswitch -l" "${dir}/dcgmi_nvswitch_list.log"
-            local dcgm_ns=0
-            while [ "$dcgm_ns" -lt 16 ]; do
-                if dcgmi nvswitch -i "$dcgm_ns" -g >/dev/null 2>&1; then
-                    run_and_log "dcgmi nvswitch -i ${dcgm_ns} -g" "${dir}/dcgmi_nvswitch_${dcgm_ns}.log"
-                else
-                    break
-                fi
-                ((dcgm_ns++))
-            done
+            run_and_log "nvidia-smi -q 2>&1" "${dir}/nvswitch_fabric_q.log"
+            run_and_log "nvidia-smi nvlink -R 2>&1" "${dir}/nvlink_remote_info.log"
+            run_and_log "nvidia-smi nvlink -e 2>&1" "${dir}/nvlink_error_count.log"
         fi
     fi
 
@@ -70,16 +67,16 @@ run_nvswitch() {
     fi
 
 # NOTE: nvswitch_N.log are generated per NVSwitch (N=0,1,...)
-#       nvswitch_smi_*.log / nvlink_error_count.log / dcgmi_nvswitch_*.log are B300/GB300 fallback (no nvswitch CLI)
+#       nvswitch_fabric_q.log / nvlink_remote_info.log / nvlink_error_count.log
+#       为无独立 nvswitch CLI 平台（B300/GB300 等）的 fallback（v1.48.61 起）
     write_manifest "${dir}/manifest.txt" \
         "nvswitch_all" "nvswitch_all.log" \
         "nvswitch_version" "nvswitch_version.log" \
         "fabricmanager_version" "fabricmanager_version.log" \
         "fabricmanager_service" "fabricmanager_service.log" \
-        "nvswitch_smi_status" "nvswitch_smi_status.log" \
-        "nvswitch_smi_info" "nvswitch_smi_info.log" \
-        "nvlink_error_count" "nvlink_error_count.log" \
-        "dcgmi_nvswitch_list" "dcgmi_nvswitch_list.log"
+        "nvswitch_fabric_q" "nvswitch_fabric_q.log" \
+        "nvlink_remote_info" "nvlink_remote_info.log" \
+        "nvlink_error_count" "nvlink_error_count.log"
 
     module_end "$MODULE_NAME"
 }

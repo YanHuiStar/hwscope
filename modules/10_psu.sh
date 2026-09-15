@@ -25,12 +25,12 @@ run_psu() {
         # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
         local ipmi_to="timeout 10"; check_cmd timeout || ipmi_to=""
         run_and_log_parallel 4 \
-            "${ipmi_to} ipmitool sensor list 2>/dev/null | grep -iE 'PSU|Pwr|PSC|PS[0-9]|PSU.*Status'" "${dir}/ipmi_psu_sensors.log" \
-            "${ipmi_to} ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Temp|PS[0-9].*Temp'" "${dir}/ipmi_psu_temp.log" \
-            "${ipmi_to} ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons|PS[0-9]_Pin|PS[0-9]_Pout'" "${dir}/ipmi_psu_power.log" \
-            "${ipmi_to} ipmitool fru print 2>/dev/null | grep -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply'" "${dir}/ipmi_psu_fru.log" \
-            "${ipmi_to} ipmitool dcmi power reading 2>&1" "${dir}/ipmi_dcmi_power.log" \
-            "${ipmi_to} ipmitool sdr list 2>/dev/null | grep -iE 'PSU|PS[0-9]|Power' " "${dir}/ipmi_sdr_psu.log"
+            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep -iE 'PSU|Pwr|PSC|PS[0-9]|PSU.*Status'\"" "${dir}/ipmi_psu_sensors.log" \
+            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Temp|PS[0-9].*Temp'\"" "${dir}/ipmi_psu_temp.log" \
+            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep -iE 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons|PS[0-9]_Pin|PS[0-9]_Pout'\"" "${dir}/ipmi_psu_power.log" \
+            "${ipmi_to} bash -c \"ipmitool fru print 2>/dev/null | grep -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply'\"" "${dir}/ipmi_psu_fru.log" \
+            "${ipmi_to} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/ipmi_dcmi_power.log" \
+            "${ipmi_to} bash -c \"ipmitool sdr list 2>/dev/null | grep -iE 'PSU|PS[0-9]|Power' \"" "${dir}/ipmi_sdr_psu.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi

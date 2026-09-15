@@ -29,9 +29,9 @@ run_power() {
         # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
         local ipmi_to="timeout 10"; check_cmd timeout || ipmi_to=""
         run_and_log_parallel 3 \
-            "${ipmi_to} ipmitool sdr list 2>&1 | grep -iE 'energy|kwh|joule'" "${dir}/energy_sdr.log" \
-            "${ipmi_to} ipmitool dcmi power reading 2>&1" "${dir}/dcmi_power.log" \
-            "${ipmi_to} ipmitool sensor list 2>&1 | grep -iE 'power|watt|total'" "${dir}/sensors_power.log"
+            "${ipmi_to} bash -c \"ipmitool sdr list 2>&1 | grep -iE 'energy|kwh|joule'\"" "${dir}/energy_sdr.log" \
+            "${ipmi_to} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log" \
+            "${ipmi_to} bash -c \"ipmitool sensor list 2>&1 | grep -iE 'power|watt|total'\"" "${dir}/sensors_power.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found（能耗台账依赖 BMC 传感器）${NC}"
     fi
