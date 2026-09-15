@@ -36,13 +36,17 @@ run_network() {
     check_cmd devlink && ib_jobs+=("devlink dev info" "${dir}/devlink_dev_info.log")
     check_cmd mlxfwmanager && ib_jobs+=("mlxfwmanager" "${dir}/mlxfwmanager.log")
     if check_cmd mlxconfig; then
-        ib_jobs+=("mlxconfig query" "${dir}/mlxconfig.log")
-        # 每口 LINK_TYPE 模式（IB/ETH/VPI，现场判断网络模式的关键）
-        # 动态枚举全部 mlx5 设备（禁止 head 截断：B300 高密度节点 12+ 个）
+        # v1.48.60 命令修正：mlxconfig 的子命令必须排在 -d 之后（正确写法 `mlxconfig -d <dev> q`）。
+        # 原 `mlxconfig query -d <dev>` 实测报 "-E- Failed to identify the device" 且无有效输出
+        # （exit 0 但内容为空，管道 grep 后变 exit 1 → 采集显示 no match），
+        # 导致每口 LINK_TYPE 长期缺失（实机 12 个设备全部 no match）；
+        # 全局 `mlxconfig query`（无 -d）同样无效——无 -d 时靠 MST 设备枚举，实测 8 次 identify 失败且耗时近百秒。
+        # 改为逐设备查询：既落盘全量（v1.41.1 全量原则），又提取 LINK_TYPE 供报告端汇总。
         local mlx_cfg_devs
         mlx_cfg_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
         for cfg_dev in $mlx_cfg_devs; do
-            ib_jobs+=("mlxconfig query -d ${cfg_dev} 2>/dev/null | grep -E 'LINK_TYPE_P[12]'" "${dir}/mlxconfig_${cfg_dev}_linktype.log")
+            ib_jobs+=("mlxconfig -d ${cfg_dev} q" "${dir}/mlxconfig_${cfg_dev}.log")
+            ib_jobs+=("mlxconfig -d ${cfg_dev} q 2>/dev/null | grep -E 'LINK_TYPE_P[12]'" "${dir}/mlxconfig_${cfg_dev}_linktype.log")
         done
     fi
     [ "${#ib_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${ib_jobs[@]}" 
@@ -262,7 +266,7 @@ run_network() {
         run_and_log_parallel 8 "${nic_pcie_jobs[@]}"
     fi
 
-# NOTE: mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log, mlxlink_N_counters.log,
+# NOTE: mlxconfig_N.log, mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log, mlxlink_N_counters.log,
     #       ethtool_*.log, ethtool_*_driver.log, ethtool_*_module.log, nic_*_pcie.log
     #       are generated per device
     write_manifest "${dir}/manifest.txt" \
@@ -273,7 +277,6 @@ run_network() {
         "ibdev2netdev_v" "ibdev2netdev_v.log" \
         "devlink_dev_info" "devlink_dev_info.log" \
         "mlxfwmanager" "mlxfwmanager.log" \
-        "mlxconfig" "mlxconfig.log" \
         "ip_addr" "ip_addr.log" \
         "ip_link" "ip_link.log" \
         "ip_route" "ip_route.log" \
