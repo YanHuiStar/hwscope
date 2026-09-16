@@ -21,7 +21,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - `conf/fw_required.txt` — 固件推荐版本基线（15_firmware 模块判定 合规/落后 用，按厂商验收手册维护；全部注释 = 判未知不误报）
 - `test/` — 硬件压测（聚合与实现解耦，v1.41.3）：`test_all.sh` 纯聚合入口（菜单/--all）+ `test/<组件>/` 单工具脚本（可独立执行，如 `test/cpu/cpu_stress_ng.sh`）+ `lib/test_common.sh` 公共库（落盘 `logs/test/<SN>/`）；只测不改
 - `tools/` — 运维操作脚本（BMC/网卡/安装），会修改系统
-- `tools/agent/` — **开发协作工具（agent/开发者用，agent 流程调用）**：git_push.sh/.bat（一键推送）、agent_sync.sh（多 agent 状态同步）；Launch-DeepSeekHarness 属用户手动启动，留 `tools/win/`
+- `tools/agent/` — **开发协作工具（agent/开发者用，agent 流程调用）**：`git_push.sh`/`.bat`（一键推送）、`agent_sync.sh`（多机/多会话状态同步）、`report_regression.sh`（报告解析回归 + 基线比对）、`regen_reports.sh`（批量重生成报告）、`repo_realign.sh`（历史重写后的仓库体检/对齐）；**说明见 `tools/agent/README.md`**；Launch-DeepSeekHarness 属用户手动启动，留 `tools/win/`
 - `tools/win/` — Windows 配套工具（.ps1/.bat）
 - `fixcrlf.sh` — Windows→Linux CRLF 换行符修复
 - `output/` — 采集结果（gitignored），`logs/` — 压缩归档（gitignored）

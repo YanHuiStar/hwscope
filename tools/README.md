@@ -12,7 +12,9 @@
 | **诊断/只读** | nvlink_verify · firmware_check · sel_monitor · cable_map · sync_version · power_monitor · cleanup | 🟢 只读（cleanup 删除输出目录，yes 确认） |
 | **写入操作** | bmc_tool · nic_tool · net_dhcp · dhcp_server · install_tool · install_ai · remote_run · fw_baseline_import | 🔴 会改系统 |
 | **远程采集** | remote_collect | 🟡 仅远程执行采集（只读）|
-| **Agent 协作** | agent_sync · git_push | 🟢 只读（git_push 仅推送） |
+| **Agent 协作** | agent_sync · git_push · report_regression · repo_realign | 🟢 只读（git_push 仅推送；report_regression 跑报告并比对基线；repo_realign 体检/对齐仓库）|
+
+> agent 协作工具（含**回归基线机制**与**历史重写后的仓库对齐**说明）见 `tools/agent/README.md`；开发环境陷阱见 `docs/AGENT_ENV.md`。
 | **报告体系** | → `report/` 模块（report.sh · batch_compare.sh · report_server.sh · md2html.awk） | 🟢 只读 |
 
 ---
