@@ -19,7 +19,7 @@
   nic_rows=12
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=33943
+  json_bytes=33968
         1 "disk_count"
         1 "platform"
 [html]

@@ -358,6 +358,7 @@ fi)
   "nvswitch": [
 $(printf '%s' "$nvs_json")
   ],
+  "nvswitch_fabric": "${NVSWITCH_FABRIC:-}",
   "health": {
     "gpu_pcie_degraded": "${GPU_DEGRADED:-OK}",
     "nvlink_status": "${NVLINK_HEALTH:-N/A}",

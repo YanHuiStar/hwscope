@@ -323,6 +323,10 @@ $(if [ -n "$nvs_md" ]; then
     echo "| 编号 | 状态 | 温度 | 活动/总端口 |"
     echo "|------|------|------|-------------|"
     printf '%s' "$nvs_md"
+fi)$(if [ -n "${NVSWITCH_FABRIC:-}" ]; then
+    echo ""
+    echo "## NVSwitch 域（Fabric）"
+    echo "${NVSWITCH_FABRIC}"
 fi)
 
 $(if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then

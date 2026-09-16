@@ -205,18 +205,45 @@ if ls ${NVS_DIR}/nvswitch_[0-9]*.log >/dev/null 2>&1; then
         NVS_DETAILS="${NVS_DETAILS}${nidx}|${nstat}|${ntemp:-N/A}°C|${nports:-N/A}/${ntotal:-N/A}"$'\n'
     done
 fi
-# B300/GB300 fallback：nvidia-smi nvswitch --status 输出（"Switch N:" 段 + NVSwitch State/Temperature/Link 行）
-if [ -z "$NVS_DETAILS" ] && [ -f "${NVS_DIR}/nvswitch_smi_status.log" ]; then
-    NVS_DETAILS=$(awk '
-        /^Switch [0-9]+:/ { if(idx!="") flush(); idx=$2; gsub(/:/,"",idx); state=""; temp=""; pc=0 }
-        idx!="" && /NVSwitch State/ { v=$0; sub(/.*:/,"",v); gsub(/ /,"",v); state=v }
-        idx!="" && /NVSwitch Temperature/ { v=$0; sub(/.*:/,"",v); gsub(/ /,"",v); sub(/C.*/,"",v); temp=v }
-        idx!="" && /Link [0-9]+ State/ { pt++; if($0 ~ /Active/) pc++ }
-        function flush() {
-            nstat=(state==""?"N/A":state)
-            if(nstat!="Active" && nstat!="N/A") nstat=nstat" ⚠️"
-            printf "%s|%s|%s°C|%s/%s\n", idx, nstat, (temp==""?"N/A":temp), pc+0, pt+0
-        }
-        END { if(idx!="") flush() }
-    ' "${NVS_DIR}/nvswitch_smi_status.log" 2>/dev/null)
+# ─── NVSwitch 域（Fabric）健康判定（v1.48.72）───
+# 原实现解析 nvswitch_smi_status.log 的 "Switch N:" 段——该文件自 v1.48.61 起不再生成（nvidia-smi
+# 无 nvswitch 子命令），解析分支长期空转，且会误读历史残留文件（22.84 目录里还留着 v1.48.58 的残留）。
+# 改用实测有效的四份数据合成一句判定（22.84 真机格式实证）：
+#   nvswitch_fabric_q.log      nvidia-smi -q → Fabric 段（State=In Progress/Completed、ClusterUUID）
+#   nvlink_remote_info.log     nvidia-smi nvlink -R → 各链路对端（FFFFFFFF = NVSwitch 未枚举）
+#   fabricmanager_service.log  systemctl status nvidia-fabricmanager（Active: active/inactive/failed）
+#   nvlink_error_count.log     nvidia-smi nvlink -e → 逐链路错误计数
+# 判定的价值：FM 未运行时 NVLink 对端不可见/ClusterUUID 未注册/DCGM 全 Fail 是同一根因的五种表现，
+# 报告里合成一句即可指向"FM 没起来"而非"硬件坏了"。
+NVSWITCH_FABRIC=""
+_fq="${NVS_DIR}/nvswitch_fabric_q.log"
+_nr="${NVS_DIR}/nvlink_remote_info.log"
+_fms="${NVS_DIR}/fabricmanager_service.log"
+_ne="${NVS_DIR}/nvlink_error_count.log"
+if [ -f "$_fq" ] || [ -f "$_nr" ]; then
+    _fmst=""
+    [ -f "$_fms" ] && _fmst=$(grep -v "^#" "$_fms" 2>/dev/null | grep -m1 "Active:" | sed 's/.*Active: *//; s/[ (].*//' | tr -d '\r')
+    _fstate=""
+    [ -f "$_fq" ] && _fstate=$(grep -v "^#" "$_fq" 2>/dev/null | grep -A2 "^[[:space:]]*Fabric$" | grep -m1 "State" | sed 's/.*: *//; s/ *$//' | tr -d '\r')
+    _uuid=""
+    [ -f "$_fq" ] && _uuid=$(grep -v "^#" "$_fq" 2>/dev/null | grep -m1 "ClusterUUID" | sed 's/.*: *//' | tr -d ' \r')
+    _pt=0; _pg=0
+    if [ -f "$_nr" ]; then
+        _pt=$(grep -c "Remote Device" "$_nr" 2>/dev/null || true)
+        _pg=$(grep -c "Remote Device FFFFFFFF" "$_nr" 2>/dev/null || true)
+    fi
+    _nerr=0
+    [ -f "$_ne" ] && _nerr=$(grep -v "^#" "$_ne" 2>/dev/null | grep -cE "Errors: [1-9]" || true)
+
+    if [ "$_fmst" = "failed" ] || [ "$_fmst" = "inactive" ]; then
+        _seg="⚠️ NVSwitch 域未建立：Fabric Manager 未运行（Active: ${_fmst}）"
+        [ -n "$_fstate" ] && _seg="${_seg}；Fabric State=${_fstate}"
+        [ -n "$_uuid" ] && _seg="${_seg}；ClusterUUID=${_uuid}"
+        [ "${_pt:-0}" -gt 0 ] && _seg="${_seg}；NVLink 对端不可见 ${_pg}/${_pt} 条"
+        NVSWITCH_FABRIC="${_seg}。FM 未拉起会使 DCGM 对 NVSwitch 域的诊断整体失败，非 GPU/NVSwitch 硬件故障——拉起 nvidia-fabricmanager 后重测（FM 版本须与驱动一致）"
+    elif [ "$_fmst" = "active" ] && [ "${_pg:-0}" -gt 0 ]; then
+        NVSWITCH_FABRIC="⚠️ Fabric Manager 运行中，但 ${_pg}/${_pt} 条 NVLink 对端不可见（FFFFFFFF）——核查 NVSwitch 供电/复位状态与 FM 版本匹配"
+    elif [ "$_fmst" = "active" ] && [ "${_nerr:-0}" -gt 0 ]; then
+        NVSWITCH_FABRIC="⚠️ NVLink 链路错误计数非零（${_nerr} 项，详见 nvlink_error_count.log）"
+    fi
 fi
