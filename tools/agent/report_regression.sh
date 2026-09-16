@@ -134,9 +134,21 @@ extract_metrics() {
     [ -f "$acc" ] && grep -oE '(PASS|FAIL|WARN|N/A)' "$acc" 2>/dev/null | sort | uniq -c | head -6 | sed 's/^/  /'
 }
 
+# ─── v1.48.74：机器指纹（同源判定）───
+# 同型号多台机器共用一个语义名基线文件（如桌面 3 台 B300 → 都映射 baseline/b300.txt）；
+# 拿 B 台样本比 A 台基线必然满屏差异（网卡/盘/PCIe 数量本来就不同），但那不是解析回归。
+# 办法：比对前先查"机器指纹"（报告里的硬件计数，不含 SN/机器标识）——
+#   指纹一致 → 同源，差异 = 真回归候选（照常报警）
+#   指纹不符 → 不同源，跳过并提示（不误报）
+# 向后兼容：旧基线（指标行齐全）同样能提取到指纹；提不到则不判同源（退回原比对行为）
+source_fingerprint() {
+    grep -E "^  (gpu_json_count|nic_rows|dimm_rows|disk_rows|psu_rows|pcie_appendix_rows)=" "$1" 2>/dev/null | sort
+}
+
 # ─── 单样本执行 ───
 run_one() {
     local sample="$1" rc=0
+    LAST_RESULT="ok"
     [ -d "$sample" ] || { echo "[ERROR] 目录不存在: $sample"; return 1; }
     local sn sem
     sn=$(basename "$sample")
@@ -169,16 +181,29 @@ run_one() {
     if [ "$UPDATE" -eq 1 ]; then
         mkdir -p "$BASELINE_DIR"
         cp "$cur" "$base"
+        LAST_RESULT="update"
         echo "  [BASELINE] 已写入: ${base}（$(wc -l < "$base" | tr -d ' ') 行指标）"
     elif [ -f "$base" ]; then
-        if diff -q "$base" "$cur" >/dev/null 2>&1; then
+        # v1.48.74：先判同源（机器指纹）——不同源时差异属机器固有，不报为回归
+        local fp_base fp_cur
+        fp_base=$(source_fingerprint "$base")
+        fp_cur=$(source_fingerprint "$cur")
+        if [ -n "$fp_base" ] && [ -n "$fp_cur" ] && [ "$fp_base" != "$fp_cur" ]; then
+            LAST_RESULT="skip"
+            echo "  [SKIP] 与基线不同源（同型号不同机器/配置变动）——差异属机器固有，不判为解析回归："
+            diff <(printf '%s\n' "$fp_base") <(printf '%s\n' "$fp_cur") 2>/dev/null \
+                | grep -E "^[<>]" | head -10 | sed 's/^/    /'
+            echo "    → 该样本若应作为此语义的比对源：--samples <样本> --update（覆盖该语义基线）"
+        elif diff -q "$base" "$cur" >/dev/null 2>&1; then
             echo "  [OK] 与基线一致（无解析回归）"
         else
+            LAST_RESULT="diff"
             echo "  [DIFF] 与基线存在差异（解析回归候选）:"
             diff "$base" "$cur" 2>/dev/null | head -30 | sed 's/^/    /'
             rc=1
         fi
     else
+        LAST_RESULT="nobase"
         echo "  [WARN] 无基线（先跑 --update 建立）"
         rc=2
     fi
@@ -191,7 +216,7 @@ run_one() {
 # ─── 主流程 ───
 if [ "$ALL" -eq 1 ]; then
     root="${HWSCOPE_SAMPLE_ROOT:-${PROJECT_DIR}/output}"
-    found=0; fail=0
+    found=0; fail=0; skipn=0
     # v1.48.50：同语义名去重——多台同机型机器（如桌面两台 MI300X）经 sn_to_semantic 映射到同一
     # 基线文件，逐台比对会把机器间固有差异（网卡/盘数不同）当成解析回归误报；本次只比对首台，
     # 后续同名样本跳过并提示（要单独验证某台用 --samples <SN> 显式指定）
@@ -211,13 +236,14 @@ if [ "$ALL" -eq 1 ]; then
         _seen_sem="${_seen_sem}${_seen_sem:+,}${_sem_cur}"
         found=$((found+1))
         run_one "${d%/}" || fail=$((fail+1))
+        [ "$LAST_RESULT" = "skip" ] && skipn=$((skipn+1))
         echo ""
     done
     if [ "$found" -eq 0 ]; then
         echo "[WARN] 未找到采集样本目录（可用 HWSCOPE_SAMPLE_ROOT=<目录> 指定多机样本根）"
         exit 2
     fi
-    echo "汇总: ${found} 个样本，${fail} 个差异"
+    echo "汇总: ${found} 个样本，${fail} 个差异，${skipn} 个不同源跳过（同型号其他机器，机器固有差异非回归）"
     [ "$fail" -eq 0 ] || exit 1
     exit 0
 fi
@@ -225,16 +251,17 @@ fi
 # v1.48.14：--samples 选跑（只跑指定样本——GPU 改动跑 GPU 样本等，不跑全量省时间）
 if [ -n "$SAMPLES" ]; then
     root="${HWSCOPE_SAMPLE_ROOT:-${PROJECT_DIR}/output}"
-    found=0; fail=0
+    found=0; fail=0; skipn=0
     for sn in ${SAMPLES//,/ }; do
         d="${root}/${sn}"
         [ -d "$d" ] || { echo "[WARN] 样本不存在: $sn（root=$root）"; continue; }
         found=$((found+1))
         run_one "$d" || fail=$((fail+1))
+        [ "$LAST_RESULT" = "skip" ] && skipn=$((skipn+1))
         echo ""
     done
     [ "$found" -gt 0 ] || exit 2
-    echo "汇总: ${found} 个样本，${fail} 个差异"
+    echo "汇总: ${found} 个样本，${fail} 个差异，${skipn} 个不同源跳过"
     [ "$fail" -eq 0 ] || exit 1
     exit 0
 fi

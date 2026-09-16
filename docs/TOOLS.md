@@ -81,4 +81,4 @@
 | `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...）；`-c <1,2,...> -y` 非交互安装（远程自动安装用，v1.42.0） |
 | `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认） |
 - **`tools/agent/regen_reports.sh`（v1.48.18）**：批量重生成报告（agent 专用）——无参=桌面 6 份默认样本；`<目录...>` 指定；`--samples SN1,SN2` 选跑；`--regression` 生成后跑回归对比 / `--update` 顺带刷新基线；输出每样本判定 + 汇总（agent 直接消费）
-- **`tools/agent/report_regression.sh`（v1.48.3，v1.48.14 迁 tools/agent/）**：报告解析回归测试——固定样本跑报告 + 10 组指标与基线比对，防解析/渲染静默回归；用法 `bash tools/agent/report_regression.sh <采集目录> [--update] [--all] [--samples SN1,SN2]`，基线 `tools/agent/baseline/<机器ID>.txt`；改解析器前后各跑一次（解析/渲染/输出格式改动必跑，纯文档/版本不跑）。需 Linux 环境（fork 密集脚本在 git-bash 下易崩）
+- **`tools/agent/report_regression.sh`（v1.48.3，v1.48.14 迁 tools/agent/）**：报告解析回归测试——固定样本跑报告 + 10 组指标与基线比对，防解析/渲染静默回归；用法 `bash tools/agent/report_regression.sh <采集目录> [--update] [--all] [--samples SN1,SN2]`，基线 `tools/agent/baseline/<语义名>.txt`（h200/a100/b200/b300/amd_oam/headless，v1.48.27 起语义名、零真实 SN）；**同源判定（v1.48.74）**：同型号多台机器共用一个基线文件，比对前先查机器指纹（GPU/网卡/内存/盘/PSU/PCIe 计数）——不符则 `[SKIP] 不同源`（机器固有差异不报为回归）；每机型以一份权威样本为基线源；改解析器前后各跑一次（解析/渲染/输出格式改动必跑，纯文档/版本不跑）。需 Linux 环境（fork 密集脚本在 git-bash 下易崩）
