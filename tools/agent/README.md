@@ -12,6 +12,7 @@
 | `git_push.sh` | 推送（内置防死循环：网络预检 + 3 败熔断 + `[PAUSE]` 纪律） | `bash tools/agent/git_push.sh -y`；`GIT_PUSH_BYPASS_COOLDOWN=1` 绕熔断 |
 | `report_regression.sh` | **报告解析回归测试**（改解析/渲染后必跑） | `bash tools/agent/report_regression.sh <采集目录>`；`--all` / `--samples SN1,SN2` / `--update` |
 | `regen_reports.sh` | 批量重生成报告（agent 调用，样本自动发现） | `bash tools/agent/regen_reports.sh`；`--samples SN1,SN2`；`--regression` |
+| `sn_check.sh` | **提交前 SN/MAC 自检**（隐私红线兜底——把检查做成可执行钩子） | `bash tools/agent/sn_check.sh`；`--install-hook` 装 git hooks；`--all-history` 全历史体检 |
 | `repo_realign.sh` | **仓库对齐**（历史被重写后其他机器分叉的恢复） | 体检 `bash tools/agent/repo_realign.sh`；对齐见下节 |
 
 推送失败时按 AGENTS「推送失败处理纪律」：**停止自动重试 → 上报用户 → 等指令**（网络不通是用户侧问题，重试空转烧 token）。
@@ -78,6 +79,37 @@ bash tools/agent/report_regression.sh <采集目录> --update
 ```
 
 **触发规则**（AGENTS.md）：改 `report/{sections,gen,lib}` 或采集模块输出格式 → **提交前必跑**；纯文档/版本号/非报告逻辑 → 不跑。
+
+## 提交前自检（sn_check.sh）
+
+隐私红线要求真实采集标识（机箱 SN / MAC 等）不进 git——但实践反复证明"写进规矩"不够：
+历史上两次出现真实 SN 进提交正文（一次我自己、一次协作 agent），都需要重写历史才能清除。
+
+`tools/agent/sn_check.sh` 把检查做成可执行钩子：
+
+```bash
+# 一次性安装（写 .git/hooks，仅本机生效，不影响他人）
+bash tools/agent/sn_check.sh --install-hook
+
+# 手动检查：暂存区 + 待推送提交
+bash tools/agent/sn_check.sh
+
+# 全历史体检（发布前跑）
+bash tools/agent/sn_check.sh --all-history
+```
+
+**判定方式**：宽模式匹配 + **长度门限收敛** + 非敏感白名单：
+
+- 真实 SN 普遍**长**（本机常见的三类形态：4 字母+3 数字+4 字母数字 = 11 字符；单字母+6 数字+混合 = 14 字符；13 位纯数字）；
+  产品型号普遍**短**（`B300`/`A2000`/`MI300X`/`GA100`/`SC2163` ≤6）→ 字母数字混合 ≥10 字符、
+  纯数字 9–13 位才算疑似，产品型号天然放行
+- 同样检测 **MAC**（带分隔符或 12 位 hex 形式）
+- 白名单放行**必须保留**的非敏感串：网卡 PSID 值（`NVD…`）、部件号（`MCX…`）、芯片型号
+  （`MT…`/`MLX…`/`GA…`）、RAID 芯片（`SAS3xxx`）、盘型号（`MTFD…`）、Mellanox 占位序列号、
+  Windows 错误码、换算常数、版本号、日期戳、`FAKE…` 示例与文档里的假 MAC
+
+命中时给出**处理建议**（改语义名 / 加白名单 / 走 filter-repo 清除流程）。
+需要临时跳过：`git commit --no-verify`。
 
 ## 仓库对齐（历史被重写之后）
 

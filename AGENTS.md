@@ -21,7 +21,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - `conf/fw_required.txt` — 固件推荐版本基线（15_firmware 模块判定 合规/落后 用，按厂商验收手册维护；全部注释 = 判未知不误报）
 - `test/` — 硬件压测（聚合与实现解耦，v1.41.3）：`test_all.sh` 纯聚合入口（菜单/--all）+ `test/<组件>/` 单工具脚本（可独立执行，如 `test/cpu/cpu_stress_ng.sh`）+ `lib/test_common.sh` 公共库（落盘 `logs/test/<SN>/`）；只测不改
 - `tools/` — 运维操作脚本（BMC/网卡/安装），会修改系统
-- `tools/agent/` — **开发协作工具（agent/开发者用，agent 流程调用）**：`git_push.sh`/`.bat`（一键推送）、`agent_sync.sh`（多机/多会话状态同步）、`report_regression.sh`（报告解析回归 + 基线比对）、`regen_reports.sh`（批量重生成报告）、`repo_realign.sh`（历史重写后的仓库体检/对齐）；**说明见 `tools/agent/README.md`**；Launch-DeepSeekHarness 属用户手动启动，留 `tools/win/`
+- `tools/agent/` — **开发协作工具（agent/开发者用，agent 流程调用）**：`git_push.sh`/`.bat`（一键推送）、`agent_sync.sh`（多机/多会话状态同步）、`report_regression.sh`（报告解析回归 + 基线比对）、`regen_reports.sh`（批量重生成报告）、`repo_realign.sh`（历史重写后的仓库体检/对齐）、`sn_check.sh`（提交前 SN/MAC 自检）；**说明见 `tools/agent/README.md`**；Launch-DeepSeekHarness 属用户手动启动，留 `tools/win/`
 - `tools/win/` — Windows 配套工具（.ps1/.bat）
 - `fixcrlf.sh` — Windows→Linux CRLF 换行符修复
 - `output/` — 采集结果（gitignored），`logs/` — 压缩归档（gitignored）
@@ -145,6 +145,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
   - 提交前必须 `git status` 审查；默认 `git add <指定文件>` 逐文件确认
   - push 前复查 `git ls-files`，确认无 `bmc/`、`gpu/`、`memory/` 等采集日志目录混入
   - 误提交已 push：立即在远程删除并重写历史（filter-repo），同时轮换受影响凭据
+- **提交前自检（v1.48.77，把规矩做成钩子）**：`bash tools/agent/sn_check.sh --install-hook` 安装 pre-commit + commit-msg 钩子（仅本机生效）；提交时自动扫**暂存改动 + 提交信息**里的疑似 SN/MAC，命中即拦下。手动体检用 `--all-history`。判定 = 宽模式 + **长度门限**（真实 SN ≥10 字符、纯数字 9–13 位；产品型号如 B300/A2000/MI300X/GA100 短于此，天然放行）+ 非敏感白名单（PSID 值、网卡部件号、芯片型号、占位序列号、Windows 错误码、换算常数、版本号、日期戳、FAKE 示例）。**提交正文禁用真实样本标识**——写 "real B200 run" 即可，勿附真 SN/MAC（历史已两次因此重写远程历史）
 - 允许提交**脱敏示例数据**（SN/IP 替换为 FAKE 值，如 `FAKESN123`），禁止真实值
 - **report_server 必须 `--bind 127.0.0.1`**：`python3 -m http.server` 默认监听 `0.0.0.0`，会把含 SN/MAC/BMC IP 的报告无鉴权暴露到局域网（v1.33.1 安全修复）；改动时勿移除 bind 参数，提示 URL 固定 127.0.0.1
 - **模拟/测试环境警示**（防重蹈覆辙）：开发/调试用的 mock 脚本、测试数据、辅助工具**可以用真实数据进行本地测试**，但**必须加入 `.gitignore`，禁止提交到仓库**；如需提交示例数据，必须用 FAKE 值（SN/IP 替换为 `FAKESN123` 等）
