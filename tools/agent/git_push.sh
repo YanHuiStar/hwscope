@@ -69,6 +69,11 @@ detect_env() {
     echo "$os"
 }
 ENV_NAME="$(detect_env)"
+# v1.48.66：空设备必须按环境选。MSYS(git-bash) 下把 /dev/null 传给 native curl 时路径会被转换，
+# 写入失败 → curl 退出码 23（CURLE_WRITE_ERROR）；叠加脚本的 `set -o pipefail`，`curl | grep`
+# 整条判定为失败——症状是 HTTP 明明 200 却永远"预检失败"（真机实测：同命令手工跑退出码 23 被忽略）
+NULL_DEV="/dev/null"
+[ "$ENV_NAME" = "git-bash" ] && NULL_DEV="NUL"
 info "环境: ${ENV_NAME} | 项目: ${PROJECT_DIR}"
 
 # WSL 且项目在 Windows 盘（/mnt/...）→ 转交 Windows 侧 git_push.bat：
@@ -265,11 +270,11 @@ push_main() {
         # v1.48.66：预检改用 GET + 状态码校验——原用 `-sI`(HEAD)，实测本机 v2ray 代理下
         # HEAD 一律返回 000（GET 才 200），导致代理明明可用却判定"直连+代理均不可达"，
         # 推送被自己的预检挡死（真机复现：Handshake 正常但 HEAD 000）。GET + `2xx/3xx` 判定最稳。
-        curl -s --max-time 5 https://github.com -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
+        curl -s --max-time 5 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
         if [ "$pre_ok" -eq 0 ]; then
             local pre_proxy
             pre_proxy="$(detect_proxy)"
-            [ -n "$pre_proxy" ] && curl -s -x "$pre_proxy" --max-time 5 https://github.com -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
+            [ -n "$pre_proxy" ] && curl -s -x "$pre_proxy" --max-time 5 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
         fi
         if [ "$pre_ok" -eq 0 ]; then
             local fc0=0
@@ -308,7 +313,7 @@ push_main() {
         if command -v curl >/dev/null 2>&1; then
             # v1.48.66：同预检——`-sI`(HEAD) 经本机代理一律 000，会误判"节点未连通"而放弃代理推送；
             # 改 GET + 状态码校验（与预检一致）
-            if curl -s -x "$proxy" --max-time 10 https://github.com -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^[23]'; then
+            if curl -s -x "$proxy" --max-time 10 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]'; then
                 info "代理连通 ✓，走代理推送..."
                 # v1.48.52：代理推送尝试 2 次（推首个连接易受网络抖动影响）
                 local ptry
