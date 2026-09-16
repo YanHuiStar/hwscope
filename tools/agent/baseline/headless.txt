@@ -24,7 +24,7 @@
 [html]
   html_table_open=20
   html_table_close=20
-  html_bytes=11994
+  html_bytes=12088
 [acceptance]
        24 N/A
         1 PASS
