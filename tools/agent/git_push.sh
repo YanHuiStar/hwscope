@@ -262,11 +262,14 @@ push_main() {
     if command -v curl >/dev/null 2>&1; then
         # v1.48.52：预检超时 3s → 5s——网络慢时 3s 会误判断网（实测多次"预检失败但实际可推"），
         # 5s 仍远低于直连失败的 21s 默认超时，兼顾快速判定与准确性
-        curl -sI --max-time 5 https://github.com >/dev/null 2>&1 && pre_ok=1
+        # v1.48.66：预检改用 GET + 状态码校验——原用 `-sI`(HEAD)，实测本机 v2ray 代理下
+        # HEAD 一律返回 000（GET 才 200），导致代理明明可用却判定"直连+代理均不可达"，
+        # 推送被自己的预检挡死（真机复现：Handshake 正常但 HEAD 000）。GET + `2xx/3xx` 判定最稳。
+        curl -s --max-time 5 https://github.com -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
         if [ "$pre_ok" -eq 0 ]; then
             local pre_proxy
             pre_proxy="$(detect_proxy)"
-            [ -n "$pre_proxy" ] && curl -x "$pre_proxy" -sI --max-time 5 https://github.com >/dev/null 2>&1 && pre_ok=1
+            [ -n "$pre_proxy" ] && curl -s -x "$pre_proxy" --max-time 5 https://github.com -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
         fi
         if [ "$pre_ok" -eq 0 ]; then
             local fc0=0
@@ -303,7 +306,9 @@ push_main() {
     if [ -n "$proxy" ]; then
         info "发现代理 ${proxy}，验证连通性..."
         if command -v curl >/dev/null 2>&1; then
-            if curl -x "$proxy" -sI --max-time 10 https://github.com -o /dev/null; then
+            # v1.48.66：同预检——`-sI`(HEAD) 经本机代理一律 000，会误判"节点未连通"而放弃代理推送；
+            # 改 GET + 状态码校验（与预检一致）
+            if curl -s -x "$proxy" --max-time 10 https://github.com -o /dev/null -w '%{http_code}' 2>/dev/null | grep -qE '^[23]'; then
                 info "代理连通 ✓，走代理推送..."
                 # v1.48.52：代理推送尝试 2 次（推首个连接易受网络抖动影响）
                 local ptry
