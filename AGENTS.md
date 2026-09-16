@@ -86,7 +86,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **推送失败处理纪律（v1.45.9 立规，防浪费 token/积分）**：git_push 输出 `[PAUSE]` 指令后**禁止自动重试**——网络不通是用户侧问题（代理节点/网络状态），盲目重试每轮空转烧 token。失败后：① 停止推送尝试 ② 把失败原因**上报用户**（"推送失败，请检查代理节点/网络，确认后我再推"）③ 等用户明确说『推送/重试』或确认网络恢复后才重新运行。git_push 已内置 4s 网络预检 + 连续 3 次失败 5 分钟熔断冷却（冷却期内调用秒败）
 - **提交后**跑 `bash tools/agent/agent_sync.sh --mark`（本地状态文件 AGENT_STATE.md 标记未推送提交；该文件 gitignore，仅单机多会话协调用，不承担跨机器——跨机器以 fetch 为准）
 - **多机器提示**：换机器开工同样先 agent_sync（fetch 到该机最新）；禁止"我以为远程是 vX"——以 agent_sync 输出为准
-- **历史重写后同步（v1.48.28 立规，SN 泄漏清除等 force-push 重写历史场景）**：远程历史被重写后，所有旧 clone 本地历史分叉——`git pull`/`git push`/git_push 的 rebase 全部失败（报"不会快进"/分叉）。
+- **历史重写后同步（v1.48.28 立规，SN 泄漏清除等 force-push 重写历史场景）**：**v1.48.75 起首选脚本 `bash tools/agent/repo_realign.sh`**（体检 / `--sync` 纯同步机 / `--protect[ --auto]` 有本地提交自动备份+逐提交扫 SN 再搬回）；手动流程如下（排障参考）。远程历史被重写后，所有旧 clone 本地历史分叉——`git pull`/`git push`/git_push 的 rebase 全部失败（报"不会快进"/分叉）。
   - **无本地独特未推提交（以同步远程为主）**：统一一次性处理
     ```bash
     git fetch --force origin && git reset --hard origin/main && git log --oneline -1
@@ -108,7 +108,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 
 ## 环境故障止损纪律（v1.45.11 立规，Windows/git-bash 实测教训）
 
-> 2026-08-26/27 实录：Agent 在环境故障上反复重试消耗大量 token/积分后总结。核心原则：**环境类故障一次尝试失败即停，上报用户等指示**——重试不解决网络/杀软/系统问题，只烧积分。
+> 2026-08-26/27 实录：Agent 在环境故障上反复重试消耗大量 token/积分后总结。核心原则：**环境类故障一次尝试失败即停，上报用户等指示**——重试不解决网络/杀软/系统问题，只烧积分。**具体症状与对策（MSYS 管道吞缓冲输出、未引号 heredoc 吃反斜杠致条件静默失效、PowerShell `$x = & cmd` 缓冲输出、curl HEAD 经代理误判断网、filter-repo 不改 commit message 等）见 `docs/AGENT_ENV.md`。**
 
 - **推送失败 = 用户侧问题**：网络不通（代理节点/断网）时重试每轮空转 ~90s+ 大量 token。git_push 已内置 4s 预检 + 3 败熔断；输出 `[PAUSE]` 后禁止再碰，上报原因即止（详见上节 v1.45.9 纪律）
 - **MSYS bash fork 崩溃识别**（git-bash 特有）：特征 = 命令**静默 exit 1 且零输出**（连开头的 echo 都不执行）或 stderr 报 `dofork: child died ... 0xC0000142` / `Resource temporarily unavailable`。规律：`ls`/`cat`/`grep` 等直接 exec 的命令正常，**fork 类全崩**（子 bash、`$( )` 密集脚本、git 复杂操作）。应对：**立即停全部操作上报用户**（多为杀软实时扫描锁定 DLL，通常分钟级自愈；曾实测 60s 后恢复）——静默失败时最容易犯的错误是以为代码有 bug 反复排查重跑，实际是环境
@@ -117,7 +117,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **Windows 杀软是环境故障首要嫌疑**：.pack 被隔离 + DLL 锁定（fork 崩溃）同时发生基本可断定。建议用户把项目目录与 Git 安装目录加入杀软白名单（根治）；`echo > /dev/tcp/127.0.0.1/<port>` 可探测代理端口（常见 7890/7897/10809/1080）
 - **MSYS 下 native 命令的空设备陷阱（v1.48.67 立规）**：git-bash 里把 `/dev/null` **作为参数**传给 native 程序（如 `curl -o /dev/null`）会被路径转换导致写入失败，curl 退出码 **23（CURLE_WRITE_ERROR）**；叠加 `set -o pipefail`，`curl ... | grep -q` **整条判定为失败**——症状是 **HTTP 200 却永远"网络预检失败"**（`git_push.sh` 长期误报断网的真根因，实测同命令手工跑退出码 23 被忽略、只看状态码就误判"可用"）。**规则**：① 传参用 `NUL`（Windows）/`/dev/null`（Linux），按环境变量区分（非参数位置的 `>/dev/null` 由 bash 处理，安全）② 排查网络类"预检失败"时**必须同时看 HTTP 状态码和退出码**，两者矛盾即命中此类陷阱 ③ 同一命令在 git-bash 与 PowerShell 行为不同时（本机实测 HEAD 请求 git-bash 000 / PowerShell 200），优先信 PowerShell 的结果，别在 MSYS 行为差异上反复试
 - **长任务前先说风险**：执行含大量 fork 的脚本（report.sh 等含数百个 `$( )`）前，告知用户"Windows 下有 fork 崩溃风险，失败即停"；失败一次后不重试，改用静态验证（`bash -n` 语法 + 抽取核心 awk/grep 逻辑单独验证）交付结论
-- **报告解析回归纪律（v1.48.4 立规，v1.48.14 迁移 tools/agent + 触发规则细化）**：改动 `report/sections/`、`report/gen/`、`report/lib/`（解析/渲染逻辑）或采集模块输出格式后，**提交前必须跑** `bash tools/agent/report_regression.sh <采集目录>`（或 `--all` 全量；`--samples SN1,SN2` 选跑受影响样本省时间——GPU 改动跑 GPU 样本等）——与基线有差异时人工确认是预期改动还是回归，确认预期后 `--update` 刷新基线。**触发规则：解析/渲染/输出格式相关改动必跑；纯文档、版本号、非报告逻辑改动不跑**（避免每次提交空等 ~5 分钟）。历史教训：AMD 多卡明细全显示 card0、内存通道数算成插槽数、表格列错位、1T9 容量误判，均由 Agent 改解析代码引入且人工 review 漏检；脚本纯 bash/awk 实现，**需 Linux 环境**（git-bash 下 report.sh 的 fork 密集会触发 MSYS 崩溃——实测整个 shell 被杀，且管道会吞掉缓冲输出造成"脚本无输出"的假象，诊断应重定向到文件而非管道）。**同源判定（v1.48.74）**：基线按机型语义名命名，同型号多台机器（如桌面 3 台 B300）共用一个基线文件——比对前先查"机器指纹"（GPU/网卡/内存/盘/PSU/PCIe 计数，来自报告指标、不含 SN 与机器标识）：指纹不符 → 输出 `[SKIP] 不同源`（差异属机器固有，**不判为回归**）；指纹一致才报 `[DIFF]`。全团队**每个机型以一份权威样本**为基线源（选采集版本最高、配置最全的那台），刷新用 `--all --update`
+- **报告解析回归纪律（v1.48.4 立规，v1.48.14 迁移 tools/agent + 触发规则细化）**：改动 `report/sections/`、`report/gen/`、`report/lib/`（解析/渲染逻辑）或采集模块输出格式后，**提交前必须跑** `bash tools/agent/report_regression.sh <采集目录>`（或 `--all` 全量；`--samples SN1,SN2` 选跑受影响样本省时间——GPU 改动跑 GPU 样本等）——与基线有差异时人工确认是预期改动还是回归，确认预期后 `--update` 刷新基线。**触发规则：解析/渲染/输出格式相关改动必跑；纯文档、版本号、非报告逻辑改动不跑**（避免每次提交空等 ~5 分钟）。历史教训：AMD 多卡明细全显示 card0、内存通道数算成插槽数、表格列错位、1T9 容量误判，均由 Agent 改解析代码引入且人工 review 漏检；脚本纯 bash/awk 实现，**需 Linux 环境**（git-bash 下 report.sh 的 fork 密集会触发 MSYS 崩溃——实测整个 shell 被杀，且管道会吞掉缓冲输出造成"脚本无输出"的假象，诊断应重定向到文件而非管道）。**同源判定（v1.48.74）**：基线按机型语义名命名，同型号多台机器（如桌面 3 台 B300）共用一个基线文件——比对前先查"机器指纹"（GPU/网卡/内存/盘/PSU/PCIe 计数，来自报告指标、不含 SN 与机器标识）：指纹不符 → 输出 `[SKIP] 不同源`（差异属机器固有，**不判为回归**）；指纹一致才报 `[DIFF]`。全团队**每个机型以一份权威样本**为基线源（选采集版本最高、配置最全的那台），刷新用 `--all --update`。**基线机制/同型号多机处理/仓库对齐的完整说明见 `tools/agent/README.md`**
 
 ## 报告与归档
 
