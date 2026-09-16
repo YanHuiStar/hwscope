@@ -50,7 +50,18 @@ run_os() {
     # 6. 服务状态（条件执行：需 systemctl；v1.41.0 全量原则：status 全量落盘不截断）
     if check_cmd systemctl; then
         for svc in nvidia-fabricmanager nvidia-persistenced; do
-            run_and_log "systemctl status $svc 2>&1" "${dir}/service_${svc}.log"
+            # v1.48.69：systemd 中无该 unit 时 `systemctl status` 返回 4 → run_and_log 记 WARN 误报。
+            # nvidia-persistenced 在部分驱动安装方式下压根没有 unit（persistence mode 由运行时
+            # `nvidia-smi -pm 1` 开启），属安装/平台形态而非故障（22.84 实测 exit=4）。
+            # 先判 unit 是否存在：不存在 → 落盘说明文件（不计数）；存在 → 正常采集。
+            if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -q "^${svc}\.service"; then
+                run_and_log "systemctl status $svc 2>&1" "${dir}/service_${svc}.log"
+            else
+                { echo "# --- N/A: 系统未安装 ${svc}.service（unit 不存在，属安装方式/平台形态，非故障）---"
+                  echo "# 注：nvidia-persistenced 缺失时，可用 'nvidia-smi -pm 1' 运行时开启 persistence mode（重启失效）"; } \
+                    > "${dir}/service_${svc}.log"
+                echo -e "${YELLOW}[N/A] ${svc}.service 未安装（unit 不存在），跳过${NC}"
+            fi
         done
         # nvsmd 仅 MGX 平台（nvsm 命令存在）才查——A100/PCIe 平台无此服务，not-found 报 WARN 属误报（v1.43.7）
         if command -v nvsm >/dev/null 2>&1; then

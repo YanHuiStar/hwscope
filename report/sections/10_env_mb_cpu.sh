@@ -166,18 +166,29 @@ MEM_SPEED=$(extract "Configured Memory Speed" "${dmidecode_memory_full}")
 [ -z "$MEM_SPEED" ] && MEM_SPEED=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
 MEM_SPEED_NOTE=""
 # 降速检测：额定 Speed 与运行速率不一致时提示（如 6400 额定 / 5200 实际）
-# 插满降速是 DDR5 物理必然（信号负载/散热），不算故障；未插满仍降速才需关注
-# 正文保留提示（信息价值），验收清单判定时再结合插满状态区分
+# v1.48.69 判据修正（用户口径）：降速是否正常取决于 DPC（每通道 DIMM 数），不是"是否插满"——
+#   超过 1DPC（已插 > 槽位/2，即至少部分通道插 2 条）时内存控制器必须降频，属平台规范；
+#   典型如 24 根插 32 槽（8 通道 2DPC + 8 通道 1DPC）降速完全正常，不该报警；
+#   只有 ≤1DPC（每通道仅 1 条）仍降速才需核查（BIOS 设置 / 混插兼容性）。
 MEM_NOM=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
-if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null; then
-    MEM_SPEED_NOTE="⚠️ 降速运行（额定 ${MEM_NOM}）"
-fi
 # 插槽数：锚定 "Memory Device" 段头（子串匹配会命中 type20 "Memory Device Mapped Address"，插槽数恒为总槽+已插 → MEM_FULL 恒 0 误判 WARN）
 MEM_SLOTS=$(grep -cE "^[[:space:]]*Memory Device$" "${dmidecode_memory_full}" 2>/dev/null)
 MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${dmidecode_memory_full}" 2>/dev/null)
-# 插满状态标记（验收清单用：插满降速=正常，不算 WARN）
+# 插满状态标记
 MEM_FULL=0
 [ "${MEM_POPULATED:-0}" -ge "${MEM_SLOTS:-0}" ] 2>/dev/null && [ "${MEM_SLOTS:-0}" -gt 0 ] && MEM_FULL=1
+# 超过 1DPC 标记：已插槽位 > 槽位总数的一半 → 存在 2DPC 通道（验收清单据此判降速是否正常）
+MEM_OVER_1DPC=0
+if [ "${MEM_SLOTS:-0}" -gt 0 ]; then
+    [ "$(( ${MEM_POPULATED:-0} * 2 ))" -gt "${MEM_SLOTS:-0}" ] 2>/dev/null && MEM_OVER_1DPC=1
+fi
+if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null; then
+    if [ "$MEM_OVER_1DPC" -eq 1 ]; then
+        MEM_SPEED_NOTE="（降速运行：额定 ${MEM_NOM}，已插 ${MEM_POPULATED}/${MEM_SLOTS} 槽属 >1DPC 配置，为平台规范正常现象）"
+    else
+        MEM_SPEED_NOTE="⚠️ 降速运行（额定 ${MEM_NOM}；仅 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽 ≤1DPC 仍降速，建议核查）"
+    fi
+fi
 # 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率|Rank），空槽跳过
 # 行模式状态机：从 "Memory Device" 段头开始，空行结束（Size 行在 Locator 之前）
 # 速率语义：Speed=模块额定（原速率），Configured Memory Speed=当前实际运行（现速率）

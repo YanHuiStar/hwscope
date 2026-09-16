@@ -80,12 +80,14 @@ run_firmware() {
     [ -f "$FW_REQUIRED" ] || FW_REQUIRED=""
 
     # ─── 采集固件版本（并行；工具缺失自动跳过，不中断） ───
+    # v1.48.69：移除 `nvidia-smi nvswitch --version`——nvidia-smi 无 nvswitch 子命令（580.105.08 实测
+    # "ERROR: Option nvswitch is not valid for this command"，exit=2 → 误报 WARN），NVSwitch 版本统一由
+    # `nvswitch --version`（独立 CLI，有则采）提供，与 05_nvswitch.sh 的口径一致（v1.48.61 立）。
     run_and_log_parallel 4 \
         "nvidia-smi --query-gpu=index,name,vbios_version --format=csv,noheader 2>&1" "${dir}/gpu_vbios.csv" \
         "ipmitool mc info 2>&1" "${dir}/bmc_mc.log" \
         "mlxfwmanager --query 2>&1" "${dir}/nic_fwmanager.log" \
-        "nvswitch --version 2>&1" "${dir}/nvswitch_version.log" \
-        "nvidia-smi nvswitch --version 2>&1" "${dir}/nvswitch_smi_version.log"
+        "nvswitch --version 2>&1" "${dir}/nvswitch_version.log"
 
     # 网卡固件兜底（无 mlxfwmanager 时）：ethtool -i 逐口读 firmware-version
     if ! check_cmd mlxfwmanager; then
@@ -122,7 +124,6 @@ run_firmware() {
         echo ""
         echo "## NVSwitch"
         grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -iE "Version|Firmware" | sed 's/^/  /'
-        grep -v "^#" "${dir}/nvswitch_smi_version.log" 2>/dev/null | grep -iE "Version|Firmware" | sed 's/^/  /'
     } > "${dir}/fw_versions.log"
 
     # ─── 合规判定 ───
@@ -194,13 +195,13 @@ run_firmware() {
         done
     fi
 
-    # NVSwitch（nvswitch --version 优先，nvidia-smi nvswitch --version 兜底）
+    # NVSwitch 版本（仅 `nvswitch --version` 独立 CLI；v1.48.69 已移除 nvidia-smi nvswitch --version 兜底——
+    # 该子命令不存在，实测 exit=2 且输出只有报错，其解析分支从未生效）
     # 注意：必须先 grep -v '^#' 过滤日志头（"# Command  : nvswitch --version 2>&1" 含
     # "--version"/"2>&1"，直接匹配会误取头部导致版本号错乱，v1.29.0 冒烟实测踩坑）
     # 优先精确匹配 Firmware 行（防取到 "Library version" 库版本误判落后）
     cur=$(grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -m1 -iE "Firmware" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
     [ -z "$cur" ] && cur=$(grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -m1 -iE "Version" | grep -vi "Library" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
-    [ -z "$cur" ] && cur=$(grep -v "^#" "${dir}/nvswitch_smi_version.log" 2>/dev/null | grep -m1 -iE "Firmware|Version" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
     [ -n "$cur" ] && fw_emit "NVSWITCH" "NVSwitch" "$cur"
 
     # ─── 判定汇总（追加到 csv 尾部；供报告段直接引用） ───

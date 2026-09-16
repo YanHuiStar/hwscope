@@ -35,21 +35,31 @@ run_network() {
     # （CX8/NV access）不可用时 devlink 仍可用，作为 PSID 主来源（回退链 devlink → mstflint → mlxfwmanager）
     check_cmd devlink && ib_jobs+=("devlink dev info" "${dir}/devlink_dev_info.log")
     check_cmd mlxfwmanager && ib_jobs+=("mlxfwmanager" "${dir}/mlxfwmanager.log")
+    [ "${#ib_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${ib_jobs[@]}"
+
+    # ─── mlxconfig：独立低并发（Mellanox 工具共享 MST 设备，混在 IB 8 路里会互相抢占）───
+    # v1.48.69：原实现把每设备的两次 mlxconfig 调用（全量 + grep LINK_TYPE）都塞进 ib_jobs 的 8 路并行。
+    # 22.84 实测 12 设备混跑：mlx5_0 耗时 83s（正常数秒），mlx5_5/6 报
+    # "-E- Error when trying to check if NV access registers are supported"（exit=3 → 误报 WARN）。
+    # 改进：① 每设备只调一次工具（LINK_TYPE 由本地 grep 从全量日志提取，零额外工具调用）
+    #       ② 独立 2 路并行（MST 争用大幅降低，且不再与 ibstat/devlink 抢设备）
     if check_cmd mlxconfig; then
-        # v1.48.60 命令修正：mlxconfig 的子命令必须排在 -d 之后（正确写法 `mlxconfig -d <dev> q`）。
-        # 原 `mlxconfig query -d <dev>` 实测报 "-E- Failed to identify the device" 且无有效输出
-        # （exit 0 但内容为空，管道 grep 后变 exit 1 → 采集显示 no match），
-        # 导致每口 LINK_TYPE 长期缺失（实机 12 个设备全部 no match）；
-        # 全局 `mlxconfig query`（无 -d）同样无效——无 -d 时靠 MST 设备枚举，实测 8 次 identify 失败且耗时近百秒。
-        # 改为逐设备查询：既落盘全量（v1.41.1 全量原则），又提取 LINK_TYPE 供报告端汇总。
+        # v1.48.60 命令修正：子命令必须排在 -d 之后（`mlxconfig -d <dev> q`）；原 `mlxconfig query -d <dev>`
+        # 实测报 "-E- Failed to identify the device" 且无有效输出；全局 `mlxconfig query`（无 -d）靠 MST
+        # 枚举同样无效（8 次 identify 失败、耗时近百秒）。
         local mlx_cfg_devs
         mlx_cfg_devs=$(ls /sys/class/infiniband/ 2>/dev/null | grep mlx5)
+        local mlxcfg_jobs=()
         for cfg_dev in $mlx_cfg_devs; do
-            ib_jobs+=("mlxconfig -d ${cfg_dev} q" "${dir}/mlxconfig_${cfg_dev}.log")
-            ib_jobs+=("mlxconfig -d ${cfg_dev} q 2>/dev/null | grep -E 'LINK_TYPE_P[12]'" "${dir}/mlxconfig_${cfg_dev}_linktype.log")
+            mlxcfg_jobs+=("mlxconfig -d ${cfg_dev} q" "${dir}/mlxconfig_${cfg_dev}.log")
+        done
+        [ "${#mlxcfg_jobs[@]}" -gt 0 ] && run_and_log_parallel 2 "${mlxcfg_jobs[@]}"
+        # LINK_TYPE 提取：从刚采的全量日志本地提取（输出内容与原来的 `... q | grep` 完全一致）
+        for cfg_dev in $mlx_cfg_devs; do
+            grep -E 'LINK_TYPE_P[12]' "${dir}/mlxconfig_${cfg_dev}.log" 2>/dev/null \
+                > "${dir}/mlxconfig_${cfg_dev}_linktype.log" || true
         done
     fi
-    [ "${#ib_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${ib_jobs[@]}" 
 
     # ─── mlxlink：遍历所有 mlx5 设备（并行） ───
     if check_cmd mlxlink; then

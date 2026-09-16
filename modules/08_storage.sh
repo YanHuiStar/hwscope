@@ -71,7 +71,17 @@ run_storage() {
                         ;;
                     sd*)
                         smart_jobs+=("smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log")
-                        smart_jobs+=("smartctl -a -d scsi '$dev' 2>&1" "${dir}/smart_${dev_short}_scsi.log")
+                        # v1.48.69：USB 桥接盘不支持 SCSI SMART 透传（走 SAT），`-d scsi` 返回 exit=4
+                        # → run_and_log 记 WARN 误报（22.84 的 PHILIPS USB 盘实测）。按传输类型条件添加。
+                        local _dt
+                        _dt=$(lsblk -dno TRAN "/dev/${dev_short}" 2>/dev/null | tr -d '[:space:]')
+                        if [ "$_dt" != "usb" ]; then
+                            smart_jobs+=("smartctl -a -d scsi '$dev' 2>&1" "${dir}/smart_${dev_short}_scsi.log")
+                        else
+                            { echo "# --- N/A: ${dev_short} 传输类型为 USB（SAT 桥接），不支持 SCSI SMART 命令 ---"
+                              echo "# 已跳过 smartctl -d scsi（该调用必然 exit=4，属设备形态而非故障）"; } \
+                                > "${dir}/smart_${dev_short}_scsi.log"
+                        fi
                         smart_jobs+=("smartctl -a '$dev' 2>/dev/null | grep -iE 'Temperature|Reallocated|Pending|Offline|Current|Read Error|Write Error|Spin_Up|Hours|Power_Cycle|SAS'" "${dir}/smart_${dev_short}_health.log")
                         ;;
                     hd*|vd*)

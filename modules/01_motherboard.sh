@@ -30,12 +30,27 @@ run_motherboard() {
         "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|UUID|Family'" "${dir}/system_summary.log" \
         "dmidecode -t baseboard 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|Version|Asset Tag'" "${dir}/baseboard_summary.log"
 
-    # 7. 补充硬件表（缓存/槽位/板载设备/TPM，独立并行）
-    run_and_log_parallel 4 \
+    # 7. 补充硬件表（缓存/槽位/TPM，独立并行）
+    run_and_log_parallel 3 \
         "dmidecode -t cache 2>/dev/null" "${dir}/dmidecode_cache.log" \
         "dmidecode -t slot 2>/dev/null" "${dir}/dmidecode_slot.log" \
-        "dmidecode -t onboard 2>/dev/null" "${dir}/dmidecode_onboard.log" \
         "dmidecode -t 43 2>/dev/null" "${dir}/dmidecode_tpm.log"
+
+    # 7b. 板载设备表（Type 41 Onboard Devices Extended Information）——条件执行
+    # v1.48.69：多数服务器平台未实现 Type 41，`dmidecode -t onboard` 输出为空且 exit=2 → run_and_log 记 WARN 误报
+    #（22.84 实测：日志 output 区 0 字节 / exit=2）。属平台固有能力缺失，非采集失败。
+    # 判据用「输出中是否含 Type 41 条目」而非「输出非空」——dmidecode 在部分环境（如 WSL）
+    # 即使无该类型也会打印版本头 2 行（"# dmidecode 3.5" + "Scanning /dev/mem ..."），按非空判断会误采。
+    local _ob_probe
+    _ob_probe=$(dmidecode -t 41 2>/dev/null | grep -c "DMI type 41")
+    if [ "${_ob_probe:-0}" -gt 0 ]; then
+        run_and_log "dmidecode -t onboard 2>/dev/null" "${dir}/dmidecode_onboard.log"
+    else
+        { echo "# --- N/A: 平台未实现 SMBIOS Type 41（Onboard Devices Extended Information）---"
+          echo "# 该平台 dmidecode -t onboard 无输出且 exit=2，属固有能力缺失，非采集失败（不计 WARN）"; } \
+            > "${dir}/dmidecode_onboard.log"
+        echo -e "${YELLOW}[N/A] SMBIOS Type 41 未实现（平台固有），跳过 onboard 表${NC}"
+    fi
 
 write_manifest "${dir}/manifest.txt" \
         "dmidecode_system" "dmidecode_system.log" \

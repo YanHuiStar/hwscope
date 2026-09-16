@@ -138,14 +138,15 @@ gen_acceptance() {
         add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
     fi
 
-    # 5. 内存运行速率（2DPC 满插降速是平台规范/DDR5 物理必然，不算故障；未插满降速才提示；无数据 → N/A）
+    # 5. 内存运行速率（v1.48.69 判据修正：超过 1DPC——已插 > 槽位/2——降速属平台规范，
+    #    典型 24 根插 32 槽；仅 ≤1DPC 每通道 1 条仍降速才需核查。无数据 → N/A）
     if [ -z "$MEM_SPEED" ] || [ "$MEM_SPEED" = "N/A" ]; then
         add_item "内存运行速率" "N/A" "内存速率数据不可用"
     elif [ -n "$MEM_SPEED_NOTE" ]; then
-        if [ "$MEM_FULL" -eq 1 ]; then
-            add_item "内存运行速率" "PASS" "${MEM_SPEED_NOTE}（插满 ${MEM_POPULATED}/${MEM_SLOTS} 槽 2DPC，降速属平台规范正常现象）"
+        if [ "${MEM_OVER_1DPC:-0}" -eq 1 ] || [ "${MEM_FULL:-0}" -eq 1 ]; then
+            add_item "内存运行速率" "PASS" "降速运行（额定 ${MEM_NOM}，现速 ${MEM_SPEED}；已插 ${MEM_POPULATED}/${MEM_SLOTS} 槽属 >1DPC 配置，降速为平台规范正常现象）"
         else
-            add_item "内存运行速率" "WARN" "${MEM_SPEED_NOTE}（仅插 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽仍降速，建议核查）"
+            add_item "内存运行速率" "WARN" "降速运行（额定 ${MEM_NOM}，现速 ${MEM_SPEED}；仅插 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽 ≤1DPC 仍降速，建议核查 BIOS 设置或混插兼容性）"
         fi
     else
         add_item "内存运行速率" "PASS" "额定速率运行（${MEM_SPEED:-N/A}）"

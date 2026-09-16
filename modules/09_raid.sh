@@ -26,10 +26,24 @@ run_raid() {
     run_and_log "lspci 2>/dev/null | grep -iE 'RAID|SAS|SATA|MegaRAID|Broadcom|LSI|AVAGO'" \
         "${dir}/pci_raid_hba_list.log"
 
-    local ctrl_count=0 hba_count=0 hba2_count=0 raid_buses=""
+    # v1.48.69：storcli64 探测带固定路径——Broadcom 官方包装到 /opt/MegaRAID/storcli/ 且不建 PATH 软链
+    # （与 v1.48.38 修的 /opt/rocm/bin 同类问题）。22.84 实证：仅按 PATH 判定"未安装"→ 报告写
+    #  "storcli64 未安装"，实际该路径下可执行，且能读到控制器/物理盘/虚拟盘全部信息。
+    #  perccli 为 Dell 版同类工具，同样落 /opt/MegaRAID/perccli/。
+    local STORCLI_BIN="" _cand=""
     if check_cmd storcli64; then
-        run_and_log "storcli64 show all 2>&1" "${dir}/storcli_controllers.log"
-        ctrl_count=$(storcli64 show all 2>/dev/null | grep -c "Controller = ")
+        STORCLI_BIN="storcli64"
+    else
+        for _cand in /opt/MegaRAID/storcli/storcli64 /opt/MegaRAID/perccli/perccli64 /usr/local/bin/storcli64; do
+            [ -x "$_cand" ] && { STORCLI_BIN="$_cand"; break; }
+        done
+        [ -n "$STORCLI_BIN" ] && echo -e "${YELLOW}[INFO] storcli64 不在 PATH，改用固定路径 ${STORCLI_BIN}${NC}"
+    fi
+
+    local ctrl_count=0 hba_count=0 hba2_count=0 raid_buses=""
+    if [ -n "$STORCLI_BIN" ]; then
+        run_and_log "$STORCLI_BIN show all 2>&1" "${dir}/storcli_controllers.log"
+        ctrl_count=$("$STORCLI_BIN" show all 2>/dev/null | grep -c "Controller = ")
     fi
     if check_cmd sas3ircu; then
         hba_count=$(sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\\.|^Index" || true)
@@ -42,20 +56,20 @@ run_raid() {
     # Phase 2: 构建并行任务数组
     local raid_jobs=()
 
-    # MegaRAID 每控制器
-    if check_cmd storcli64; then
+    # MegaRAID 每控制器（v1.48.69：统一走 $STORCLI_BIN，兼容 /opt/MegaRAID 下的非 PATH 安装）
+    if [ -n "$STORCLI_BIN" ]; then
         for ((c=0; c<ctrl_count; c++)); do
-            raid_jobs+=("storcli64 /c${c} show all 2>&1" "${dir}/ctrl${c}_info.log")
-            raid_jobs+=("storcli64 /c${c} show all 2>&1 | grep -iE 'Model|Serial|Firmware|BIOS|Boot|Board Type|Ctrl Rate|ROC temperature|Product Name'" "${dir}/ctrl${c}_summary.log")
-            raid_jobs+=("storcli64 /c${c} /bbu show all 2>&1" "${dir}/ctrl${c}_bbu.log")
-            raid_jobs+=("storcli64 /c${c} show event 2>&1" "${dir}/ctrl${c}_events.log")
+            raid_jobs+=("$STORCLI_BIN /c${c} show all 2>&1" "${dir}/ctrl${c}_info.log")
+            raid_jobs+=("$STORCLI_BIN /c${c} show all 2>&1 | grep -iE 'Model|Serial|Firmware|BIOS|Boot|Board Type|Ctrl Rate|ROC temperature|Product Name'" "${dir}/ctrl${c}_summary.log")
+            raid_jobs+=("$STORCLI_BIN /c${c} /bbu show all 2>&1" "${dir}/ctrl${c}_bbu.log")
+            raid_jobs+=("$STORCLI_BIN /c${c} show event 2>&1" "${dir}/ctrl${c}_events.log")
             # 虚拟盘数：统计 VD 表数据行（段头 "Virtual Drives :" 恒 1 次，按段头计数多 VD 时只采 v0——改按表行统计）
             local vd_count
-            vd_count=$(storcli64 /c${c} /vx show all 2>/dev/null | grep -cE "^[0-9]+/[0-9]+[[:space:]]+" || true)
+            vd_count=$("$STORCLI_BIN" /c${c} /vx show all 2>/dev/null | grep -cE "^[0-9]+/[0-9]+[[:space:]]+" || true)
             if [ "${vd_count:-0}" -gt 0 ]; then
-                raid_jobs+=("storcli64 /c${c} /vx show all 2>&1" "${dir}/ctrl${c}_vd_all.log")
+                raid_jobs+=("$STORCLI_BIN /c${c} /vx show all 2>&1" "${dir}/ctrl${c}_vd_all.log")
                 for ((v=0; v<vd_count; v++)); do
-                    raid_jobs+=("storcli64 /c${c} /v${v} show all 2>&1" "${dir}/ctrl${c}_vd${v}.log")
+                    raid_jobs+=("$STORCLI_BIN /c${c} /v${v} show all 2>&1" "${dir}/ctrl${c}_vd${v}.log")
                 done
             fi
         done
