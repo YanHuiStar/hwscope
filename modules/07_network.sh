@@ -207,7 +207,7 @@ run_network() {
                         dev==bdf && /Part Number:/ { sub(/.*Part Number:[[:space:]]*/, ""); print; exit }
                     ' "${dir}/mlxfwmanager.log" 2>/dev/null)
                     # v1.48.56：Part Number 为占位符（"--"/"-"）时不采用——原逻辑只判非空，
-                    # 会把空值变成 "PN:--" 污染 PSID 列（实测 B300-sample 出现）
+                    # 会把空值变成 "PN:--" 污染 PSID 列（实测 B300 样本出现）
                     case "$fw_psid" in
                         ""|"--"|"-"|"N/A") fw_psid="" ;;
                         *) fw_psid="PN:${fw_psid}" ;;

@@ -99,7 +99,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
     git fetch --force origin
     git reset --hard origin/main         # ③ 对齐新远程
     # ④ 逐提交搬回（先查是否触及 SN 相关文件/内容，有则先清理再搬）
-    git show <未推提交> --stat | grep -iE "head-sample|amd-sample|baseline"   # 检查
+    git show <未推提交> --stat | grep -iE "<SN 模式，如厂商前缀+数字>|baseline"   # 检查
     git cherry-pick <未推提交>
     git stash pop                        # ⑤ 恢复未提交改动
     ```
