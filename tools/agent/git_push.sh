@@ -263,7 +263,7 @@ push_main() {
     # ─── 网络快速预检（v1.45.8）：github.com 直连 3s + 代理 3s 都不通 → 快速 FAIL——
     #     断网时避免 3×21s 直连空转（WorkBuddy 死循环场景每轮开销从 ~90s 降到 ~4s），
     #     预检失败也计入失败计数（连续 3 次仍触发熔断冷却） ───
-    local pre_ok=0
+    local pre_ok=0 pre_use_proxy=0
     if command -v curl >/dev/null 2>&1; then
         # v1.48.52：预检超时 3s → 5s——网络慢时 3s 会误判断网（实测多次"预检失败但实际可推"），
         # 5s 仍远低于直连失败的 21s 默认超时，兼顾快速判定与准确性
@@ -274,7 +274,7 @@ push_main() {
         if [ "$pre_ok" -eq 0 ]; then
             local pre_proxy
             pre_proxy="$(detect_proxy)"
-            [ -n "$pre_proxy" ] && curl -s -x "$pre_proxy" --max-time 5 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
+            [ -n "$pre_proxy" ] && curl -s -x "$pre_proxy" --max-time 5 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && { pre_ok=1; pre_use_proxy=1; }
         fi
         if [ "$pre_ok" -eq 0 ]; then
             local fc0=0
@@ -297,15 +297,23 @@ push_main() {
         ai "先 git pull --rebase $REMOTE $BRANCH，在远程 v${rver} 基础上升级版本（tools/sync_version.sh），再重推"
         return 1
     fi
-    # 策略：默认直连优先（3 次，connectTimeout=6s 快速失败——直连有时反而能成功，
-    #       不因探测到代理就跳过直连）；3 次全失败才走代理兜底（v1.38.3 用户确认）
-    for attempt in 1 2 3; do
-        info "推送尝试 ${attempt}/3（直连）..."
-        out="$(try_push)"
-        if [ $? -eq 0 ]; then rm -f "$fail_count_file" "$cooldown_file"; return 0; fi
-        echo "$out" | sed 's/^/    /'
-        [ "$attempt" -lt 3 ] && sleep 2
-    done
+    # 策略（v1.48.73 修正）：优先按预检结论走——
+    #   预检显示"直连不可达 + 代理可用"时直接走代理，跳过直连重试。原实现无条件先试 3 次直连，
+    #   而直连失败每次要等 21s（`http.connectTimeout=6` 对本机网络无效，实测仍是 21s），
+    #   合计 ~63s 全花在已知不通的路径上才轮到代理（用户反馈"这么久吗"）。
+    #   直连可达时保持原直连优先策略（直连不受代理节点波动影响）。
+    #   注意：若直连能通但推送仍失败（如认证/权限），下方代理兜底逻辑不变。
+    if [ "$pre_use_proxy" -eq 1 ]; then
+        info "预检显示直连不可达、代理可用——直接走代理（跳过 3 次直连重试，省 ~60s）"
+    else
+        for attempt in 1 2 3; do
+            info "推送尝试 ${attempt}/3（直连）..."
+            out="$(try_push)"
+            if [ $? -eq 0 ]; then rm -f "$fail_count_file" "$cooldown_file"; return 0; fi
+            echo "$out" | sed 's/^/    /'
+            [ "$attempt" -lt 3 ] && sleep 2
+        done
+    fi
 
     proxy="$(detect_proxy)"
     if [ -n "$proxy" ]; then
