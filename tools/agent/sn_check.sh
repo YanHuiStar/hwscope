@@ -28,12 +28,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_DIR" || exit 1
 
-MODE="default"; MSGFILE=""
+MODE="default"; MSGFILE=""; WITH_REMOTES=0
 for a in "$@"; do
     case "$a" in
         --staged)      MODE="staged" ;;
         --commit-msg)  MODE="commitmsg"; MSGFILE="$2"; shift ;;
         --all-history) MODE="history" ;;
+        --include-remotes) WITH_REMOTES=1 ;;
         --install-hook) MODE="install" ;;
         -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     esac
@@ -94,10 +95,16 @@ case "$MODE" in
         if ! scan_text "提交信息" < "$MSGFILE"; then RC=1; fi
         ;;
     history)
-        echo "[INFO] 扫描全历史（内容 + 提交信息 + 文件名）..."
-        if ! git log --all --format="%s%n%b" 2>/dev/null | scan_text "历史提交信息"; then RC=1; fi
-        if ! git rev-list --all 2>/dev/null | while read -r c; do git grep -hE "$PATTERN" "$c" -- 2>/dev/null; done | grep -vE "$NOISE" | scan_text "历史文件内容"; then RC=1; fi
-        if ! git log --all --name-only --pretty=format: 2>/dev/null | scan_text "历史文件名"; then RC=1; fi
+        # 默认只扫**本地分支**（--branches）：远程引用可能尚未推送清理结果，
+        # 用 --all 会把"待 force push 的旧历史"也算进来，产生误导性命中（本地已干净却报不干净）。
+        # 需要连同远程一起看时加 --include-remotes。
+        REV="--branches"
+        [ "$WITH_REMOTES" -eq 1 ] && REV="--all"
+        echo "[INFO] 扫描历史（内容 + 提交信息 + 文件名；范围: ${REV}）..."
+        if ! git log $REV --format="%s%n%b" 2>/dev/null | scan_text "历史提交信息"; then RC=1; fi
+        if ! git rev-list $REV 2>/dev/null | while read -r c; do git grep -hE "$PATTERN" "$c" -- 2>/dev/null; done | grep -vE "$NOISE" | scan_text "历史文件内容"; then RC=1; fi
+        if ! git log $REV --name-only --pretty=format: 2>/dev/null | scan_text "历史文件名"; then RC=1; fi
+        [ "$WITH_REMOTES" -eq 1 ] && echo "[INFO] 已含远程引用（若刚清理过历史，远程仍为旧提交属正常，force push 后复查）"
         ;;
     default)
         echo "[INFO] 检查暂存区 + 待推送提交..."
