@@ -64,24 +64,63 @@ function Invoke-Native {
 }
 
 function Invoke-SSHRetry {
-    param([string]$Desc, [scriptblock]$Action, [int]$MaxTries = 3)
+    param([string]$Desc, [scriptblock]$Action, [int]$MaxTries = 3, [string]$HostName = "")
     # v1.48.24：native 命令（scp/ssh）写 stderr 的 Warning（如 host key "Permanently added"）在
     # $ErrorActionPreference="Stop" 下会抛 NativeCommandError 中断脚本——即使 exit code=0。
     # 此处临时降级为 Continue，成败只信 $LASTEXITCODE（连接/认证失败 exit≠0 仍会被捕获重试）
     $oldEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    # v1.48.82：改为「噪音白名单」——只压制 ssh/OpenSSH 客户端自身的提示，
+    #   不再整类丢弃 stderr。v1.48.51 的 `-isnot [ErrorRecord]` 会把 stderr 全吞，
+    #   而单次认证模式让 `bash hwscope.sh >&2` 走 stderr（避开 stdout 上的 tar 流），
+    #   结果采集进度全部消失、只剩头尾几行（用户报"输出被吞"）。
+    $NoisePat = 'Permanently added|REMOTE HOST IDENTIFICATION|Host key verification failed|Offending (RSA|ED25519|ECDSA) key|NativeCommandError|^\s*\+\s*(CategoryInfo|FullyQualifiedErrorId)|^\s*\+ '
+    $keyHandled = $false
     for ($i = 1; $i -le $MaxTries; $i++) {
         $out = @()
-        # v1.48.51：stderr（ErrorRecord）只累积用于判定，不显示——输错密码时原样输出会打出
-        # PowerShell 的 NativeCommandError 红块（功能正常但观感吓人）；密码提示走 tty 不受影响
         # v1.48.53 修复：v1.48.51 误用 `$raw = & $Action` 先整体捕获——PowerShell 会消费完 native
         # 全部输出才赋值，导致远端采集"全部完成才输出"（用户误判卡死）。必须保持管道流式：
         # native 输出逐行进入 ForEach-Object 即时显示（下同：勿再引入 `$x = & $cmd` 形式的捕获）
         & { $ErrorActionPreference = "Continue"; & $Action 2>&1 } | ForEach-Object {
-            $out += "$_"
-            if ($_ -isnot [System.Management.Automation.ErrorRecord]) { $_ }   # 仅 stdout/正常输出显示
+            $line = "$_"
+            $out += $line
+            if ($_ -isnot [System.Management.Automation.ErrorRecord]) { $_ }        # stdout：原样显示
+            elseif ($line -notmatch $NoisePat) { $line }                             # 非噪音 stderr：显示（远端采集进度）
         } | Out-Host
         $code = $LASTEXITCODE
+
+        # ── 方案 A：主机密钥变更自动处理（v1.48.82，用户选定）──
+        # 流动盘/重装场景下 host key 变化是常态。此处：备份 known_hosts → 删除该主机旧记录 →
+        # 提示新旧指纹 → 自动重试一次。仅对「已知主机的 key 变化」放行，未知主机仍走 accept-new。
+        $keyChanged = (($out -join "`n") -match "REMOTE HOST IDENTIFICATION HAS CHANGED")
+        if ($keyChanged -and -not $keyHandled -and $HostName) {
+            $keyHandled = $true
+            $hkHost = ($HostName -replace '^[^@]+@', '')
+            $kh = Join-Path $env:USERPROFILE ".ssh\known_hosts"
+            Write-Host "[WARN] $hkHost 的主机密钥已变化（重装系统/换盘）——自动处理中..." -ForegroundColor Yellow
+            if (Test-Path $kh) {
+                $bak = "$kh.bak-$(Get-Date -Format 'yyyyMMddHHmmss')"
+                Copy-Item $kh $bak -Force
+                Write-Host "[INFO]   已备份 known_hosts → $(Split-Path $bak -Leaf)" -ForegroundColor Gray
+            }
+            # 记录变更前指纹（供事后核对是否被真实替换）
+            $oldFp = & ssh-keygen -F $hkHost 2>$null | Where-Object { $_ -and $_ -notmatch '^#' }
+            if ($oldFp) {
+                $oldSum = ($oldFp | ssh-keygen -lf - 2>$null) -join ' / '
+                Write-Host "[INFO]   旧指纹: $oldSum" -ForegroundColor DarkGray
+            }
+            & ssh-keygen -R $hkHost 2>&1 | Out-Null
+            Write-Host "[INFO]   已清除旧记录，重新连接以接受新密钥（指纹如下，请核对是否为预期机器）" -ForegroundColor Gray
+            $newFp = & ssh-keyscan -T 5 $hkHost 2>$null
+            if ($newFp) {
+                $newSum = ($newFp | ssh-keygen -lf - 2>$null) -join ' / '
+                Write-Host "[INFO]   新指纹: $newSum" -ForegroundColor DarkGray
+            }
+            Write-Host "[INFO]   重试 $Desc ..." -ForegroundColor Yellow
+            $i--          # 本次不计入重试次数
+            continue
+        }
+
         if ($code -eq 0) { $ErrorActionPreference = $oldEAP; return 0 }
         $authFail = (($out -join "`n") -match "Permission denied|password.*incorrect|Authentication failed")
         if (-not $authFail -or $i -ge $MaxTries) {
@@ -136,7 +175,7 @@ try {
             Write-Host "[INFO]   远端先非交互安装依赖: install_tool -c $InstallItems -y" -ForegroundColor Gray
         }
         $rs = "cd /tmp; rm -rf $RemoteDir; mkdir -p $RemoteDir; tar xzf - -C $RemoteDir; cd $RemoteDir; ${preCmd}bash hwscope.sh$hwArgs >&2; rc=`$?; if [ `$rc -eq 0 ]; then tar czf - --warning=no-timestamp -C $RemoteDir/output . -C $RemoteDir logs; fi; rm -rf $RemoteDir; exit `$rc"
-        $rc = Invoke-SSHRetry "远程采集" { & cmd /c ("ssh $SSHOpts -T $H `"$rs`" < `"$pushFile`" > `"$pullFile`"") }
+        $rc = Invoke-SSHRetry "远程采集" { & cmd /c ("ssh $SSHOpts -T $H `"$rs`" < `"$pushFile`" > `"$pullFile`"") } -HostName $H
         if ($rc -ne 0) {
             if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源可达性)" -ForegroundColor Red }
             else { Write-Host "[ERROR] 远程采集失败 (exit=$rc)" -ForegroundColor Red }
@@ -146,7 +185,7 @@ try {
         # ── 原三步模式：普通用户 + sudo（sudo 需 tty 交互输密码，无法与 stdin 传数据共存） ──
         Write-Host "[INFO] 三步模式（普通用户 + sudo 需 tty）：推送 → 执行 → 回拉（3 次密码）..." -ForegroundColor Yellow
         # 2. scp 推送（认证失败自动重试）
-        $rc = Invoke-SSHRetry "scp 推送" { & scp $SSHOpts.Split(" ") $pushFile "${H}:${RemoteDir}.tgz" }
+        $rc = Invoke-SSHRetry "scp 推送" { & scp $SSHOpts.Split(" ") $pushFile "${H}:${RemoteDir}.tgz" } -HostName $H
         if ($rc -ne 0) { Write-Host "[ERROR] 项目推送失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
 
         # 3. ssh 解包 + 远端执行（不传 --output：hwscope.sh 默认输出 <远端>/output/<MACHINE_ID>/，对标本地 output/<SN> 结构）
@@ -155,7 +194,7 @@ try {
             $installCmd = "$Sudo bash tools/install_tool.sh -c $InstallItems -y && "
         }
         Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs（默认输出 output/<MACHINE_ID>/）" -ForegroundColor Yellow
-        $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs" }
+        $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs" } -HostName $H
         if ($rc -ne 0) {
             if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源网络可达性)" -ForegroundColor Red }
             else { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red }
