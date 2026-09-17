@@ -85,7 +85,16 @@ function Invoke-SSHRetry {
             $line = "$_"
             $out += $line
             if ($_ -isnot [System.Management.Automation.ErrorRecord]) { $_ }        # stdout：原样显示
-            elseif ($line -notmatch $NoisePat) { $line }                             # 非噪音 stderr：显示（远端采集进度）
+            else {
+                # v1.48.83：stderr 必须输出 Exception.Message（真实文本），不能输出 "$_"
+                #   ——ErrorRecord 字符串化对空消息返回类型名（System.Management.Automation.RemoteException），
+                #   会把远端 stderr 的空行刷成这串字（用户报"空行排版没了"）；Message 为空时输出单空格占位，
+                #   既不破坏管道流式又能保住原空行（空串会被 PowerShell 管道丢弃）
+                if ($line -notmatch $NoisePat) {
+                    $msg = $_.Exception.Message
+                    if ([string]::IsNullOrEmpty($msg)) { ' ' } else { $msg }
+                }
+            }
         } | Out-Host
         $code = $LASTEXITCODE
 
