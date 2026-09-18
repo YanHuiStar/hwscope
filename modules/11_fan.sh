@@ -23,7 +23,7 @@ run_fan() {
     # ─── 1. IPMI 风扇传感器 ───
     if check_cmd ipmitool; then
         # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
-        local ipmi_to="timeout 10"; check_cmd timeout || ipmi_to=""
+        local ipmi_to="timeout ${IPMI_TIMEOUT:-30}"; check_cmd timeout || ipmi_to=""
         run_and_log_parallel 4 \
             "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep -iE 'FAN|RPM|PWM|Duty'\"" "${dir}/ipmi_fan_sensors.log" \
             "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep -iE 'FAN.*Status|FAN.*Mode'\"" "${dir}/ipmi_fan_status.log" \

@@ -199,3 +199,7 @@ bash tools/agent/agent_sync.sh --clear      # 推送成功后：清空未推送�
 
 - **版本号只升不降**：升版本前看 agent_sync 显示的远程版本，在远程基础上升；git_push 会硬拦截"本地 < 远程"
 - 协作规则全文见 [AGENTS.md](../AGENTS.md)「多机器/多 Agent 协作规则」
+
+## 环境变量
+
+- `HWSCOPE_IPMI_TIMEOUT`（默认 `30`，单位秒）：IPMI/BMC 命令超时。现场 BMC 响应慢（如技嘉 B200 实测 ipmi_sensors/sdr/fan_*/psu_* 在 10s 内全线超时）时可调大，例如 `HWSCOPE_IPMI_TIMEOUT=60 sudo -E bash hwscope.sh`。注意 `sudo` 需用 `-E` 保留环境变量，或改为 `sudo HWSCOPE_IPMI_TIMEOUT=60 bash hwscope.sh`。

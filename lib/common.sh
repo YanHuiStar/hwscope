@@ -13,6 +13,18 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# ─── IPMI/BMC 命令超时（秒） ───
+# v1.48.91：由硬编码 10s 提为 30s，并开放环境变量覆盖。
+# 起因：技嘉 B200 五台机上各有 10~13 个 IPMI 命令在 10s 内全部超时（exit=124）——
+#   ipmi_sensors / sdr / fan_* / psu_* / sensors_temp 全线拿不到，导致风扇、温度、
+#   PSU 冗余三项落成「采集失败」N/A，其中一台因此跨过「≥4 项无数据」阈值被
+#   判成「数据不足」而无法验收。现场 BMC 响应慢是常见情形，10s 对这类平台不够。
+# 代价可控：timeout 只对**卡住的命令**生效——正常命令 1s 内返回就不会等满 30s，
+#   所以调大默认值对健康 BMC 的采集耗时几乎无影响，只让慢 BMC 有机会把数据取回来。
+# 覆盖方式：HWSCOPE_IPMI_TIMEOUT=60 ./hwscope.sh（调试个别极慢平台时用）
+IPMI_TIMEOUT="${HWSCOPE_IPMI_TIMEOUT:-30}"
+export IPMI_TIMEOUT
+
 # ─── 脚本帮助（统一 -h/--help：打印脚本头部注释块） ───
 # 提取 $0 的注释头（跳过 shebang 与 ==== 装饰线），作为帮助文本；调用后 exit 0
 show_script_help() {

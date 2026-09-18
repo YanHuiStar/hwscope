@@ -22,7 +22,7 @@ run_bmc() {
     # ─── 本地 IPMI（OS 内 /dev/ipmi0） ───
     if check_cmd ipmitool; then
         # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
-        local ipmi_to="timeout 10"; check_cmd timeout || ipmi_to=""
+        local ipmi_to="timeout ${IPMI_TIMEOUT:-30}"; check_cmd timeout || ipmi_to=""
         # 本地 IPMI（BMC 通道限制 max_jobs=4）
         run_and_log_parallel 4 \
             "${ipmi_to} bash -c \"ipmitool mc info 2>&1\"" "${dir}/ipmi_mc.log" \
@@ -54,7 +54,7 @@ run_bmc() {
         echo -e "${BLUE}[BMC] Remote BMC: ${BMC_IP}${NC}"
         export IPMI_PASSWORD="${BMC_PASS}"
         # -E: 从 IPMI_PASSWORD 环境变量读密码（无 -E 会交互式等密码，被 timeout 杀掉）；timeout 缺失兜底（精简容器）
-        local bmc_timeout="timeout 8"
+        local bmc_timeout="timeout ${IPMI_TIMEOUT:-30}"
         check_cmd timeout || bmc_timeout=""
         local ipmi_cmd="${bmc_timeout} ipmitool -E -H ${BMC_IP} -U ${BMC_USER} -I ${BMC_INTERFACE}"
 
@@ -72,7 +72,7 @@ run_bmc() {
     if [ -n "$HGX_BMC_IP" ] && check_cmd ipmitool; then
         echo -e "${BLUE}[BMC] HGX Baseboard BMC: ${HGX_BMC_IP}${NC}"
         export IPMI_PASSWORD="${HGX_BMC_PASS}"
-        local hgx_timeout="timeout 8"
+        local hgx_timeout="timeout ${IPMI_TIMEOUT:-30}"
         check_cmd timeout || hgx_timeout=""
         local hgx_cmd="${hgx_timeout} ipmitool -E -H ${HGX_BMC_IP} -U ${HGX_BMC_USER} -I ${BMC_INTERFACE}"
 
