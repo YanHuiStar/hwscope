@@ -40,7 +40,19 @@ run_psu() {
         run_and_log "dmidecode -t 39 2>/dev/null" "${dir}/dmidecode_psu.log"
     fi
 
-    # ─── 3. sysfs power_supply ───
+    # ─── 3b. CPU 功耗（Intel RAPL / AMD energy driver）——只读 sysfs，零额外依赖（v1.48.88） ───
+    # 为什么需要两次采样：sysfs 暴露的 energy_uj 是**自开机累积的能量计数器**，
+    #   单次读取没有功率含义，必须取差值再除以时间：
+    #     P(W) = ΔE(uJ) × 10⁻⁶ / Δt(s) = ΔE / Δt(ns) × 1000
+    #   采样间隔取 3s（RAPL 计数器刷新粒度通常 1ms~1s，3s 足够稳且不至于明显拖慢采集）。
+    # 典型域名：package-0（整 CPU）、core、uncore、dram。平台无 /sys/class/powercap → 跳过，
+    #   报告端按「平台固有 N/A」处理（虚拟机/部分 AMD 平台确实没有）。
+    if [ -d /sys/class/powercap ]; then
+        _rapl_cmd='D=$(ls -d /sys/class/powercap/*/ 2>/dev/null); [ -n "$D" ] || exit 0; for d in $D; do [ -f "${d}name" ] || continue; echo "$(cat ${d}name 2>/dev/null)|$(cat ${d}energy_uj 2>/dev/null)"; done > /tmp/.hw_rapl1; t1=$(date +%s%N); sleep 3; for d in $D; do [ -f "${d}name" ] || continue; echo "$(cat ${d}name 2>/dev/null)|$(cat ${d}energy_uj 2>/dev/null)"; done > /tmp/.hw_rapl2; t2=$(date +%s%N); dt_ns=$((t2-t1)); paste -d"|" /tmp/.hw_rapl1 /tmp/.hw_rapl2 | awk -F"|" -v dt="$dt_ns" "{ if (\$2!=\"\" && \$4!=\"\" && \$4>=\$2 && dt>0) printf \"%s: %.1f W  (E1=%s uJ, E2=%s uJ, 间隔 %.1f s)\\n\", \$1, (\$4-\$2)*1000/dt, \$2, \$4, dt/1000000000 }"; rm -f /tmp/.hw_rapl1 /tmp/.hw_rapl2'
+        run_and_log "$_rapl_cmd" "${dir}/rapl_power.log"
+    fi
+
+    # ─── 4. sysfs power_supply ───
     if [ -d /sys/class/power_supply ]; then
         for psu in /sys/class/power_supply/*; do
             local psu_name

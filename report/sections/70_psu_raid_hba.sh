@@ -223,11 +223,28 @@ if [ -f "$_fru_src" ]; then
             PSU_DCMI="DCMI 平台功耗读数（ipmitool dcmi power reading）: 当前 ${dcmi_cur}W${dcmi_min:+ · 最小 ${dcmi_min}W}${dcmi_max:+ · 最大 ${dcmi_max}W}${dcmi_avg:+ · 平均 ${dcmi_avg}W}"
         fi
     fi
+    # ─── CPU 功耗（RAPL 两次采样，v1.48.88）——独立信源，可与 DCMI 交叉验证 ───
+    # 为什么值得单列：DCMI 给的是平台总功耗读数，厂际口径不一（有的只报主板域）；
+    #   RAPL 是 CPU 自己的能量计数器，两个数对不上时就说明 DCMI 口径有问题——
+    #   这正是我们之前**不该**替客户断言「DCMI 含/不含 GPU」的原因。
+    PSU_CPU_RAPL=""
+    if [ -f "${PSU_DIR}/rapl_power.log" ]; then
+        _rapl_out=$(grep -vE "^#|^[[:space:]]*$" "${PSU_DIR}/rapl_power.log" 2>/dev/null | grep -E "W[[:space:]]*\(" | sed 's/^[[:space:]]*//' | head -4)
+        _rapl_pkg=$(printf '%s\n' "$_rapl_out" | grep -iE "^package" | paste -sd' · ' -)
+        _rapl_other=$(printf '%s\n' "$_rapl_out" | grep -viE "^package" | head -3 | awk -F: '{print $1}' | paste -sd'/' -)
+        if [ -n "$_rapl_pkg" ]; then
+            PSU_CPU_RAPL="CPU 功耗（RAPL）: ${_rapl_pkg}"
+            [ -n "$_rapl_other" ] && PSU_CPU_RAPL="${PSU_CPU_RAPL}（另有 ${_rapl_other} 域）"
+        elif [ -n "$_rapl_out" ]; then
+            PSU_CPU_RAPL="CPU 功耗（RAPL）: $(printf '%s\n' "$_rapl_out" | paste -sd' · ' -)"
+        fi
+    fi
     # PSU 尾注文本（变量拼接，避免 $( ) 命令替换剥离尾换行导致排版空行堆积）
     PSU_NOTE_TXT=""
     [ "$PSU_REDUNDANT" != "N/A" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  电源冗余: ${PSU_REDUNDANT}"$'\n'
     [ -n "$PSU_EXTRA" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_EXTRA}"$'\n'
     [ -n "$PSU_DCMI" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_DCMI}"$'\n'
+    [ -n "$PSU_CPU_RAPL" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_CPU_RAPL}"$'\n'
     [ -n "$PSU_PLATFORM_NOTE" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ⚠️ ${PSU_PLATFORM_NOTE}"$'\n'
     # 每只 PSU 当前输入功率（Pwr_PSU<N>_In 或 PS<N>_Pin，| W |），按编号匹配追加
     if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -qE "Pwr_PSU[0-9]|PS[0-9]_Pin" "$psu_power_csv" 2>/dev/null; then

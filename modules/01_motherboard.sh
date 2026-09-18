@@ -36,6 +36,15 @@ run_motherboard() {
         "dmidecode -t slot 2>/dev/null" "${dir}/dmidecode_slot.log" \
         "dmidecode -t 43 2>/dev/null" "${dir}/dmidecode_tpm.log"
 
+    # 7a. 全量 DMI 表（v1.48.88）——裸 dmidecode 覆盖全部 DMI type，补齐此前未采的类型：
+    #   Type 27 Cooling Device（风扇）、26 Voltage Probe、28 Temperature Probe、
+    #   29 Electrical Current Probe（电流，可与 DCMI 功耗交叉验证）、11 OEM Strings（厂商自定义）、
+    #   38 IPMI Device、42 Management Controller Host Interface、8 Port Connector、
+    #   10 On Board Devices、32 System Boot、22 Portable Battery 等。
+    #   单条命令、零额外依赖，是「一次性补全」成本最低的做法。各 type 的专用文件仍保留
+    #   （报告端按专用文件解析；全量文件用于兜底、溯源与后续按需扩展）。
+    run_and_log "dmidecode 2>/dev/null" "${dir}/dmidecode_full.log"
+
     # 7b. 板载设备表（Type 41 Onboard Devices Extended Information）——条件执行
     # v1.48.69：多数服务器平台未实现 Type 41，`dmidecode -t onboard` 输出为空且 exit=2 → run_and_log 记 WARN 误报
     #（22.84 实测：日志 output 区 0 字节 / exit=2）。属平台固有能力缺失，非采集失败。

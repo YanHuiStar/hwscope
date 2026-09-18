@@ -524,7 +524,8 @@ fi)
 | 数量 | $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A（未取到数据）"; fi) |
 | 转速 | ${FAN_SPEED:-N/A} |
 | 冗余 | ${FAN_REDUNDANT:-N/A}$(if [ -n "$FAN_EXTRA" ]; then echo "（${FAN_EXTRA}）"; fi) |
-| 温度 | ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}} |
+| 温度 | ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}} |$(if [ -n "$FAN_DETAILS" ]; then echo "
+| 数据来源 | ${FAN_SOURCE:-IPMI} |"; fi)
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "### 散热风扇明细"
     echo "| # | 风扇 | 转速(RPM) | 状态 |"
@@ -562,6 +563,7 @@ $(
     [ "$PSU_REDUNDANT" != "N/A" ] && echo "**电源冗余: ${PSU_REDUNDANT}**"
     [ -n "$PSU_EXTRA" ] && echo "**${PSU_EXTRA}**"
     [ -n "$PSU_DCMI" ] && echo "**${PSU_DCMI}**"
+    [ -n "$PSU_CPU_RAPL" ] && echo "**${PSU_CPU_RAPL}**"
     [ -n "$PSU_PLATFORM_NOTE" ] && echo "> ⚠️ ${PSU_PLATFORM_NOTE}"
 )
 

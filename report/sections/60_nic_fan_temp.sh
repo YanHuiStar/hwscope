@@ -464,6 +464,70 @@ if [ -f "${ipmi_fan_sensors}" ]; then
     }')
 fi
 
+# ─── v1.48.88：IPMI 取不到时的 OS 侧风扇兜底（lm-sensors → hwmon sysfs） ───
+# 服务器风扇多走 BMC（SMBus/PMBus），OS 看不到；但部分平台会把转速暴露给内核驱动
+# （nct6775/it87/ast 等），此时采集端已落盘的 sensors_fan.log / hwmon_*/fan_values.log 有数据。
+# 原实现完全没读这条路，**明明采到了也显示 N/A**，还会让「风扇」章节误报采集失败。
+# 仅在 IPMI 无数据时兜底（IPMI 权威：带状态与冗余语义）；FAN_REDUNDANT 不参与兜底（冗余仅 IPMI 有）。
+FAN_SOURCE="IPMI"
+if [ "${FAN_DATA_OK:-0}" -ne 1 ]; then
+    _os_details=""; _os_src=""
+
+    # ① lm-sensors：sensors 输出形如 "fan1:        4200 RPM  (min = 0 RPM)"
+    if [ -f "${FAN_DIR}/sensors_fan.log" ]; then
+        _os_details=$(grep -vE "^#|^[[:space:]]*$" "${FAN_DIR}/sensors_fan.log" 2>/dev/null \
+            | grep -iE "rpm" | sed 's/^[[:space:]]*//' \
+            | awk '{name=$1; sub(/:$/,"",name); val=""; for(i=1;i<=NF;i++){ if($i ~ /^[0-9]+(\.[0-9]+)?$/) {val=$i; break} } if(val!="") print name"|"val"|OS(lm-sensors)"}' \
+            | head -40)
+        [ -n "$_os_details" ] && _os_src="lm-sensors"
+    fi
+
+    # ② hwmon sysfs：hwmon_*/fan_values.log 形如 "fan1_input: 4200"
+    if [ -z "$_os_src" ]; then
+        _hw_files=$(find "${FAN_DIR}" -maxdepth 2 -name "fan_values.log" 2>/dev/null | head -5)
+        if [ -n "$_hw_files" ]; then
+            _os_details=$(cat $_hw_files 2>/dev/null | grep -iE "fan[0-9]+_input" \
+                | awk -F': *' '{n=$1; gsub(/[^0-9]/,"",n); print "fan"n"|"$2"|OS(hwmon)"}' | head -40)
+            [ -n "$_os_details" ] && _os_src="hwmon"
+        fi
+    fi
+
+    if [ -n "$_os_details" ]; then
+        FAN_DETAILS="$_os_details"
+        FAN_COUNT=$(printf '%s\n' "$_os_details" | grep -c '|')
+        _os_min=$(printf '%s\n' "$_os_details" | awk -F'|' '$2 ~ /^[0-9]+$/ {print $2}' | sort -n | head -1)
+        _os_max=$(printf '%s\n' "$_os_details" | awk -F'|' '$2 ~ /^[0-9]+$/ {print $2}' | sort -n | tail -1)
+        [ -n "$_os_min" ] && FAN_SPEED="${_os_min}-${_os_max} RPM"
+        FAN_DATA_OK=1
+        FAN_SOURCE="OS 侧（${_os_src}）"
+    fi
+
+    # ③ dmidecode Type 27（Cooling Device）——最后一档：只有 Type/Status，无转速
+    #   SMBIOS 的 Cooling Device 表给出平台声明的散热器件（Type: Fan，Status: OK）。
+    #   信息量少于前两路（无 RPM），但能证明「平台确实有风扇且状态正常」——
+    #   对「风扇数量 0」这种误导性结论，有它就足以纠正为「平台有 N 个风扇（来自 SMBIOS，无转速）」。
+    if [ "${FAN_DATA_OK:-0}" -ne 1 ]; then
+        _dmi_full=$(find "${FAN_DIR}/.." -maxdepth 2 -name "dmidecode_full.log" 2>/dev/null | head -1)
+        if [ -n "$_dmi_full" ]; then
+            _dmi_fans=$(awk '
+                /^Cooling Device$/ { incool=1; ctype=""; cstat=""; next }
+                incool && /^\tType:/ { t=$2; ctype=$2 }
+                incool && /^\tStatus:/ { cstat=$2 }
+                incool && /^\tType:/ && ctype ~ /^Fan/ { }
+                /^$/ { if (incool && ctype ~ /^Fan/) { print "SMBIOS冷却装置|" cstat "|SMBIOS(Type27)"; } incool=0 }
+                END { if (incool && ctype ~ /^Fan/) { print "SMBIOS冷却装置|" cstat "|SMBIOS(Type27)" } }
+            ' "$_dmi_full" 2>/dev/null)
+            _dmi_n=$(printf '%s\n' "$_dmi_fans" | grep -c '|')
+            if [ "${_dmi_n:-0}" -gt 0 ]; then
+                FAN_DETAILS="$_dmi_fans"
+                FAN_COUNT="$_dmi_n"
+                FAN_DATA_OK=1
+                FAN_SOURCE="SMBIOS（dmidecode Type 27，无转速）"
+            fi
+        fi
+    fi
+fi
+
 # ─── 风扇冗余三态（Fan Redundancy / FAN Cable / Fan PG；Dell/标准服务器 IPMI，v1.36.0） ───
 # FAN_REDUNDANT: 冗余满足 / ⚠️ 冗余失效 / N/A（供报告与验收"风扇冗余"判定）
 # FAN_EXTRA: 三态摘要展示（如 "Fan Redundancy:ok FAN Cable:ok 12V Fan PG:ok"）
