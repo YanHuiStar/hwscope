@@ -75,6 +75,7 @@
 - **用法**：`bash tools/remote_collect.sh -H user@host [hwscope 参数...]`
 - **功能**：从运维机 SSH 到目标机执行完整采集（tar 推送→执行→结果回拉→清理），无需登录服务器手动跑
 - **`--install <1,2,...>`**（v1.42.0）：推送后先远端非交互装依赖（`install_tool.sh -c <列表> -y`）再采集——远程冷启动一条龙；普通用户时安装+采集合并一条 `-t` 命令（sudo 密码只输一次），安装失败中止不采集
+- **Windows 版 `tools/win/remote_collect.ps1/.bat`**（功能等价）：**root/免 sudo 走「单次认证模式」**（v1.48.63，一条 ssh 内完成推送→采集→回拉，只需输 1 次密码）；**采集进度实时显示**（远端输出经 stderr 透传，v1.48.82/83 修复了"整类丢弃 stderr"与"空行被刷成类型名"两个问题）；**host key 变更自动处理**（v1.48.82：备份 known_hosts → `ssh-keygen -R` → 打印新旧指纹 → 自动重试一次，仅对已知主机的变化放行）
 - **凭据**：交互式密码默认（SSH ControlMaster 复用，输一次密码）；root 免 sudo，普通用户自动 `-t` 供 sudo 交互；SSH key 仅限可信内网。密码不落盘
 - **输出**：本地 `output/remote_output/<机器ID>/`（对标本地 output/<SN> 结构）；归档包 → `logs/remote_logs/`
 

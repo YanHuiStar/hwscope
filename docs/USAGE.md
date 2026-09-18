@@ -87,6 +87,8 @@ tools\win\remote_collect.ps1 -H root@10.0.0.1 -Modules gpu,cpu -OutDir D:\hwout
 tools\win\remote_collect.bat -H root@10.0.0.1 -InstallItems 1,2   # 先远端装基础+压测依赖再采集（v1.42.1）
 ```
 
+- **Windows 版差异**：**root/免 sudo 走单次认证模式**（v1.48.63，一条 ssh 完成推送→采集→回拉，只需输 1 次密码；普通用户 + sudo 仍是 3 次）；**采集进度实时显示**（远端输出经 stderr 透传）；**host key 变更自动处理**（v1.48.82：备份 known_hosts → 清旧记录 → 打印新旧指纹 → 自动重试一次）；无 ControlMaster（Windows OpenSSH 不支持）
+
 - 依赖：Windows 自带 OpenSSH 客户端 + tar（零新依赖）
 - 认证：交互式密码，每步失败自动重试 3 次（Windows OpenSSH 不支持 ControlMaster，共 3 次密码输入）
 - `-InstallItems <1,2,...>`：远端先跑 `install_tool.sh -c <列表> -y` 非交互装依赖再采集（安装+采集合并一条 ssh 命令）
