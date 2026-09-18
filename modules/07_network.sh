@@ -21,6 +21,9 @@ run_network() {
     MST_NOT_STARTED=0
     # mstflint 查询失败计数（多 Mellanox 卡时可能有部分失败）
     MSTFLINT_FAILED_COUNT=0
+    # v1.49.2：mstflint 失败详情（原先 `2>/dev/null` 把失败原因丢掉，真机上无法诊断——
+    #   CX8/新平台实测 8 张卡全失败但只留了个计数，不知道是版本不认、权限还是设备节点问题）
+    MSTFLINT_FAILED_DETAIL=""
 
     # ─── InfiniBand + Mellanox / NVIDIA NIC 工具（并行） ───
     local ib_jobs=()
@@ -188,11 +191,30 @@ run_network() {
                 if [ -n "$mstdev" ]; then
                     # 声明与赋值分离：local mq_out=$(...) 会吞掉命令退出码（local 本身恒返回 0）
                     local mq_out
-                    mq_out=$(mstflint -d "$mstdev" q 2>/dev/null)
-                    if [ $? -ne 0 ]; then
+                    # v1.49.2：stderr 不再丢弃——失败原因记入 mstflint_failed.log 供真机诊断
+                    local mq_err
+                    mq_err=$(mktemp)
+                    mq_out=$(mstflint -d "$mstdev" q 2>"$mq_err")
+                    local mq_rc=$?
+                    if [ "$mq_rc" -ne 0 ]; then
                         mstflint_failed=1
                         MSTFLINT_FAILED_COUNT=$((MSTFLINT_FAILED_COUNT + 1))
-                        echo -e "${YELLOW}[WARN] mstflint 查询失败: $nbdf${NC}" >&2
+                        MSTFLINT_FAILED_DETAIL="${MSTFLINT_FAILED_DETAIL}--- BDF ${nbdf} · dev ${mstdev} · rc=${mq_rc} ---"$'\n'
+                        [ -s "$mq_err" ] && MSTFLINT_FAILED_DETAIL="${MSTFLINT_FAILED_DETAIL}$(head -5 "$mq_err")"$'\n'
+                        # 兜底①：mlxlink -d <ibdev> -v（部分新平台 mstflint 不认，mlxlink 能读到卡 SN）
+                        #   注意 mlxlink -d 收的是 mlx5_X 设备名或 BDF，不是 /dev/mst/* 路径
+                        if check_cmd mlxlink; then
+                            local nibdev mv_out
+                            nibdev=$(ls "/sys/class/net/${ndev}/device/infiniband/" 2>/dev/null | head -1)
+                            mv_out=$(mlxlink -d "${nibdev:-$nbdf}" -v 2>/dev/null | grep --line-buffered -iE "^[[:space:]]*(Serial Number|Base MAC)" | head -2)
+                            if [ -n "$mv_out" ]; then
+                                MSTFLINT_FAILED_DETAIL="${MSTFLINT_FAILED_DETAIL}    mlxlink -v 兜底: ${mv_out}"$'\n'
+                                local mv_sn
+                                mv_sn=$(printf '%s\n' "$mv_out" | grep -i "Serial Number" | head -1 | awk -F: '{print $NF}' | tr -d ' \t')
+                                [ -n "$mv_sn" ] && [ "$mv_sn" != "N/A" ] && nsn="$mv_sn"
+                            fi
+                        fi
+                        echo -e "${YELLOW}[WARN] mstflint 查询失败: $nbdf (rc=$mq_rc)${NC}" >&2
                     else
                         local mq_sn
                         mq_sn=$(echo "$mq_out" | grep --line-buffered -iE "^Serial Number|^Board Serial" | head -1 | awk '{print $NF}')
@@ -201,6 +223,7 @@ run_network() {
                         mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')
                         [ -n "$mq_psid" ] && npsid="$mq_psid"
                     fi
+                    rm -f "$mq_err"
                 else
                     # MST 仍不可用（非 root 或 mst start 失败）→ 记录提示供报告标注
                     MST_NOT_STARTED=1
@@ -325,7 +348,12 @@ run_network() {
     fi
     # mstflint 部分失败提示
     if [ "$MSTFLINT_FAILED_COUNT" -gt 0 ]; then
-        echo "⚠️ $MSTFLINT_FAILED_COUNT 张 Mellanox 卡的 mstflint 查询失败（SN/PSID 可能不准确），请检查日志" > "${dir}/mstflint_failed.log"
+        {
+            echo "⚠️ $MSTFLINT_FAILED_COUNT 张 Mellanox 卡的 mstflint 查询失败（SN/PSID 可能不准确），请检查日志"
+            echo ""
+            echo "失败详情（v1.49.2 起记录 stderr 与兜底尝试）："
+            printf '%s' "${MSTFLINT_FAILED_DETAIL:-（无详情）}"
+        } > "${dir}/mstflint_failed.log"
         write_manifest --append "${dir}/manifest.txt" "mstflint_failed" "mstflint_failed.log"
     fi
 
