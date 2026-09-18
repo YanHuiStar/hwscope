@@ -139,4 +139,6 @@ bash tools/agent/repo_realign.sh --protect --auto     # 再自动 cherry-pick（
 
 - 预检 = `curl --max-time <N> https://github.com`（直连）+ 经代理各试一次，判定可达性
 - **超时 N 默认 15s**，可用环境变量 `GIT_PUSH_PRECHECK_TIMEOUT` 覆盖（如 `=30`）
-- **慢 ≠ 断**：预检失败只代表"快速判定没通过"，不等于网络不通。预检失败后应先手工执行 `timeout 60 git push origin main` 确认；真实推送成功即完成，不必再走脚本。历史上预检超时已三次放宽（3s→5s→15s）。
+- **预检未通过不再等于放弃推送（v1.48.92）**：预检探的是 `https://github.com` **首页**，而 git push 走 `/<owner>/<repo>.git` 的 **git 端点**，两者不是同一条路径（首页 curl 更易被 schannel 拖累）。实测连续两次「预检判不可达、手工 push 20s 成功」，故预检失败会降级（`pre_degraded`）并继续：试 1 次直连 → 代理兜底 → 仍失败才上报。
+- 预检超时可用 `GIT_PUSH_PRECHECK_TIMEOUT` 覆盖（默认 15s）；历史上预检已三次放宽（3s→5s→15s）。
+

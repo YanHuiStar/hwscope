@@ -263,7 +263,7 @@ push_main() {
     # ─── 网络快速预检（v1.45.8）：github.com 直连 3s + 代理 3s 都不通 → 快速 FAIL——
     #     断网时避免 3×21s 直连空转（WorkBuddy 死循环场景每轮开销从 ~90s 降到 ~4s），
     #     预检失败也计入失败计数（连续 3 次仍触发熔断冷却） ───
-    local pre_ok=0 pre_use_proxy=0
+    local pre_ok=0 pre_use_proxy=0 pre_degraded=0
     if command -v curl >/dev/null 2>&1; then
         # v1.48.52：预检超时 3s → 5s——网络慢时 3s 会误判断网（实测多次"预检失败但实际可推"），
         # 5s 仍远低于直连失败的 21s 默认超时，兼顾快速判定与准确性
@@ -288,9 +288,14 @@ push_main() {
             fc0=$((fc0 + 1))
             echo "$fc0" > "$fail_count_file"
             [ "$fc0" -ge 3 ] && { echo "$(( $(date +%s) + 300 ))" > "$cooldown_file"; warn "连续 ${fc0} 次失败——已触发 5 分钟熔断冷却"; }
-            fail "网络预检失败（直连+代理各 ${pre_to}s 均不可达）——请先手工试一次真实推送确认：timeout 60 git push origin main"
-            ai "[PAUSE] 网络预检失败。注意：预检只是快速判定，慢 ≠ 断——先手工跑一次 \`timeout 60 git push origin main\`；真实推送也失败才上报用户检查代理节点/网络，不要自动重试"
-            return 1
+            # v1.48.92：降级为警告，不再直接 return 1 放弃推送。
+            #   根因：预检探的是 `https://github.com`（**首页**），而 git push 走的是
+            #   `https://github.com/<owner>/<repo>.git` 的 git 端点——两者**不是同一条路径**，
+            #   首页 curl 还被 schannel 的 `server closed abruptly` 拖累。实测同一时刻预检
+            #   判「直连+代理均不可达」，紧接着手工 `git push` 约 20s 即成功（连续两次复现）。
+            #   预检失败只作提示，继续走真实推送流程；熔断(3 次/5 分钟)保留，防真断网空转。
+            warn "网络预检未通过（直连+代理各 ${pre_to}s 未响应）——预检探的是 github.com 首页，与 git 推送端点不同路径，慢/脆不代表不能推；继续尝试真实推送..."
+            pre_degraded=1
         fi
     fi
     # 版本单调性检查（v1.37.2）：本地 HWSCOPE_VERSION < 远程 → 拒绝（防凭记忆回退版本；fetch 已在上一步执行）
@@ -311,6 +316,14 @@ push_main() {
     #   注意：若直连能通但推送仍失败（如认证/权限），下方代理兜底逻辑不变。
     if [ "$pre_use_proxy" -eq 1 ]; then
         info "预检显示直连不可达、代理可用——直接走代理（跳过 3 次直连重试，省 ~60s）"
+    elif [ "${pre_degraded:-0}" -eq 1 ]; then
+        # v1.48.92：预检未通过时只试 **1 次**直连（不盲试 3 次）——既不让预检的误判
+        #   挡住真实可行的推送，也不像原来那样在可能真断网时耗掉 ~63s（用户曾反馈"这么久吗"）。
+        #   这次直连失败就交给下面的代理兜底，仍失败才按真实失败上报。
+        info "预检未通过——先试直连 1 次（不盲试 3 次）..."
+        out="$(try_push)"
+        if [ $? -eq 0 ]; then rm -f "$fail_count_file" "$cooldown_file"; return 0; fi
+        echo "$out" | sed 's/^/    /'
     else
         for attempt in 1 2 3; do
             info "推送尝试 ${attempt}/3（直连）..."
