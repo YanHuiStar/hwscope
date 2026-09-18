@@ -301,7 +301,12 @@ gen_acceptance() {
 
     # 14. 风扇冗余（N+N）（11_fan 采集 Fan Redundancy 传感器；无风扇平台=形态 N/A 不计入，
     #     有风扇但无冗余状态=采集缺失计入——参考电源冗余判定，v1.36.0）
-    if [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+    # v1.48.88：新增「采集失败」分支——此前 FAN_COUNT=0 一律判「无风扇（平台配置形态）」不计入，
+    #   但 BMC 慢导致 ipmitool 超时时也会得出 FAN_COUNT=0，等于把**采集缺失**误报成**平台无风扇**，
+    #   白白放过了数据缺口（实测 Giga B200: 10s 超时 → 报告写"无风扇"，而机器是 8×B200 整机）。
+    if [ "${FAN_DATA_OK:-0}" -ne 1 ] 2>/dev/null; then
+        add_item "风扇冗余（N+N）" "N/A" "风扇数据采集失败（ipmitool 风扇传感器命令超时/不可读，非平台无风扇；需复核 BMC 响应或补采）"
+    elif [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         add_item "风扇冗余（N+N）" "N/A" "无风扇（平台配置形态，冗余不适用）" 1
     elif [ "$FAN_REDUNDANT" = "N/A" ]; then
         if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then

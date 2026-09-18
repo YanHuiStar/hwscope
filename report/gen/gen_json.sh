@@ -309,7 +309,8 @@ fi)
     ]
   },
   "fan": {
-    "count": "${FAN_COUNT:-0}",
+    "count": "$(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A"; fi)",
+    "data_ok": "${FAN_DATA_OK:-0}",
     "speed": "${FAN_SPEED:-N/A}",
     "redundancy": "${FAN_REDUNDANT:-N/A}",
     "redundancy_extra": "${FAN_EXTRA:-}",

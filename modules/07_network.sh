@@ -226,23 +226,32 @@ run_network() {
                     *) npsid="$fw_psid" ;;
                 esac
             fi
-            local nfw="N/A"
+            local nfw="N/A" _ndrv=""
             if check_cmd ethtool; then
+                # v1.48.88：一次 ethtool -i 同时取固件串与驱动名
+                local _ei
+                _ei=$(ethtool -i "$ndev" 2>/dev/null)
                 # 固件是多段字符串（如 "9.00 0x8000d9a8 1.3256.0" / "0x00012b2c, 1.3429.0"），
                 # 取冒号后全部（awk 只取第一段会丢 NVM 版本且带逗号）
-                nfw=$(ethtool -i "$ndev" 2>/dev/null | grep "firmware-version" | cut -d: -f2- | xargs)
+                nfw=$(printf '%s' "$_ei" | grep "firmware-version" | cut -d: -f2- | xargs)
+                _ndrv=$(printf '%s' "$_ei" | awk -F': ' '/^driver:/{print $2; exit}')
             fi
             # v1.48.56：ethtool PSID（权威来源）——Mellanox ethtool -i 的 firmware-version 形如
             # "40.46.5500 (NVD0000000072)"，括号内即 PSID。零额外命令（nfw 已取）、每卡每口都有，
             # 且由内核按 netdev 提供——不像 mstflint 经 MST 设备（实测多口卡/新平台下残缺，
             # 甚至 MST 设备↔BDF 误配读到他卡 PSID：CX7 卡读出 CX8 的 NVD0000000072）
+            # v1.48.88：判据由「接口名 ib*/mlx*/ConnectX*」改为「驱动名 mlx5_core/mlx4_core」——
+            #   以太模式（ens*）的 Mellanox 口名字里没有 ib/mlx 字样，旧条件把它们整批漏掉，
+            #   只能靠后续 mstflint 兜（兜到就有、兜不到就 N/A，同型号两张卡结果还不一致：
+            #   实测 MCX755106AS-HEAT 的 ens3f0np0 明明 ethtool -i 带 (MT_0000000834) 却写成 N/A，
+            #   而 ens10f0np0 是绕 mstflint 兜到的 MT_0000000884）。驱动名与协议模式无关，更可靠。
             local _eth_psid=""
-            case "$nfw" in
-                *"("*")"*)
-                    case "$ndev" in
-                        ib*|*mlx*|*MLX*|*ConnectX*)
+            case "$_ndrv" in
+                mlx5_core|mlx4_core)
+                    case "$nfw" in
+                        *"("*")"*)
                             _eth_psid=$(printf '%s' "$nfw" | sed -n 's/.*(\([^)]*\)).*/\1/p')
-                            case "$_eth_psid" in ""|"--"|"N/A") _eth_psid="" ;; esac ;;
+                            case "$_eth_psid" in ""|"--"|"-"|"N/A") _eth_psid="" ;; esac ;;
                     esac ;;
             esac
             [ -n "$_eth_psid" ] && npsid="$_eth_psid"

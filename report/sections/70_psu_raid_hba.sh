@@ -210,6 +210,9 @@ if [ -f "$_fru_src" ]; then
     # v1.48.24：分口径标注——TOTAL_POWER=PSU 输入总功率（含 GPU），DCMI=主板侧（不含 GPU）；此前都叫"整机功耗"易误读
     [ -n "$total_pwr" ] && PSU_EXTRA="整机功耗（PSU 输入，含 GPU）: ${total_pwr}"
     # DCMI 功耗统计（dcmi power reading：Instantaneous/Minimum/Maximum/Average，标准 IPMI 功耗统计）
+    # v1.48.88：去掉「主板侧，不含 GPU」这个未经证实的口径标注——
+    #   DCMI 规范的 power reading 定义是**平台总功耗**，但各厂 BMC 实现不一（有的只上报主板域）。
+    #   报告不该替客户断言口径，如实写「DCMI 平台功耗读数」并给出读数字段来源即可。
     PSU_DCMI=""
     if [ -f "${PSU_DIR}/ipmi_dcmi_power.log" ]; then
         dcmi_cur=$(grep -iE "Instantaneous power reading|Current Power|Current Reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
@@ -217,7 +220,7 @@ if [ -f "$_fru_src" ]; then
         dcmi_max=$(grep -iE "Maximum" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         dcmi_avg=$(grep -iE "Average power reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         if [ -n "$dcmi_cur" ]; then
-            PSU_DCMI="DCMI 整机功耗（主板侧，不含 GPU）: 当前 ${dcmi_cur}W${dcmi_min:+ · 最小 ${dcmi_min}W}${dcmi_max:+ · 最大 ${dcmi_max}W}${dcmi_avg:+ · 平均 ${dcmi_avg}W}"
+            PSU_DCMI="DCMI 平台功耗读数（ipmitool dcmi power reading）: 当前 ${dcmi_cur}W${dcmi_min:+ · 最小 ${dcmi_min}W}${dcmi_max:+ · 最大 ${dcmi_max}W}${dcmi_avg:+ · 平均 ${dcmi_avg}W}"
         fi
     fi
     # PSU 尾注文本（变量拼接，避免 $( ) 命令替换剥离尾换行导致排版空行堆积）

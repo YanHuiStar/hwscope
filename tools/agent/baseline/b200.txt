@@ -19,14 +19,14 @@
   nic_rows=14
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | 物理位置 |
 [json]
-  json_bytes=36514
+  json_bytes=36547
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=23
   html_table_close=23
-  html_bytes=40552
+  html_bytes=40720
 [acceptance]
-        4 N/A
+        5 N/A
        12 PASS
         2 WARN

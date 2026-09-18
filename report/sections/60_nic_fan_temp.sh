@@ -220,6 +220,27 @@ if [ -f "${nic_inventory}" ]; then
             ' "${devlink_dev_info}" 2>/dev/null)
             [ -n "$dvl_psid" ] && npsid="$dvl_psid"
         fi
+        # ─── v1.48.88：PSID 权威来源 = ethtool -i 固件串括号值，**有值就覆盖**（不只是 N/A 时兜底） ───
+        #   内核按 netdev 提供、每卡每口都有，且与端口跑 IB 还是 ETH 无关，不会错配。
+        #   为什么要覆盖而非兜底：实测 mlxfwmanager 查询失败时（"-E- Failed to query 0000:b6:00.0
+        #   device, error : FwInit has failed!"）会把**他卡的 PSID** 配过来——b6:00.0（ens10f0np0，
+        #   MCX755106AS，真值 MT_0000000834）被写成 MT_0000000884，而后者实际属于 ens1f0np0（BlueField-3）。
+        #   这正是 AGENTS 记过的「MST 设备↔BDF 误配读到他卡 PSID」。
+        #   另：旧采集数据的 nic_inventory 里以太模式（ens*）的 Mellanox 口 PSID 恒为 N/A
+        #   （旧判据用接口名 ib*/mlx*，把 ens* 漏了），也借此一并修正。
+        if [ -f "${NET_DIR}/ethtool_${nnic}_driver.log" ]; then
+            _ei_log="${NET_DIR}/ethtool_${nnic}_driver.log"
+            _ei_drv=$(awk -F': ' '/^driver:/{print $2; exit}' "$_ei_log" 2>/dev/null | tr -d '\r')
+            case "$_ei_drv" in
+                mlx5_core|mlx4_core)
+                    _ei_fw=$(grep -m1 "firmware-version" "$_ei_log" 2>/dev/null | cut -d: -f2- | xargs)
+                    _ei_psid=$(printf '%s' "$_ei_fw" | sed -n 's/.*(\([^)]*\)).*/\1/p')
+                    case "$_ei_psid" in
+                        ""|"--"|"-"|"N/A") ;;
+                        *) npsid="$_ei_psid" ;;
+                    esac ;;
+            esac
+        fi
         # PSID 回查：nic_inventory 中 PSID=N/A 时，从 mlxfwmanager.log 按 BDF 补 PSID/Part Number
         # （采集端 mstflint 失败或 mlxfwmanager 无 PSID 字段时；报告端日志已就绪，无竞态）
         # 顺序: Device # → Device Type → Part Number → Description → PSID → PCI Device Name → ...
@@ -251,8 +272,13 @@ if [ -f "${nic_inventory}" ]; then
             mt=$(grep -E "^${nnbdf%% (USB)*} " "${lspci_all}" 2>/dev/null | grep -oE 'ConnectX-[0-9]+( Lx| Dx)?|BlueField[- ][0-9A-Za-z]*' | head -1)
         fi
         # 兜底：lspci 无型号时用 CA type 映射（MT4129→ConnectX-7 等）
+        # v1.48.88：同样必须先判映射存在——Intel/USB 口 lspci 取不到 ConnectX/BlueField 型号、
+        #   NETDEV_CA 也无映射，空下标会让 bash 报 "bad array subscript" 并中断报告生成。
         if [ -z "$mt" ]; then
-            mt="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
+            _mt_ca="${NETDEV_CA[$nnic]:-}"
+            if [ -n "$_mt_ca" ]; then
+                mt="${CA_MODEL[$_mt_ca]:-}"
+            fi
             [ -n "$mt" ] && mt=$(mt_model "$mt")
         fi
         [ -n "$mt" ] && npn="${npn} [${mt}]"
@@ -260,10 +286,20 @@ if [ -f "${nic_inventory}" ]; then
         if echo "$mt" | grep -qiE "BlueField"; then
             npn="${npn} [DPU]"
         fi
-        # IB 设备（ibp*/ibs*）的专属补充：Mellanox 标志 + 芯片编号 + SN 为占位时的 Node GUID 兜底
+        # ─── v1.48.88：芯片编号（MT 编号）对所有接口提取，不再限 ibp*/ibs* ───
+        # CA_MODEL 来自 ibstat，而 ibstat 会列出**所有 RDMA 设备**，与端口当前跑 IB 还是 ETH 无关：
+        #   实测 MCX755106AS-HEAT 的以太口 ens3f0np0 → mlx5_0 → CA type = MT4129（信息一直都在）。
+        # 原实现把它锁在 ibp*/ibs* 分支内，导致**所有以太模式 Mellanox 卡的「芯片」列恒为 —**。
+        # 注意：必须先判 NETDEV_CA 映射存在再用作下标——Intel/USB 等非 Mellanox 口没有映射，
+        #   直接写 ${CA_MODEL[${NETDEV_CA[$nnic]:-}]} 会产生空下标 → bash 报 "bad array subscript"。
+        nchip=""
+        _nchip_ca="${NETDEV_CA[$nnic]:-}"
+        if [ -n "$_nchip_ca" ]; then
+            nchip="${CA_MODEL[$_nchip_ca]:-}"
+        fi
+        # IB 设备（ibp*/ibs*）的专属补充：Mellanox 标志 + SN 为占位时的 Node GUID 兜底
         if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
             NIC_MLX=1
-            nchip="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
             # SN 为占位值/空时，用 ibstat Node GUID 兜底（每卡唯一，可区分多卡）
             if [ -z "$nsn" ] || [ "$nsn" = "N/A" ] || [ "$nsn" = "1951526575073" ]; then
                 ng_ca="${NETDEV_CA[$nnic]:-}"
@@ -401,6 +437,15 @@ load_manifest "${FAN_DIR}" sensors_all "sensors_all.log"
 # 风扇匹配：兼容 Fan10_Speed_F / FAN1_Speed / Fan2 等大小写变体；只统计转速传感器（$3=RPM），
 # 跳过 Present/discrete 等离散值（如 PSU1 Slow FAN1 是 discrete 状态位 0x1，非真实转速）
 FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
+# v1.48.88：区分「采集失败」与「平台真无风扇传感器」——此前两者都渲染成「数量 0」，会让客户以为机器没风扇。
+#   判据：日志有实际数据行 = 采集成功（此时 0 才是真无传感器）；日志空/仅注释 = 命令超时或不可读（BMC 慢）。
+#   实测 Giga B200（B200-sample-c）：ipmitool sensor list 10s 超时 → 日志空 → 报告写「数量 0」，
+#   而该机实为 8×B200 整机，风扇必然存在。
+FAN_DATA_OK=0
+if [ -f "${ipmi_fan_sensors}" ] && [ -s "${ipmi_fan_sensors}" ]; then
+    _fan_lines=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | grep -cE "[^[:space:]]")
+    [ "${_fan_lines:-0}" -gt 0 ] && FAN_DATA_OK=1
+fi
 FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+(\.[0-9]+)?$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | head -1)
 FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+(\.[0-9]+)?$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | tail -1)
 FAN_SPEED=""

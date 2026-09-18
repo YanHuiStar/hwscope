@@ -521,7 +521,7 @@ fi)
 ## 风扇
 | 项 | 值 |
 |----|----|
-| 数量 | ${FAN_COUNT:-0} |
+| 数量 | $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A（未取到数据）"; fi) |
 | 转速 | ${FAN_SPEED:-N/A} |
 | 冗余 | ${FAN_REDUNDANT:-N/A}$(if [ -n "$FAN_EXTRA" ]; then echo "（${FAN_EXTRA}）"; fi) |
 | 温度 | ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}} |
@@ -534,8 +534,10 @@ $(if [ -n "$FAN_DETAILS" ]; then
         fan_seq=$((fan_seq+1))
         echo "| ${fan_seq} | ${fname} | ${fval} | ${fstatus} |"
     done
+elif [ "${FAN_DATA_OK:-0}" -eq 0 ] 2>/dev/null; then
+    echo "> ⚠️ 风扇数据**采集失败**（ipmitool 风扇传感器命令超时或不可读，非平台无风扇）——建议复核 BMC 响应速度，或手动执行 \`ipmitool sensor list | grep -i fan\` 确认"
 elif [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-    echo "> ⚠️ 未采集到风扇数据（ipmitool 风扇传感器不可读或平台无风扇传感器）"
+    echo "> 已采集到传感器表但无风扇转速项（该平台风扇可能不经标准 IPMI 传感器暴露）"
 fi)
 
 ## 电源 PSU
