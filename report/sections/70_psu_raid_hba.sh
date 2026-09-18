@@ -80,10 +80,10 @@ if [ -f "$_fru_src" ]; then
     [ -f "${ipmi_psu_sensors}" ] && psu_power_csv="${ipmi_psu_sensors}"
     [ -f "${ipmi_sensors_power}" ] && psu_power_csv2="${ipmi_sensors_power}"
     _pin_src=""
-    [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+ power in|psu_pin_[0-9]+" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
-    [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
+    [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu[0-9]+ power in|psu_pin_[0-9]+" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
+    [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
     if [ -n "$_pin_src" ] && [ -n "$PSU_DETAILS" ]; then
-        _pin_map=$(grep -v "^#" "$_pin_src" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+_Pin|^PSU[0-9]+ Power In|^PSU_PIN_[0-9]+/ { n=$1; gsub(/[^0-9]/, "", n); sub(/^0+/, "", n); v=$2; gsub(/ /, "", v); printf "%s:%sW ", n, v }')
+        _pin_map=$(grep -v "^#" "$_pin_src" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+_Pin|^PSU[0-9]+_Pin|^PSU[0-9]+ Power In|^PSU_PIN_[0-9]+/ { n=$1; gsub(/[^0-9]/, "", n); sub(/^0+/, "", n); v=$2; gsub(/ /, "", v); if (v ~ /\./) sub(/\.?0+$/, "", v); printf "%s:%sW ", n, v }')
         if [ -n "$_pin_map" ]; then
             PSU_DETAILS=$(while IFS= read -r _pline; do
                 [ -z "$_pline" ] && continue
@@ -247,8 +247,8 @@ if [ -f "$_fru_src" ]; then
         [ -z "$_temp_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _temp_src="$psu_power_csv2"
         # 功耗补全源：psu sensors 的 PS*_Pin / PSU* Power In → bmc power 的 PS*_Pin（v1.48.24 加 PSU_PIN_0N 下划线式）
         _pin_src=""
-        [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+ power in|psu_pin_[0-9]+" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
-        [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
+        [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu[0-9]+ power in|psu_pin_[0-9]+" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
+        [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
         if [ -n "$_temp_src" ]; then
             _psu_src="sensor"
             PSU_DETAILS=$(grep -v "^#" "$_temp_src" 2>/dev/null | awk -F'|' '
@@ -303,7 +303,15 @@ if [ -f "$_fru_src" ]; then
     fi    # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
     # 独立展示（不放 PSU 表内：语义是整机级而非单电源，且避免 N/A 占位列突兀）
     PSU_EXTRA=""
-    total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
+    total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); if ($2 ~ /\./) sub(/\.?0+$/,"",$2); print $2"W"; exit}')
+    # v1.48.98：兜底 bmc/ipmi_sensors_power.log 的 H_Total_Power——实测 B300（B300-sample-a，22.224）
+    #   该机 psu/ipmi_psu_power.log 为空（命令超时），而 bmc/ipmi_sensors_power.log 有
+    #   `H_Total_Power | 750.000 | Watts | ok`（整机功耗）。原实现只读前者 → 报告整机功耗空白。
+    #   H_ 前缀是该平台（Inventec）的命名习惯，与 psu 日志的 Total_Power 同义（同处 PSU 输入口径）。
+    if [ -z "$total_pwr" ]; then
+        total_pwr=$(grep -v "^#" "${BMC_DIR}/ipmi_sensors_power.log" 2>/dev/null \
+            | awk -F'|' 'tolower($1) ~ /^h_total_power|^total_power/{gsub(/ /,"",$2); if ($2 ~ /\./) sub(/\.?0+$/,"",$2); print $2"W"; exit}')
+    fi
     # v1.48.24：分口径标注——TOTAL_POWER=PSU 输入总功率（含 GPU），DCMI=主板侧（不含 GPU）；此前都叫"整机功耗"易误读
     [ -n "$total_pwr" ] && PSU_EXTRA="整机功耗（PSU 输入，含 GPU）: ${total_pwr}"
     # DCMI 功耗统计（dcmi power reading：Instantaneous/Minimum/Maximum/Average，标准 IPMI 功耗统计）

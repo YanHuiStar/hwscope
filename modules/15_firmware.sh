@@ -123,7 +123,7 @@ run_firmware() {
         done
         echo ""
         echo "## NVSwitch"
-        grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -iE "Version|Firmware" | sed 's/^/  /'
+        grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep --line-buffered -iE "Version|Firmware" | sed 's/^/  /'
     } > "${dir}/fw_versions.log"
 
     # ─── 合规判定 ───

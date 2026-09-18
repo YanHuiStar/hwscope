@@ -30,8 +30,8 @@ run_pcie() {
         "lspci -nn" "${dir}/lspci_all.log" \
         "lspci -t -vv" "${dir}/lspci_tree.log" \
         "lspci -v | grep -A 30 'NVIDIA'" "${dir}/lspci_nvidia.log" \
-        "lspci | grep -E 'PCI bridge|Host Bridge|PCIe'" "${dir}/pcie_bridge.log" \
-        "lspci -vvv 2>/dev/null | grep -E 'LnkSta:|LnkCap:'" \
+        "lspci | grep --line-buffered -E 'PCI bridge|Host Bridge|PCIe'" "${dir}/pcie_bridge.log" \
+        "lspci -vvv 2>/dev/null | grep --line-buffered -E 'LnkSta:|LnkCap:'" \
             "${dir}/pcie_speed_width.log" \
         "lspci -vvv" "${dir}/pcie_full.log"
 
@@ -41,7 +41,7 @@ run_pcie() {
     if [ -n "$gpu_buses" ]; then
         local count=0
         while IFS= read -r bus; do
-            run_and_log "lspci -vvv -s '$bus' 2>/dev/null | grep -E 'Region|LnkSta:|LnkCap:|LnkSta2:'" \
+            run_and_log "lspci -vvv -s '$bus' 2>/dev/null | grep --line-buffered -E 'Region|LnkSta:|LnkCap:|LnkSta2:'" \
                 "${dir}/gpu_pcie_${count}.log"
             ((count++))
         done < <(printf '%s\n' "$gpu_buses")

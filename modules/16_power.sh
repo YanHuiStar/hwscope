@@ -29,9 +29,9 @@ run_power() {
         # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
         local ipmi_to="timeout ${IPMI_TIMEOUT:-30}"; check_cmd timeout || ipmi_to=""
         run_and_log_parallel 3 \
-            "${ipmi_to} bash -c \"ipmitool sdr list 2>&1 | grep -iE 'energy|kwh|joule'\"" "${dir}/energy_sdr.log" \
+            "${ipmi_to} bash -c \"ipmitool sdr list 2>&1 | grep --line-buffered -iE 'energy|kwh|joule'\"" "${dir}/energy_sdr.log" \
             "${ipmi_to} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>&1 | grep -iE 'power|watt|total'\"" "${dir}/sensors_power.log"
+            "${ipmi_to} bash -c \"ipmitool sensor list 2>&1 | grep --line-buffered -iE 'power|watt|total'\"" "${dir}/sensors_power.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found（能耗台账依赖 BMC 传感器）${NC}"
     fi
@@ -74,7 +74,7 @@ run_power() {
     # 累计能耗：IPMI SDR Energy 传感器优先（Joules/Wh/kWh），Redfish EnergykWh 兜底
     if [ -f "${dir}/energy_sdr.log" ]; then
         local _eline
-        _eline=$(grep -v "^#" "${dir}/energy_sdr.log" | grep -iE 'energy|kwh|joule' | head -1)
+        _eline=$(grep -v "^#" "${dir}/energy_sdr.log" | grep --line-buffered -iE 'energy|kwh|joule' | head -1)
         if [ -n "$_eline" ]; then
             # SDR 行布局容错：读数可能为 $2 纯数字或 "$2 读数+单位"（如 "12345678 Joules"）、$3 可能是状态列
             en_val=$(echo "$_eline" | grep -oE "[0-9][0-9.]*" | head -1)

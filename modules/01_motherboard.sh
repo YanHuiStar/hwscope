@@ -27,8 +27,8 @@ run_motherboard() {
         "dmidecode -t baseboard" "${dir}/dmidecode_baseboard.log" \
         "dmidecode -t bios" "${dir}/dmidecode_bios.log" \
         "dmidecode -t chassis" "${dir}/dmidecode_chassis.log" \
-        "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|UUID|Family'" "${dir}/system_summary.log" \
-        "dmidecode -t baseboard 2>/dev/null | grep -E 'Manufacturer|Product Name|Serial Number|Version|Asset Tag'" "${dir}/baseboard_summary.log"
+        "dmidecode -t system 2>/dev/null | grep --line-buffered -E 'Manufacturer|Product Name|Serial Number|UUID|Family'" "${dir}/system_summary.log" \
+        "dmidecode -t baseboard 2>/dev/null | grep --line-buffered -E 'Manufacturer|Product Name|Serial Number|Version|Asset Tag'" "${dir}/baseboard_summary.log"
 
     # 7. 补充硬件表（缓存/槽位/TPM，独立并行）
     run_and_log_parallel 3 \

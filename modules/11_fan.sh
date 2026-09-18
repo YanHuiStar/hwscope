@@ -25,12 +25,12 @@ run_fan() {
         # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
         local ipmi_to="timeout ${IPMI_TIMEOUT:-30}"; check_cmd timeout || ipmi_to=""
         run_and_log_parallel 4 \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep -iE 'FAN|RPM|PWM|Duty'\"" "${dir}/ipmi_fan_sensors.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep -iE 'FAN.*Status|FAN.*Mode'\"" "${dir}/ipmi_fan_status.log" \
-            "${ipmi_to} bash -c \"ipmitool sdr list 2>/dev/null | grep -iE 'Fan.*Redundancy|FAN.*Cable|Fan.*PG|Redundancy'\"" "${dir}/ipmi_fan_redundancy.log"
+            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'FAN|RPM|PWM|Duty'\"" "${dir}/ipmi_fan_sensors.log" \
+            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'FAN.*Status|FAN.*Mode'\"" "${dir}/ipmi_fan_status.log" \
+            "${ipmi_to} bash -c \"ipmitool sdr list 2>/dev/null | grep --line-buffered -iE 'Fan.*Redundancy|FAN.*Cable|Fan.*PG|Redundancy'\"" "${dir}/ipmi_fan_redundancy.log"
         # 冗余三态兜底：sdr 无匹配时从 sensor list 再抓（Dell/标准服务器传感器名变体，v1.36.0）
         if [ ! -s "${dir}/ipmi_fan_redundancy.log" ]; then
-            run_and_log "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep -iE 'Fan.*Redundancy|FAN.*Cable|Fan.*PG'\"" "${dir}/ipmi_fan_redundancy.log"
+            run_and_log "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'Fan.*Redundancy|FAN.*Cable|Fan.*PG'\"" "${dir}/ipmi_fan_redundancy.log"
         fi
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
@@ -40,7 +40,7 @@ run_fan() {
     if check_cmd sensors; then
         run_and_log_parallel 4 \
             "sensors 2>/dev/null" "${dir}/sensors_all.log" \
-            "sensors 2>/dev/null | grep -iE 'fan|FAN'" "${dir}/sensors_fan.log"
+            "sensors 2>/dev/null | grep --line-buffered -iE 'fan|FAN'" "${dir}/sensors_fan.log"
     else
         echo -e "${YELLOW}[SKIP] sensors (lm-sensors) not found${NC}"
     fi

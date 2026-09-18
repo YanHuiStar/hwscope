@@ -22,7 +22,7 @@ run_cpu() {
     # 1. CPU FRU 信息（dmidecode，条件执行）
     if check_cmd dmidecode; then
         run_and_log "dmidecode -t processor" "${dir}/dmidecode_processor.log"
-        run_and_log "dmidecode -t processor 2>/dev/null | grep -E 'Manufacturer|Family|Version|Max Speed|Core Count|Thread Count'" \
+        run_and_log "dmidecode -t processor 2>/dev/null | grep --line-buffered -E 'Manufacturer|Family|Version|Max Speed|Core Count|Thread Count'" \
             "${dir}/dmidecode_processor_summary.log"
     else
         echo -e "${YELLOW}[SKIP] dmidecode not found, skipping FRU view${NC}"
@@ -31,10 +31,10 @@ run_cpu() {
     # 2. CPU OS 视角 + 拓扑 + 频率（独立命令，并行采集）
     # 架构相关命令串行执行（条件分支）
     if [ "$cpu_arch" = "aarch64" ]; then
-        run_and_log "cat /proc/cpuinfo | grep -E 'CPU implementer|CPU part|CPU variant|CPU revision|CPU architecture|Features' | sort -u" \
+        run_and_log "cat /proc/cpuinfo | grep --line-buffered -E 'CPU implementer|CPU part|CPU variant|CPU revision|CPU architecture|Features' | sort -u" \
             "${dir}/cpu_summary.log"
     else
-        run_and_log "cat /proc/cpuinfo | grep -E 'model name|physical id|siblings|core id|cpu cores' | sort -u" \
+        run_and_log "cat /proc/cpuinfo | grep --line-buffered -E 'model name|physical id|siblings|core id|cpu cores' | sort -u" \
             "${dir}/cpu_summary.log"
     fi
 
@@ -42,12 +42,12 @@ run_cpu() {
     run_and_log_parallel 8 \
         "lscpu" "${dir}/lscpu.log" \
         "nproc" "${dir}/cpu_core_count.log" \
-        "lscpu | grep -E 'Stepping|CPU(s)|Model name' | head -5" "${dir}/cpu_stepping.log" \
+        "lscpu | grep --line-buffered -E 'Stepping|CPU(s)|Model name' | head -5" "${dir}/cpu_stepping.log" \
         "cat /proc/cpuinfo" "${dir}/proc_cpuinfo_full.log" \
         "lscpu -e" "${dir}/lscpu_extended.log" \
         "cat /sys/devices/system/cpu/smt/active 2>/dev/null" "${dir}/smt_status.log" \
         "awk -F':[ \\t]*' '/cpu MHz/{s+=\$2; c++} END{if(c>0) printf \"Average: %.0f MHz, Total CPUs: %d\\n\", s/c, c; else print \"N/A (no cpu MHz in cpuinfo)\"}' /proc/cpuinfo 2>/dev/null" "${dir}/cpu_freq.log" \
-        "LANG=C lscpu | grep -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
+        "LANG=C lscpu | grep --line-buffered -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
 
 write_manifest "${dir}/manifest.txt" \
         "dmidecode_processor" "dmidecode_processor.log" \

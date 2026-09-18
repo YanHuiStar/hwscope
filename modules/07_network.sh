@@ -166,10 +166,10 @@ run_network() {
             if [ -n "$nsn" ] && echo "$nsn" | grep -qE "^1951526575073$|^[0]+$"; then
                 nsn=""
             fi
-            [ -z "$nsn" ] && nsn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Serial Number" | head -1 | awk '{print $NF}')
+            [ -z "$nsn" ] && nsn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep --line-buffered -i "Serial Number" | head -1 | awk '{print $NF}')
             [ -z "$nsn" ] && nsn="N/A"
             local npn
-            npn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep -i "Part Number" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
+            npn=$(lspci -vv -s "$nbdf" 2>/dev/null | grep --line-buffered -i "Part Number" | head -1 | awk -F': ' '{print $2}' | tr -d ' ')
             [ -z "$npn" ] && npn=$(lspci -s "$nbdf" 2>/dev/null | cut -d' ' -f4-)
             # Mellanox 卡：sysfs serial 常为占位值（多卡相同），用 mstflint q 读 VPD 真 SN + PSID
             local mstdev=""
@@ -183,8 +183,8 @@ run_network() {
                     mst start >/dev/null 2>&1 || true
                     sleep 1
                 fi
-                mstdev=$(mst status 2>/dev/null | grep -i "$nbdf" | awk '{print $1}' | head -1)
-                [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep -i "${nbdf//:}" | head -1)
+                mstdev=$(mst status 2>/dev/null | grep --line-buffered -i "$nbdf" | awk '{print $1}' | head -1)
+                [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep --line-buffered -i "${nbdf//:}" | head -1)
                 if [ -n "$mstdev" ]; then
                     # 声明与赋值分离：local mq_out=$(...) 会吞掉命令退出码（local 本身恒返回 0）
                     local mq_out
@@ -195,7 +195,7 @@ run_network() {
                         echo -e "${YELLOW}[WARN] mstflint 查询失败: $nbdf${NC}" >&2
                     else
                         local mq_sn
-                        mq_sn=$(echo "$mq_out" | grep -iE "^Serial Number|^Board Serial" | head -1 | awk '{print $NF}')
+                        mq_sn=$(echo "$mq_out" | grep --line-buffered -iE "^Serial Number|^Board Serial" | head -1 | awk '{print $NF}')
                         [ -n "$mq_sn" ] && nsn="$mq_sn"
                         local mq_psid
                         mq_psid=$(echo "$mq_out" | grep "PSID" | awk '{print $NF}')

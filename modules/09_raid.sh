@@ -23,7 +23,7 @@ run_raid() {
     module_start "$MODULE_NAME"
 
     # Phase 1: 串行获取所有设备数量 / 列表（后续命令依赖这些值）
-    run_and_log "lspci 2>/dev/null | grep -iE 'RAID|SAS|SATA|MegaRAID|Broadcom|LSI|AVAGO'" \
+    run_and_log "lspci 2>/dev/null | grep --line-buffered -iE 'RAID|SAS|SATA|MegaRAID|Broadcom|LSI|AVAGO'" \
         "${dir}/pci_raid_hba_list.log"
 
     # v1.48.69：storcli64 探测带固定路径——Broadcom 官方包装到 /opt/MegaRAID/storcli/ 且不建 PATH 软链
@@ -63,7 +63,7 @@ run_raid() {
     if check_cmd sas2ircu; then
         hba2_count=$(sas2ircu list 2>/dev/null | grep -c "^Index" || true)
     fi
-    raid_buses=$(lspci -D 2>/dev/null | grep -iE 'RAID|SAS|MegaRAID|Broadcom.*SAS' | awk '{print $1}')
+    raid_buses=$(lspci -D 2>/dev/null | grep --line-buffered -iE 'RAID|SAS|MegaRAID|Broadcom.*SAS' | awk '{print $1}')
 
     # Phase 2: 构建并行任务数组
     local raid_jobs=()
@@ -72,7 +72,7 @@ run_raid() {
     if [ -n "$STORCLI_BIN" ]; then
         for ((c=0; c<ctrl_count; c++)); do
             raid_jobs+=("$STORCLI_BIN /c${c} show all 2>&1" "${dir}/ctrl${c}_info.log")
-            raid_jobs+=("$STORCLI_BIN /c${c} show all 2>&1 | grep -iE 'Model|Serial|Firmware|BIOS|Boot|Board Type|Ctrl Rate|ROC temperature|Product Name'" "${dir}/ctrl${c}_summary.log")
+            raid_jobs+=("$STORCLI_BIN /c${c} show all 2>&1 | grep --line-buffered -iE 'Model|Serial|Firmware|BIOS|Boot|Board Type|Ctrl Rate|ROC temperature|Product Name'" "${dir}/ctrl${c}_summary.log")
             raid_jobs+=("$STORCLI_BIN /c${c} /bbu show all 2>&1" "${dir}/ctrl${c}_bbu.log")
             raid_jobs+=("$STORCLI_BIN /c${c} show event 2>&1" "${dir}/ctrl${c}_events.log")
             # 虚拟盘数：统计 VD 表数据行（段头 "Virtual Drives :" 恒 1 次，按段头计数多 VD 时只采 v0——改按表行统计）

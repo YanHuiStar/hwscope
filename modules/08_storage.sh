@@ -67,7 +67,7 @@ run_storage() {
                 case "$dev_short" in
                     nvme*)
                         smart_jobs+=("smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log")
-                        smart_jobs+=("smartctl -a '$dev' 2>/dev/null | grep -E 'Temperature|Percentage Used|Power On Hours|Data Units|Media Errors|Warning'" "${dir}/smart_${dev_short}_health.log")
+                        smart_jobs+=("smartctl -a '$dev' 2>/dev/null | grep --line-buffered -E 'Temperature|Percentage Used|Power On Hours|Data Units|Media Errors|Warning'" "${dir}/smart_${dev_short}_health.log")
                         ;;
                     sd*)
                         smart_jobs+=("smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log")
@@ -82,7 +82,7 @@ run_storage() {
                               echo "# 已跳过 smartctl -d scsi（该调用必然 exit=4，属设备形态而非故障）"; } \
                                 > "${dir}/smart_${dev_short}_scsi.log"
                         fi
-                        smart_jobs+=("smartctl -a '$dev' 2>/dev/null | grep -iE 'Temperature|Reallocated|Pending|Offline|Current|Read Error|Write Error|Spin_Up|Hours|Power_Cycle|SAS'" "${dir}/smart_${dev_short}_health.log")
+                        smart_jobs+=("smartctl -a '$dev' 2>/dev/null | grep --line-buffered -iE 'Temperature|Reallocated|Pending|Offline|Current|Read Error|Write Error|Spin_Up|Hours|Power_Cycle|SAS'" "${dir}/smart_${dev_short}_health.log")
                         ;;
                     hd*|vd*)
                         smart_jobs+=("smartctl -a '$dev' 2>&1" "${dir}/smart_${dev_short}.log")
@@ -179,9 +179,9 @@ run_storage() {
                 smodel=$(echo "$sinfo" | grep "Device Model:" | cut -d':' -f2- | xargs)
                 sfw=$(echo "$sinfo" | grep "Firmware Version:" | awk '{print $3}')
                 # SCSI 格式回退（RAID 逻辑盘/SAS：Serial number:/Product:/Revision:，ATA 关键字匹配不到）
-                [ -z "$ssn" ] && ssn=$(echo "$sinfo" | grep -iE "^Serial number:" | cut -d: -f2- | xargs)
-                [ -z "$smodel" ] && smodel=$(echo "$sinfo" | grep -iE "^Product:" | cut -d: -f2- | xargs)
-                [ -z "$sfw" ] && sfw=$(echo "$sinfo" | grep -iE "^Revision:" | cut -d: -f2- | xargs)
+                [ -z "$ssn" ] && ssn=$(echo "$sinfo" | grep --line-buffered -iE "^Serial number:" | cut -d: -f2- | xargs)
+                [ -z "$smodel" ] && smodel=$(echo "$sinfo" | grep --line-buffered -iE "^Product:" | cut -d: -f2- | xargs)
+                [ -z "$sfw" ] && sfw=$(echo "$sinfo" | grep --line-buffered -iE "^Revision:" | cut -d: -f2- | xargs)
                 # 类型区分：SATA 盘有 "SATA Version is"；SAS 盘走 SCSI 格式（Product:/Serial number:）或 Transport protocol 明确为 SAS
                 # （注意：Transport protocol 行对 SATA 盘也输出 "Transport protocol: SATA"，必须值判断，勿无条件判 SAS）
                 if echo "$sinfo" | grep -qi "SATA Version is"; then stype="SATA"
@@ -193,10 +193,10 @@ run_storage() {
             local sattrs=""
             check_cmd smartctl && sattrs=$(smartctl -A "$sdev" 2>/dev/null)
             local spo
-            spo=$(echo "$sattrs" | grep -i "Power_On_Hours" | awk '{print $NF; exit}')
+            spo=$(echo "$sattrs" | grep --line-buffered -i "Power_On_Hours" | awk '{print $NF; exit}')
             if [ -z "$spo" ] || ! echo "$spo" | grep -qE "^[0-9]+$"; then spo="0"; fi
             local spc
-            spc=$(echo "$sattrs" | grep -i "Power_Cycle" | awk '{print $NF; exit}')
+            spc=$(echo "$sattrs" | grep --line-buffered -i "Power_Cycle" | awk '{print $NF; exit}')
             if [ -z "$spc" ] || ! echo "$spc" | grep -qE "^[0-9]+$"; then spc="0"; fi
             echo "${sname}|${stype}|${ssize:-N/A}|${smodel:-N/A}|${ssn:-N/A}|${sfw:-N/A}|N/A|${spo}|${spc}|N/A"
         done

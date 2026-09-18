@@ -24,7 +24,7 @@ run_memory() {
     # 1~3+5. 独立的内存信息采集命令（并行采集；串行模式自动降级）
     run_and_log_parallel 4 \
         "dmidecode -t memory" "${dir}/dmidecode_memory_full.log" \
-        "dmidecode -t memory 2>/dev/null | grep -E 'Locator|Size|Type:|Speed|Manufacturer|Serial Number|Part Number|Rank|Configured Clock'" \
+        "dmidecode -t memory 2>/dev/null | grep --line-buffered -E 'Locator|Size|Type:|Speed|Manufacturer|Serial Number|Part Number|Rank|Configured Clock'" \
             "${dir}/memory_slot_fields.log" \
         "free -h" "${dir}/free_h.log" \
         "cat /proc/meminfo" "${dir}/proc_meminfo.log"

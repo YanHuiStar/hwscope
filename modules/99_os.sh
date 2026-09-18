@@ -18,7 +18,7 @@ run_os() {
     # 1. 独立的 OS 基础信息命令（并行采集；串行模式自动降级）
     run_and_log_parallel 4 \
         "uname -a" "${dir}/uname.log" \
-        "lsmod | grep -E 'nvidia|mlx5|mlx4|ipmi|i2c'" "${dir}/kernel_modules_gpu_net.log" \
+        "lsmod | grep --line-buffered -E 'nvidia|mlx5|mlx4|ipmi|i2c'" "${dir}/kernel_modules_gpu_net.log" \
         "lsmod" "${dir}/lsmod_all.log" \
         "uptime" "${dir}/uptime.log"
 
@@ -41,10 +41,10 @@ run_os() {
     if check_cmd dmesg; then
         run_and_log_parallel 4 \
             "dmesg" "${dir}/dmesg_full.log" \
-            "dmesg | grep -iE 'nvidia|nvswitch|mlx5|pcie|error|fail|temp|throttle'" \
+            "dmesg | grep --line-buffered -iE 'nvidia|nvswitch|mlx5|pcie|error|fail|temp|throttle'" \
                 "${dir}/dmesg_hardware.log" \
-            "dmesg | grep -i nvidia" "${dir}/dmesg_nvidia.log" \
-            "dmesg | grep -iE 'nvswitch|fabric'" "${dir}/dmesg_nvswitch.log"
+            "dmesg | grep --line-buffered -i nvidia" "${dir}/dmesg_nvidia.log" \
+            "dmesg | grep --line-buffered -iE 'nvswitch|fabric'" "${dir}/dmesg_nvswitch.log"
     fi
 
     # 5b. 持久化内核日志（v1.48.90）——dmesg 是**环形缓冲，重启即丢**，而 XID 这类
@@ -54,11 +54,11 @@ run_os() {
     #   各取 tail 截断，保证单文件可读（全量在 e2e 场景无意义，定位只需要最近若干条）。
     if check_cmd journalctl; then
         run_and_log_parallel 3 \
-            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'Xid|NVRM|nvswitch|fabric|pcieport|AER|MCA: ' | tail -500" \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep --line-buffered -iE 'Xid|NVRM|nvswitch|fabric|pcieport|AER|MCA: ' | tail -500" \
                 "${dir}/journal_kernel_hw.log" \
-            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'Xid *(\(PCI|:)|NVRM: Xid' | tail -200" \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep --line-buffered -iE 'Xid *(\(PCI|:)|NVRM: Xid' | tail -200" \
                 "${dir}/journal_xid.log" \
-            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'machine check|Hardware Error|mce:|MCA: |EDAC MC[0-9]+: [0-9]+ (CE|UE)' | tail -200" \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep --line-buffered -iE 'machine check|Hardware Error|mce:|MCA: |EDAC MC[0-9]+: [0-9]+ (CE|UE)' | tail -200" \
                 "${dir}/journal_mce.log"
     fi
 

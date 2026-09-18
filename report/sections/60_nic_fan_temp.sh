@@ -434,6 +434,26 @@ fi
 FAN_DIR="${OUT}/fan"
 load_manifest "${FAN_DIR}" ipmi_fan_sensors "ipmi_fan_sensors.log"
 load_manifest "${FAN_DIR}" sensors_all "sensors_all.log"
+# v1.48.98：兜底改用 bmc/ipmi_sensors.log——**同一台机的同一份数据，别再显示 N/A**。
+#   实测 B300（B300-sample-a，22.224）：采集日志里
+#     bmc/ipmi_sensors.log   = `ipmitool sensor list 2>&1`            → 100 行（含 15 行 FAN、18 行 PSU）
+#     fan/ipmi_fan_sensors.log = `ipmitool sensor list | grep -iE 'FAN|RPM…'` → **0 行**
+#   两者都是同一个 ipmitool 命令，差别只在**后者的输出接了管道 grep**：
+#   grep 在管道里是**块缓冲**，30s 超时被 kill 时缓冲区未 flush → 整份输出丢失。
+#   而前者直接重定向到文件（行缓冲/无缓冲），超时前已落盘的 100 行得以保留。
+#   后果：报告「风扇 数量 N/A（未取到数据）」，而同一份日志里风扇转速标标准准。
+#   修复分两处：① 采集端（modules/11_fan.sh）加 `grep --line-buffered`，从源头杜绝缓冲丢数据；
+#            ② 本处兜底：ipmi_fan_sensors 为空时改用 bmc/ipmi_sensors.log（同为 sensor list 全量，
+#               字段格式一致，下游 awk 自带 /fan[0-9]/ 过滤，不会把其他传感器算进来）。
+#   注意仅「空/无有效行」时才兜底：有数据仍以专用文件为准（避免行为变化）。
+_fan_have=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | grep -cE "[^[:space:]]")
+if [ "${_fan_have:-0}" -eq 0 ]; then
+    _fan_fb="${BMC_DIR}/ipmi_sensors.log"
+    if [ -f "${_fan_fb}" ] && [ "$(grep -v '^#' "${_fan_fb}" 2>/dev/null | grep -icE 'fan|rpm')" -gt 0 ]; then
+        ipmi_fan_sensors="${_fan_fb}"
+        FAN_SRC_FALLBACK=1
+    fi
+fi
 # 风扇匹配：兼容 Fan10_Speed_F / FAN1_Speed / Fan2 等大小写变体；只统计转速传感器（$3=RPM），
 # 跳过 Present/discrete 等离散值（如 PSU1 Slow FAN1 是 discrete 状态位 0x1，非真实转速）
 FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
