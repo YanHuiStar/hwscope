@@ -173,9 +173,33 @@ if [ -f "$_fru_src" ]; then
                                 PSU*) _dnum=$(echo "$_dloc" | sed 's/^PSU//; s/^0*//') ;;
                                 *)    _dnum="${_didx:-1}" ;;
                             esac
-                            # 型号列合并厂商+Revision（如 "DELTA DPS-3000AB-25 C Rev 01F"），PN/SN/容量独立列
-                            _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
+                            # v1.48.94：识别「BIOS 未填充 FRU」的记录——Name/厂商/SN/PN 全为
+                            #   "Not Specified" 时，说明 BIOS 这次没读到该颗 PSU 的 FRU。
+                            #   实证：Gigabyte B200 NVL8（B200-sample-a）12 条 Type 39 中恰有 1 条字段全空，
+                            #   而同机 IPMI 侧 PS1..PS12_Status 全为 ok，且其余 4 台同 BIOS/BMC 版本的机器无此空记录
+                            #   → 属该颗 PSU 的 FRU 读取失败（BIOS 经 PMBus 读，BMC 另走一路）。
+                            #   原实现直接按「厂商+Name+Rev+Revision」拼接，会渲染成
+                            #   "Not Specified Not Specified Rev Not Specified"，看着像采集坏了。
+                            #   注意容量不改：Max Power Capacity 是真实字段（该空记录也带 3000 W），不能丢。
+                            _dempty=0
+                            case "$_dname" in
+                                "Not Specified"|"")
+                                    case "$_dmfr" in
+                                        "Not Specified"|"")
+                                            case "$_dsn" in
+                                                "Not Specified"|"") _dempty=1 ;;
+                                            esac ;;
+                                    esac ;;
+                            esac
+                            if [ "$_dempty" -eq 1 ]; then
+                                _dfull="（FRU 未读到——BIOS 未填充该条记录，供电状态见下方 IPMI 传感器）"
+                                _dpn="—"; _dsn="—"
+                            else
+                                # 型号列合并厂商+Revision（如 "DELTA DPS-3000AB-25 C Rev 01F"），PN/SN/容量独立列
+                                _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
+                            fi
                             PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
+                            [ "$_dempty" -eq 1 ] && PSU_EMPTY_FRU=$(( ${PSU_EMPTY_FRU:-0} + 1 ))
                         fi
                         _dloc=""; _dname=""; _dmfr=""; _dsn=""; _dpn=""; _dcap=""; _drev=""
                         ;;
@@ -187,8 +211,25 @@ if [ -f "$_fru_src" ]; then
                     PSU*) _dnum=$(echo "$_dloc" | sed 's/^PSU//; s/^0*//') ;;
                     *)    _dnum="${_didx:-1}" ;;
                 esac
-                _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
+                # v1.48.94：与 Handle 分支同一判据（见上）——最后一条记录若也是空字段，同样友好渲染
+                _dempty=0
+                case "$_dname" in
+                    "Not Specified"|"")
+                        case "$_dmfr" in
+                            "Not Specified"|"")
+                                case "$_dsn" in
+                                    "Not Specified"|"") _dempty=1 ;;
+                                esac ;;
+                        esac ;;
+                esac
+                if [ "$_dempty" -eq 1 ]; then
+                    _dfull="（FRU 未读到——BIOS 未填充该条记录，供电状态见下方 IPMI 传感器）"
+                    _dpn="—"; _dsn="—"
+                else
+                    _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
+                fi
                 PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
+                [ "$_dempty" -eq 1 ] && PSU_EMPTY_FRU=$(( ${PSU_EMPTY_FRU:-0} + 1 ))
             fi
         fi
         # 平台限制标注：FRU 无 PSU 条目时说明（避免客户误以为漏采）——按明细行来源区分文案（v1.44.0）
@@ -199,7 +240,7 @@ if [ -f "$_fru_src" ]; then
                 # PS<N> Status 传感器佐证（0x1/ok = 在位正常）：sdr list 带 ok 状态列，有则注明增强可信度
                 _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_sdr_psu.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $3 ~ /ok/ {n++} END{print n+0}')
                 [ "${_ps_ok:-0}" -gt 0 ] 2>/dev/null || _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $2 ~ /^0x1$/ {n++} END{print n+0}')
-                PSU_PLATFORM_NOTE="平台未暴露单电源 FRU 与单 PSU 功率传感器（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位，型号/SN/额定容量为 dmidecode 数据${_ps_ok:+，PS 状态传感器均 ok})"
+                PSU_PLATFORM_NOTE="平台未暴露单电源 FRU 与单 PSU 功率传感器（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位${PSU_EMPTY_FRU:+，其中 ${PSU_EMPTY_FRU} 条记录的 FRU 字段未填充（BIOS 未读到该颗 PSU 的型号/SN，供电状态不受影响）}，型号/SN/额定容量为 dmidecode 数据${_ps_ok:+，PS 状态传感器均 ok})"
             fi
         fi
     fi
