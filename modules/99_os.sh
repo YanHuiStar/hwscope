@@ -54,11 +54,11 @@ run_os() {
     #   各取 tail 截断，保证单文件可读（全量在 e2e 场景无意义，定位只需要最近若干条）。
     if check_cmd journalctl; then
         run_and_log_parallel 3 \
-            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'Xid|NVRM|nvswitch|fabric|mlx5|pcieport|AER|MCE|machine check|Hardware Error' | tail -500" \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'Xid|NVRM|nvswitch|fabric|pcieport|AER|MCA: ' | tail -500" \
                 "${dir}/journal_kernel_hw.log" \
-            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'Xid|NVRM' | tail -200" \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'Xid *(\(PCI|:)|NVRM: Xid' | tail -200" \
                 "${dir}/journal_xid.log" \
-            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'MCE|machine check|mcelog|Hardware Error|EDAC' | tail -200" \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'machine check|Hardware Error|mce:|MCA: |EDAC MC[0-9]+: [0-9]+ (CE|UE)' | tail -200" \
                 "${dir}/journal_mce.log"
     fi
 

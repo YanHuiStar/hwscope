@@ -250,10 +250,16 @@ fi
 MCE_HITS=""; MCE_COUNT=0; MCE_SRC=""
 for _mce_c in "${OS_DIR}/journal_mce.log" "${OS_DIR}/journal_kernel_hw.log" "${OS_DIR}/dmesg_hardware.log"; do
     [ -f "$_mce_c" ] && [ -s "$_mce_c" ] || continue
-    _mce_hit=$(grep -icE "Machine Check|Hardware Error|mce:|MCA: " "$_mce_c" 2>/dev/null)
+    # v1.48.95：同样**必须排除 `^#` 日志头行**——该行形如
+    #   `# Command : ... | grep -iE 'MCE|machine check|mcelog|Hardware Error|EDAC'`，
+    #   自身就含 "mce"/"machine check" 字样，不排除必然自匹配出假阳性。
+    #   实测 B300（B300-sample-a）：journal_mce.log 内容全是 EDAC 驱动初始化
+    #   （`EDAC MC: Ver: 3.0.0` / `EDAC MC0: Giving out device ...`），却因命令头被判 WARN。
+    _mce_hit=$(grep -vE "^#" "$_mce_c" 2>/dev/null | grep -icE "Machine Check|Hardware Error|mce:|MCA: ")
     if [ "${_mce_hit:-0}" -gt 0 ]; then
         MCE_SRC="$(basename "$_mce_c")"
-        MCE_HITS=$(grep -iE "Machine Check|Hardware Error|mce:|MCA: " "$_mce_c" 2>/dev/null \
+        MCE_HITS=$(grep -vE "^#" "$_mce_c" 2>/dev/null \
+            | grep -iE "Machine Check|Hardware Error|mce:|MCA: " \
             | sed -E 's/^\[[^]]*\] +//' | sort -u | head -10)
         MCE_COUNT=$(printf '%s\n' "$MCE_HITS" | grep -c .)
         break

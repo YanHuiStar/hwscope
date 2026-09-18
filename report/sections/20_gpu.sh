@@ -386,11 +386,18 @@ _os_dir="${OS_DIR:-${OUT}/os}"
 for _cand in "${_os_dir}/journal_xid.log" "${_os_dir}/journal_kernel_hw.log" \
              "${_os_dir}/dmesg_nvidia.log" "${_os_dir}/dmesg_hardware.log"; do
     [ -f "$_cand" ] && [ -s "$_cand" ] || continue
-    _hit=$(grep -icE "Xid" "$_cand" 2>/dev/null)
+    # v1.48.95：**必须排除 `^#` 开头的日志头行**。HwScope 每个日志文件头部写入
+    #   `# Command : ... | grep -iE 'Xid|NVRM' | tail -200` —— 这行**本身就含 "Xid" 字样**，
+    #   不排除就会匹配到自己的采集命令行，凭空报出「检出 GPU XID 错误」。
+    #   实测 B300（B300-sample-a）：journal_xid.log 仅 1 条内容（驱动加载 `NVRM: loading ...`），
+    #   却因命令头自匹配被判 WARN，客户看到误以为显卡有故障历史。
+    #   同理排除后仍要收紧模式：只认真正的 XID 记录格式（`Xid (PCI:` / `NVRM: Xid`）。
+    _hit=$(grep -vE "^#" "$_cand" 2>/dev/null | grep -icE "Xid *\(PCI|NVRM: *Xid")
     if [ "${_hit:-0}" -gt 0 ]; then
         GPU_XID_SRC="$(basename "$_cand")"
-        GPU_XID=$(grep -iE "Xid" "$_cand" 2>/dev/null \
-            | sed -E 's/^\[[^]]*\] +//; s/^.*(NVRM: Xid)/\1/' \
+        GPU_XID=$(grep -vE "^#" "$_cand" 2>/dev/null \
+            | grep -iE "Xid *\(PCI|NVRM: *Xid" \
+            | sed -E 's/^\[[^]]*\] +//; s/^.*(NVRM: *Xid)/\1/' \
             | sed 's/[[:space:]]\+$//' | sort -u | head -12)
         GPU_XID_COUNT=$(printf '%s\n' "$GPU_XID" | grep -c .)
         break
