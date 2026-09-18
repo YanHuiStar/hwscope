@@ -270,11 +270,17 @@ push_main() {
         # v1.48.66：预检改用 GET + 状态码校验——原用 `-sI`(HEAD)，实测本机 v2ray 代理下
         # HEAD 一律返回 000（GET 才 200），导致代理明明可用却判定"直连+代理均不可达"，
         # 推送被自己的预检挡死（真机复现：Handshake 正常但 HEAD 000）。GET + `2xx/3xx` 判定最稳。
-        curl -s --max-time 5 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
+        # v1.48.92：预检超时 5s → 15s（可用 GIT_PUSH_PRECHECK_TIMEOUT 覆盖）——
+        #   5s 依然会误判：实测同一时刻预检判"直连+代理均不可达"，而紧接着手工 `git push`
+        #   约 20s 就推成功了。慢 ≠ 断，预检把"慢"误判成"断"的代价是**把有效推送挡死在门口**，
+        #   且按纪律 PAUSE 后禁止重试，这一轮工作就卡住了；相反，真断网时多等 10s 只是浪费 10s。
+        #   两害相权，预检宁可偏保守（慢）也不要偏激进（误杀）。
+        local pre_to="${GIT_PUSH_PRECHECK_TIMEOUT:-15}"
+        curl -s --max-time "$pre_to" https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && pre_ok=1
         if [ "$pre_ok" -eq 0 ]; then
             local pre_proxy
             pre_proxy="$(detect_proxy)"
-            [ -n "$pre_proxy" ] && curl -s -x "$pre_proxy" --max-time 5 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && { pre_ok=1; pre_use_proxy=1; }
+            [ -n "$pre_proxy" ] && curl -s -x "$pre_proxy" --max-time "$pre_to" https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && { pre_ok=1; pre_use_proxy=1; }
         fi
         if [ "$pre_ok" -eq 0 ]; then
             local fc0=0
@@ -282,8 +288,8 @@ push_main() {
             fc0=$((fc0 + 1))
             echo "$fc0" > "$fail_count_file"
             [ "$fc0" -ge 3 ] && { echo "$(( $(date +%s) + 300 ))" > "$cooldown_file"; warn "连续 ${fc0} 次失败——已触发 5 分钟熔断冷却"; }
-            fail "网络预检失败（直连+代理均不可达，4s 快速判定）——断网状态请勿反复重试，连上节点/网络恢复后再推"
-            ai "[PAUSE] 网络预检失败——暂停推送尝试，不要再自动重试；上报用户：检查代理节点是否已连接/网络是否恢复"
+            fail "网络预检失败（直连+代理各 ${pre_to}s 均不可达）——请先手工试一次真实推送确认：timeout 60 git push origin main"
+            ai "[PAUSE] 网络预检失败。注意：预检只是快速判定，慢 ≠ 断——先手工跑一次 \`timeout 60 git push origin main\`；真实推送也失败才上报用户检查代理节点/网络，不要自动重试"
             return 1
         fi
     fi
