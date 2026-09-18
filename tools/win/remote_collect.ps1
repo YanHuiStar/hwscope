@@ -258,7 +258,8 @@ try {
                 Remove-Item $dst -Recurse -Force
                 Write-Host "[INFO] ${sn}: 已清空旧目录（历史留存于 $($arch.Name)）" -ForegroundColor Yellow
             } else {
-                Write-Host "[WARN] ${sn}: 旧目录含未归档内容或无归档可比对，保留旧目录改为增量覆盖" -ForegroundColor Yellow
+                Write-Host "[WARN] ${sn}: 旧目录非空，但找不到可比对的归档（常见原因：归档已被移走/清理），保留旧目录改为增量覆盖" -ForegroundColor Yellow
+                Write-Host "        不会删除任何文件；但本次未覆盖到的旧文件会留在目录里（如需干净目录：先把该目录归档再重跑，或直接删除该目录）" -ForegroundColor Yellow
             }
         }
         New-Item -ItemType Directory -Force -Path $dst | Out-Null

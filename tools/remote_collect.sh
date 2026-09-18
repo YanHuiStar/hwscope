@@ -170,8 +170,9 @@ for _d in "$_STAGE"/*/; do
             rm -rf "$_dst"
             echo -e "\033[0;33m[INFO] ${_sn}: 已清空旧目录（历史留存于 $(basename "$_arch")）\033[0m"
         else
-            echo -e "\033[0;33m[WARN] ${_sn}: 旧目录含未归档内容或无归档可比对，保留旧目录改为增量覆盖\033[0m"
-            echo -e "\033[0;33m        （如需干净目录请先归档：tar czf logs/remote_logs/${_sn}-$(date '+%Y%m%d%H%M%S').tar.gz -C ${LOCAL_OUT}/remote_output ${_sn}）\033[0m"
+            echo -e "\033[0;33m[WARN] ${_sn}: 旧目录非空，但找不到可比对的归档（常见原因：归档已被移走/清理），保留旧目录改为增量覆盖\033[0m"
+            echo -e "\033[0;33m        不会删除任何文件；但本次未覆盖到的旧文件会留在目录里（如需干净目录：先把该目录归档再重跑，或直接删除该目录）\033[0m"
+            echo -e "\033[0;33m        归档命令：tar czf logs/remote_logs/${_sn}-$(date '+%Y%m%d%H%M%S').tar.gz -C ${LOCAL_OUT}/remote_output ${_sn}\033[0m"
         fi
     fi
     mkdir -p "$_dst"
