@@ -106,7 +106,15 @@ run_network() {
             safe_name=$(echo "$dev" | tr '/' '_')
             eth_jobs+=("ethtool '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}.log")
             eth_jobs+=("ethtool -i '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_driver.log")
-            eth_jobs+=("ethtool -m '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_module.log")
+            # v1.48.84：Mellanox（mlx5_core）跳过 ethtool -m——光模块信息前面已由 mlxlink -m 采集；
+            #   且该命令在部分固件上触发内核报错刷屏（mlx5_cmd_out_err / QUERY_MCIA_REG status 0x3 /
+            #   mlx5_query_module_eeprom_by_page failed:0xffffffff），既污染 console 又污染 dmesg，
+            #   而 2>/dev/null 挡不住内核 printk。非 mlx5 网卡（只有 ethtool 能读光模块）照旧保留。
+            local nic_drv=""
+            [ -e "/sys/class/net/$dev/device/driver" ] && nic_drv=$(basename "$(readlink -f "/sys/class/net/$dev/device/driver" 2>/dev/null)" 2>/dev/null)
+            if [ "$nic_drv" != "mlx5_core" ]; then
+                eth_jobs+=("ethtool -m '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_module.log")
+            fi
         done < <(printf '%s\n' "$eth_devs")
         [ "${#eth_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${eth_jobs[@]}"
     fi
