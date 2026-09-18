@@ -241,3 +241,21 @@ load_manifest "${MEM_DIR}" edac_errors "edac_errors.log"
 if [ -f "${edac_errors}" ]; then
     MEM_EDAC=$(grep -E "CE_count|UE_count" "${edac_errors}" 2>/dev/null | grep -vE "N/A|^#" | awk -F': ' '{sum[$1]+=$2} END{if(NR>0) printf "CE:%d UE:%d", sum["CE_count"], sum["UE_count"]; else print "0/0"}')
 fi
+
+# ─── CPU 机器检查异常（MCE，v1.48.90）───
+# MCE = CPU 硬件级致命错误（缓存/内存控制器/系统总线），内核会打 "Machine Check" /
+#   "Hardware Error" / "mce:" 记录。**一旦出现即视为 CPU 或内存子系统故障的直接证据**，
+#   比 EDAC 的 CE/UE 计数更靠近硬件根因（EDAC 从内存控制器侧看，MCE 从 CPU 侧看）。
+# 来源优先级：journal_mce.log（持久化，跨重启）→ journal_kernel_hw.log → dmesg（本次开机）。
+MCE_HITS=""; MCE_COUNT=0; MCE_SRC=""
+for _mce_c in "${OS_DIR}/journal_mce.log" "${OS_DIR}/journal_kernel_hw.log" "${OS_DIR}/dmesg_hardware.log"; do
+    [ -f "$_mce_c" ] && [ -s "$_mce_c" ] || continue
+    _mce_hit=$(grep -icE "Machine Check|Hardware Error|mce:|MCA: " "$_mce_c" 2>/dev/null)
+    if [ "${_mce_hit:-0}" -gt 0 ]; then
+        MCE_SRC="$(basename "$_mce_c")"
+        MCE_HITS=$(grep -iE "Machine Check|Hardware Error|mce:|MCA: " "$_mce_c" 2>/dev/null \
+            | sed -E 's/^\[[^]]*\] +//' | sort -u | head -10)
+        MCE_COUNT=$(printf '%s\n' "$MCE_HITS" | grep -c .)
+        break
+    fi
+done

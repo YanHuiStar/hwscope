@@ -47,6 +47,21 @@ run_os() {
             "dmesg | grep -iE 'nvswitch|fabric'" "${dir}/dmesg_nvswitch.log"
     fi
 
+    # 5b. 持久化内核日志（v1.48.90）——dmesg 是**环形缓冲，重启即丢**，而 XID 这类
+    #   GPU 故障码往往是重启之后才被翻出来定位的（现场「机器曾经掉过卡」这种结论，
+    #   只能靠持久化日志）。journal 里同时能捞到 MCE（CPU 机器检查异常）与 AER。
+    # 范围限制：仅内核消息（-k）+ 最近 7 天（--since），避免 journal 巨大时拖慢采集；
+    #   各取 tail 截断，保证单文件可读（全量在 e2e 场景无意义，定位只需要最近若干条）。
+    if check_cmd journalctl; then
+        run_and_log_parallel 3 \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'Xid|NVRM|nvswitch|fabric|mlx5|pcieport|AER|MCE|machine check|Hardware Error' | tail -500" \
+                "${dir}/journal_kernel_hw.log" \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'Xid|NVRM' | tail -200" \
+                "${dir}/journal_xid.log" \
+            "journalctl -k --no-pager --since '7 days ago' 2>/dev/null | grep -iE 'MCE|machine check|mcelog|Hardware Error|EDAC' | tail -200" \
+                "${dir}/journal_mce.log"
+    fi
+
     # 6. 服务状态（条件执行：需 systemctl；v1.41.0 全量原则：status 全量落盘不截断）
     if check_cmd systemctl; then
         for svc in nvidia-fabricmanager nvidia-persistenced; do
@@ -113,7 +128,10 @@ run_os() {
         "dmesg_nvswitch" "dmesg_nvswitch.log" \
         "numa_hardware" "numa_hardware.log" \
         "numa_nodes" "numa_nodes.log" \
-        "pcie_aer" "pcie_aer.log"
+        "pcie_aer" "pcie_aer.log" \
+        "journal_kernel_hw" "journal_kernel_hw.log" \
+        "journal_xid" "journal_xid.log" \
+        "journal_mce" "journal_mce.log"
 
     module_end "$MODULE_NAME"
 }

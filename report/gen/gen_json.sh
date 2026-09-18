@@ -247,6 +247,8 @@ ${dimms_json}
     "ras": "${GPU_RAS:-N/A}",
     "vbios": "${GPU_VBIOS:-N/A}",
     "ascend_note": "${GPU_ASCEND_NOTE:-}",
+    "xid_count": "${GPU_XID_COUNT:-0}",
+    "xid_source": "${GPU_XID_SRC:-}",
     "xgmi": "${GPU_XGMI_SUMMARY:-}",
     "nvlink": "${NV_LINK_SUMMARY:-N/A}",
     "serials": "${GPU_SERIALS:-N/A}",

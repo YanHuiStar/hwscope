@@ -382,6 +382,22 @@ gen_acceptance() {
                 fi ;;
     esac
 
+    # ── 硬件故障历史项（v1.48.90：GPU XID / CPU MCE / RAID 缓存电池）──
+    # 判据取向：这些都是「已经出过事」的历史记录，**判 WARN 而非 FAIL**——
+    #   ① 历史事件可能已通过换卡/复位解决，据此否决交付不合理；
+    #   ② 但绝不能沉默放过：XID 79（掉卡）/ 双bit ECC / MCE / 电池失效，
+    #      是跟供应商谈判时最硬的证据，报告必须留痕。
+    # 仅在检出时添加：无检出不加项，保证验收项数与既有基线一致。
+    if [ -n "${GPU_XID:-}" ]; then
+        add_item "GPU XID 错误历史" "WARN" "检出 ${GPU_XID_COUNT} 类 XID 错误（来源 ${GPU_XID_SRC}）——需确认对应卡是否已更换/复位"
+    fi
+    if [ -n "${MCE_HITS:-}" ]; then
+        add_item "CPU MCE" "WARN" "检出 ${MCE_COUNT} 条机器检查异常（来源 ${MCE_SRC}）——需复核 CPU/内存子系统"
+    fi
+    if [ "${RAID_BBU_WARN:-0}" -eq 1 ] 2>/dev/null; then
+        add_item "RAID 缓存电池" "WARN" "${RAID_BBU_SUMMARY}（若写缓存为 WriteBack 则掉电有丢数据风险）"
+    fi
+
     # 汇总判定（N/A 过多时不得判合格——数据不足无法验收）
     if [ "$fail" -gt 0 ]; then
         verdict="不合格（${fail} 项 FAIL，需处理后再交付）"

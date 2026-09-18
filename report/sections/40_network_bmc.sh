@@ -59,6 +59,30 @@ fi
 IB_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | tail -1)
 [ -n "$IB_SPEED" ] && IB_SPEED="${IB_SPEED} Gb/s"
 
+# ─── IB 链路性能计数器（perfquery，v1.48.90）───
+# 为什么必需：ibstat/ibstatus 只给链路状态与速率，**看不见误码**——「ACTIVE 400Gb」也可能是
+#   在坏线缆/脏光模块上反复纠错才达成的。只有性能计数器能反映真实链路质量。
+# 关注计数（非零即需留意，持续增长 = 线缆/光模块/交换机端口问题）：
+#   SymbolErrorCounter 符号错误 / LinkDownedCounter 链路掉线次数 /
+#   PortRcvErrors 接收错误 / PortXmitDiscards 发送丢弃 /
+#   LocalLinkIntegrityErrors 本地链路完整性 / PortRcvRemotePhysicalErrors 对端物理错误。
+# perfquery -x 每项形如 "SymbolErrorCounter:................0"，按冒号与点切分取末段数值。
+IB_PERF_NONZERO=""; IB_PERF_COUNT=0
+if [ -f "${NET_DIR}/perfquery.log" ]; then
+    IB_PERF_NONZERO=$(grep -vE "^#|^$" "${NET_DIR}/perfquery.log" 2>/dev/null \
+        | awk -F'[:.]+' '
+            { k=$1; gsub(/[^A-Za-z]/,"",k)
+              v=$NF; gsub(/[^0-9]/,"",v)
+              if (k == "SymbolErrorCounter" || k == "LinkDownedCounter" || k == "PortRcvErrors" \
+                  || k == "PortXmitDiscards" || k == "LocalLinkIntegrityErrors" \
+                  || k == "PortRcvRemotePhysicalErrors" || k == "PortRcvSwitchRelayErrors") {
+                  seen[k] += v
+              } }
+            END { for (x in seen) if (seen[x] + 0 > 0) printf "%s=%d ", x, seen[x] }
+        ')
+    IB_PERF_COUNT=$(printf '%s' "$IB_PERF_NONZERO" | grep -o '=' | wc -l)
+fi
+
 # 额定速率（卡能力，无需接线）：解析 mlxlink Enabled Link Speed 位图，取最大速率族
 # Mellanox 位图: bit0=SDR(10G) bit1=DDR(20G) bit2=QDR(40G) bit3=FDR10(40G) bit4=FDR(56G)
 #                bit5=EDR(100G) bit6=HDR(200G) bit7=NDR(400G) bit8=XDR(800G) bit9=GDR(1600G)

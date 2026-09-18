@@ -44,6 +44,18 @@ run_raid() {
     if [ -n "$STORCLI_BIN" ]; then
         run_and_log "$STORCLI_BIN show all 2>&1" "${dir}/storcli_controllers.log"
         ctrl_count=$("$STORCLI_BIN" show all 2>/dev/null | grep -c "Controller = ")
+        # v1.48.90：BBU/缓存电池健康 + 虚盘缓存策略——RAID 卡在断电时能否保住缓存数据全靠它，
+        #   且「Write Back 写缓存 + 电池失效」是真实的数据丢失风险点（验收常见关注项）。
+        #   show all 只给控制器/磁盘摘要，BBU 与虚盘缓存详情必须逐控制器单独查询。
+        if [ "${ctrl_count:-0}" -gt 0 ] 2>/dev/null; then
+            local _bbu_jobs=()
+            local _ci
+            for ((_ci=0; _ci<ctrl_count; _ci++)); do
+                _bbu_jobs+=("$STORCLI_BIN /c${_ci}/bbu show all 2>&1" "${dir}/storcli_c${_ci}_bbu.log")
+                _bbu_jobs+=("$STORCLI_BIN /c${_ci}/cv show all 2>&1" "${dir}/storcli_c${_ci}_cv.log")
+            done
+            run_and_log_parallel $(( ${#_bbu_jobs[@]} / 2 )) "${_bbu_jobs[@]}"
+        fi
     fi
     if check_cmd sas3ircu; then
         hba_count=$(sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\\.|^Index" || true)

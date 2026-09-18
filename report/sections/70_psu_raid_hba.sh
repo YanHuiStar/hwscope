@@ -318,6 +318,45 @@ if [ -f "${storcli_controllers}" ] && grep -q "Controller = " "${storcli_control
         raidx=$((raidx + 1))
     done
 fi
+
+# ─── RAID 缓存电池（BBU/超级电容）与写缓存策略（v1.48.90）───
+# 为什么必需：RAID 卡在掉电时能否保住缓存数据全靠 BBU/超级电容。**「Write Back 写缓存 +
+#   电池失效」是真实的数据丢失风险**——卡会继续宣称缓存开启，但掉电时数据直接丢。
+#   验收时这一对必须一起看：只报 WriteBack 不报电池状态，等于漏掉了风险。
+# 数据来源：storcli /cN/bbu show all（电池详情）+ /cN/cv show all（虚盘缓存策略）。
+RAID_BBU_SUMMARY=""; RAID_BBU_WARN=0
+_bbu_parts=""
+for _bf in "${RAID_DIR}"/storcli_c*_bbu.log; do
+    [ -f "$_bf" ] || continue
+    _bci=$(basename "$_bf" | sed -E 's/^storcli_c([0-9]+)_bbu\.log$/\1/')
+    # 电池状态字段名随 storcli 版本/型号变化：State / Battery State / Health
+    _bstate=$(grep -iE "^[[:space:]]*(State|Battery State|Health)[[:space:]]*[:=]" "$_bf" 2>/dev/null \
+        | head -1 | sed -E 's/.*[:=][[:space:]]*//' | sed 's/[[:space:]]*$//')
+    # 部分型号走表格输出（EID State ... / 0 Optimal ...）
+    [ -z "$_bstate" ] && _bstate=$(awk '/^[[:space:]]*[0-9]+[[:space:]]+(Optimal|Good|Failed|Degraded|Charging|Missing)/ {print $2; exit}' "$_bf" 2>/dev/null)
+    # 无 BBU 的卡：storcli 会回 "Controller has no BBU / not present"
+    _nobbu=$(grep -ciE "no BBU|BBU.*not present|not equipped" "$_bf" 2>/dev/null)
+    if [ "${_nobbu:-0}" -gt 0 ]; then
+        _bbu_parts="${_bbu_parts}c${_bci}:无BBU "
+    elif [ -n "$_bstate" ]; then
+        _bbu_parts="${_bbu_parts}c${_bci}:${_bstate} "
+        case "$_bstate" in
+            *Optimal*|*optimal*|*Good*|*good*|*OK*|*ok*) ;;
+            *) RAID_BBU_WARN=1 ;;
+        esac
+    fi
+done
+[ -n "$_bbu_parts" ] && RAID_BBU_SUMMARY="缓存电池: $(echo "$_bbu_parts" | sed 's/ *$//')"
+
+# 虚盘写缓存策略（WriteBack 且电池异常 = 数据丢失风险）
+RAID_CACHE_POLICY=""
+for _cf in "${RAID_DIR}"/storcli_c*_cv.log; do
+    [ -f "$_cf" ] || continue
+    _cp=$(grep -iE "Current Cache Policy|Cache Policy" "$_cf" 2>/dev/null | head -2 \
+        | sed -E 's/.*[:=][[:space:]]*//' | sed 's/[[:space:]]*$//' | paste -sd' / ' -)
+    [ -n "$_cp" ] && RAID_CACHE_POLICY="${RAID_CACHE_POLICY}${_cp}; "
+done
+[ -n "$RAID_CACHE_POLICY" ] && RAID_CACHE_POLICY=$(echo "$RAID_CACHE_POLICY" | sed 's/; *$//')
 # RAID 硬件存在性（lspci 仅匹配 RAID bus controller 类目——SAS controller/Serial Attached SCSI 是
 # HBA 直通卡类目，归 HBA_PCI_PRESENT；排除 Intel VMD 虚拟 RAID 与 PCIe Switch 管理端点——
 # PEX89/97 交换机管理端点被 lspci 分类为 Serial Attached SCSI controller，非 RAID/HBA 卡）

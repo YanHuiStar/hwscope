@@ -31,6 +31,13 @@ run_network() {
     # v1.48.53：ibdev2netdev -v（verbose 含 PCI BDF）——mlx5_X ↔ 接口名 ↔ BDF 三方对齐，
     # 供物理槽位标注（mlxlink/mlxconfig 按 mlx5_X、槽位表按 BDF）与 PSID 解析交叉校验
     check_cmd ibdev2netdev && ib_jobs+=("ibdev2netdev -v" "${dir}/ibdev2netdev_v.log")
+
+    # IB 链路性能计数器（v1.48.90）——IB 卡验收的金标准指标。
+    # 为什么必需：ibstat/ibstatus 只给链路状态与速率，**看不见误码**。链路「ACTIVE 400Gb」也可能是
+    #   在坏线缆上反复纠错达成的，只有 perfquery 的 SymbolError/PortRcvErrors/PortXmitDiscards/
+    #   LinkDowned 才能真正反映链路质量（这些计数增长 = 线缆/光模块/交换机端口问题）。
+    # -x 取扩展计数集；裸 perfquery 只读本地端口，无需 LID 参数。
+    check_cmd perfquery && ib_jobs+=("perfquery -x" "${dir}/perfquery.log")
     # v1.48.53：devlink 固件信息（内核标准接口）——取 fw.psid（PSID）；MST/mstflint 在新平台
     # （CX8/NV access）不可用时 devlink 仍可用，作为 PSID 主来源（回退链 devlink → mstflint → mlxfwmanager）
     check_cmd devlink && ib_jobs+=("devlink dev info" "${dir}/devlink_dev_info.log")
@@ -302,6 +309,7 @@ run_network() {
         "ibv_devinfo" "ibv_devinfo.log" \
         "ibdev2netdev" "ibdev2netdev.log" \
         "ibdev2netdev_v" "ibdev2netdev_v.log" \
+        "perfquery" "perfquery.log" \
         "devlink_dev_info" "devlink_dev_info.log" \
         "mlxfwmanager" "mlxfwmanager.log" \
         "ip_addr" "ip_addr.log" \

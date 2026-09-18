@@ -373,3 +373,26 @@ if [ -f "${GPU_DIR}/gpu_amd_topo.log" ]; then
         GPU_XGMI_SUMMARY="xGMI 拓扑日志已采集（未检出 xGMI 标记，解析待真机校准）"
     fi
 fi
+
+# ─── GPU XID 错误历史（v1.48.90）───
+# XID 是 NVIDIA 官方 GPU 故障码，是「这块卡曾经出过事」最直接的证据：
+#   79 = GPU 从总线上掉下去（掉卡）、48 = ECC 双 bit 不可纠正、13/31 = 显存/指令异常、
+#   62 = 显存页退役、74 = NVLink 错误。这类结论**无法**从 SMART/ECC 当前计数推断出来。
+# 来源优先级：journal_xid.log（持久化，跨重启）→ journal_kernel_hw.log → dmesg（仅本次开机）。
+#   重启会清空 dmesg，若只依赖 dmesg，则「机器曾经掉过卡」在重启后彻底查不到——
+#   这正是本次补 journalctl 采集的原因。
+GPU_XID=""; GPU_XID_COUNT=0; GPU_XID_SRC=""
+_os_dir="${OS_DIR:-${OUT}/os}"
+for _cand in "${_os_dir}/journal_xid.log" "${_os_dir}/journal_kernel_hw.log" \
+             "${_os_dir}/dmesg_nvidia.log" "${_os_dir}/dmesg_hardware.log"; do
+    [ -f "$_cand" ] && [ -s "$_cand" ] || continue
+    _hit=$(grep -icE "Xid" "$_cand" 2>/dev/null)
+    if [ "${_hit:-0}" -gt 0 ]; then
+        GPU_XID_SRC="$(basename "$_cand")"
+        GPU_XID=$(grep -iE "Xid" "$_cand" 2>/dev/null \
+            | sed -E 's/^\[[^]]*\] +//; s/^.*(NVRM: Xid)/\1/' \
+            | sed 's/[[:space:]]\+$//' | sort -u | head -12)
+        GPU_XID_COUNT=$(printf '%s\n' "$GPU_XID" | grep -c .)
+        break
+    fi
+done

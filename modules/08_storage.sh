@@ -141,6 +141,11 @@ run_storage() {
                     nspare=$(echo "$nspare" | tr -d '%')
                     if [[ "$nspare" =~ ^[0-9]+$ ]]; then nspare=$((100 - nspare)); else nspare="N/A"; fi
                 fi
+                # v1.48.90：NVMe 错误日志（盘级错误历史）——SMART 只给健康度与计数，
+                #   错误日志才有**每一次错误的类型/时间戳/LBA**，是判断「盘曾经出过错」的直接证据
+                #   （如 Invalid Field / Write Fault / Unsafe Shutdown 会指向掉电或线缆问题）。
+                #   落盘为独立文件（按盘名区分），report 端按盘聚合展示。
+                nvme error-log "$ndev" > "${dir}/nvme_error_${nname}.log" 2>/dev/null || true
             fi
             # nvme 命令缺失时 fallback smartctl（smart_<dev>_health.log 的 "Percentage Used"）
             if [ -z "$nspare" ] && [ -f "${dir}/smart_${nname}_health.log" ]; then

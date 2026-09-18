@@ -304,6 +304,9 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
         if [ -n "${GPU_XGMI_SUMMARY:-}" ]; then
             echo "| xGMI | ${GPU_XGMI_SUMMARY} |"
         fi
+        if [ -n "${GPU_XID:-}" ]; then
+            echo "| XID 错误 | ⚠️ 检出 ${GPU_XID_COUNT} 类 GPU XID 错误（来源: ${GPU_XID_SRC}）——详见下方明细 |"
+        fi
     fi
 fi)
 $(if [ -n "$gpu_details_md" ]; then
@@ -315,6 +318,16 @@ $(if [ -n "$gpu_details_md" ]; then
     echo "| 卡 | 型号 | SN | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS |"
     echo "|----|------|----|----|------|------|----------|-------|"
     printf '%s' "$gpu_details_md"
+fi)
+$(if [ -n "${GPU_XID:-}" ]; then
+    echo ""
+    echo "> ⚠️ **GPU XID 错误历史（来源: ${GPU_XID_SRC}）** —— XID 是 NVIDIA 官方故障码，"
+    echo "> 常见含义：79=GPU 掉总线、48=ECC 双bit不可纠正、13/31=显存/指令异常、62=显存页退役、74=NVLink 错误。"
+    echo "> 以下为检出记录（去重）："
+    echo ""
+    echo '```'
+    printf '%s\n' "$GPU_XID"
+    echo '```'
 fi)
 
 $(if [ -n "$nvs_md" ]; then
@@ -604,6 +617,35 @@ $(
     fi
     if [ -n "$DCGM_NOTICE" ]; then
         echo "| ⚠️ DCGM | ${DCGM_NOTICE} |"
+    fi
+    # ─── v1.48.90：新增健康项（XID / MCE / IB 误码 / NVMe 错误 / RAID 缓存电池）───
+    # 集中放在健康检查段：这五类都是「曾经出过事」的直接证据，客户/供应商谈判时最先看这里。
+    if [ -n "${GPU_XID:-}" ]; then
+        echo "| ⚠️ GPU XID 错误 | 检出 ${GPU_XID_COUNT} 类（来源: ${GPU_XID_SRC}）——详见 GPU 段明细 |"
+    fi
+    if [ -n "${MCE_HITS:-}" ]; then
+        echo "| ⚠️ CPU MCE | 检出 ${MCE_COUNT} 条机器检查异常（来源: ${MCE_SRC}） |"
+    fi
+    if [ -n "${IB_PERF_NONZERO:-}" ]; then
+        echo "| ⚠️ IB 链路误码 | ${IB_PERF_NONZERO} |"
+    else
+        case "${IB_COUNT:-0}" in
+            ''|0) ;;
+            *) [ -f "${NET_DIR:-}/perfquery.log" ] && echo "| IB 链路误码 | ✓ 性能计数器全部为 0 |" ;;
+        esac
+    fi
+    if [ "${NVME_ERR_DISKS:-0}" -gt 0 ] 2>/dev/null; then
+        echo "| ⚠️ NVMe 错误日志 | ${NVME_ERR_DISKS} 块盘有非零错误（${NVME_ERR_DETAIL}） |"
+    fi
+    if [ -n "${RAID_BBU_SUMMARY:-}" ]; then
+        if [ "${RAID_BBU_WARN:-0}" -eq 1 ] 2>/dev/null; then
+            echo "| ⚠️ RAID 缓存电池 | ${RAID_BBU_SUMMARY}（异常——与写缓存策略同看） |"
+        else
+            echo "| RAID 缓存电池 | ${RAID_BBU_SUMMARY} |"
+        fi
+    fi
+    if [ -n "${RAID_CACHE_POLICY:-}" ]; then
+        echo "| RAID 写缓存策略 | ${RAID_CACHE_POLICY} |"
     fi
 )
 | SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |

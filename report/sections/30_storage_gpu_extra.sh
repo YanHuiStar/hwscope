@@ -140,6 +140,25 @@ if [ -f "${disk_inventory}" ]; then
     done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
 fi
 
+# ─── NVMe 错误日志汇总（v1.48.90）───
+# nvme error-log 给出每次错误的类型/时间戳/LBA，是「这块盘曾经出过错」的直接证据
+# （Invalid Field / Write Fault / Unsafe Shutdown 会指向掉电或线缆问题）——
+# SMART 只给健康度百分比，看不出错误发生过没有。
+# 输出形如 "Error Log Entries for device:nvme0 entries:63"，其后 Entry[N] 段落含 error_count。
+# 这里统计「有非零错误的盘数」与「累计错误条目数」，明细留在原日志按需查。
+NVME_ERR_DISKS=0; NVME_ERR_TOTAL=0; NVME_ERR_DETAIL=""
+for _ne in "${STO_DIR}"/nvme_error_*.log; do
+    [ -f "$_ne" ] || continue
+    _devname=$(basename "$_ne" | sed 's/^nvme_error_//; s/\.log$//')
+    _cnt=$(grep -cE "^[[:space:]]*error_count[[:space:]]*:" "$_ne" 2>/dev/null)
+    _nz=$(grep -E "^[[:space:]]*error_count[[:space:]]*:" "$_ne" 2>/dev/null | grep -cvE ":[[:space:]]*0[[:space:]]*$")
+    if [ "${_nz:-0}" -gt 0 ]; then
+        NVME_ERR_DISKS=$((NVME_ERR_DISKS+1))
+        NVME_ERR_TOTAL=$((NVME_ERR_TOTAL+_nz))
+        NVME_ERR_DETAIL="${NVME_ERR_DETAIL}${_devname}:${_nz}条 "
+    fi
+done
+
 # GPU 退役行数（gpu_remapped_rows.csv）
 GPU_REMAP="N/A"
 load_manifest "${GPU_DIR}" gpu_remapped_rows "gpu_remapped_rows.csv"
