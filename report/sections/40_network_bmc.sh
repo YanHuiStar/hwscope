@@ -234,6 +234,48 @@ fi
 SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
 SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -icE "pcie|aer|uncorrectable")
 
+# ─── v1.48.86：SEL 告警终态（未解除 / 已自愈）───
+# SEL 的 Asserted/Deasserted 是**同一事件的进入/解除两态**：同「传感器 + 事件类型」出现
+# Deasserted 即表示该项已恢复正常。旧实现只用 `grep -ciE "critical|fatal"` 数行，
+# 会把 Deasserted 行（其事件描述里同样含 "Critical" 字样）也算作告警 ——
+# 实测 A100 机 2022 年风扇瞬停事件 4 条（2 Asserted + 2 Deasserted，19 秒后自愈）
+# 被报成"2 条 Critical"→ FAIL，判定与事实相反。
+# 规则：Critical 级 Asserted 事件，若存在同键 Deasserted → 已自愈（SEL_CRIT_RECOVERED），
+#       否则视为当前仍未解除（SEL_CRIT_UNRESOLVED，才是真故障）。
+# 累积型事件（Uncorrectable ECC 等）天然没有 Deassert 配对，会自动落到 UNRESOLVED，规则自洽。
+SEL_CRIT_UNRESOLVED=0
+SEL_CRIT_RECOVERED=0
+if [ -f "${ipmi_sel_elist}" ]; then
+    _sel_stat=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
+        | grep -vE "Could not open|Unable|No such file|command failed|device at /dev|^$" \
+        | awk -F'|' '
+            NF>=6 {
+                s=$4; e=$5; st=$6
+                gsub(/^ +| +$/,"",s); gsub(/^ +| +$/,"",e); gsub(/^ +| +$/,"",st)
+                k=s"|"e
+                if (st=="Deasserted") { rel[k]=1; store[++m]=k; next }
+                if (st=="Asserted" && tolower(e) ~ /critical|fatal|non-recoverable|nonrecoverable/) {
+                    crit[k]=1; order[++n]=k
+                }
+            }
+            END {
+                u=0; r=0
+                for (i=1;i<=n;i++) { if (order[i] in rel) r++; else u++ }
+                printf "%d %d", u, r
+            }')
+    SEL_CRIT_UNRESOLVED="${_sel_stat%% *}"
+    SEL_CRIT_RECOVERED="${_sel_stat##* }"
+    : "${SEL_CRIT_UNRESOLVED:=0}"; : "${SEL_CRIT_RECOVERED:=0}"
+fi
+# 已解除事件的日期（供报告文案标注"何时自愈"）
+SEL_RECOVERED_WHEN=""
+if [ "${SEL_CRIT_RECOVERED:-0}" -gt 0 ] 2>/dev/null; then
+    SEL_RECOVERED_WHEN=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
+        | grep -vE "Could not open|Unable|No such file|command failed|device at /dev|^$" \
+        | awk -F'|' '{st=$6; gsub(/^ +| +$/,"",st); if(st=="Deasserted"){d=$2; gsub(/^ +| +$/,"",d); print d}}' \
+        | sort -u | head -1)
+fi
+
 # SEL 告警级事件明细（只列 Critical/Error/PCIe/告警类，过滤 Boot/Timestamp 等常规噪声事件）
 SEL_DETAILS=""
 if [ -f "${ipmi_sel_elist}" ]; then

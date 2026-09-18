@@ -41,6 +41,8 @@ mt_model() {
         MT4131) echo "ConnectX-8" ;;
         # MT4129=ConnectX-7 (MCX75xxx, NDR 400G)；MT2910/MT4125 同代不同封装
         MT4129|MT2910|MT4125) echo "ConnectX-7" ;;
+        # v1.48.85：BlueField DPU（MT43244 = lspci 型号名；MT41692 = ibstat CA type 的 SoC 编号）
+        MT43244|MT41692) echo "BlueField-3" ;;
         MT4124) echo "ConnectX-6 Lx" ;;
         MT4123) echo "ConnectX-6 Dx" ;;
         MT4121|MT4122) echo "ConnectX-6" ;;
@@ -83,7 +85,12 @@ if [ -n "$GPU_TOPO_FILE" ]; then
         done < <(echo "$_hdr" | awk '{for(i=1;i<=NF;i++) if($i~/^NIC[0-9]+$/) printf "%s:%d\n", $i, i}')
     fi
     if [ "${#_nic_cols[@]}" -gt 0 ]; then
-        # 每列 NIC：统计 GPU 行中 PIX 出现次数（任一 GPU 直连即标记）
+        # 每列 NIC：统计 GPU 行中 PIX/PXB 出现情况（任一 GPU 近距即标记）
+        # v1.48.86：判据由 PIX 放宽到 PIX|PXB。NVIDIA 拓扑距离分级里，PIX（同一 PCIe switch）
+        #   与 PXB（跨多个 switch 但同处一个 PCIe 域、不经 CPU）**都属"本地"连接**，
+        #   是 GPUDirect RDMA 的可用形态；PHB/NODE/SYS 才经 CPU。仅认 PIX 会漏判老 HGX 平台：
+        #   实测 A100 HGX（A100-sample-a）4 口 CX-6 计算网卡全为 PXB（经 PLX switch 上连），
+        #   无一条 PIX → 整列被隐藏、计算网卡行消失。
         declare -A _nic_pix
         while IFS= read -r _row; do
             [ -z "$_row" ] && continue
@@ -91,24 +98,48 @@ if [ -n "$GPU_TOPO_FILE" ]; then
             _idx=0
             for _col in "${_nic_cols[@]}"; do
                 _val=$(echo "$_row" | awk -v c="${_nic_idx[$_idx]}" '{print $c}')
-                [ "$_val" = "PIX" ] && _nic_pix[$_col]=1
+                case "$_val" in PIX|PXB) _nic_pix[$_col]=1 ;; esac
                 _idx=$((_idx+1))
             done
         done < <(grep -v "^#" "$GPU_TOPO_FILE")
-        # 映射：topo NIC 列按 BDF 升序 = nic_inventory 中 PCIe 网卡按 BDF 升序
-        _pci_nics=()
-        while IFS='|' read -r _d _bdf _rest; do
-            [ -z "$_d" ] || [ "$_d" = "#" ] && continue
-            echo "$_bdf" | grep -qE "^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$" && _pci_nics+=("$_d|$_bdf")
-        done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
-        # 按 BDF 排序（topo NIC 列序 = BDF 升序）
-        _pci_nics=($(printf '%s\n' "${_pci_nics[@]}" | sort -t'|' -k2))
-        _nn=0
-        for _col in "${_nic_cols[@]}"; do
-            _entry="${_pci_nics[$_nn]:-}"
-            [ -n "$_entry" ] && [ "${_nic_pix[$_col]:-0}" -eq 1 ] && GPU_DIRECT_NIC[${_entry%%|*}]="1"
-            _nn=$((_nn+1))
+        # ─── v1.48.85：优先用 topo 自带的 "NIC<n>: mlx5_<m>" 权威映射 ───
+        # 原实现假设「topo NIC 列序 = 网卡 BDF 升序」（见下方降级分支），但 topo 只列出
+        # 具备 RDMA 能力的口（实测 18 列 vs 网卡 26 口），列数与口数不等时按序硬对**必然错位**
+        # ——表现为管理口（X710/10GBASE-T）被误标 GPU直连、而部分 MCX 反而漏标。
+        # topo 文件自带对照表（"NIC0: mlx5_0" …），据此把 NIC<n> 换成 mlx5 设备名，
+        # 再用 ibdev2netdev 建立的 NETDEV_CA 反查得到 netdev，映射唯一且不依赖排序假设。
+        declare -A _ca2dev
+        for _dv in "${!NETDEV_CA[@]}"; do
+            [ -n "${NETDEV_CA[$_dv]:-}" ] && _ca2dev["${NETDEV_CA[$_dv]}"]="$_dv"
         done
+        _mapped=0
+        while IFS= read -r _line; do
+            _n=$(printf '%s' "$_line" | sed -n 's/^\(NIC[0-9]\+\):.*/\1/p')
+            _m=$(printf '%s' "$_line" | sed -n 's/^NIC[0-9]\+: *\([A-Za-z0-9_.-]\+\).*/\1/p')
+            if [ -z "$_n" ] || [ -z "$_m" ]; then continue; fi
+            if [ "${_nic_pix[$_n]:-0}" -ne 1 ]; then continue; fi
+            _nd="${_ca2dev[$_m]:-}"
+            if [ -n "$_nd" ]; then
+                GPU_DIRECT_NIC["$_nd"]="1"
+                _mapped=$((_mapped+1))
+            fi
+        done < <(grep -oE "^ *NIC[0-9]+: *[A-Za-z0-9_.-]+" "$GPU_TOPO_FILE" 2>/dev/null | sed 's/^ *//')
+        # 降级：topo 无对照表（老版本）时，退回「topo NIC 列按 BDF 升序」旧逻辑
+        if [ "$_mapped" -eq 0 ]; then
+            _pci_nics=()
+            while IFS='|' read -r _d _bdf _rest; do
+                [ -z "$_d" ] || [ "$_d" = "#" ] && continue
+                echo "$_bdf" | grep -qE "^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]$" && _pci_nics+=("$_d|$_bdf")
+            done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
+            # 按 BDF 排序（老版 topo 的 NIC 列序 = BDF 升序）
+            _pci_nics=($(printf '%s\n' "${_pci_nics[@]}" | sort -t'|' -k2))
+            _nn=0
+            for _col in "${_nic_cols[@]}"; do
+                _entry="${_pci_nics[$_nn]:-}"
+                [ -n "$_entry" ] && [ "${_nic_pix[$_col]:-0}" -eq 1 ] && GPU_DIRECT_NIC[${_entry%%|*}]="1"
+                _nn=$((_nn+1))
+            done
+        fi
     fi
 fi
 if [ -f "${nic_inventory}" ]; then
@@ -210,29 +241,29 @@ if [ -f "${nic_inventory}" ]; then
             rpsid=$(echo "$rpsid" | tr -d '\n\r')
             [ -n "$rpsid" ] && npsid="$rpsid"
         fi
-        # IB 设备（ibp*/ibs*）附加控制器型号
+        # ─── v1.48.85：型号提取与 DPU 判定对所有接口生效 ───
+        # 原来整块（型号/DPU/芯片）都锁在 ibp*/ibs* 分支内，导致 ens* 形态的 BlueField DPU
+        # （实测 900-9D3B6-00CV-AA0 → ens1f0np0）永远取不到型号，从未被判为 DPU；
+        # 且 lspci 正则要求方括号（\[BlueField[^]]*\]），而 lspci 里 BlueField 是裸文本
+        # （"MT43244 BlueField-3 integrated ConnectX-7"）→ 双重失配。两处一并修正。
+        mt=""
+        if [ -f "${lspci_all}" ]; then
+            mt=$(grep -E "^${nnbdf%% (USB)*} " "${lspci_all}" 2>/dev/null | grep -oE 'ConnectX-[0-9]+( Lx| Dx)?|BlueField[- ][0-9A-Za-z]*' | head -1)
+        fi
+        # 兜底：lspci 无型号时用 CA type 映射（MT4129→ConnectX-7 等）
+        if [ -z "$mt" ]; then
+            mt="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
+            [ -n "$mt" ] && mt=$(mt_model "$mt")
+        fi
+        [ -n "$mt" ] && npn="${npn} [${mt}]"
+        # BlueField 系列 = DPU（Data Processing Unit，内置 Arm 处理器），标注区分普通网卡
+        if echo "$mt" | grep -qiE "BlueField"; then
+            npn="${npn} [DPU]"
+        fi
+        # IB 设备（ibp*/ibs*）的专属补充：Mellanox 标志 + 芯片编号 + SN 为占位时的 Node GUID 兜底
         if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
             NIC_MLX=1
-            # 型号附加：优先 lspci 直读（PCI ID 权威，认识所有 Mellanox 卡，无需维护映射表）
-            mt=""
-            if [ -f "${lspci_all}" ]; then
-                mt=$(grep -E "^${nnbdf%% (USB)*} " "${lspci_all}" 2>/dev/null | grep -oE '\[ConnectX-[0-9]+( Lx| Dx)?\]|\[BlueField[^]]*\]' | head -1 | tr -d '[]')
-            fi
-            # 兜底：lspci 无型号时用 CA type 映射（MT4129→ConnectX-7 等）
-            if [ -z "$mt" ]; then
-                mt="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
-                [ -n "$mt" ] && mt=$(mt_model "$mt")
-            fi
-            [ -n "$mt" ] && npn="${npn} [${mt}]"
-            # BlueField 系列 = DPU（Data Processing Unit，内置 Arm 处理器），标注区分普通网卡
-            if echo "$mt" | grep -qiE "BlueField"; then
-                npn="${npn} [DPU]"
-            fi
-            # 芯片编号（MT 编号：MT4129 等，工程/固件视角核对用）
-            nchip=""
-            if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
-                nchip="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
-            fi
+            nchip="${CA_MODEL[${NETDEV_CA[$nnic]:-}]:-}"
             # SN 为占位值/空时，用 ibstat Node GUID 兜底（每卡唯一，可区分多卡）
             if [ -z "$nsn" ] || [ "$nsn" = "N/A" ] || [ "$nsn" = "1951526575073" ]; then
                 ng_ca="${NETDEV_CA[$nnic]:-}"

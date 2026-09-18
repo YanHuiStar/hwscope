@@ -245,13 +245,18 @@ gen_acceptance() {
         add_item "整机温度正常" "PASS" "${TEMP_SUMMARY}"
     fi
 
-    # 11. SEL 事件（合并 Critical + PCIe 错误；采集失败/无数据 → N/A，禁止假阳性 PASS）
+    # 11. SEL 事件（v1.48.86：按「告警是否已解除」判，而非「是否出现过 Critical 字样」）
+    #     旧实现只看 SEL_CRIT>0 → FAIL，而 SEL_CRIT 是 grep -ciE "critical|fatal" 的行数，
+    #     连 Deasserted 行（描述里同样含 "Critical"）也计入 → 已自愈的历史事件被判 FAIL。
+    #     现按终态：未解除=FAIL；已自愈=WARN（告知曾发生但不卡交付）；无 Critical=PASS。
     if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
         add_item "SEL 事件" "N/A" "SEL 数据不可用（ipmitool 采集失败或无权限）"
-    elif [ "${SEL_CRIT:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT} 条 Critical"
+    elif [ "${SEL_CRIT_UNRESOLVED:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT_UNRESOLVED} 条 Critical 告警**尚未解除**（需处理后再交付）"
     elif [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 事件" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
+    elif [ "${SEL_CRIT_RECOVERED:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "SEL 事件" "WARN" "共 ${SEL_TOTAL:-0} 条 SEL，无未解除告警；其中 ${SEL_CRIT_RECOVERED} 条 Critical 已于 ${SEL_RECOVERED_WHEN:-N/A} 自愈（Asserted→Deasserted 成对，建议留意）"
     elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical/PCIe 错误（有历史事件）"
     else
@@ -392,22 +397,43 @@ gen_acceptance() {
         [ -n "$_mtp" ] && ACC_MEM_DIMM=$(awk -v t="$_mtp" -v p="$MEM_POPULATED" 'BEGIN{printf "%.0fGB", t/p}' < /dev/null)
     fi
     ACC_NIC_IB="N/A"; ACC_NIC_IB_COUNT=0; ACC_NIC_ETH="N/A"; ACC_NIC_ETH_COUNT=0
+    ACC_NIC_DPU="N/A"; ACC_NIC_DPU_COUNT=0
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport nlink nloc; do
             [ -z "$nnic" ] && continue
-            # v1.43.10 修正：按接口名归类（ibp*/ib* = IB 计算网卡；en*/eth* = 以太）。
-            # 原按 ConnectX|MCX 前缀归类会把 CX5 以太（MCX556A）误入 IB——实测 6 张假 IB（2 以太+4 IB）
-            if echo "$nnic" | grep -qE "^ib"; then
+            # v1.48.85：归类判据改为「物理直连」而非「接口名」——
+            #   ① DPU（BlueField 系列）优先判定：它可能同时 GPU 直连（实测 BlueField-3 挂在 GPU 下游），
+            #      先判 DPU 才不会在两个桶里各统计一次
+            #   ② 标记为 GPU直连（nvidia-smi topo PIX = 与 GPU 同 PCIe switch）→ 计算网卡
+            #   ③ 其余 → 网卡&端口
+            # 旧实现按接口名 ^ib 归类（= 当前跑 IB 模式），判的是**可配置的模式**而非物理直连：
+            #   实测 B200-sample-c 上 18 口真 GPU 直连网卡全跑 ETH 模式而被划入「以太」，
+            #   唯一跑 IB 的 CX-7（PCIe 仅 x2、物理位置 M2_1、不在 GPU 域）反被当成计算网卡。
+            #   v1.43.10 当时按 ConnectX|MCX 前缀归类失效，改为接口名是"打补丁"；本次从物理属性重新定义。
+            _nm=$(echo "${npn:-N/A}" | sed 's/Intel Corporation Ethernet Controller //; s/ for 10GBASE-T.*//; s/ (rev [0-9]*)//')
+            if echo "${npn:-}" | grep -qiE "BlueField"; then
+                ACC_NIC_DPU_COUNT=$((ACC_NIC_DPU_COUNT+1))
+                [ "$ACC_NIC_DPU" = "N/A" ] && ACC_NIC_DPU="$_nm"
+            elif [ "${ngd:-}" = "GPU直连" ] && echo "${npn:-}" | grep -qE "ConnectX-[678]|BlueField"; then
+                # v1.48.86：GPU直连 之外再加「卡型」过滤——PXB 级距离会把同 PCIe 域的
+                #   非计算卡一并纳入（实测 A100 机上 MCX556A-ECAT（CX-5）也是 PXB），
+                #   只认高速计算卡（ConnectX-6/7/8、BlueField）才算计算网卡。
                 ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
-                [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="${npn:-N/A}"
+                [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="$_nm"
+            elif [ "${GPU_TOPO_AVAIL:-0}" != "1" ] && echo "$nnic" | grep -qE "^ib"; then
+                # v1.48.86 回退分支：**无 topo 数据时**按接口名判（IB 模式口 = 计算网卡，同旧实现）。
+                #   必须保留这条——AMD/昇腾平台没有 nvidia-smi topo，GPU_DIRECT_NIC 恒为空，
+                #   若不回退会把这类平台的计算网卡整批丢进「网卡&端口」：
+                #   实测 AMD MI300X（AMD-sample-a）8 口 CX-7 400G 计算网卡因此全部消失。
+                #   与「GPU直连」判据的分工是：有 topo → 用物理直连（准确）；无 topo → 用协议口兜底（可用）。
+                ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
+                [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="$_nm"
             else
                 ACC_NIC_ETH_COUNT=$((ACC_NIC_ETH_COUNT+1))
-                # 以太型号聚合（多种卡混插都显示，如 "MCX556A-ECAT + AOC-ATG-i2TM"）
-                _eth_m=$(echo "${npn:-N/A}" | sed 's/Intel Corporation Ethernet Controller //; s/ for 10GBASE-T.*//; s/ (rev [0-9]*)//')
                 if [ "$ACC_NIC_ETH" = "N/A" ]; then
-                    ACC_NIC_ETH="$_eth_m"
-                elif ! echo "$ACC_NIC_ETH" | grep -qF "$_eth_m"; then
-                    ACC_NIC_ETH="${ACC_NIC_ETH} + ${_eth_m}"
+                    ACC_NIC_ETH="$_nm"
+                elif ! echo "$ACC_NIC_ETH" | grep -qF "$_nm"; then
+                    ACC_NIC_ETH="${ACC_NIC_ETH} + ${_nm}"
                 fi
             fi
         done < <(printf '%s\n' "$NIC_DETAILS")
@@ -453,10 +479,15 @@ gen_acceptance() {
             echo "| GPU模组 | 无（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
         fi
         if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "| 计算网卡 | ${ACC_NIC_IB:-N/A}（IB ${IB_NOMINAL:-N/A}） | 张 | ${ACC_NIC_IB_COUNT} |"
+            # v1.48.85：计算网卡改按 GPU 直连归类后，不能再标 "（IB …）"——直连与协议模式无关。
+            #   单位用「口」：NIC_DETAILS 每行是一个网络端口（不是一张卡），双口卡会占两行
+            echo "| 计算网卡 | ${ACC_NIC_IB:-N/A}（GPU 直连） | 口 | ${ACC_NIC_IB_COUNT} |"
+        fi
+        if [ "${ACC_NIC_DPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| DPU | ${ACC_NIC_DPU:-N/A} | 口 | ${ACC_NIC_DPU_COUNT} |"
         fi
         if [ "${ACC_NIC_ETH_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 张 | ${ACC_NIC_ETH_COUNT} |"
+            echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 口 | ${ACC_NIC_ETH_COUNT} |"
         fi
         echo "| 存储 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
         echo "| 电源模块 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
