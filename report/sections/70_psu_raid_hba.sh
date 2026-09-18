@@ -51,8 +51,12 @@ if [ -f "$_fru_src" ]; then
                 [ -n "$pending" ] && PSU_DETAILS="${PSU_DETAILS}${pending}${ppn:-N/A}|${psn:-N/A}"$'\n'
                 pdesc=$(echo "$pline" | cut -d: -f2- | xargs)
                 # v1.48.24：PSU_FRU_N (ID x) → PSU N 行首规范化（显示与 pin 功耗映射对齐）
-                if echo "$pdesc" | grep -qE "^PSU_FRU_[0-9]+"; then
-                    pdesc=$(echo "$pdesc" | sed -E 's/^PSU_FRU_([0-9]+).*/PSU\1/')
+                # v1.48.97：实测 B300（B300-sample-a）FRU 描述为 "PSU6_FRU (ID 1)"（下划线在 N 前、
+                #   且带 "(ID n)" 后缀），原 `^PSU_FRU_[0-9]+` 规则不匹配 → 该行 $1 保留为
+                #   "PSU6_FRU (ID 1)"，而下方按 dmidecode 补字段时要求 $1 精确等于 "PSU6"，
+                #   导致 FRU 行永远拿不到 SMBIOS 的容量/型号补齐。改为把两种写法统一归一到 PSU<N>。
+                if echo "$pdesc" | grep -qE "^PSU_FRU_[0-9]+|^PSU[0-9]+_FRU"; then
+                    pdesc=$(echo "$pdesc" | sed -E 's/^PSU_FRU_([0-9]+).*/PSU\1/; s/^PSU([0-9]+)_FRU.*/PSU\1/')
                 fi
                 pmodel=""; ppn=""; psn=""; pending="" ;;
             *"Product Name"*)          pmodel=$(echo "$pline" | cut -d: -f2- | xargs); [ -n "$pdesc" ] && pending="${pdesc}|${pmodel}|" ;;
@@ -64,6 +68,9 @@ if [ -f "$_fru_src" ]; then
     # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）
     # v1.48.24：加 PSU_FRU[0-9] 匹配——"PSU_FRU_1"（下划线）此前被 PSU[0-9] 滤掉 → 8 电源显示 0（真机 G7768 M6 实测）
     PSU_DETAILS=$(echo "$PSU_DETAILS" | grep -iE "PSU[0-9]|PSU_FRU[0-9]|Power Supply")
+    # v1.48.97：记录 PSU 明细来源（供「平台限制标注」按实际来源出文案）——fru / fru+dmi / dmi / sensor。
+    #   此处 FRU 解析已完成（含 pending 收尾与 PSU 行过滤），有内容即来自 IPMI FRU。
+    [ -n "$PSU_DETAILS" ] && _psu_src="fru"
     # v1.48.30：FRU 有 PSU 条目时功耗列也补全（原功耗补全仅在 76 行 FRU 空占位路径跑——
     # FRU 路径（PSU_FRU_1 描述）功耗恒 N/A；数据源同为 ipmi_psu_sensors.log 的 PSU_PIN_0N/PS*_Pin）
     psu_power_csv="${PSU_DIR}/ipmi_psu_sensors.log"
@@ -101,6 +108,137 @@ if [ -f "$_fru_src" ]; then
     [ -f "${ipmi_psu_sensors}" ] && psu_power_csv="${ipmi_psu_sensors}"
     [ -f "${ipmi_sensors_power}" ] && psu_power_csv2="${ipmi_sensors_power}"
     # 回退：部分平台（如 Inventec）FRU 不暴露 PSU 条目，但传感器有 PSU*_Temp / PS*_Pin / PSU* Power In —— 用传感器生成占位行
+
+    # dmidecode Type 39 补充源（v1.44.0 立，v1.48.97 由「兜底」改为「补充」）
+    #   v1.44.0 原逻辑 `-z "$PSU_DETAILS"`（只在 FRU **完全没有** PSU 条目时才用 dmidecode），
+    #   对「FRU 只暴露部分电源」的平台会**漏报**。实测 B300（B300-sample-a）：
+    #     IPMI FRU 只枚举出 PSU6_FRU / PSU7_FRU 两个（ID 1/2），而 SMBIOS Type 39 有完整 8 条
+    #     （A_PSU0/1/2 与 B_PSU3/4/5 各为 CR68-3300TO5R2I 3300W、PSU6/7 为 CRPS2000D2W 2000W）
+    #     → 报告只显示 2 颗，客户看到的电源数量是错的（该机实为 6×3300W + 2×2000W 混插）。
+    #   改为：dmidecode 里**FRU 未覆盖的编号**追加为占位行，交由下方字段补全逻辑填型号/SN/容量。
+    #   FRU 已覆盖的编号保持不动（FRU 是带内更权威的来源）。编号取 Location 去掉 A_/B_ 槽位前缀。
+    if [ -f "${dmidecode_psu}" ] && grep -q "System Power Supply" "${dmidecode_psu}" 2>/dev/null; then
+        _dmi_nums=$(grep -v "^#" "${dmidecode_psu}" 2>/dev/null | awk '
+            /System Power Supply/ { idx++ }
+            /Location:/ {
+                loc=$NF
+                gsub(/^[A-Za-z][A-Za-z]*_/, "", loc)     # A_PSU0 / B_PSU3 → PSU0 / PSU3
+                split(loc, a, "PSU")
+                n = (a[2] != "" ? a[2] : idx)
+                if (n != "") print n
+            }')
+        _have_nums=$(printf '%s\n' "$PSU_DETAILS" | grep -oE "^PSU[0-9]+" | sed 's/^PSU//')
+        # v1.48.97：上游（FRU 解析 → 功耗补全）用 $( ) 接管道，末尾换行会被剥掉；
+        #   若不补回来，本循环第一次追加的 "PSU0|..." 会拼到上一行 SN 之后
+        #   （实测出现 "2Q040329508PSU0"）。这里统一保证以换行结尾。
+        case "$PSU_DETAILS" in
+            *$'\n') ;;
+            *) PSU_DETAILS="${PSU_DETAILS}"$'\n' ;;
+        esac
+        _dmi_added=0
+        for _dn in $_dmi_nums; do
+            printf '%s\n' "$_have_nums" | grep -qx "$_dn" && continue
+            _dmi_added=$(( _dmi_added + 1 ))
+            PSU_DETAILS="${PSU_DETAILS}PSU${_dn}|N/A|N/A|N/A|N/A|N/A"$'\n'
+        done
+        # 按编号排序（dmidecode 用的是物理槽位序，FRU 追加顺序可能与之交错）
+        # 用 awk 抽出编号作排序键，避免 `sort -t'U'` 被后面的 `|` 干扰
+        if [ -n "$PSU_DETAILS" ]; then
+            PSU_DETAILS=$(printf '%s\n' "$PSU_DETAILS" | grep -v '^$' \
+                | awk -F'|' '{n=$1; sub(/^PSU/,"",n); if(n=="")n=9999; printf "%06d\t%s\n", n, $0}' \
+                | sort -k1,1n | cut -f2-)$'\n'
+        fi
+    fi
+    # v1.48.97：dmidecode 参与后升级来源标记（供「平台限制标注」区分文案）
+    if [ -f "${dmidecode_psu}" ] && grep -q "System Power Supply" "${dmidecode_psu}" 2>/dev/null; then
+        if [ -n "${_psu_src:-}" ]; then _psu_src="fru+dmi"; else _psu_src="dmi"; fi
+        [ "${_dmi_added:-0}" -gt 0 ] 2>/dev/null && _psu_dmi_added="${_dmi_added}"
+    fi
+    # dmidecode type39 补型号/SN/PN/容量（按 Location 匹配槽位；无 FRU 平台用 SMBIOS 补齐）
+    if [ -n "$PSU_DETAILS" ] && [ -f "${dmidecode_psu}" ]; then
+        # 构建 "Location→型号|厂商|SN|PN|容量|Revision" 映射（dmidecode type39 每个 PSU 一段）
+        while IFS= read -r _dl; do
+            case "$_dl" in
+                *"System Power Supply"*) _didx=$(( ${_didx:-0} + 1 )) ;;
+                *Location:*) _dloc=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                *Name:*)     _dname=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                *Manufacturer:*) _dmfr=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                *"Serial Number:"*) _dsn=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                *"Model Part Number:"*) _dpn=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                *"Max Power Capacity:"*) _dcap=$(echo "$_dl" | cut -d: -f2- | xargs | tr -d ' ') ;;
+                *Revision:*) _drev=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
+                *Handle*)
+                    # 段落结束（下一个 Handle 行）——此时 Location/Name/PN/容量/Revision 已读全
+                    if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
+                        # v1.48.54：Location 含 PSU<num> 用其编号；"Not Specified" 等新平台回退段序号
+                        # v1.48.97：原 `PSU*` 匹配不到带槽位前缀的 Location（实测 B300 为
+                        #   "A_PSU0".."B_PSU5"），全部落到 *) 分支取段序号 → 编号整体错位
+                        #   （A_PSU0 被当成 PSU1，且真正的 PSU0 占位行补不上字段）。
+                        #   改为取最后一个 "PSU" 之后的数字；前导零只在前方还有数字时剥离
+                        #   （否则 "PSU0" 会被 sed 's/^0*//' 变成空串）。
+                        case "$_dloc" in
+                            *PSU*) _dnum=$(echo "$_dloc" | sed -E 's/.*PSU//; s/^0+([0-9])/\1/') ;;
+                            *)     _dnum="${_didx:-1}" ;;
+                        esac
+                        # v1.48.94：识别「BIOS 未填充 FRU」的记录——Name/厂商/SN/PN 全为
+                        #   "Not Specified" 时，说明 BIOS 这次没读到该颗 PSU 的 FRU。
+                        #   实证：Gigabyte B200 NVL8（B200-sample-a）12 条 Type 39 中恰有 1 条字段全空，
+                        #   而同机 IPMI 侧 PS1..PS12_Status 全为 ok，且其余 4 台同 BIOS/BMC 版本的机器无此空记录
+                        #   → 属该颗 PSU 的 FRU 读取失败（BIOS 经 PMBus 读，BMC 另走一路）。
+                        #   原实现直接按「厂商+Name+Rev+Revision」拼接，会渲染成
+                        #   "Not Specified Not Specified Rev Not Specified"，看着像采集坏了。
+                        #   注意容量不改：Max Power Capacity 是真实字段（该空记录也带 3000 W），不能丢。
+                        _dempty=0
+                        case "$_dname" in
+                            "Not Specified"|"")
+                                case "$_dmfr" in
+                                    "Not Specified"|"")
+                                        case "$_dsn" in
+                                            "Not Specified"|"") _dempty=1 ;;
+                                        esac ;;
+                                esac ;;
+                        esac
+                        if [ "$_dempty" -eq 1 ]; then
+                            _dfull="（FRU 未读到——BIOS 未填充该条记录，供电状态见下方 IPMI 传感器）"
+                            _dpn="—"; _dsn="—"
+                        else
+                            # 型号列合并厂商+Revision（如 "DELTA DPS-3000AB-25 C Rev 01F"），PN/SN/容量独立列
+                            _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
+                        fi
+                        PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
+                        [ "$_dempty" -eq 1 ] && PSU_EMPTY_FRU=$(( ${PSU_EMPTY_FRU:-0} + 1 ))
+                    fi
+                    _dloc=""; _dname=""; _dmfr=""; _dsn=""; _dpn=""; _dcap=""; _drev=""
+                    ;;
+            esac
+        done < <(grep -v "^#" "${dmidecode_psu}" 2>/dev/null)
+        # 最后一段（文件尾无空行）
+        if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
+            case "$_dloc" in
+                *PSU*) _dnum=$(echo "$_dloc" | sed -E 's/.*PSU//; s/^0+([0-9])/\1/') ;;
+                *)     _dnum="${_didx:-1}" ;;
+            esac
+            # v1.48.94：与 Handle 分支同一判据（见上）——最后一条记录若也是空字段，同样友好渲染
+            _dempty=0
+            case "$_dname" in
+                "Not Specified"|"")
+                    case "$_dmfr" in
+                        "Not Specified"|"")
+                            case "$_dsn" in
+                                "Not Specified"|"") _dempty=1 ;;
+                            esac ;;
+                    esac ;;
+            esac
+            if [ "$_dempty" -eq 1 ]; then
+                _dfull="（FRU 未读到——BIOS 未填充该条记录，供电状态见下方 IPMI 传感器）"
+                _dpn="—"; _dsn="—"
+            else
+                _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
+            fi
+            PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
+            [ "$_dempty" -eq 1 ] && PSU_EMPTY_FRU=$(( ${PSU_EMPTY_FRU:-0} + 1 ))
+        fi
+    fi
     if [ -z "$PSU_DETAILS" ]; then
         # 编号识别源：psu sensors 的 PSU*_Temp（优先）→ PSU* Power In → bmc power 的 PS*_Pin
         _temp_src=""
@@ -112,6 +250,7 @@ if [ -f "$_fru_src" ]; then
         [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+ power in|psu_pin_[0-9]+" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
         [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
         if [ -n "$_temp_src" ]; then
+            _psu_src="sensor"
             PSU_DETAILS=$(grep -v "^#" "$_temp_src" 2>/dev/null | awk -F'|' '
                 tolower($1) ~ /psu[0-9]+_temp|psu_pin_[0-9]+|ps[0-9]+_pin|psu[0-9]+ power in/ {
                     num=$1; gsub(/[^0-9]/, "", num); sub(/^0+/, "", num)
@@ -137,114 +276,31 @@ if [ -f "$_fru_src" ]; then
                 fi
             fi
         fi
-        # dmidecode Type 39 独立生成源（v1.44.0）：Supermicro 等平台 FRU 无 PSU 条目、传感器仅离散
-        # PS<N> Status（无 PSU*_Temp/PS*_Pin 模拟量）——占位行与传感器占位均失败时，SMBIOS Type 39
-        # 是唯一 PSU 明细来源（Location/型号/厂商/SN/PN/容量/状态全有），生成占位行交由下方补全逻辑填字段
-        if [ -z "$PSU_DETAILS" ] && [ -f "${dmidecode_psu}" ] && grep -q "System Power Supply" "${dmidecode_psu}" 2>/dev/null; then
-            PSU_DETAILS=$(grep -v "^#" "${dmidecode_psu}" 2>/dev/null | awk '
-                /System Power Supply/ { idx++ }
-                /Location:/ {
-                    if (n != "") print "PSU" n "|N/A|N/A|N/A|N/A|N/A"
-                    split($NF, a, "PSU")
-                    # v1.48.54：新平台 Location 为 "Not Specified"（无 PSU 编号）——回退段序号 idx
-                    n = (a[2] != "" ? a[2] : idx)
-                }
-                END { if (n != "") print "PSU" n "|N/A|N/A|N/A|N/A|N/A" }
-            ')
-        fi
-        # dmidecode type39 补型号/SN/PN/容量（按 Location 匹配槽位；无 FRU 平台用 SMBIOS 补齐）
-        if [ -n "$PSU_DETAILS" ] && [ -f "${dmidecode_psu}" ]; then
-            # 构建 "Location→型号|厂商|SN|PN|容量|Revision" 映射（dmidecode type39 每个 PSU 一段）
-            while IFS= read -r _dl; do
-                case "$_dl" in
-                    *"System Power Supply"*) _didx=$(( ${_didx:-0} + 1 )) ;;
-                    *Location:*) _dloc=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
-                    *Name:*)     _dname=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
-                    *Manufacturer:*) _dmfr=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
-                    *"Serial Number:"*) _dsn=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
-                    *"Model Part Number:"*) _dpn=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
-                    *"Max Power Capacity:"*) _dcap=$(echo "$_dl" | cut -d: -f2- | xargs | tr -d ' ') ;;
-                    *Revision:*) _drev=$(echo "$_dl" | cut -d: -f2- | xargs) ;;
-                    *Handle*)
-                        # 段落结束（下一个 Handle 行）——此时 Location/Name/PN/容量/Revision 已读全
-                        if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
-                            # v1.48.54：Location 含 PSU<num> 用其编号；"Not Specified" 等新平台回退段序号
-                            case "$_dloc" in
-                                PSU*) _dnum=$(echo "$_dloc" | sed 's/^PSU//; s/^0*//') ;;
-                                *)    _dnum="${_didx:-1}" ;;
-                            esac
-                            # v1.48.94：识别「BIOS 未填充 FRU」的记录——Name/厂商/SN/PN 全为
-                            #   "Not Specified" 时，说明 BIOS 这次没读到该颗 PSU 的 FRU。
-                            #   实证：Gigabyte B200 NVL8（B200-sample-a）12 条 Type 39 中恰有 1 条字段全空，
-                            #   而同机 IPMI 侧 PS1..PS12_Status 全为 ok，且其余 4 台同 BIOS/BMC 版本的机器无此空记录
-                            #   → 属该颗 PSU 的 FRU 读取失败（BIOS 经 PMBus 读，BMC 另走一路）。
-                            #   原实现直接按「厂商+Name+Rev+Revision」拼接，会渲染成
-                            #   "Not Specified Not Specified Rev Not Specified"，看着像采集坏了。
-                            #   注意容量不改：Max Power Capacity 是真实字段（该空记录也带 3000 W），不能丢。
-                            _dempty=0
-                            case "$_dname" in
-                                "Not Specified"|"")
-                                    case "$_dmfr" in
-                                        "Not Specified"|"")
-                                            case "$_dsn" in
-                                                "Not Specified"|"") _dempty=1 ;;
-                                            esac ;;
-                                    esac ;;
-                            esac
-                            if [ "$_dempty" -eq 1 ]; then
-                                _dfull="（FRU 未读到——BIOS 未填充该条记录，供电状态见下方 IPMI 传感器）"
-                                _dpn="—"; _dsn="—"
-                            else
-                                # 型号列合并厂商+Revision（如 "DELTA DPS-3000AB-25 C Rev 01F"），PN/SN/容量独立列
-                                _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
-                            fi
-                            PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
-                            [ "$_dempty" -eq 1 ] && PSU_EMPTY_FRU=$(( ${PSU_EMPTY_FRU:-0} + 1 ))
-                        fi
-                        _dloc=""; _dname=""; _dmfr=""; _dsn=""; _dpn=""; _dcap=""; _drev=""
-                        ;;
-                esac
-            done < <(grep -v "^#" "${dmidecode_psu}" 2>/dev/null)
-            # 最后一段（文件尾无空行）
-            if [ -n "$_dloc" ] && [ -n "$_dname" ]; then
-                case "$_dloc" in
-                    PSU*) _dnum=$(echo "$_dloc" | sed 's/^PSU//; s/^0*//') ;;
-                    *)    _dnum="${_didx:-1}" ;;
-                esac
-                # v1.48.94：与 Handle 分支同一判据（见上）——最后一条记录若也是空字段，同样友好渲染
-                _dempty=0
-                case "$_dname" in
-                    "Not Specified"|"")
-                        case "$_dmfr" in
-                            "Not Specified"|"")
-                                case "$_dsn" in
-                                    "Not Specified"|"") _dempty=1 ;;
-                                esac ;;
-                        esac ;;
-                esac
-                if [ "$_dempty" -eq 1 ]; then
-                    _dfull="（FRU 未读到——BIOS 未填充该条记录，供电状态见下方 IPMI 传感器）"
-                    _dpn="—"; _dsn="—"
-                else
-                    _dfull="${_dmfr:+${_dmfr} }${_dname}${_drev:+ Rev ${_drev}}"
-                fi
-                PSU_DETAILS=$(echo "$PSU_DETAILS" | awk -v num="$_dnum" -v name="$_dfull" -v pn="${_dpn:-N/A}" -v sn="${_dsn:-N/A}" -v cap="${_dcap:-N/A}" -F'|' 'BEGIN{OFS="|"} $1=="PSU"num {$2=name; $3=pn; $4=sn; $5=cap} {print}')
-                [ "$_dempty" -eq 1 ] && PSU_EMPTY_FRU=$(( ${PSU_EMPTY_FRU:-0} + 1 ))
-            fi
-        fi
-        # 平台限制标注：FRU 无 PSU 条目时说明（避免客户误以为漏采）——按明细行来源区分文案（v1.44.0）
-        if [ -n "$PSU_DETAILS" ]; then
-            if [ -n "$_temp_src" ]; then
+        # v1.48.97：来源标记（提示块已移出本分支，见下方「平台限制标注」）
+    fi
+
+    # 平台限制标注：说明 PSU 明细的实际来源，避免客户误以为漏采（v1.44.0 立；v1.48.97 按 _psu_src 分类）
+    #   v1.48.97：本块原先嵌在 `if [ -z "$PSU_DETAILS" ]` 内；dmidecode 补充块移出该分支后，
+    #   「FRU 非空但只列部分电源」的机器不再进入该分支，提示整条丢失
+    #   （回归实测 B200 B200-sample-b html −197B 即此）。故移出并按来源出文案。
+    if [ -n "$PSU_DETAILS" ]; then
+        case "${_psu_src:-}" in
+            fru) ;;    # 全部来自 IPMI FRU，无需平台限制说明
+            fru+dmi)
+                _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_sdr_psu.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $3 ~ /ok/ {n++} END{print n+0}')
+                [ "${_ps_ok:-0}" -gt 0 ] 2>/dev/null || _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $2 ~ /^0x1$/ {n++} END{print n+0}')
+                PSU_PLATFORM_NOTE="部分 PSU 未暴露单电源 FRU（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位，其中 ${_psu_dmi_added:-?} 颗的型号/SN/额定容量取自 dmidecode${_ps_ok:+；PS 状态传感器均 ok}）"
+                ;;
+            sensor*)
                 PSU_PLATFORM_NOTE="平台未暴露单电源 FRU（传感器+SMBIOS 确认存在与功耗）"
-            else
-                # PS<N> Status 传感器佐证（0x1/ok = 在位正常）：sdr list 带 ok 状态列，有则注明增强可信度
+                ;;
+            *)
                 _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_sdr_psu.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $3 ~ /ok/ {n++} END{print n+0}')
                 [ "${_ps_ok:-0}" -gt 0 ] 2>/dev/null || _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $2 ~ /^0x1$/ {n++} END{print n+0}')
                 PSU_PLATFORM_NOTE="平台未暴露单电源 FRU 与单 PSU 功率传感器（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位${PSU_EMPTY_FRU:+，其中 ${PSU_EMPTY_FRU} 条记录的 FRU 字段未填充（BIOS 未读到该颗 PSU 的型号/SN，供电状态不受影响）}，型号/SN/额定容量为 dmidecode 数据${_ps_ok:+，PS 状态传感器均 ok})"
-            fi
-        fi
-    fi
-    # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
+                ;;
+        esac
+    fi    # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
     # 独立展示（不放 PSU 表内：语义是整机级而非单电源，且避免 N/A 占位列突兀）
     PSU_EXTRA=""
     total_pwr=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{gsub(/ /,"",$2); print $2"W"; exit}')
@@ -261,7 +317,21 @@ if [ -f "$_fru_src" ]; then
         dcmi_max=$(grep -iE "Maximum" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         dcmi_avg=$(grep -iE "Average power reading" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)
         if [ -n "$dcmi_cur" ]; then
-            PSU_DCMI="DCMI 平台功耗读数（ipmitool dcmi power reading）: 当前 ${dcmi_cur}W${dcmi_min:+ · 最小 ${dcmi_min}W}${dcmi_max:+ · 最大 ${dcmi_max}W}${dcmi_avg:+ · 平均 ${dcmi_avg}W}"
+            # v1.48.97：原文案把「瞬时」与「窗口统计」并排成「当前 X · 最小 Y · 最大 Z」，
+            #   实测该机 min=max=750 而瞬时=770 → 读起来像「电源最高只有 750W 却跑了 770W」，
+            #   是展示误导。根因：DCMI 的 Min/Max/Average 是 **BMC 内部采样窗口内** 的统计，
+            #   与 Instantaneous（此刻）不同步，且窗口长度仅数秒（该机 "Sampling period: 5 Seconds"）。
+            #   故解析窗口长度并在文案中点明口径，再把瞬时与窗口统计分段，避免误读。
+            dcmi_win=$(grep -iE "Sampling period" "${PSU_DIR}/ipmi_dcmi_power.log" 2>/dev/null \
+                       | grep -oE "Sampling period:[[:space:]]*[0-9]+" | grep -oE "[0-9]+" \
+                       | head -1 | awk '{print $1+0}')      # 去掉 BMC 补的前导零（00000005 → 5）
+            _win_txt=""; [ -n "$dcmi_win" ] && _win_txt="（BMC 内部 ${dcmi_win}s 采样窗口）"
+            _win_stat=""
+            [ -n "$dcmi_min" ] && _win_stat="窗口内 最小 ${dcmi_min}W"
+            [ -n "$dcmi_max" ] && _win_stat="${_win_stat}${_win_stat:+ / }最大 ${dcmi_max}W"
+            [ -n "$dcmi_avg" ] && _win_stat="${_win_stat}${_win_stat:+ / }平均 ${dcmi_avg}W"
+            PSU_DCMI="DCMI 平台功耗读数（ipmitool dcmi power reading）: 瞬时 ${dcmi_cur}W"
+            [ -n "$_win_stat" ] && PSU_DCMI="${PSU_DCMI} ｜ ${_win_stat}${_win_txt}"
         fi
     fi
     # ─── CPU 功耗（RAPL 两次采样，v1.48.88）——独立信源，可与 DCMI 交叉验证 ───
@@ -270,14 +340,25 @@ if [ -f "$_fru_src" ]; then
     #   这正是我们之前**不该**替客户断言「DCMI 含/不含 GPU」的原因。
     PSU_CPU_RAPL=""
     if [ -f "${PSU_DIR}/rapl_power.log" ]; then
-        _rapl_out=$(grep -vE "^#|^[[:space:]]*$" "${PSU_DIR}/rapl_power.log" 2>/dev/null | grep -E "W[[:space:]]*\(" | sed 's/^[[:space:]]*//' | head -4)
-        _rapl_pkg=$(printf '%s\n' "$_rapl_out" | grep -iE "^package" | paste -sd' · ' -)
-        _rapl_other=$(printf '%s\n' "$_rapl_out" | grep -viE "^package" | head -3 | awk -F: '{print $1}' | paste -sd'/' -)
+        _rapl_out=$(grep -vE "^#|^[[:space:]]*$" "${PSU_DIR}/rapl_power.log" 2>/dev/null | grep -E "W[[:space:]]*\(" | sed 's/^[[:space:]]*//' | head -8)
+        # v1.48.97：括号里的 "E1=… uJ, E2=… uJ, 间隔 3.0 s" 是采集端为算功率取的两个能量计读数，
+        #   属中间量，客户不需要（原始值在 rapl_power.log 里可追溯）——报告只留功率。
+        _rapl_out_s=$(printf '%s\n' "$_rapl_out" | sed -E 's/[[:space:]]*\([^)]*\)[[:space:]]*$//')
+        # v1.48.97：`paste -d' · '` 是**多字符**分隔符，paste 会按字符轮转使用（第1个分隔用空格、
+        #   第2个用 ·），导致两个 package 之间只出现空格。改用单字符分隔后再替换，保证分隔一致。
+        _rapl_pkg=$(printf '%s\n' "$_rapl_out_s" | grep -iE "^package" | paste -sd'|' - | sed 's/|/ · /g')
+        # v1.48.97：非 package 域按 CPU 各有一个（该机两个 dram 域），原实现直接取域名拼 "/" 会出现
+        #   "dram/dram"。改为域名去重后列出功率值（同域多值以 / 分隔），信息不丢也不重复。
+        _rapl_other=$(printf '%s\n' "$_rapl_out_s" | grep -viE "^package" | awk -F: '
+            { v=$2; gsub(/^[[:space:]]+|[[:space:]]+$/,"",v); sub(/[[:space:]]*W.*/,"",v);
+              n=$1; gsub(/^[[:space:]]+|[[:space:]]+$/,"",n);
+              if(n=="")next; if(!(n in seen)){seen[n]=v; ord[++c]=n} else {seen[n]=seen[n]"/"v} }
+            END{ for(i=1;i<=c;i++) printf "%s %sW%s", ord[i], seen[ord[i]], (i<c?" / ":"") }')
         if [ -n "$_rapl_pkg" ]; then
             PSU_CPU_RAPL="CPU 功耗（RAPL）: ${_rapl_pkg}"
-            [ -n "$_rapl_other" ] && PSU_CPU_RAPL="${PSU_CPU_RAPL}（另有 ${_rapl_other} 域）"
-        elif [ -n "$_rapl_out" ]; then
-            PSU_CPU_RAPL="CPU 功耗（RAPL）: $(printf '%s\n' "$_rapl_out" | paste -sd' · ' -)"
+            [ -n "$_rapl_other" ] && PSU_CPU_RAPL="${PSU_CPU_RAPL}（另有 ${_rapl_other}）"
+        else
+            PSU_CPU_RAPL="CPU 功耗（RAPL）: $(printf '%s\n' "$_rapl_out_s" | paste -sd' · ' -)"
         fi
     fi
     # PSU 尾注文本（变量拼接，避免 $( ) 命令替换剥离尾换行导致排版空行堆积）

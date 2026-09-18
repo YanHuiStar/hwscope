@@ -134,11 +134,15 @@ for f in "${NET_DIR}"/mlxlink_mlx5_*_module.log; do
     [ -f "$f" ] || continue
     dev=$(basename "$f" | sed 's/mlxlink_\(.*\)_module.log/\1/')
     [ -z "$dev" ] && continue
-    cable=$(grep -iE "Cable Type|cable type" "$f" | head -1 | cut -d':' -f2- | tr -d ' \t')
+    # v1.48.97：原实现 `tr -d ' \t'` 会把 "Passive copper cable" 压成 "Passivecoppercable"
+    #   （实测 B300 B300-sample-a 报告出现该黏连字符串），且压掉空格后 `*Copper*` 也匹配不到
+    #   小写的 copper，连归一化都失效、直接把原始串回显进表格。改为只去首尾空白，
+    #   归一化匹配用大小写无关字符类（mlxlink 各版本首字母大小写不一致）。
+    cable=$(grep -iE "Cable Type|cable type" "$f" | head -1 | cut -d':' -f2- | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     if [ -n "$cable" ] && [ "$cable" != "N/A" ]; then
         case "$cable" in
-            *Copper*) CABLE_SUMMARY="${CABLE_SUMMARY}${dev}:DAC," ;;
-            *Optical*|*Fiber*) CABLE_SUMMARY="${CABLE_SUMMARY}${dev}:Optical," ;;
+            *[Cc]opper*) CABLE_SUMMARY="${CABLE_SUMMARY}${dev}:DAC," ;;
+            *[Oo]ptical*|*[Ff]iber*) CABLE_SUMMARY="${CABLE_SUMMARY}${dev}:Optical," ;;
             *) CABLE_SUMMARY="${CABLE_SUMMARY}${dev}:${cable}," ;;
         esac
     fi
