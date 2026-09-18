@@ -16,19 +16,39 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # 桌面路径自动探测（Windows git-bash: /c/... 或 C:/...；WSL: /mnt/c/...）
+# v1.48.87：不再硬编码用户名——原实现写死 "/mnt/c/Users/yanhu/Desktop"，
+#   换机器/换账号（实测本机是 15707）即探测失败 → 报"[ERROR] 无有效样本目录"。
+#   改为：① DESKTOP_OVERRIDE 显式指定 ② USERPROFILE 推导（git-bash 下已设）
+#         ③ 扫 /mnt/c/Users/*/Desktop（排除 Public/Default 等公共账号）
 DESKTOP=""
-for _cand in "/mnt/c/Users/yanhu/Desktop" "/c/Users/yanhu/Desktop" "C:/Users/yanhu/Desktop"; do
-    [ -d "$_cand" ] && DESKTOP="$_cand" && break
-done
-[ -z "$DESKTOP" ] && DESKTOP="${DESKTOP_OVERRIDE:-}"
+if [ -n "${DESKTOP_OVERRIDE:-}" ] && [ -d "${DESKTOP_OVERRIDE}" ]; then
+    DESKTOP="$DESKTOP_OVERRIDE"
+fi
+if [ -z "$DESKTOP" ] && [ -n "${USERPROFILE:-}" ]; then
+    _up=$(printf '%s' "$USERPROFILE" | sed 's|\\|/|g')          # C:\Users\x -> C:/Users/x
+    _up=$(printf '%s' "$_up" | sed 's|^\([A-Za-z]\):|/\L\1|')   # C:/... -> /c/...
+    [ -d "${_up}/Desktop" ] && DESKTOP="${_up}/Desktop"
+fi
+if [ -z "$DESKTOP" ]; then
+    for _cand in /mnt/c/Users/*/Desktop /c/Users/*/Desktop "C:/Users/"*/Desktop; do
+        [ -d "$_cand" ] || continue
+        case "$_cand" in
+            *Public*|*Default*|*"All Users"*) continue ;;
+        esac
+        DESKTOP="$_cand"; break
+    done 2>/dev/null
+fi
 
 # v1.48.27：默认自动发现（隐私红线：真实 SN 不进 git——不硬编码样本 SN；
 # 无参数时扫描桌面根下含 hwscope_report.md 的采集目录，或 --samples 指定）
 discover_samples() {
     local root="${1:-$DESKTOP}" d
+    [ -d "$root" ] || return 0
     for d in "$root"/*/; do
         [ -d "$d" ] || continue
-        [ -f "${d}hwscope_report.md" ] || [ -d "${d}gpu" ] && echo "${d%/}"
+        if [ -f "${d}hwscope_report.md" ] || [ -d "${d}gpu" ]; then
+            echo "${d%/}"
+        fi
     done 2>/dev/null
 }
 DEFAULT_SN=""
