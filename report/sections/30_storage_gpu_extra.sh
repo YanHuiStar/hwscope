@@ -140,24 +140,51 @@ if [ -f "${disk_inventory}" ]; then
     done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
 fi
 
-# ─── NVMe 错误日志汇总（v1.48.90）───
-# nvme error-log 给出每次错误的类型/时间戳/LBA，是「这块盘曾经出过错」的直接证据
-# （Invalid Field / Write Fault / Unsafe Shutdown 会指向掉电或线缆问题）——
+# ─── NVMe 错误日志汇总（v1.48.90；v1.48.96 按 status_field 分类）───
+# nvme error-log 给出每次错误的类型/时间戳/LBA，是「这块盘曾经出过错」的直接证据——
 # SMART 只给健康度百分比，看不出错误发生过没有。
-# 输出形如 "Error Log Entries for device:nvme0 entries:63"，其后 Entry[N] 段落含 error_count。
-# 这里统计「有非零错误的盘数」与「累计错误条目数」，明细留在原日志按需查。
-NVME_ERR_DISKS=0; NVME_ERR_TOTAL=0; NVME_ERR_DETAIL=""
+#
+# 为什么必须分类（v1.48.96）：初版只统计「非零 error_count」，把两类性质完全不同的
+#   错误混为一谈，导致误报。实测 B300（B300-sample-a）：nvme0n1/nvme1n1 各 1~2 条
+#   `0x6002 Invalid Field in Command`（opcode=0、lba=0xffffffffffffffff、parm_err_loc=0x28
+#   ——**没有任何读写失败**，是主机侧发了固件不支持的管理命令，典型成因是 nvme-cli/libnvme
+#   比盘固件新），却被渲染成「2 块盘有非零错误」，看着像盘要坏了。
+#
+# 分类依据 = status_field 低 12 位（`0x6` 是固定前缀，其后 3 位是 status code）：
+#   尾部 `0x28x/0x282` 等 = status code type **介质/掉电/路径类** → 盘自身或供电问题 → 报 WARN
+#   尾部 `0x00x`        = status code type **通用（命令）类** → 主机侧命令不兼容 → 仅提示
+#   无法归类            = 保守按介质类处理（宁可报，不可漏）
+NVME_ERR_MEDIA=0; NVME_ERR_SHUTDOWN=0; NVME_ERR_CMD=0
+NVME_ERR_MEDIA_D=""; NVME_ERR_SHUTDOWN_D=""; NVME_ERR_CMD_D=""
 for _ne in "${STO_DIR}"/nvme_error_*.log; do
     [ -f "$_ne" ] || continue
     _devname=$(basename "$_ne" | sed 's/^nvme_error_//; s/\.log$//')
-    _cnt=$(grep -cE "^[[:space:]]*error_count[[:space:]]*:" "$_ne" 2>/dev/null)
-    _nz=$(grep -E "^[[:space:]]*error_count[[:space:]]*:" "$_ne" 2>/dev/null | grep -cvE ":[[:space:]]*0[[:space:]]*$")
-    if [ "${_nz:-0}" -gt 0 ]; then
-        NVME_ERR_DISKS=$((NVME_ERR_DISKS+1))
-        NVME_ERR_TOTAL=$((NVME_ERR_TOTAL+_nz))
-        NVME_ERR_DETAIL="${NVME_ERR_DETAIL}${_devname}:${_nz}条 "
-    fi
+    # 逐条 Entry 取 status_field 的括号描述（每块盘可能有多种错误）
+    _sf=$(grep -oE "status_field[[:space:]]*:[[:space:]]*0x[0-9a-f]+\([^)]*\)" "$_ne" 2>/dev/null \
+          | sed -E 's/.*0x([0-9a-f]+)\(([^)]*)\).*/\1|\2/')
+    [ -z "$_sf" ] && continue
+    _m=0; _s=0; _c=0
+    while IFS='|' read -r _code _desc; do
+        [ -z "$_code" ] && continue
+        case "$_desc" in
+            # 命令/参数不兼容（主机侧问题，非盘故障）
+            *"Invalid Field in Command"*|*"Invalid Opcode"*|*"Invalid Namespace"*|*"Invalid Field"*|*"Invalid Command Opcode"*)
+                _c=$((_c+1)) ;;
+            # 非正常掉电（供电环境问题，非盘坏）
+            *"Unsafe Shutdown"*)
+                _s=$((_s+1)) ;;
+            # 其余（Write Fault/Unrecovered Read/Data Protection/介质/路径…）保守按介质类
+            *)
+                _m=$((_m+1)) ;;
+        esac
+    done < <(printf '%s\n' "$_sf")
+    [ "$_m" -gt 0 ] && { NVME_ERR_MEDIA=$((NVME_ERR_MEDIA+_m)); NVME_ERR_MEDIA_D="${NVME_ERR_MEDIA_D}${_devname}:${_m}条 "; }
+    [ "$_s" -gt 0 ] && { NVME_ERR_SHUTDOWN=$((NVME_ERR_SHUTDOWN+_s)); NVME_ERR_SHUTDOWN_D="${NVME_ERR_SHUTDOWN_D}${_devname}:${_s}条 "; }
+    [ "$_c" -gt 0 ] && { NVME_ERR_CMD=$((NVME_ERR_CMD+_c)); NVME_ERR_CMD_D="${NVME_ERR_CMD_D}${_devname}:${_c}条 "; }
 done
+# 纯命令类 = 全部错误都在命令类（无介质/掉电）→ 报告按「兼容性提示」呈现，不计 WARN
+NVME_CMD_ONLY=0
+[ "$NVME_ERR_CMD" -gt 0 ] && [ "$NVME_ERR_MEDIA" -eq 0 ] && [ "$NVME_ERR_SHUTDOWN" -eq 0 ] && NVME_CMD_ONLY=1
 
 # GPU 退役行数（gpu_remapped_rows.csv）
 GPU_REMAP="N/A"

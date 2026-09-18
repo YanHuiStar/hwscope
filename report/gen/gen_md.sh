@@ -634,8 +634,18 @@ $(
             *) [ -f "${NET_DIR:-}/perfquery.log" ] && echo "| IB 链路误码 | ✓ 性能计数器全部为 0 |" ;;
         esac
     fi
-    if [ "${NVME_ERR_DISKS:-0}" -gt 0 ] 2>/dev/null; then
-        echo "| ⚠️ NVMe 错误日志 | ${NVME_ERR_DISKS} 块盘有非零错误（${NVME_ERR_DETAIL}） |"
+    # v1.48.96：NVMe 错误按 status_field 分类呈现——
+    #   介质类（Write Fault/Unrecovered Read/Data Protection…）与掉电类（Unsafe Shutdown）
+    #   才报 ⚠️；纯命令类（Invalid Field/Opcode/Namespace，主机侧命令不兼容）作提示，
+    #   因为它**不是盘故障**（实测 opcode=0、lba 全 F，无任何读写失败）。
+    if [ "${NVME_ERR_MEDIA:-0}" -gt 0 ] 2>/dev/null; then
+        echo "| ⚠️ NVMe 介质错误 | ${NVME_ERR_MEDIA_D}（介质/盘自身类错误，建议复查该盘） |"
+    fi
+    if [ "${NVME_ERR_SHUTDOWN:-0}" -gt 0 ] 2>/dev/null; then
+        echo "| ⚠️ NVMe 非正常掉电 | ${NVME_ERR_SHUTDOWN_D}（Unsafe Shutdown，建议排查供电/拔盘历史） |"
+    fi
+    if [ "${NVME_ERR_CMD:-0}" -gt 0 ] 2>/dev/null; then
+        echo "| NVMe 命令兼容性 | ${NVME_ERR_CMD_D} Invalid Field（主机侧命令参数不被固件支持，非介质故障） |"
     fi
     if [ -n "${RAID_BBU_SUMMARY:-}" ]; then
         if [ "${RAID_BBU_WARN:-0}" -eq 1 ] 2>/dev/null; then
