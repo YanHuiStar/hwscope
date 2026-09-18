@@ -315,8 +315,8 @@ fi)
     "data_ok": "${FAN_DATA_OK:-0}",
     "source": "${FAN_SOURCE:-IPMI}",
     "speed": "${FAN_SPEED:-N/A}",
-    "redundancy": "${FAN_REDUNDANT:-N/A}",
-    "redundancy_extra": "${FAN_EXTRA:-}",
+    "redundancy": "",
+    "redundancy_extra": "",
     "details": [
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do

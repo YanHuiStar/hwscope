@@ -300,6 +300,22 @@ if [ -f "$_fru_src" ]; then
                 PSU_PLATFORM_NOTE="平台未暴露单电源 FRU 与单 PSU 功率传感器（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位${PSU_EMPTY_FRU:+，其中 ${PSU_EMPTY_FRU} 条记录的 FRU 字段未填充（BIOS 未读到该颗 PSU 的型号/SN，供电状态不受影响）}，型号/SN/额定容量为 dmidecode 数据${_ps_ok:+，PS 状态传感器均 ok})"
                 ;;
         esac
+        # v1.49.0：PSU「当前功耗」列的 N/A 说明（区别于「平台无该传感器」）。
+        #   实测 B300（B300-sample-a，22.224）8 颗电源中仅 PSU6/7 有带内输入功率读数（_Pin），
+        #   其余由 SMBIOS/dmidecode 枚举；BMC 另有一组 B_PSU0~B_PSU5_Pout（输出功率）采用
+        #   不同编号体系，与 SMBIOS 槽位编号无法一一对应，故不做映射、只在表下如实说明，
+        #   避免客户对着 6 个裸 N/A 猜「是不是电源坏了」。
+        _psu_nopwr=0; _psu_has_pout=0
+        if [ -n "${PSU_DETAILS:-}" ]; then
+            _psu_nopwr=$(printf '%s\n' "$PSU_DETAILS" | awk -F'|' 'NF>=6 && ($6=="" || $6=="N/A"){c++} END{print c+0}')
+            _psu_has_pout=$(grep -v "^#" "${BMC_DIR}/ipmi_sensors_power.log" 2>/dev/null \
+                | awk -F'|' 'tolower($1) ~ /_pout/ {n++} END{print n+0}')
+        fi
+        if [ "${_psu_nopwr:-0}" -gt 0 ] 2>/dev/null; then
+            _ppn="当前功耗列有 ${_psu_nopwr} 颗显示 N/A：带内（IPMI）仅部分电源提供输入功率读数（_Pin），其余由 SMBIOS(dmidecode) 枚举、无带内功率读数"
+            [ "${_psu_has_pout:-0}" -gt 0 ] 2>/dev/null && _ppn="${_ppn}；BMC 另提供一组 _Pout（输出功率）以不同编号体系命名，与 SMBIOS 槽位编号无法一一对应，故未做映射"
+            PSU_PLATFORM_NOTE="${PSU_PLATFORM_NOTE:+${PSU_PLATFORM_NOTE}；}${_ppn}"
+        fi
     fi    # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
     # 独立展示（不放 PSU 表内：语义是整机级而非单电源，且避免 N/A 占位列突兀）
     PSU_EXTRA=""

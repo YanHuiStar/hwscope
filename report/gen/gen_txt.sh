@@ -89,7 +89,8 @@ gen_txt() {
         nic_details_txt="${nic_details_txt}  -- USB 外接网卡（非 PCIe，不参与统计） --"$'\n'
         while IFS='|' read -r unnic unmac unpn unfw; do
             [ -z "$unnic" ] && continue
-            nic_details_txt="${nic_details_txt}    ${unnic}  ${unmac}  ${unpn:-—}  FW:${unfw:-—}"$'\n'
+            _upn="${unpn:-}"; case "$_upn" in N/A|n/a|NA|na|"") _upn="N/A（USB 网卡，无 PCI 芯片信息）";; esac
+            nic_details_txt="${nic_details_txt}    ${unnic}  ${unmac}  ${_upn}  FW:${unfw:-—}"$'\n'
         done < <(printf '%s\n' "$USB_NICS")
     fi
     # NVSwitch 纯文本
@@ -289,7 +290,7 @@ fi)
   IB设备 : ${IB_COUNT:-0}
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
   Link状态: Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）}
-  额定速率: ${IB_NOMINAL:-N/A}$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n  固件一致性: [警告] 同型号卡固件版本不一致（仅供核对，非故障判定）：%s' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ]; then printf '\n  链路质量: %s%s（原始值，未设阈值判定）' "${IB_BER_SUMMARY:+Raw Physical BER ${IB_BER_SUMMARY}}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}"; fi)
+  额定速率: ${IB_NOMINAL:-N/A}$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n  固件一致性: [警告] 同型号卡固件版本不一致（仅供核对，非故障判定）：%s' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ] || [ "${IB_BER_TRIED:-0}" -gt 0 ]; then printf '\n  链路质量: %s%s（原始值，未设阈值判定%s）' "${IB_BER_TEXT}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}" "${IB_ETH_MODE_PORTS:+；${IB_ETH_MODE_PORTS% } 为以太模式、无 IB BER}"; fi)
   网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)$(if printf '%s\n' "$nic_details_txt" | grep -q "能力 " 2>/dev/null; then printf '\n  注: PCIe(协商) 标"(能力 …)"= 卡能力高于当前协商，多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障\n'; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
     printf '\n  网卡明细（ibstat 回退，旧采集无 nic_inventory）:\n'
     echo "$NIC_FALLBACK_DETAILS" | while IFS='|' read -r fca ftype fguid fstate; do
@@ -325,7 +326,6 @@ fi)
 [风扇]
   数量   : $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A（未取到数据）"; fi)
   转速   : ${FAN_SPEED:-N/A}
-  冗余   : ${FAN_REDUNDANT:-N/A}$(if [ -n "$FAN_EXTRA" ]; then echo "（${FAN_EXTRA}）"; fi)
   温度   : ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}}
 $(if [ -n "$FAN_DETAILS" ]; then echo "  来源   : ${FAN_SOURCE:-IPMI}"; fi)
 $(if [ -n "$FAN_DETAILS" ]; then
@@ -345,7 +345,9 @@ $(if [ -n "$PSU_DETAILS" ]; then
     while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
+        pcap_d="${pcap:-}"; case "$pcap_d" in N/A|n/a|"") pcap_d="—" ;; esac
+        ppwr_d="${ppower:-}"; case "$ppwr_d" in N/A|n/a|"") ppwr_d="—" ;; esac
+        printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "$pcap_d" "$ppwr_d"
     done < <(printf '%s\n' "$PSU_DETAILS")
 else echo "  N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读）"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)$(if [ -n "$PWR_CUR" ] || [ -n "$PWR_ENERGY" ]; then
     printf '\n[能耗台账]\n'

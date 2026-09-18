@@ -170,11 +170,25 @@ fi
 #       故只呈现数值供对比，不设阈值、不进验收项，避免误判。
 IB_BER_SUMMARY=""
 IB_LINK_DOWN_EVENTS=0
+IB_ETH_MODE_PORTS=""
+# v1.49.0：曾尝试读取 BER 的口数——全口都读不到时也要如实显示，不能因滤掉字面量 N/A 而整行消失。
+IB_BER_TRIED=0
 for f in "${NET_DIR}"/mlxlink_mlx5_*_counters.log; do
     [ -f "$f" ] || continue
     _bd=$(basename "$f" | sed 's/^mlxlink_//; s/_counters\.log$//')
+    IB_BER_TRIED=$((IB_BER_TRIED + 1))
     _ber=$(grep -m1 "Raw Physical BER" "$f" 2>/dev/null | awk -F':' '{print $NF}' | tr -d ' \t')
     _ldc=$(grep -m1 "Link Down Counter" "$f" 2>/dev/null | awk -F':' '{print $NF}' | tr -d ' \t')
+    # v1.49.0：滤掉字面量 "N/A"——以太模式口（mlxlink 报 `Physical state : ETH_AN_FSM_ENABLE`）
+    #   没有 IB 的 BER，输出为 `Effective Physical BER : N/A`。原实现只判 `-n` 与 `!= 0`，
+    #   于是把字符串 N/A 当成误码值写进摘要（实测 B300 报告出现 `mlx5_2:N/A mlx5_3:N/A`）。
+    #   同时记录下来，供报告标注「这些口为以太模式、无 IB BER」而非留一个裸 N/A。
+    case "$_ber" in
+        N/A|n/a|NA|na|"") _ber="" ;;
+    esac
+    if [ -z "$_ber" ] && grep -qiE "ETH_AN_FSM_ENABLE|ETH.*FSM" "$f" 2>/dev/null; then
+        IB_ETH_MODE_PORTS="${IB_ETH_MODE_PORTS}${_bd} "
+    fi
     # 过滤 mlxlink 无效哨兵：15E-255 为下溢/未初始化占位（非真实误码，避免误读为"极低误码"）；
     # 通用判据 = 指数 > 40 视为无效
     _exp=$(printf '%s' "$_ber" | sed -n 's/.*[Ee]-\([0-9]*\)$/\1/p')
@@ -183,6 +197,15 @@ for f in "${NET_DIR}"/mlxlink_mlx5_*_counters.log; do
     [ -n "$_ber" ] && [ "$_ber" != "0" ] && IB_BER_SUMMARY="${IB_BER_SUMMARY}${_bd}:${_ber} "
 done
 IB_BER_SUMMARY=$(echo "$IB_BER_SUMMARY" | sed 's/ $//')
+# v1.49.0：BER 行文案预计算——区分「有读数」与「全口读不到」。
+#   注意不能写成 ${IB_BER_SUMMARY:-${IB_BER_TRIED:+...}}：${VAR:-X} 在 VAR 非空时返回 VAR 的值，
+#   会导致行内内容重复两遍（实测 B300 报告出现重复的 BER 列表）。
+IB_BER_TEXT=""
+if [ -n "$IB_BER_SUMMARY" ]; then
+    IB_BER_TEXT="Raw Physical BER ${IB_BER_SUMMARY}"
+elif [ "${IB_BER_TRIED:-0}" -gt 0 ]; then
+    IB_BER_TEXT="Raw Physical BER 未取到（${IB_BER_TRIED} 个口均无读数）；"
+fi
 
 # ─── BMC ───
 BMC_DIR="${OUT}/bmc"

@@ -24,14 +24,14 @@ run_fan() {
     if check_cmd ipmitool; then
         # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
         local ipmi_to="timeout ${IPMI_TIMEOUT:-30}"; check_cmd timeout || ipmi_to=""
-        run_and_log_parallel 4 \
+        # v1.49.0 删除 fan redundancy 采集（原 3 命令 → 现 2，并发数 4→2）：原为 sdr list 主采 +
+        #   sensor list 兜底（v1.36.0）。实测 22 台样本无一提供有效信息——6 台采到
+        #   `FAN_Redundancy | 0x00 | ok`（0x00 在 IPMI discrete 语义里是「无该状态」，不是「有冗余」），
+        #   另 16 台为空；报告端原 `*ok*` 分支还会误判成「冗余满足」。而这两个命令在慢 BMC 上
+        #   各自跑满超时（实测该机 exit=124 / 30s 一个），等于每轮白等 30~60 秒换一个无人用的空文件。
+        run_and_log_parallel 2 \
             "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'FAN|RPM|PWM|Duty'\"" "${dir}/ipmi_fan_sensors.log" \
             "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'FAN.*Status|FAN.*Mode'\"" "${dir}/ipmi_fan_status.log" \
-            "${ipmi_to} bash -c \"ipmitool sdr list 2>/dev/null | grep --line-buffered -iE 'Fan.*Redundancy|FAN.*Cable|Fan.*PG|Redundancy'\"" "${dir}/ipmi_fan_redundancy.log"
-        # 冗余三态兜底：sdr 无匹配时从 sensor list 再抓（Dell/标准服务器传感器名变体，v1.36.0）
-        if [ ! -s "${dir}/ipmi_fan_redundancy.log" ]; then
-            run_and_log "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'Fan.*Redundancy|FAN.*Cable|Fan.*PG'\"" "${dir}/ipmi_fan_redundancy.log"
-        fi
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi
@@ -77,7 +77,6 @@ run_fan() {
     write_manifest "${dir}/manifest.txt" \
         "ipmi_fan_sensors" "ipmi_fan_sensors.log" \
         "ipmi_fan_status" "ipmi_fan_status.log" \
-        "ipmi_fan_redundancy" "ipmi_fan_redundancy.log" \
         "sensors_all" "sensors_all.log" \
         "sensors_fan" "sensors_fan.log" \
         "acpi_fan" "acpi_fan.log"

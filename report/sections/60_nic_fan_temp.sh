@@ -488,7 +488,7 @@ fi
 # 服务器风扇多走 BMC（SMBus/PMBus），OS 看不到；但部分平台会把转速暴露给内核驱动
 # （nct6775/it87/ast 等），此时采集端已落盘的 sensors_fan.log / hwmon_*/fan_values.log 有数据。
 # 原实现完全没读这条路，**明明采到了也显示 N/A**，还会让「风扇」章节误报采集失败。
-# 仅在 IPMI 无数据时兜底（IPMI 权威：带状态与冗余语义）；FAN_REDUNDANT 不参与兜底（冗余仅 IPMI 有）。
+# 仅在 IPMI 无数据时兜底（IPMI 权威：带状态；风扇冗余自 v1.49.0 移除，见下）。
 FAN_SOURCE="IPMI"
 if [ "${FAN_DATA_OK:-0}" -ne 1 ]; then
     _os_details=""; _os_src=""
@@ -548,27 +548,12 @@ if [ "${FAN_DATA_OK:-0}" -ne 1 ]; then
     fi
 fi
 
-# ─── 风扇冗余三态（Fan Redundancy / FAN Cable / Fan PG；Dell/标准服务器 IPMI，v1.36.0） ───
-# FAN_REDUNDANT: 冗余满足 / ⚠️ 冗余失效 / N/A（供报告与验收"风扇冗余"判定）
-# FAN_EXTRA: 三态摘要展示（如 "Fan Redundancy:ok FAN Cable:ok 12V Fan PG:ok"）
-FAN_REDUNDANT="N/A"; FAN_EXTRA=""
-load_manifest "${FAN_DIR}" ipmi_fan_redundancy "ipmi_fan_redundancy.log"
-if [ -f "${ipmi_fan_redundancy}" ]; then
-    FAN_EXTRA=$(grep -v "^#" "${ipmi_fan_redundancy}" 2>/dev/null | grep -iE "Redundancy|Cable|PG" | head -6 \
-        | awk -F'|' '{n=$1; v=$3; gsub(/^ +| +$/,"",n); gsub(/^ +| +$/,"",v); if(n!=""&&v!="") printf "%s:%s ", n, v}' | sed 's/ $//')
-    _fan_red=$(grep -v "^#" "${ipmi_fan_redundancy}" 2>/dev/null | grep -iE "Fan.*Redundancy" | head -1)
-    if [ -n "$_fan_red" ]; then
-        case "$_fan_red" in
-            *"| 0x01"*|*"| 0x1"*|*ok*|*OK*) FAN_REDUNDANT="冗余满足" ;;
-            *) FAN_REDUNDANT="⚠️ 冗余失效" ;;
-        esac
-    fi
-fi
-# 平台无风扇冗余传感器判定（v1.43.9）：风扇转速传感器正常但无冗余等级 → 平台固有不计数（验收用）
-FAN_SENSOR_PRESENT=0
-if [ -f "${ipmi_fan_sensors}" ] && grep -qiE "FAN" "${ipmi_fan_sensors}" 2>/dev/null; then
-    FAN_SENSOR_PRESENT=1
-fi
+# ─── 风扇冗余（已移除，v1.49.0） ───
+# 原解析 Fan Redundancy / FAN Cable / Fan PG 三态（v1.36.0）。删除理由见 gen_acceptance.sh 第 14 项注释：
+#   22 台样本无一提供有效冗余信息（6 台是 `FAN_Redundancy | 0x00 | ok`——0x00 在 IPMI discrete 语义里是
+#   「无该状态/未定义」，不是「有冗余」；且原 `*ok*` 分支会把它误判成「冗余满足」；另 16 台为空文件）。
+#   BMC 普遍不提供风扇冗余接口，保留只会产生噪声与误判。
+# FAN_SENSOR_PRESENT 亦随之移除（原本仅服务风扇冗余的「平台固有 N/A」判定）。
 
 # 温度概况（ipmi_sensors_temp.log：进风/出风/CPU/内存/电源 关键温度聚合 min-max）
 TEMP_SUMMARY=""

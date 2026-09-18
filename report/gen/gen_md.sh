@@ -443,7 +443,7 @@ fi)
 | IB 设备数 | ${IB_COUNT:-0} |
 | IB 活动口 | ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})} |
 | IB Link 状态 | Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）} |
-| IB 额定速率 | ${IB_NOMINAL:-N/A} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ]; then printf '\n| IB 链路质量 | %s%s（原始值，未设阈值判定） |' "${IB_BER_SUMMARY:+Raw Physical BER ${IB_BER_SUMMARY}}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}"; fi)
+| IB 额定速率 | ${IB_NOMINAL:-N/A} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ] || [ "${IB_BER_TRIED:-0}" -gt 0 ]; then printf '\n| IB 链路质量 | %s%s（原始值，未设阈值判定%s） |' "${IB_BER_TEXT}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}" "${IB_ETH_MODE_PORTS:+；${IB_ETH_MODE_PORTS% } 为以太模式、无 IB BER}"; fi)
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 $(net_extra_md)
 
@@ -481,7 +481,8 @@ $(if [ -n "$USB_NICS" ]; then
     echo "|------|-----|------|------|"
     while IFS='|' read -r unnic unmac unpn unfw; do
         [ -z "$unnic" ] && continue
-        echo "| ${unnic} | ${unmac} | ${unpn:-—} | ${unfw:-—} |"
+        _upn="${unpn:-}"; case "$_upn" in N/A|n/a|NA|na|"") _upn="N/A（USB 网卡，无 PCI 芯片信息）";; esac
+        echo "| ${unnic} | ${unmac} | ${_upn} | ${unfw:-—} |"
     done < <(printf '%s\n' "$USB_NICS")
 fi)
 
@@ -536,7 +537,6 @@ fi)
 |----|----|
 | 数量 | $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A（未取到数据）"; fi) |
 | 转速 | ${FAN_SPEED:-N/A} |
-| 冗余 | ${FAN_REDUNDANT:-N/A}$(if [ -n "$FAN_EXTRA" ]; then echo "（${FAN_EXTRA}）"; fi) |
 | 温度 | ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}} |$(if [ -n "$FAN_DETAILS" ]; then echo "
 | 数据来源 | ${FAN_SOURCE:-IPMI} |"; fi)
 $(if [ -n "$FAN_DETAILS" ]; then
@@ -563,7 +563,9 @@ $(if [ -n "$PSU_DETAILS" ]; then
     while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
+        pcap_d="${pcap:-}"; case "$pcap_d" in N/A|n/a|"") pcap_d="—" ;; esac
+          ppwr_d="${ppower:-}"; case "$ppwr_d" in N/A|n/a|"") ppwr_d="—" ;; esac
+          printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "$pcap_d" "$ppwr_d"
     done < <(printf '%s\n' "$PSU_DETAILS")
 else
     echo "| — | N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读） | — | — | — | — | — |"

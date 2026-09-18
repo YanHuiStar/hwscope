@@ -94,6 +94,6 @@ for f in "${NET_DIR}"/mlxconfig_*_linktype.log; do
     p1=$(grep "LINK_TYPE_P1" "$f" | awk '{print $2}' | head -1)
     p2=$(grep "LINK_TYPE_P2" "$f" | awk '{print $2}' | head -1)
     [ -z "$p1" ] && [ -z "$p2" ] && continue
-    LINKTYPE_SUMMARY="${LINKTYPE_SUMMARY}${cfg_dev}:P1=${p1:-N/A} P2=${p2:-N/A},"
+    LINKTYPE_SUMMARY="${LINKTYPE_SUMMARY}${cfg_dev}:P1=${p1:-未配置} P2=${p2:-未配置},"
 done
 LINKTYPE_SUMMARY=$(echo "$LINKTYPE_SUMMARY" | sed 's/,$//')

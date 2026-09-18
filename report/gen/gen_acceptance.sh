@@ -299,28 +299,13 @@ gen_acceptance() {
         add_item "OS-BMC 口径一致" "PASS" "OS 与 BMC 口径完全一致"
     fi
 
-    # 14. 风扇冗余（N+N）（11_fan 采集 Fan Redundancy 传感器；无风扇平台=形态 N/A 不计入，
-    #     有风扇但无冗余状态=采集缺失计入——参考电源冗余判定，v1.36.0）
-    # v1.48.88：新增「采集失败」分支——此前 FAN_COUNT=0 一律判「无风扇（平台配置形态）」不计入，
-    #   但 BMC 慢导致 ipmitool 超时时也会得出 FAN_COUNT=0，等于把**采集缺失**误报成**平台无风扇**，
-    #   白白放过了数据缺口（实测 Giga B200: 10s 超时 → 报告写"无风扇"，而机器是 8×B200 整机）。
-    if [ "${FAN_DATA_OK:-0}" -ne 1 ] 2>/dev/null; then
-        add_item "风扇冗余（N+N）" "N/A" "风扇数据采集失败（ipmitool 风扇传感器命令超时/不可读，非平台无风扇；需复核 BMC 响应或补采）"
-    elif [ "${FAN_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        add_item "风扇冗余（N+N）" "N/A" "无风扇（平台配置形态，冗余不适用）" 1
-    elif [ "$FAN_REDUNDANT" = "N/A" ]; then
-        if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
-            add_item "风扇冗余（N+N）" "N/A" "平台无 BMC（无 IPMI 风扇冗余传感器，判定不适用）" 1
-        elif [ "${FAN_SENSOR_PRESENT:-0}" -eq 1 ]; then
-            add_item "风扇冗余（N+N）" "N/A" "平台无风扇冗余等级传感器（风扇转速正常，无冗余等级读数；平台固有不计数）" 1
-        else
-            add_item "风扇冗余（N+N）" "N/A" "无风扇冗余状态数据（ipmitool 未采集到 Fan Redundancy 传感器，需补采）"
-        fi
-    elif [ "$FAN_REDUNDANT" = "冗余满足" ]; then
-        add_item "风扇冗余（N+N）" "PASS" "${FAN_EXTRA:-冗余满足（N+N）}"
-    else
-        add_item "风扇冗余（N+N）" "FAIL" "风扇冗余失效（单点故障风险）"
-    fi
+    # 14.（已移除）风扇冗余（N+N）
+    # v1.49.0 删除：实测 22 台样本（AMD/A100/B200/B300 全平台）无一提供有效信息——
+    #   6 台采到的值是 `FAN_Redundancy | 0x00 | ok`（0x00 在 IPMI discrete 语义里是
+    #   「无该状态/未定义」，**不是**「有冗余」；有冗余应为 0x01），另 16 台为空文件。
+    #   且原解析 `*ok*` 会把 0x00 误判成「冗余满足」；即便修对，该平台也读不到冗余等级。
+    #   结论：BMC 普遍不提供风扇冗余接口 → 本项为纯噪声，删除以免每次验收为「固有还是缺失」空纠结。
+    #   （电源冗余（N+N）保留——B300 系列 7/22 台能读到 PSU 冗余等级，是有效信息）
 
     # 15. PCIe 链路完整（v1.41.0：PEX Fabric Switch 枚举 + 关键链路 LnkSta 满速/降速；
     #     交付验收看扩展板卡通路与模组接口链路——超微 H200 机头场景客户核对点）
