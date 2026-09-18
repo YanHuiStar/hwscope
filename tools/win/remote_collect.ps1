@@ -217,9 +217,54 @@ try {
     }
     Remove-Item $pushFile -Force -ErrorAction SilentlyContinue
 
-    $rcUntar = Invoke-Native { & $TarExe xzf $pullFile -C $remoteOutDir }
-    if ($rcUntar -ne 0) { Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
+    # v1.48.99：改为**先解到暂存目录**再逐机器精准替换——原实现直接 `tar x -C remoteOutDir` 是纯覆盖式解包，
+    #   只覆盖同名文件，**旧版本产生过、新版本不再产生的文件会永久残留**（如 nvswitch_smi_*.log）。
+    #   后果：报告端的兜底路径（「fan/ 空就读 bmc/ipmi_sensors.log」等）**假设目录内文件同属一次采集**，
+    #   在残留场景下会把旧批次文件当本次数据渲染。本地采集有 rm -rf 清目录故无此问题，
+    #   缺口只在远程这一条路径（对标 sh 版 hwscope.sh v1.45.6/v1.45.10 的「清空 + 归档校验」）。
+    $stage = Join-Path $env:TEMP "hwscope_stage_$TS"
+    Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    $rcUntar = Invoke-Native { & $TarExe xzf $pullFile -C $stage }
+    if ($rcUntar -ne 0) { Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue; Write-Host "[ERROR] 回拉数据损坏或为空（远端打包失败？）" -ForegroundColor Red; exit 1 }   # 第二道防线：远端 tar 失败时 pullFile 空/坏
     Remove-Item $pullFile -Force -ErrorAction SilentlyContinue
+
+    $remoteLogsDirEarly = Join-Path $ProjectDir "logs/remote_logs"
+    New-Item -ItemType Directory -Force -Path $remoteOutDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $remoteLogsDirEarly | Out-Null
+    foreach ($sd in Get-ChildItem $stage -Directory -Force -ErrorAction SilentlyContinue) {
+        $sn = $sd.Name
+        # logs/ 不是机器目录，搬到固定位置交给下方原流程
+        if ($sn -eq 'logs') {
+            $lg = Join-Path $remoteOutDir "logs"
+            New-Item -ItemType Directory -Force -Path $lg | Out-Null
+            Copy-Item (Join-Path $sd.FullName '*') -Destination $lg -Recurse -Force -ErrorAction SilentlyContinue
+            continue
+        }
+        # 护栏①：机器目录名只允许 [A-Za-z0-9_-]（防路径穿越/误删）  ②：过短名跳过
+        if ($sn -notmatch '^[A-Za-z0-9_-]+$') { Write-Host "[WARN] 跳过非法的机器目录名: $sn" -ForegroundColor Yellow; continue }
+        if ($sn.Length -lt 4) { Write-Host "[WARN] 跳过过短的机器目录名: $sn" -ForegroundColor Yellow; continue }
+        $dst = Join-Path $remoteOutDir $sn
+        if (Test-Path $dst) {
+            # 覆盖前归档校验（对标 hwscope.sh v1.45.10）：有归档且归档不早于目录内容 → 可安全清空；
+            # 否则保留旧目录改为增量覆盖并告警，**绝不静默删除未归档数据**。
+            $arch = Get-ChildItem $remoteLogsDirEarly -Filter "$sn-*.tar.gz" -ErrorAction SilentlyContinue |
+                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            $newerThanArch = if ($arch) {
+                Get-ChildItem $dst -Recurse -File -Force -ErrorAction SilentlyContinue |
+                    Where-Object { $_.LastWriteTime -gt $arch.LastWriteTime } | Select-Object -First 1
+            } else { $null }
+            if ($arch -and -not $newerThanArch) {
+                Remove-Item $dst -Recurse -Force
+                Write-Host "[INFO] ${sn}: 已清空旧目录（历史留存于 $($arch.Name)）" -ForegroundColor Yellow
+            } else {
+                Write-Host "[WARN] ${sn}: 旧目录含未归档内容或无归档可比对，保留旧目录改为增量覆盖" -ForegroundColor Yellow
+            }
+        }
+        New-Item -ItemType Directory -Force -Path $dst | Out-Null
+        Copy-Item (Join-Path $sd.FullName '*') -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 
     # 归档包移到 logs\remote_logs\（与本地采集日志区分；远端 logs/ 解包到了 remote_output\logs）
     # 合并逻辑：report 子目录目标已存在时逐个移入（Move-Item 目录到非空目录会报错——重复跑场景）

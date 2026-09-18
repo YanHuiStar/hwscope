@@ -129,8 +129,56 @@ if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "
     echo -e "\033[0;31m[ERROR] 结果回拉失败\033[0m"; exit 1
 fi
 # 本地解包同样丢弃 stderr：旧版 tar 对未来时间戳（目标机时钟偏差）解包也警告刷屏——v1.43.5 实测根因
-tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "${LOCAL_OUT}/remote_output" 2>/dev/null || { echo -e "\033[0;31m[ERROR] 回拉数据损坏或为空（远端打包失败？）\033[0m"; exit 1; }
+# v1.48.99：改为**先解到暂存目录**再逐机器精准替换——原实现直接 `tar x -C remote_output` 是纯覆盖式解包，
+#   只覆盖同名文件，**旧版本产生过、新版本不再产生的文件会永久残留**。实证：
+#     remote_output/20260914173449/nvswitch/nvswitch_smi_info.log     ← 报告端已不读的旧产物
+#     remote_output/AMD-sample-a/firmware/nvswitch_smi_version.log   ← 同上
+#   后果：报告端近年加的兜底路径（如「fan/ 空就读 bmc/ipmi_sensors.log」）**假设目录内文件同属一次采集**，
+#   在残留场景下会把**旧批次文件当本次数据渲染**（本地采集有 rm -rf 清目录故无此问题，
+#   缺口只在远程这一条路径——对标 hwscope.sh v1.45.6/v1.45.10 的「清空 + 归档校验」做法补齐）。
+_STAGE=$(mktemp -d "${TMPDIR:-/tmp}/hwscope_stage_${TS}.XXXXXX") || { echo -e "\033[0;31m[ERROR] 无法创建暂存目录\033[0m"; exit 1; }
+if ! tar xzf "/tmp/hwscope_pull_${TS}.tgz" -C "$_STAGE" 2>/dev/null; then
+    rm -rf "$_STAGE"
+    echo -e "\033[0;31m[ERROR] 回拉数据损坏或为空（远端打包失败？）\033[0m"; exit 1
+fi
 rm -f "/tmp/hwscope_pull_${TS}.tgz"
+mkdir -p "${LOCAL_OUT}/remote_output" "${SCRIPT_DIR}/logs/remote_logs"
+_REPLACED=""
+for _d in "$_STAGE"/*/; do
+    [ -d "$_d" ] || continue
+    _sn=$(basename "$_d")
+    # logs/ 不是机器目录，交回下方原流程（先搬到固定位置，保持原有行为）
+    if [ "$_sn" = "logs" ]; then
+        mkdir -p "${LOCAL_OUT}/remote_output/logs"
+        cp -a "$_d". "${LOCAL_OUT}/remote_output/logs/" 2>/dev/null
+        continue
+    fi
+    # 护栏①：机器目录名只允许 [A-Za-z0-9_-]（防路径穿越/误删）
+    case "$_sn" in
+        *[!A-Za-z0-9_-]*) echo -e "\033[0;33m[WARN] 跳过非法的机器目录名: ${_sn}\033[0m"; continue ;;
+    esac
+    # 护栏②：过短目录名跳过
+    if [ "${#_sn}" -lt 4 ]; then
+        echo -e "\033[0;33m[WARN] 跳过过短的机器目录名: ${_sn}\033[0m"; continue
+    fi
+    _dst="${LOCAL_OUT}/remote_output/${_sn}"
+    if [ -d "$_dst" ]; then
+        # 覆盖前归档校验（对标 hwscope.sh v1.45.10）：本地已有该机器的归档包、且归档不早于目录内容 → 可安全清空；
+        # 否则保留旧目录改为增量覆盖（退化为原行为）并明确告警，**绝不静默删除未归档数据**。
+        _arch=$(ls -t "${SCRIPT_DIR}/logs/remote_logs/${_sn}-"*.tar.gz 2>/dev/null | head -1)
+        if [ -n "$_arch" ] && [ -z "$(find "$_dst" -type f -newer "$_arch" -print -quit 2>/dev/null)" ]; then
+            rm -rf "$_dst"
+            echo -e "\033[0;33m[INFO] ${_sn}: 已清空旧目录（历史留存于 $(basename "$_arch")）\033[0m"
+        else
+            echo -e "\033[0;33m[WARN] ${_sn}: 旧目录含未归档内容或无归档可比对，保留旧目录改为增量覆盖\033[0m"
+            echo -e "\033[0;33m        （如需干净目录请先归档：tar czf logs/remote_logs/${_sn}-$(date '+%Y%m%d%H%M%S').tar.gz -C ${LOCAL_OUT}/remote_output ${_sn}）\033[0m"
+        fi
+    fi
+    mkdir -p "$_dst"
+    cp -a "$_d". "$_dst/" 2>/dev/null
+    _REPLACED="${_REPLACED}${_sn} "
+done
+rm -rf "$_STAGE"
 
 # 归档包移到 logs/remote_logs/（与本地采集日志区分；远端 logs/ 解包到了 LOCAL_OUT/remote_output/logs）
 # 合并逻辑：report 子目录目标已存在时逐个文件移入（mv 目录到非空目录会 Directory not empty 失败——重复跑场景）

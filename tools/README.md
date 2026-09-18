@@ -77,7 +77,7 @@
 - **`--install <1,2,...>`**（v1.42.0）：推送后先远端非交互装依赖（`install_tool.sh -c <列表> -y`）再采集——远程冷启动一条龙；普通用户时安装+采集合并一条 `-t` 命令（sudo 密码只输一次），安装失败中止不采集
 - **Windows 版 `tools/win/remote_collect.ps1/.bat`**（功能等价）：**root/免 sudo 走「单次认证模式」**（v1.48.63，一条 ssh 内完成推送→采集→回拉，只需输 1 次密码）；**采集进度实时显示**（远端输出经 stderr 透传，v1.48.82/83 修复了"整类丢弃 stderr"与"空行被刷成类型名"两个问题）；**host key 变更自动处理**（v1.48.82：备份 known_hosts → `ssh-keygen -R` → 打印新旧指纹 → 自动重试一次，仅对已知主机的变化放行）
 - **凭据**：交互式密码默认（SSH ControlMaster 复用，输一次密码）；root 免 sudo，普通用户自动 `-t` 供 sudo 交互；SSH key 仅限可信内网。密码不落盘
-- **输出**：本地 `output/remote_output/<机器ID>/`（对标本地 output/<SN> 结构）；归档包 → `logs/remote_logs/`
+- **输出**：本地 `output/remote_output/<机器ID>/`（对标本地 output/<SN> 结构）；归档包 → `logs/remote_logs/`；**v1.48.99：回拉改为"逐机器精准替换"**——先解到暂存目录，再对每台机器「有归档且归档不早于目录内容 → 清空旧目录后落地；否则保留旧目录增量覆盖并告警」。原因：原实现是纯覆盖式解包，**旧版本产生过、新版本不再产生的文件会永久残留**（实证 `remote_output/*/nvswitch/nvswitch_smi_*.log`），而报告端的兜底路径假设"目录内文件同属一次采集"，残留会让它把旧批次文件当本次数据渲染。带护栏：目录名仅允许 `[A-Za-z0-9_-]`、长度 ≥4、绝不静默删未归档数据
 
 ### `regen_reports.sh` — 批量重生成报告（tools/agent/，agent 专用，v1.48.18）
 - **用法**：`bash tools/agent/regen_reports.sh`（桌面 6 份默认样本）；`bash tools/agent/regen_reports.sh <目录...>` 指定样本；`--samples SN1,SN2` 桌面选跑
