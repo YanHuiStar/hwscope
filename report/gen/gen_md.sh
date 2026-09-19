@@ -582,7 +582,7 @@ fi)
 | IB 设备数 | ${IB_COUNT:-0} |
 | IB 活动口 | ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})} |
 | IB Link 状态 | Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED") |
-| IB 额定速率 | ${IB_NOMINAL:-N/A} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ] || [ "${IB_BER_TRIED:-0}" -gt 0 ]; then printf '\n| IB 链路质量 | %s%s（原始值，未设阈值判定%s；逐 CA 明细见网络段） |' "${IB_BER_BRIEF:-${IB_BER_TEXT}}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}" "${IB_ETH_MODE_PORTS:+；${IB_ETH_MODE_PORTS% } 为以太模式、无 IB BER}"; fi)
+| IB 额定速率 | ${IB_NOMINAL:-N/A} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 $(net_extra_md)
 

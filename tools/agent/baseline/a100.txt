@@ -1,12 +1,12 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=427
+  table_rows=442
 [gpu]
   gpu_detail_rows=8
   model:  NVIDIA A100-SXM4-40GB
   gpu_json_count=8
 [memory]
-  dimm_rows=16
+  dimm_rows=32
   header: | # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
 [psu]
   psu_rows=6
@@ -25,16 +25,17 @@
   nic_rows=24
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | 物理位置 |
 [json]
-  json_bytes=50063
+  json_bytes=53487
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=28
   html_table_close=28
-  html_bytes=60277
+  html_bytes=63419
 [acceptance]
         3 N/A
-       14 PASS
+       13 PASS
+        2 WARN
 [acceptance_hw]
   准系统 | 台 | 1
   CPU | 颗 | 2

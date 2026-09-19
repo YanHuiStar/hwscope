@@ -195,7 +195,8 @@ if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>
         MEM_SPEED_NOTE="⚠️ 降速运行（额定 ${MEM_NOM}；仅 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽 ≤1DPC 仍降速，建议核查）"
     fi
 fi
-# 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率|Rank），空槽跳过
+# 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率|Rank）
+# v1.50.2：空槽也输出一行（容量列「（未插）」）——只报汇总数看不出哪几个槽空着
 # 行模式状态机：从 "Memory Device" 段头开始，空行结束（Size 行在 Locator 之前）
 # 速率语义：Speed=模块额定（原速率），Configured Memory Speed=当前实际运行（现速率）
 MEM_DIMMS=""
@@ -210,7 +211,15 @@ if [ -f "${dmidecode_memory_full}" ]; then
         in_dimm && /^[[:space:]]*Speed:/             {nom=$0;  sub(/^[[:space:]]*Speed:[[:space:]]*/,"",nom); next}
         in_dimm && /^[[:space:]]*Configured Memory Speed:/ {cur=$0; sub(/^[[:space:]]*Configured Memory Speed:[[:space:]]*/,"",cur); next}
         in_dimm && /^[[:space:]]*Rank:/              {rank=$0; sub(/^[[:space:]]*Rank:[[:space:]]*/,"",rank); next}
-        in_dimm && /^[[:space:]]*$/ { if(size!="") printf "%s|%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur, rank; in_dimm=0 }
+        in_dimm && /^[[:space:]]*$/ {
+            if (size != "") {
+                printf "%s|%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur, rank
+            } else if (slot != "") {
+                # v1.50.2：空槽也列一行——只报「已插 N/总 M」看不出哪几个槽位空着（用户反馈不直观）
+                printf "%s|（未插）|—|—|—|—|—|—\n", slot
+            }
+            in_dimm=0
+        }
     ' "${dmidecode_memory_full}" 2>/dev/null)
 fi
 # 部件号 → 芯片位宽推断（v1.45.13：x4/x8；未知=空——报告整列全空时动态隐藏该列）

@@ -42,7 +42,18 @@ if [ -n "$IB_CA_LIST" ]; then
     done | awk '{s+=$1} END{print s+0}')
 else
     IB_COUNT=$(grep -c "^CA '" "${ibstat}" 2>/dev/null)
-    IB_ACTIVE=$(grep -c "State: Active" "${ibstat}" 2>/dev/null)
+    # v1.50.2：只统计「IB 模式且 Active」的端口。旧实现直接数 "State: Active"，
+    #   把以太模式的 RDMA 口也算成 IB 活动口——实测 CX8/CX6 跑 ETH 的机器被报成
+    #   「IB 活动口 4 (100 Gb/s ×4)」，而 ibstat 里这些口是 Link layer: Ethernet。
+    #   判据用 ibstat 自带的 Link layer 字段（per-port、驱动当前状态、不依赖 mlxconfig 查询成功）。
+    IB_ACTIVE=$(awk '
+        /State:/{ st=$2 }
+        /Link layer:/{ if (st == "Active" && $3 == "InfiniBand") n++ }
+        END{ print n+0 }' "${ibstat}" 2>/dev/null)
+    # 以太模式口数（同一判据；报告用于说明「为何活动口少于设备数」）
+    IB_ETH_MODE_PORTS_CNT=$(awk '
+        /Link layer:/{ if ($3 == "Ethernet") n++ }
+        END{ print n+0 }' "${ibstat}" 2>/dev/null)
     # v1.48.58：Initializing 单独计数（见上）
     IB_INITIALIZING=$(grep -c "State: Initializing" "${ibstat}" 2>/dev/null)
     # Link 状态统计：Down（未连）+ 未插线缆（mlxlink Recommendation，排除 module/counters 文件）
@@ -54,9 +65,22 @@ fi
 # 活动口的速率分布（如 "100 Gb/s ×4"；无活动口显示 Down）
 IB_ACTIVE_SPEED=""
 if [ "${IB_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then
-    IB_ACTIVE_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | uniq -c | awk '{printf "%s Gb/s ×%d ", $2, $1}' | sed 's/ $//')
+        # v1.50.2：与 IB_ACTIVE 同源（只取 IB 模式端口），避免「计数 4 却列出 12 个速率」
+    IB_ACTIVE_SPEED=$(awk '
+        /State:/{ st=$2 }
+        /Rate:/{ rt=$2 }
+        /Link layer:/{ if (st == "Active" && $3 == "InfiniBand") cnt[rt]++ }
+        END{
+            n=0; for (r in cnt) key[++n]=r+0
+            for (i=1;i<=n;i++) for (j=i+1;j<=n;j++) if (key[j]<key[i]) { x=key[i]; key[i]=key[j]; key[j]=x }
+            for (i=1;i<=n;i++) printf "%s Gb/s ×%d ", key[i], cnt[key[i]]
+        }' "${ibstat}" 2>/dev/null | sed 's/ $//')
 fi
-IB_SPEED=$(grep -A2 "State: Active" "${ibstat}" 2>/dev/null | grep -iE "Rate:" | awk '{print $2}' | sort -n | tail -1)
+    # v1.50.2：同上，只取 IB 模式端口的最高速率
+    IB_SPEED=$(awk '
+        /Rate:/{ rt=$2 }
+        /Link layer:/{ if ($3 == "InfiniBand" && rt+0 > mx) mx = rt+0 }
+        END{ if (mx > 0) print mx }' "${ibstat}" 2>/dev/null)
 [ -n "$IB_SPEED" ] && IB_SPEED="${IB_SPEED} Gb/s"
 
 # ─── IB 链路性能计数器（perfquery，v1.48.90）───
