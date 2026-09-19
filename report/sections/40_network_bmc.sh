@@ -263,8 +263,18 @@ done
 # SEL 数据有效性（采集失败时统计全为 0，验收不能判 PASS，须区分"无数据"）
 SEL_DATA_VALID=0
 if [ -f "${ipmi_sel_elist}" ]; then
-    _sel_err=$(grep -iE "Could not open|Unable|No such file|command failed|device at /dev" "${ipmi_sel_elist}" 2>/dev/null | head -1)
-    [ -z "$_sel_err" ] && SEL_DATA_VALID=1
+    # v1.49.17 修复：BMC 的 SEL 常有空洞（个别条目读不到），此时 ipmitool 会打印
+    #   "Get SEL Entry N command failed: ... not found"，但**其余条目是好的**。
+    #   旧逻辑「出现错误行即判整体不可用」把这类机器报成"采集失败"——漏报数据（比误报更危险）。
+    #   实测 B300 样本：真实 SEL 1 条 + 2 行 command failed → 被误判为不可用。
+    #   新判据：先看有没有**真实数据行**（"  N | 日期 | ..."），有即有效。
+    _sel_rows=$(grep -cE "^ *[0-9]+ \|" "${ipmi_sel_elist}" 2>/dev/null)
+    if [ "${_sel_rows:-0}" -gt 0 ]; then
+        SEL_DATA_VALID=1
+    else
+        _sel_err=$(grep -iE "Could not open|Unable|No such file|command failed|device at /dev" "${ipmi_sel_elist}" 2>/dev/null | head -1)
+        [ -z "$_sel_err" ] && SEL_DATA_VALID=1
+    fi
 fi
 SEL_TOTAL=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | wc -l)
 

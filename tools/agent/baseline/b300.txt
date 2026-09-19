@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=269
+  table_rows=267
 [gpu]
   gpu_detail_rows=8
   model:  NVIDIA B300 SXM6 AC
@@ -19,23 +19,23 @@
   nic_rows=14
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=36679
+  json_bytes=36685
         1 "disk_count"
         1 "platform"
 [html]
-  html_table_open=24
-  html_table_close=24
-  html_bytes=39557
+  html_table_open=23
+  html_table_close=23
+  html_bytes=39324
 [acceptance]
-        4 N/A
-       11 PASS
+        3 N/A
+       12 PASS
 [acceptance_hw]
   准系统 | 台 | 1
   CPU | 颗 | 2
   内存 | 条 | 32
   GPU模组 | 张 | 8
-  计算网卡 | 张 | 9（1 口×8 + 4 口×1，共 12 口）
-  网卡&端口 | 张 | 1（2 口×1，共 2 口）
+  计算网卡 | 张 | 9（单口×8 + 四口×1，共 12 口）
+  网卡&端口 | 张 | 1（双口×1，共 2 口）
   存储 | 块 | 0
   电源模块 | 个 | 12
   系统管理 | 套 | 1

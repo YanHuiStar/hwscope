@@ -455,7 +455,17 @@ fi
         #   仅对**多口卡**加后缀——单口是常态，标出来只是噪音，且「端口」列已写 1/1。
         _npt="${NIC_PORT_TOTAL[${nnbdf%%.*}]:-0}"
         if [ "${_npt:-0}" -gt 1 ] 2>/dev/null; then
-            npn="${npn}（${_npt} 口）"
+        # v1.49.17：口数用**行业叫法**（Intel/NVIDIA 官方为 Single/Dual/Quad-Port，
+        #   中文习惯"单口/双口/四口"——不说"两口"）；非 1/2/3/4/8 用「N 口」。
+        case "$_npt" in
+            1) _ptxt="单口" ;;
+            2) _ptxt="双口" ;;
+            3) _ptxt="三口" ;;
+            4) _ptxt="四口" ;;
+            8) _ptxt="八口" ;;
+            *) _ptxt="${_npt} 口" ;;
+        esac
+            npn="${npn}（${_ptxt}）"
         fi
         # 物理位置（v1.48.53）：槽位表上溯（GPU 直连卡命中 SXM*_GPU* 槽位；标准卡命中 SLOTn/LAN）
         nloc=""

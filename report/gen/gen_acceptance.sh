@@ -152,17 +152,10 @@ gen_acceptance() {
         add_item "内存运行速率" "PASS" "额定速率运行（${MEM_SPEED:-N/A}）"
     fi
 
-    # 6. 线缆配对完整（条件驱动：按实际链路状态判定——无 IB 卡/未接线=场景固有不计数；已接线但无线缆数据=采集缺失计数）
-    if [ -n "$CABLE_PAIRS" ]; then
-        add_item "IB 线缆配对" "PASS" "${CABLE_PAIRS}"
-    elif [ "${IB_ACTIVE:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "IB 线缆配对" "N/A" "IB 链路已 Active（已接线）但无线缆配对数据（采集缺失，需补采）"
-    elif [ "${IB_LINK_DOWN:-0}" -gt 0 ] 2>/dev/null || [ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "IB 线缆配对" "N/A" "IB 链路未连接（交付验收通常不接线，场景固有）" 1
-    else
-        add_item "IB 线缆配对" "N/A" "无 IB 网卡（非 IB 平台，线缆配对不适用）" 1
-    fi
-
+    # v1.49.17：移除原「IB 线缆配对」验收项（用户判断 + 实测支持）——
+    #   该项判的是 IB 卡**成对直连**（同机 mlx5_11↔mlx5_1），而交付场景 IB 卡接交换机 →
+    #   CABLE_PAIRS 恒空 → 该项恒 N/A，属"永远不判"的占位项。线缆配对信息仍保留在报告
+    #   「网络」段（真有卡间直连拓扑时照常展示），只是不再占验收项位。
     # 7. 磁盘寿命充足（spare 第10列；<90% 提示，<50% FAIL；无盘数据或无 spare 数据 → N/A 禁止假阳性 PASS）
     local disk_warn="" disk_fail="" disk_spare_known=0
     if [ -n "$DISK_DETAILS" ]; then
@@ -217,22 +210,26 @@ gen_acceptance() {
         add_item "SMART 健康状态" "PASS" "全部盘 SMART 健康评估通过"
     fi
 
-    # 9. 电源冗余（N+N 冗余是供电可靠性核心；失效=单点故障风险）
-    # v1.43.9 条件区分：无 BMC（不计数）/ 平台无冗余等级传感器（SDR 有供电传感器，不计数）/ PSU≥2 但 IPMI 无冗余数据（计数）/ 采集缺失（计数）
-    case "$PSU_REDUNDANT" in
-        N/A)
-            if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
-                add_item "电源冗余（N+N）" "N/A" "平台无 BMC（IPMI 传感器不可用，冗余判定不适用）" 1
-            elif [ "${PSU_SENSOR_PRESENT:-0}" -eq 1 ]; then
-                add_item "电源冗余（N+N）" "N/A" "平台无 PSU 冗余等级传感器（供电传感器正常，无冗余等级读数；平台固有不计数）" 1
-            elif [ "${PSU_COUNT_DMI:-0}" -ge 2 ] 2>/dev/null; then
-                add_item "电源冗余（N+N）" "N/A" "PSU ${PSU_COUNT_DMI} 个（dmidecode），IPMI 无冗余等级数据（采集缺失，建议人工核对）"
-            else
-                add_item "电源冗余（N+N）" "N/A" "无冗余传感器数据（IPMI 采集缺失，需补采）"
-            fi ;;
-        *失效*) add_item "电源冗余（N+N）" "FAIL" "电源冗余失效（单点故障风险）" ;;
-        *) add_item "电源冗余（N+N）" "PASS" "${PSU_REDUNDANT}" ;;
-    esac
+    # 9. 电源状态（v1.49.17：取代原「电源冗余（N+N）」）
+    #   原项判据是 IPMI 的 PS_Redundant 冗余等级传感器，但**多数平台不暴露**——实测 8 台样本
+    #   仅 1 台有该数据 → 长期恒 N/A（用户反馈"经常采集不到"属实）。改为多级判据判「电源是否
+    #   正常」，实测覆盖面 8/8：① PS*_Status 传感器 0x1=正常（5/8，能报 FAIL）；
+    #   ② SMBIOS/dmidecode 在位数量（8/8，兜底"有没有"）；③ 温度/功耗读数（写进说明佐证）；
+    #   附：冗余等级有数据才提，不再作为独立判定。
+    _pwr_red=""
+    [ -n "${PSU_REDUNDANT:-}" ] && [ "${PSU_REDUNDANT}" != "N/A" ] && _pwr_red="；冗余等级：${PSU_REDUNDANT}"
+    if [ "${PSU_STATUS_BAD:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "电源状态" "FAIL" "检测到 ${PSU_STATUS_BAD} 颗电源状态异常（IPMI PS*_Status 非 0x1）${PSU_STATUS_BAD_D:+：${PSU_STATUS_BAD_D}}${_pwr_red}"
+    elif [ "${PSU_STATUS_OK:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "电源状态" "PASS" "${PSU_STATUS_OK} 颗电源状态正常（IPMI PS*_Status=0x1${PSU_STATUS_TEMP:+；温度 ${PSU_STATUS_TEMP}}${PSU_STATUS_PWR:+；功耗 ${PSU_STATUS_PWR}}）${_pwr_red}"
+    elif [ "${PSU_COUNT_DMI:-0}" -ge 2 ] 2>/dev/null; then
+        add_item "电源状态" "PASS" "SMBIOS 确认 ${PSU_COUNT_DMI} 颗电源在位（该平台 IPMI 未暴露电源状态传感器，按在位数量判定）${_pwr_red}"
+    elif [ -n "${PSU_DETAILS:-}" ]; then
+        _pc=$(printf '%s\n' "$PSU_DETAILS" | grep -c .)
+        add_item "电源状态" "PASS" "PSU 明细 ${_pc} 条（电源 FRU/传感器可见，IPMI 无状态等级数据）${_pwr_red}"
+    else
+        add_item "电源状态" "N/A" "该平台未暴露电源状态（IPMI 无 PS*_Status、SMBIOS 无 Type 39、FRU 无 PSU 条目；平台固有，不计数）" 1
+    fi
 
     # 10. 整机温度正常范围（进风/出风/CPU/内存/电源/PCH 传感器均 ok）
     if [ -z "$TEMP_SUMMARY" ]; then
@@ -416,12 +413,18 @@ gen_acceptance() {
             *)   _eth_dist[$_n]=$(( ${_eth_dist[$_n]:-0} + 1 )) ;;
         esac
     }
+    _port_name() {   # v1.49.17：口数用行业叫法（Intel/NVIDIA 官方 Single/Dual/Quad-Port）
+        case "$1" in
+            1) printf '单口' ;; 2) printf '双口' ;; 3) printf '三口' ;;
+            4) printf '四口' ;; 8) printf '八口' ;; *) printf '%s 口' "$1" ;;
+        esac
+    }
     _dist_str() {   # $1=ib|dpu|eth → "1口×8" / "2口×1+4口×1"（口数升序）
         local _k _out=""
         case "$1" in
-            ib)  for _k in $(printf '%s\n' "${!_ib_dist[@]}" | sort -n); do _out="${_out}${_out:+ + }${_k} 口×${_ib_dist[$_k]}"; done ;;
-            dpu) for _k in $(printf '%s\n' "${!_dpu_dist[@]}" | sort -n); do _out="${_out}${_out:+ + }${_k} 口×${_dpu_dist[$_k]}"; done ;;
-            *)   for _k in $(printf '%s\n' "${!_eth_dist[@]}" | sort -n); do _out="${_out}${_out:+ + }${_k} 口×${_eth_dist[$_k]}"; done ;;
+            ib)  for _k in $(printf '%s\n' "${!_ib_dist[@]}" | sort -n); do _out="${_out}${_out:+ + }$(_port_name "$_k")×${_ib_dist[$_k]}"; done ;;
+            dpu) for _k in $(printf '%s\n' "${!_dpu_dist[@]}" | sort -n); do _out="${_out}${_out:+ + }$(_port_name "$_k")×${_dpu_dist[$_k]}"; done ;;
+            *)   for _k in $(printf '%s\n' "${!_eth_dist[@]}" | sort -n); do _out="${_out}${_out:+ + }$(_port_name "$_k")×${_eth_dist[$_k]}"; done ;;
         esac
         printf '%s' "$_out"
     }
@@ -491,9 +494,12 @@ gen_acceptance() {
                     ACC_NIC_ETH_COUNT=$((ACC_NIC_ETH_COUNT+1))
                     _cp=$(_card_ports "$nport"); _dist_add eth "$_cp"
                     _mm="$_nm"
+                    # v1.49.17：去重按**基础型号**（去掉口数后缀）比对——原整串比对在型号
+                    #   带上「（双口）」这类后缀后失效，同一型号被拼接两次（实测 "A A + B B"）。
+                    _mbase="${_nm%%（*}"
                     if [ "$ACC_NIC_ETH" = "N/A" ]; then
                         ACC_NIC_ETH="$_mm"
-                    elif ! echo "$ACC_NIC_ETH" | grep -qF "$_mm"; then
+                    elif ! printf '%s' "$ACC_NIC_ETH" | grep -qF "$_mbase"; then
                         ACC_NIC_ETH="${ACC_NIC_ETH} + ${_mm}"
                     fi
                 fi

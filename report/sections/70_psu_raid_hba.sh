@@ -16,7 +16,14 @@ _fru_src="${ipmi_psu_fru}"
 if [ -f "$_fru_src" ] && [ -f "${ipmi_fru_all}" ]; then
     _n_psu=$(grep -c "FRU Device Description : PSU" "$_fru_src" 2>/dev/null)
     _n_full=$(grep -c "FRU Device Description : PSU" "${ipmi_fru_all}" 2>/dev/null)
-    [ "${_n_full:-0}" -gt "${_n_psu:-0}" ] && _fru_src="${ipmi_fru_all}"
+    # v1.49.17：除条数外**字段完整性**也要判——实测 psu/ipmi_psu_fru.log 的输出不含
+    #   "Product Manufacturer"（bmc/ipmi_fru_all.log 才有），两者条数相同时旧逻辑总选前者
+    #   → 厂商信息永远取不到（AMD 机 12 颗厂商列全空即此）。同条数下优先字段更全的一份。
+    _m_psu=$(grep -c "Product Manufacturer" "$_fru_src" 2>/dev/null)
+    _m_full=$(grep -c "Product Manufacturer" "${ipmi_fru_all}" 2>/dev/null)
+    if [ "${_n_full:-0}" -gt "${_n_psu:-0}" ] || { [ "${_n_full:-0}" -ge "${_n_psu:-0}" ] && [ "${_m_full:-0}" -gt "${_m_psu:-0}" ]; }; then
+        _fru_src="${ipmi_fru_all}"
+    fi
 fi
 PSU_DETAILS=""
 PSU_PLATFORM_NOTE=""
@@ -44,7 +51,7 @@ if [ -f "${dmidecode_psu}" ]; then
     PSU_COUNT_DMI=$(grep -ci "System Power Supply" "${dmidecode_psu}" 2>/dev/null || echo 0)
 fi
 if [ -f "$_fru_src" ]; then
-    pdesc=""; pmodel=""; ppn=""; psn=""; pending=""
+    pdesc=""; pmfr=""; pmodel=""; ppn=""; psn=""; pending=""
     while IFS= read -r pline; do
         case "$pline" in
             *"FRU Device Description"*)
@@ -58,8 +65,12 @@ if [ -f "$_fru_src" ]; then
                 if echo "$pdesc" | grep -qE "^PSU_FRU_[0-9]+|^PSU[0-9]+_FRU"; then
                     pdesc=$(echo "$pdesc" | sed -E 's/^PSU_FRU_([0-9]+).*/PSU\1/; s/^PSU([0-9]+)_FRU.*/PSU\1/')
                 fi
-                pmodel=""; ppn=""; psn=""; pending="" ;;
-            *"Product Name"*)          pmodel=$(echo "$pline" | cut -d: -f2- | xargs); [ -n "$pdesc" ] && pending="${pdesc}|${pmodel}|" ;;
+                pmfr=""; pmodel=""; ppn=""; psn=""; pending="" ;;
+            *"Product Name"*)          pmodel=$(echo "$pline" | cut -d: -f2- | xargs); [ -n "$pdesc" ] && pending="${pdesc}|${pmfr:+${pmfr} }${pmodel}|" ;;
+            # v1.49.17：厂商一直都在 FRU 里（Product Manufacturer: APLUSPOWER），旧解析只取
+            #   Product Name → 型号列看不出厂商（实测 AMD 机 12 颗）。此处并入型号列而非新增字段
+            #   （加字段会牵动 10+ 处硬编码字段位，漏一处即全表错位）。
+            *"Product Manufacturer"*)  pmfr=$(echo "$pline" | cut -d: -f2- | xargs) ;;
             *"Product Part Number"*)   ppn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
             *"Product Serial"*)        psn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
         esac
@@ -93,7 +104,6 @@ if [ -f "$_fru_src" ]; then
                 _pnum=$(echo "$_pline" | cut -d'|' -f1 | grep -oE '[0-9]+' | head -1 | sed 's/^0*//')
                 _pval=$(echo "$_pin_map" | tr ' ' '\n' | grep -E "^${_pnum}:" | cut -d: -f2)
                 if [ -n "$_pval" ]; then
-                    # 行补到 6 字段（额定列 N/A + 当前功耗=val）；已 6 字段则只覆盖 $6
                     echo "$_pline" | awk -v val="$_pval" -F'|' 'BEGIN{OFS="|"} { if (NF < 6) $5="N/A"; $6=val; print }'
                 else
                     echo "$_pline"

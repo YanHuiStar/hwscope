@@ -50,7 +50,8 @@ gen_txt() {
     local disk_details_txt=""
     # 整列隐藏判定（同 MD）：寿命%/额定/健康 整列无值省略字段（旧采集无 SMART）
     local disk_has_spare=0 disk_has_spec=0 disk_has_health=0
-    if [ -n "$DISK_DETAILS" ]; then
+    if [ -n "$(printf '%s' "$DISK_DETAILS" | tr -d ' 
+')" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
             [ -n "$dspare" ] && [ "$dspare" != "—" ] && [ "$dspare" != "N/A" ] && disk_has_spare=1
@@ -246,7 +247,7 @@ fi)
   盘数   : ${STORAGE_COUNT:-0}
   总容量 : ${STORAGE_TOTAL:-N/A}
   盘型号 : ${STORAGE_MODELS:-N/A}
-  系统盘 : ${SYS_DISK:-N/A} (已从统计排除)$(if [ -n "$disk_details_txt" ]; then printf '\n%s' "$disk_details_txt"; fi)$(if [ -n "$RAID_VD_DETAILS" ]; then
+  系统盘 : ${SYS_DISK:-N/A} (已从统计排除)$(if [ -n "$(printf '%s' "$disk_details_txt" | tr -d ' \n')" ]; then printf '\n%s' "$disk_details_txt"; fi)$(if [ -n "$RAID_VD_DETAILS" ]; then
     printf '\n  RAID虚拟盘（逻辑盘）:\n'
     echo "$RAID_VD_DETAILS" | while IFS='|' read -r rvdname rvdmodel rvdsize rvdsn; do
         [ -z "$rvdname" ] && continue

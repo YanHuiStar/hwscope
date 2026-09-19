@@ -372,11 +372,15 @@ fi)
 | 盘型号 | ${STORAGE_MODELS:-N/A} |
 | 系统盘(已排除) | ${SYS_DISK:-N/A} |
 
-### 存储盘明细
-| # | 设备 | 类型 | 容量$(if [ "$disk_has_spec" -eq 1 ]; then echo " | 额定"; fi) | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数$(if [ "$disk_has_spare" -eq 1 ]; then echo " | 寿命%"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo " | 健康"; fi) |
-|---|------|------|------$(if [ "$disk_has_spec" -eq 1 ]; then echo "|------"; fi)|------|------|----|------|---------|----------$(if [ "$disk_has_spare" -eq 1 ]; then echo "|-------"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo "|------"; fi)|
-$(printf '%s' "$disk_details_md")
-$(if [ -n "$DISK_DETAILS" ] && { [ "$disk_has_spare" -eq 0 ] || [ "$disk_has_health" -eq 0 ]; }; then
+$(if [ -n "$(printf '%s' "$disk_details_md" | tr -d ' \n')" ]; then
+    # v1.49.17：无数据盘（HGX 模组等）时整块不输出——原实现标题/表头/分隔行无条件渲染，
+    #   只把数据行留空，MD 会渲染成一张空表格（实测 B300 台 phys 盘数 0）。
+    echo "### 存储盘明细"
+    echo "| # | 设备 | 类型 | 容量$(if [ "$disk_has_spec" -eq 1 ]; then echo " | 额定"; fi) | 型号 | SN | 固件 | BDF | 通电(h) | 通电次数$(if [ "$disk_has_spare" -eq 1 ]; then echo " | 寿命%"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo " | 健康"; fi) |"
+    echo "|---|------|------|------$(if [ "$disk_has_spec" -eq 1 ]; then echo "|------"; fi)|------|------|----|------|---------|----------$(if [ "$disk_has_spare" -eq 1 ]; then echo "|-------"; fi)$(if [ "$disk_has_health" -eq 1 ]; then echo "|------"; fi)|"
+    printf '%s\n' "$disk_details_md"
+fi)
+$(if [ -n "$(printf '%s' "$DISK_DETAILS" | tr -d ' \n')" ] && { [ "$disk_has_spare" -eq 0 ] || [ "$disk_has_health" -eq 0 ]; }; then
     echo "> 注：$(if [ "$disk_has_spare" -eq 0 ]; then echo "寿命%"; fi)$(if [ "$disk_has_spare" -eq 0 ] && [ "$disk_has_health" -eq 0 ]; then echo "、"; fi)$(if [ "$disk_has_health" -eq 0 ]; then echo "健康"; fi) 列因旧采集无 SMART 数据而隐藏"
 fi)
 
