@@ -245,9 +245,14 @@ try {
         if ($sn -notmatch '^[A-Za-z0-9_-]+$') { Write-Host "[WARN] 跳过非法的机器目录名: $sn" -ForegroundColor Yellow; continue }
         if ($sn.Length -lt 4) { Write-Host "[WARN] 跳过过短的机器目录名: $sn" -ForegroundColor Yellow; continue }
         $dst = Join-Path $remoteOutDir $sn
+        $residCheck = $false
         if (Test-Path $dst) {
             # 覆盖前归档校验（对标 hwscope.sh v1.45.10）：有归档且归档不早于目录内容 → 可安全清空；
-            # 否则保留旧目录改为增量覆盖并告警，**绝不静默删除未归档数据**。
+            # 否则保留旧目录改为增量覆盖，**绝不静默删除未归档数据**。
+            # v1.49.10：归档被人工移走是常规操作，原先每次都打 WARN → 纯噪音，降级为 INFO；
+            #   同时补一道真风险检查：增量覆盖会留下"本次没拉到"的旧文件，而报告端按文件名找数据，
+            #   会读到过期内容。覆盖后用**文件清单差集**判定（不用时间戳——Copy-Item 保留原始
+            #   时间戳，远端采集时间常早于本次回拉，用时间比会把本次文件误判为残留）。
             $arch = Get-ChildItem $remoteLogsDirEarly -Filter "$sn-*.tar.gz" -ErrorAction SilentlyContinue |
                     Sort-Object LastWriteTime -Descending | Select-Object -First 1
             $newerThanArch = if ($arch) {
@@ -258,12 +263,29 @@ try {
                 Remove-Item $dst -Recurse -Force
                 Write-Host "[INFO] ${sn}: 已清空旧目录（历史留存于 $($arch.Name)）" -ForegroundColor Yellow
             } else {
-                Write-Host "[WARN] ${sn}: 旧目录非空，但找不到可比对的归档（常见原因：归档已被移走/清理），保留旧目录改为增量覆盖" -ForegroundColor Yellow
-                Write-Host "        不会删除任何文件；但本次未覆盖到的旧文件会留在目录里（如需干净目录：先把该目录归档再重跑，或直接删除该目录）" -ForegroundColor Yellow
+                Write-Host "[INFO] ${sn}: 旧目录已存在、无归档可比对（归档常被人工移走）→ 增量覆盖，不删任何文件" -ForegroundColor Yellow
+                $residCheck = $true
             }
         }
         New-Item -ItemType Directory -Force -Path $dst | Out-Null
         Copy-Item (Join-Path $sd.FullName '*') -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
+        # v1.49.10：残留检测——本次没拉到的旧文件会留下，报告端可能读到过期数据。只列前 5 个 + 总数。
+        if ($residCheck) {
+            $rel = { param($p) $p.Substring($dst.Length).TrimStart('\', '/') }
+            $pulled = New-Object System.Collections.Generic.HashSet[string]
+            Get-ChildItem $sd.FullName -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                [void]$pulled.Add((& $rel $_.FullName))
+            }
+            $resid = Get-ChildItem $dst -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object {
+                -not $pulled.Contains((& $rel $_.FullName))
+            }
+            if ($resid -and $resid.Count -gt 0) {
+                Write-Host "[WARN] ${sn}: 有 $($resid.Count) 个旧文件本次未拉到，仍留在目录里（报告端可能读到过期数据）：" -ForegroundColor Yellow
+                $resid | Select-Object -First 5 | ForEach-Object { Write-Host "        $((& $rel $_.FullName))" -ForegroundColor Yellow }
+                if ($resid.Count -gt 5) { Write-Host "        …另有 $($resid.Count - 5) 个（完整列表见 $dst）" -ForegroundColor Yellow }
+                Write-Host "        如需干净目录：删除 $dst 后重跑本次回拉" -ForegroundColor Yellow
+            }
+        }
     }
     Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 

@@ -162,21 +162,44 @@ for _d in "$_STAGE"/*/; do
         echo -e "\033[0;33m[WARN] 跳过过短的机器目录名: ${_sn}\033[0m"; continue
     fi
     _dst="${LOCAL_OUT}/remote_output/${_sn}"
+    _resid_check=""
     if [ -d "$_dst" ]; then
         # 覆盖前归档校验（对标 hwscope.sh v1.45.10）：本地已有该机器的归档包、且归档不早于目录内容 → 可安全清空；
-        # 否则保留旧目录改为增量覆盖（退化为原行为）并明确告警，**绝不静默删除未归档数据**。
+        # 否则保留旧目录改为增量覆盖，**绝不静默删除未归档数据**。
+        # v1.49.10：归档被人工移走是常规操作（用户常态做法），原实现每次都打 WARN → 纯噪音。
+        #   故降级为 INFO；同时补一道**真风险**检查：增量覆盖会留下旧文件，而报告端按文件名找数据，
+        #   旧文件会让它读到过期数据（如本次未采的模块、已改名的日志）。覆盖后按 mtime 找出
+        #   早于本次落盘的文件，确有残留才 WARN 并列出（这才是唯一值得打扰的情况）。
         _arch=$(ls -t "${SCRIPT_DIR}/logs/remote_logs/${_sn}-"*.tar.gz 2>/dev/null | head -1)
         if [ -n "$_arch" ] && [ -z "$(find "$_dst" -type f -newer "$_arch" -print -quit 2>/dev/null)" ]; then
             rm -rf "$_dst"
             echo -e "\033[0;33m[INFO] ${_sn}: 已清空旧目录（历史留存于 $(basename "$_arch")）\033[0m"
         else
-            echo -e "\033[0;33m[WARN] ${_sn}: 旧目录非空，但找不到可比对的归档（常见原因：归档已被移走/清理），保留旧目录改为增量覆盖\033[0m"
-            echo -e "\033[0;33m        不会删除任何文件；但本次未覆盖到的旧文件会留在目录里（如需干净目录：先把该目录归档再重跑，或直接删除该目录）\033[0m"
-            echo -e "\033[0;33m        归档命令：tar czf logs/remote_logs/${_sn}-$(date '+%Y%m%d%H%M%S').tar.gz -C ${LOCAL_OUT}/remote_output ${_sn}\033[0m"
+            echo -e "\033[0;33m[INFO] ${_sn}: 旧目录已存在、无归档可比对（归档常被人工移走）→ 增量覆盖，不删任何文件\033[0m"
+            _resid_check="yes"
         fi
     fi
     mkdir -p "$_dst"
     cp -a "$_d". "$_dst/" 2>/dev/null
+    # v1.49.10：残留检测——增量覆盖后，目录里"本次没拉到"的旧文件会留下，
+    #   而报告端按文件名找数据，会读到过期内容（如本次未采的模块、已改名的日志）。
+    #   判定方式**用文件清单差集**（本次拉到的 vs 覆盖后目录里有的），不用 mtime：
+    #   cp -a 保留远端原始时间戳，远端采集时间常早于本次回拉，用时间比会把本次文件误判为残留。
+    #   只列前 5 个 + 总数，不刷屏。
+    if [ -n "$_resid_check" ]; then
+        _pulled=$(cd "$_d" 2>/dev/null && find . -type f 2>/dev/null | sed 's|^\./||' | sort)
+        _have=$(cd "$_dst" 2>/dev/null && find . -type f 2>/dev/null | sed 's|^\./||' | sort)
+        _resid=$(comm -23 <(printf '%s\n' "$_have") <(printf '%s\n' "$_pulled") 2>/dev/null | grep -v '^$' | head -500)
+        _rn=$(printf '%s\n' "$_resid" | grep -c . 2>/dev/null || true)
+        _rn=${_rn:-0}
+        if [ "$_rn" -gt 0 ]; then
+            echo -e "\033[0;33m[WARN] ${_sn}: 有 ${_rn} 个旧文件本次未拉到，仍留在目录里（报告端可能读到过期数据）：\033[0m"
+            printf '%s\n' "$_resid" | head -5 | sed 's|^|        |'
+            [ "$_rn" -gt 5 ] && echo "        …另有 $((_rn - 5)) 个（完整列表见 ${_dst}）"
+            echo -e "\033[0;33m        如需干净目录：rm -rf ${_dst} 后重跑本次回拉\033[0m"
+        fi
+        unset _resid_check _pulled _have _resid _rn
+    fi
     _REPLACED="${_REPLACED}${_sn} "
 done
 rm -rf "$_STAGE"
