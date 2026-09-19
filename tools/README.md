@@ -12,6 +12,8 @@
 | **诊断/只读** | nvlink_verify · firmware_check · sel_monitor · cable_map · sync_version · power_monitor · cleanup | 🟢 只读（cleanup 删除输出目录，yes 确认） |
 | **写入操作** | bmc_tool · nic_tool · net_dhcp · dhcp_server · install_tool · install_ai · remote_run · fw_baseline_import | 🔴 会改系统 |
 | **远程采集** | remote_collect | 🟡 仅远程执行采集（只读）|
+> **密码输入排版（v1.49.16）**：连续输错密码时，每轮输出为「提示行 → `Permission denied...` 独立行 → `[认证失败 N/3]` 进度行」；3 次用尽给出排查方向（密码/用户名/是否禁用了密码登录）。密码提示由 ssh 直接写 tty，脚本无法把状态插到提示行尾，故采用等价的分行形式。
+
 | **Agent 协作** | agent_sync · git_push · report_regression · repo_realign | 🟢 只读（git_push 仅推送；report_regression 跑报告并比对基线；repo_realign 体检/对齐仓库）|
 
 > agent 协作工具（含**回归基线机制**与**历史重写后的仓库对齐**说明）见 `tools/agent/README.md`；开发环境陷阱见 `docs/AGENT_ENV.md`。

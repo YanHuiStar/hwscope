@@ -92,6 +92,15 @@ function Invoke-SSHRetry {
                 #   既不破坏管道流式又能保住原空行（空串会被 PowerShell 管道丢弃）
                 if ($line -notmatch $NoisePat) {
                     $msg = $_.Exception.Message
+                    # v1.49.16 排版修复：ssh 的密码提示写 /dev/tty（不经管道、无换行），而
+                    #   `Permission denied` 走 stderr 被本函数捕获后重放 —— 直接输出会接在提示
+                    #   行尾部，成了 "root@x's password: Permission denied, please try again."
+                    #   （用户实测报的排版）。认证类消息前先补一个换行：提示行结束、错误独立成行。
+                    if ($msg -match 'Permission denied|Authentication failed|password|Host key verification') {
+                        # 换行必须拼进同一输出项——Write-Host 与管道输出的交错顺序 PowerShell
+                        #   不保证（mock 实测：补的空行没落到正确位置）
+                        $msg = "`n$msg"
+                    }
                     if ([string]::IsNullOrEmpty($msg)) { ' ' } else { $msg }
                 }
             }
@@ -139,9 +148,16 @@ function Invoke-SSHRetry {
             if ($code -ne 0 -and $out.Count -gt 0) {
                 Write-Host "  [原因] $(($out | Where-Object { $_ } | Select-Object -First 2) -join ' / ')" -ForegroundColor DarkGray
             }
+            # v1.49.16：连输 3 次多半不是手误——给出可操作排查方向
+            if ($authFail -and $i -ge $MaxTries) {
+                Write-Host "[FAIL] $Desc 连续 $MaxTries 次认证失败。" -ForegroundColor Red
+                Write-Host "  可能原因：① 密码输错 ② 用户名不对（如应为 ubuntu 而非 root） ③ 远端仅允许密钥登录（PasswordAuthentication no）" -ForegroundColor Yellow
+                Write-Host "  排查：先手工执行 'ssh $HostName' 确认可登录；常用目标建议配置免密（ssh-copy-id），本工具会自动复用密钥。" -ForegroundColor Gray
+            }
             return $code
         }
-        Write-Host "[WARN] $Desc 认证失败（密码错误？），重试 $i/$MaxTries ..." -ForegroundColor Yellow
+        # v1.49.16：给出次数进度与剩余，避免用户盯着 Permission denied 不知还要输几次
+        Write-Host "[认证失败 $i/$MaxTries] $Desc：密码错误或用户名不对（还剩 $($MaxTries - $i) 次）" -ForegroundColor Yellow
     }
     $ErrorActionPreference = $oldEAP
     return $code
