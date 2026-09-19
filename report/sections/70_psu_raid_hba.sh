@@ -80,10 +80,12 @@ if [ -f "$_fru_src" ]; then
     [ -f "${ipmi_psu_sensors}" ] && psu_power_csv="${ipmi_psu_sensors}"
     [ -f "${ipmi_sensors_power}" ] && psu_power_csv2="${ipmi_sensors_power}"
     _pin_src=""
-    [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu[0-9]+ power in|psu_pin_[0-9]+" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
-    [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
+    # v1.49.8：加 DGX 平台的 `PWR_PSU<N>` 命名（实测 DGX A100：PWR_PSU0~5，值列 273.000 W）。
+    #   注意 awk 正则默认大小写敏感，PWR_ 是全大写，必须单独列一条。
+    [ -f "$psu_power_csv" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu[0-9]+ power in|psu_pin_[0-9]+|pwr_psu[0-9]+" "$psu_power_csv" 2>/dev/null && _pin_src="$psu_power_csv"
+    [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu_pin_[0-9]+|pwr_psu[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
     if [ -n "$_pin_src" ] && [ -n "$PSU_DETAILS" ]; then
-        _pin_map=$(grep -v "^#" "$_pin_src" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+_Pin|^PSU[0-9]+_Pin|^PSU[0-9]+ Power In|^PSU_PIN_[0-9]+/ { n=$1; gsub(/[^0-9]/, "", n); sub(/^0+/, "", n); v=$2; gsub(/ /, "", v); if (v ~ /\./) sub(/\.?0+$/, "", v); printf "%s:%sW ", n, v }')
+        _pin_map=$(grep -v "^#" "$_pin_src" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+_Pin|^PSU[0-9]+_Pin|^PSU[0-9]+ Power In|^PSU_PIN_[0-9]+|^PWR_PSU[0-9]+[ \t]*$/ { n=$1; sub(/^[ \t]+/, "", n); sub(/[ \t]+$/, "", n); gsub(/[^0-9]/, "", n); sub(/^0+/, "", n); v=$2; gsub(/ /, "", v); if (v ~ /\./) sub(/\.?0+$/, "", v); printf "%s:%sW ", n, v }')
         if [ -n "$_pin_map" ]; then
             PSU_DETAILS=$(while IFS= read -r _pline; do
                 [ -z "$_pline" ] && continue
@@ -108,6 +110,21 @@ if [ -f "$_fru_src" ]; then
     [ -f "${ipmi_psu_sensors}" ] && psu_power_csv="${ipmi_psu_sensors}"
     [ -f "${ipmi_sensors_power}" ] && psu_power_csv2="${ipmi_sensors_power}"
     # 回退：部分平台（如 Inventec）FRU 不暴露 PSU 条目，但传感器有 PSU*_Temp / PS*_Pin / PSU* Power In —— 用传感器生成占位行
+    # v1.49.8：**DGX 平台**两头都没有——FRU 只有 Builtin/MID/IOEL/IOER/PDB/GB/M.2/SW 八个（无 PSU），
+    #   dmidecode 无 Type 39；但 ipmi_sensors_power.log 有 PWR_PSU0~5（各 234~286W）。
+    #   不补这一步，整块电源显示「N/A（无 PSU 数据）」而电源实际在位并有功耗读数——
+    #   属「有数据却说没有」，与「0 条 ≠ 没有」同源。故用传感器编号生成占位行。
+    if [ -z "$PSU_DETAILS" ] && [ -f "$psu_power_csv2" ] && grep -qE '^PWR_PSU[0-9]+' "$psu_power_csv2" 2>/dev/null; then
+        PSU_DETAILS=$(grep -E '^PWR_PSU[0-9]+' "$psu_power_csv2" 2>/dev/null | awk -F'|' '{
+            k=$1; sub(/^[ \t]+/,"",k); sub(/[ \t]+$/,"",k)
+            n=k; sub(/^PWR_PSU/, "", n)
+            v=$2; gsub(/ /,"",v); if (v ~ /\./) sub(/\.?0+$/,"",v)
+            # 额定容量取第 8 列（该平台传感器格式：Name|Reading|Unit|Status|LNC|LNC|LNC|UNC|UNC|...）
+            c=$8; gsub(/ /,"",c); if (c ~ /\./) sub(/\.?0+$/,"",c)
+            if (c ~ /^[0-9]+$/) c=c"W"; else c="N/A"
+            printf "PSU%s||||%s|%sW\n", n, c, v
+        }')
+    fi
 
     # dmidecode Type 39 补充源（v1.44.0 立，v1.48.97 由「兜底」改为「补充」）
     #   v1.44.0 原逻辑 `-z "$PSU_DETAILS"`（只在 FRU **完全没有** PSU 条目时才用 dmidecode），
@@ -260,7 +277,7 @@ if [ -f "$_fru_src" ]; then
             if [ -n "$_pin_src" ] && [ -n "$PSU_DETAILS" ]; then
                 # 构建 "编号:功耗" 列表（如 "6:427W 7:448W"）
                 _pin_map=$(grep -v "^#" "$_pin_src" 2>/dev/null | awk -F'|' '
-                    $1 ~ /^PS[0-9]+_Pin|^PSU[0-9]+ Power In|^PSU_PIN_[0-9]+/ { n=$1; gsub(/[^0-9]/, "", n); sub(/^0+/, "", n); v=$2; gsub(/ /, "", v); printf "%s:%sW ", n, v }')
+                    $1 ~ /^PS[0-9]+_Pin|^PSU[0-9]+ Power In|^PSU_PIN_[0-9]+|^PWR_PSU[0-9]+[ \t]*$/ { n=$1; sub(/^[ \t]+/, "", n); sub(/[ \t]+$/, "", n); gsub(/[^0-9]/, "", n); sub(/^0+/, "", n); v=$2; gsub(/ /, "", v); if (v ~ /\./) sub(/\.?0+$/, "", v); printf "%s:%sW ", n, v }')
                 # 占位行逐行替换功耗（PSU6 → 6 → 查 _pin_map）
                 if [ -n "$_pin_map" ]; then
                     PSU_DETAILS=$(while IFS= read -r _pline; do
@@ -392,14 +409,15 @@ if [ -f "$_fru_src" ]; then
     [ -n "$PSU_DCMI" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_DCMI}"$'\n'
     [ -n "$PSU_CPU_RAPL" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_CPU_RAPL}"$'\n'
     [ -n "$PSU_PLATFORM_NOTE" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ⚠️ ${PSU_PLATFORM_NOTE}"$'\n'
-    # 每只 PSU 当前输入功率（Pwr_PSU<N>_In 或 PS<N>_Pin，| W |），按编号匹配追加
-    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -qE "Pwr_PSU[0-9]|PS[0-9]_Pin" "$psu_power_csv" 2>/dev/null; then
+    # 每只 PSU 当前输入功率（Pwr_PSU<N>_In / PS<N>_Pin / PWR_PSU<N>，| W |），按编号匹配追加
+    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -qE "Pwr_PSU[0-9]|PS[0-9]_Pin|PWR_PSU[0-9]" "$psu_power_csv" 2>/dev/null; then
         # 一次性构建 编号→功率 映射，再一次性追加（避免逐行 echo|awk 嵌套性能灾难）
         PSU_DETAILS=$(awk -v psu_detail="$PSU_DETAILS" '
             BEGIN { FS="|"; OFS="|" }
-            /Pwr_PSU[0-9]+_In|PS[0-9]+_Pin/ {
-                num=$1; sub(/.*Pwr_PSU/, "", num); sub(/.*PS/, "", num); sub(/[^0-9].*/, "", num)
+            /Pwr_PSU[0-9]+_In|PS[0-9]+_Pin|PWR_PSU[0-9]+[ \t]*\|/ {
+                num=$1; sub(/.*Pwr_PSU/, "", num); sub(/.*PWR_PSU/, "", num); sub(/.*PS/, "", num); sub(/[^0-9].*/, "", num)
                 val=$2; gsub(/ /, "", val)
+                if (val ~ /\./) sub(/\.?0+$/, "", val)
                 power[num]=val "W"
             }
             END {

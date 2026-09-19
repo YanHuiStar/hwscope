@@ -402,8 +402,14 @@ gen_acceptance() {
         _mtp=$(echo "$MEM_TOTAL_PHYS" | grep -oE "[0-9.]+" | head -1)
         [ -n "$_mtp" ] && ACC_MEM_DIMM=$(awk -v t="$_mtp" -v p="$MEM_POPULATED" 'BEGIN{printf "%.0fGB", t/p}' < /dev/null)
     fi
-    ACC_NIC_IB="N/A"; ACC_NIC_IB_COUNT=0; ACC_NIC_ETH="N/A"; ACC_NIC_ETH_COUNT=0
-    ACC_NIC_DPU="N/A"; ACC_NIC_DPU_COUNT=0
+    ACC_NIC_IB="N/A"; ACC_NIC_IB_COUNT=0; ACC_NIC_IB_PORT=0; ACC_NIC_ETH="N/A"; ACC_NIC_ETH_COUNT=0; ACC_NIC_ETH_PORT=0
+    ACC_NIC_DPU="N/A"; ACC_NIC_DPU_COUNT=0; ACC_NIC_DPU_PORT=0
+    # v1.49.8：数量单位由「口」改「张」——nport 列形如 `1/2`（该卡第 1 口 / 共 2 口），
+    #   只数「第 1 口」的行，每行 = 1 张物理卡。旧实现每端口 +1，导致「双口卡 ×2 + 板载 ×1」
+    #   被写成「5 口」，与配置单的「张」对不上（实测 DGX A100：5 口实为 3 张卡）。
+    #   nport 为空（老采集/无该字段）时按单口卡处理，保持向后兼容。
+    #   另累计 *口数* 供硬件概览显示「N 张（M 口）」。
+    _nic_is_card_head() { case "${1:-1/1}" in 1/*|"") return 0 ;; *) return 1 ;; esac; }
     if [ -n "$NIC_DETAILS" ]; then
         while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport nlink nloc; do
             [ -z "$nnic" ] && continue
@@ -418,13 +424,15 @@ gen_acceptance() {
             #   v1.43.10 当时按 ConnectX|MCX 前缀归类失效，改为接口名是"打补丁"；本次从物理属性重新定义。
             _nm=$(echo "${npn:-N/A}" | sed 's/Intel Corporation Ethernet Controller //; s/ for 10GBASE-T.*//; s/ (rev [0-9]*)//')
             if echo "${npn:-}" | grep -qiE "BlueField"; then
-                ACC_NIC_DPU_COUNT=$((ACC_NIC_DPU_COUNT+1))
+                ACC_NIC_DPU_PORT=$((ACC_NIC_DPU_PORT+1))
+                _nic_is_card_head "$nport" && ACC_NIC_DPU_COUNT=$((ACC_NIC_DPU_COUNT+1))
                 [ "$ACC_NIC_DPU" = "N/A" ] && ACC_NIC_DPU="$_nm"
             elif [ "${ngd:-}" = "GPU直连" ] && echo "${npn:-}" | grep -qE "ConnectX-[678]|BlueField"; then
                 # v1.48.86：GPU直连 之外再加「卡型」过滤——PXB 级距离会把同 PCIe 域的
                 #   非计算卡一并纳入（实测 A100 机上 MCX556A-ECAT（CX-5）也是 PXB），
                 #   只认高速计算卡（ConnectX-6/7/8、BlueField）才算计算网卡。
-                ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
+                ACC_NIC_IB_PORT=$((ACC_NIC_IB_PORT+1))
+                _nic_is_card_head "$nport" && ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
                 [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="$_nm"
             elif [ "${GPU_TOPO_AVAIL:-0}" != "1" ] && echo "$nnic" | grep -qE "^ib"; then
                 # v1.48.86 回退分支：**无 topo 数据时**按接口名判（IB 模式口 = 计算网卡，同旧实现）。
@@ -432,10 +440,12 @@ gen_acceptance() {
                 #   若不回退会把这类平台的计算网卡整批丢进「网卡&端口」：
                 #   实测 AMD MI300X（AMD-sample-a）8 口 CX-7 400G 计算网卡因此全部消失。
                 #   与「GPU直连」判据的分工是：有 topo → 用物理直连（准确）；无 topo → 用协议口兜底（可用）。
-                ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
+                ACC_NIC_IB_PORT=$((ACC_NIC_IB_PORT+1))
+                _nic_is_card_head "$nport" && ACC_NIC_IB_COUNT=$((ACC_NIC_IB_COUNT+1))
                 [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="$_nm"
             else
-                ACC_NIC_ETH_COUNT=$((ACC_NIC_ETH_COUNT+1))
+                ACC_NIC_ETH_PORT=$((ACC_NIC_ETH_PORT+1))
+                _nic_is_card_head "$nport" && ACC_NIC_ETH_COUNT=$((ACC_NIC_ETH_COUNT+1))
                 if [ "$ACC_NIC_ETH" = "N/A" ]; then
                     ACC_NIC_ETH="$_nm"
                 elif ! echo "$ACC_NIC_ETH" | grep -qF "$_nm"; then
@@ -486,14 +496,15 @@ gen_acceptance() {
         fi
         if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
             # v1.48.85：计算网卡改按 GPU 直连归类后，不能再标 "（IB …）"——直连与协议模式无关。
-            #   单位用「口」：NIC_DETAILS 每行是一个网络端口（不是一张卡），双口卡会占两行
-            echo "| 计算网卡 | ${ACC_NIC_IB:-N/A}（GPU 直连） | 口 | ${ACC_NIC_IB_COUNT} |"
+            # v1.49.8：单位由「口」改「张」——按物理卡计数（同卡多口只算一张），
+            #   与配置单的「张」对得上；口数放括号内保留，因为线缆/端口数同样有意义。
+            echo "| 计算网卡 | ${ACC_NIC_IB:-N/A}（GPU 直连） | 张 | ${ACC_NIC_IB_COUNT}（${ACC_NIC_IB_PORT} 口） |"
         fi
         if [ "${ACC_NIC_DPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "| DPU | ${ACC_NIC_DPU:-N/A} | 口 | ${ACC_NIC_DPU_COUNT} |"
+            echo "| DPU | ${ACC_NIC_DPU:-N/A} | 张 | ${ACC_NIC_DPU_COUNT}（${ACC_NIC_DPU_PORT} 口） |"
         fi
         if [ "${ACC_NIC_ETH_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 口 | ${ACC_NIC_ETH_COUNT} |"
+            echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 张 | ${ACC_NIC_ETH_COUNT}（${ACC_NIC_ETH_PORT} 口） |"
         fi
         echo "| 存储 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
         echo "| 电源模块 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"

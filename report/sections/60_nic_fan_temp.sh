@@ -620,11 +620,15 @@ TEMP_SUMMARY=""
 load_manifest "${BMC_DIR}" ipmi_sensors_temp "ipmi_sensors_temp.log"
 if [ -f "${ipmi_sensors_temp}" ]; then
     _temp_agg() {   # $1=匹配模式, $2=标签
-        grep -v "^#" "${ipmi_sensors_temp}" 2>/dev/null | awk -F'|' -v pat="$1" 'tolower($1) ~ pat {
-            v=$2; gsub(/ /,"",v); if(v ~ /^[0-9]+(\.[0-9]+)?$/) { if(v+0>0) print v }
-        }' | sort -n | awk -v lbl="$2" 'NR==1{mn=$1} {mx=$1} END{if(mn!=""){sub(/\.0+$/,"",mn); sub(/\.0+$/,"",mx); printf "%s %s-%s°C  ", lbl, mn, mx}}'
+        # v1.49.8：先 trim `$1` 再匹配——IPMI 传感器的 Name 列是**左对齐补空格**的
+        #   （实测 `TEMP_CPU0        |`），带 `$` 锚的模式（如 ^temp_cpu[0-9]+$）永不命中。
+        grep -v "^#" "${ipmi_sensors_temp}" 2>/dev/null | awk -F'|' -v pat="$1" '{ k=$1; sub(/^[ \t]+/,"",k); sub(/[ \t]+$/,"",k); k=tolower(k); if (k ~ pat) { v=$2; gsub(/ /,"",v); if(v ~ /^[0-9]+(\.[0-9]+)?$/) { if(v+0>0) print v } } }' | sort -n | awk -v lbl="$2" 'NR==1{mn=$1} {mx=$1} END{if(mn!=""){sub(/\.0+$/,"",mn); sub(/\.0+$/,"",mx); printf "%s %s-%s°C  ", lbl, mn, mx}}'
     }
-    TEMP_SUMMARY="$( _temp_agg 'inlet.*temp|tr[0-9]+.*temp' '进风'; _temp_agg 'outlet.*temp' '出风'; _temp_agg '^cpu[0-9]+[ _]temp' 'CPU'; _temp_agg 'dimm.*temp' '内存'; _temp_agg 'psu[0-9]+[ _]temp' '电源'; _temp_agg 'pch.*temp' 'PCH' )"
+    # v1.49.8：加 DGX 平台的 `TEMP_CPU<N>` / `TEMP_GB_GPU<N>` 命名（实测 DGX A100：
+    #   TEMP_CPU0 46C / TEMP_GB_GPU0~7 27~35C）。原模式 `^cpu[0-9]+[ _]temp` 要求
+    #   "cpu 开头"，而 DGX 是 "temp_cpu0"，故整机温度被判「无温度传感器数据」——
+    #   实际有数据（错的是解析，不是硬件）。注意 _temp_agg 已 tolower。
+    TEMP_SUMMARY="$( _temp_agg 'inlet.*temp|tr[0-9]+.*temp' '进风'; _temp_agg 'outlet.*temp' '出风'; _temp_agg '^cpu[0-9]+[ _]temp|^temp_cpu[0-9]+$' 'CPU'; _temp_agg 'dimm.*temp' '内存'; _temp_agg 'psu[0-9]+[ _]temp' '电源'; _temp_agg 'pch.*temp' 'PCH'; _temp_agg '^temp_gb_gpu[0-9]+$' 'GPU' )"
     TEMP_SUMMARY=$(echo "$TEMP_SUMMARY" | sed 's/  *$//')
 fi
 # OS 侧温度兜底（v1.45.16）：无 BMC 温度（ipmi_sensors_temp 无/失败/平台无 BMC）时，

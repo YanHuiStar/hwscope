@@ -21,8 +21,13 @@ NC='\033[0m' # No Color
 #   判成「数据不足」而无法验收。现场 BMC 响应慢是常见情形，10s 对这类平台不够。
 # 代价可控：timeout 只对**卡住的命令**生效——正常命令 1s 内返回就不会等满 30s，
 #   所以调大默认值对健康 BMC 的采集耗时几乎无影响，只让慢 BMC 有机会把数据取回来。
-# 覆盖方式：HWSCOPE_IPMI_TIMEOUT=60 ./hwscope.sh（调试个别极慢平台时用）
-IPMI_TIMEOUT="${HWSCOPE_IPMI_TIMEOUT:-30}"
+# 覆盖方式：HWSCOPE_IPMI_TIMEOUT=90 ./hwscope.sh（调试个别极慢平台时用）
+# v1.49.8：默认 30 → 60 秒。实测 DGX A100 的 BMC 很慢——ipmi_fru 22s、ipmi_fru_summary 36s，
+#   ipmi_sdr / ipmi_sensors / ipmi_sensors_fan / ipmi_sensors_volt / ipmi_sel_elist
+#   在 30s 全部超时（exit 124、0 行）→ 风扇、电压、SDR 类数据整批丢失；
+#   ipmi_sensors_power 刚好 17.61s 赶上才保住。30s 对这类平台不够。
+#   代价：极慢平台单命令最坏等待翻倍；可用环境变量按需调回。
+IPMI_TIMEOUT="${HWSCOPE_IPMI_TIMEOUT:-60}"
 export IPMI_TIMEOUT
 
 # ─── 脚本帮助（统一 -h/--help：打印脚本头部注释块） ───

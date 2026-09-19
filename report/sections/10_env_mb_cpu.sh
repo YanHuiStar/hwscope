@@ -255,11 +255,22 @@ for _mce_c in "${OS_DIR}/journal_mce.log" "${OS_DIR}/journal_kernel_hw.log" "${O
     #   自身就含 "mce"/"machine check" 字样，不排除必然自匹配出假阳性。
     #   实测 B300（B300-sample-a）：journal_mce.log 内容全是 EDAC 驱动初始化
     #   （`EDAC MC: Ver: 3.0.0` / `EDAC MC0: Giving out device ...`），却因命令头被判 WARN。
-    _mce_hit=$(grep -vE "^#" "$_mce_c" 2>/dev/null | grep -icE "Machine Check|Hardware Error|mce:|MCA: ")
+    # v1.49.7：**裸 `mce:` 前缀过宽**，会把内核启动信息当成故障——实测 DGX A100
+    #   （A100-sample-a）journal_mce.log 只有一行
+    #   `Sep 19 07:17:25 ubuntu kernel: MCE: In-kernel MCE decoding enabled.`
+    #   （内核说"MCE 解码已启用"，是正常启动信息、零 MCE），却被报成
+    #   「CPU MCE 检出 1 条机器检查异常」→ 整机被误判「有条件通过」。
+    #   收紧为：真 MCE 必然带 `Machine Check` / `Hardware Error` / `MCA: ` /
+    #   `mce: [Hardware Error]` 之一（AMD 平台形态），裸 `mce:` / `MCE:` 不算；
+    #   再加一层已知启动噪音排除表兜底。
+    _mce_re="Machine Check|Hardware Error|MCA: |mce: *\\[Hardware Error\\]"
+    _mce_noise="In-kernel MCE decoding|mce: CPU supports|EDAC MC: Ver|EDAC MC[0-9]+: Giving out|Machine Check: Disabled"
+    _mce_hit=$(grep -vE "^#" "$_mce_c" 2>/dev/null | grep -vE "$_mce_noise" | grep -icE "$_mce_re")
     if [ "${_mce_hit:-0}" -gt 0 ]; then
         MCE_SRC="$(basename "$_mce_c")"
         MCE_HITS=$(grep -vE "^#" "$_mce_c" 2>/dev/null \
-            | grep -iE "Machine Check|Hardware Error|mce:|MCA: " \
+            | grep -vE "$_mce_noise" \
+            | grep -iE "$_mce_re" \
             | sed -E 's/^\[[^]]*\] +//' | sort -u | head -10)
         MCE_COUNT=$(printf '%s\n' "$MCE_HITS" | grep -c .)
         break
