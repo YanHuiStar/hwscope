@@ -33,9 +33,19 @@ load_manifest "${BMC_DIR}" ipmi_sdr "ipmi_sdr.log"
 if [ -f "${ipmi_sdr}" ]; then
     _red_line=$(grep -iE "^PS_Redundant|PSU.*Redundant" "${ipmi_sdr}" 2>/dev/null | head -1)
     if [ -n "$_red_line" ]; then
-        case "$_red_line" in
-            *"| 0x01"*|*"| 0x1"*|*ok*) PSU_REDUNDANT="冗余满足（N+N）" ;;
-            *) PSU_REDUNDANT="⚠️ 冗余失效" ;;
+        # v1.49.18：改为**只判数值列**。原 `*ok*` 通配会把 `PS_Redundant | 0x00 | ok`
+        #   （0x00=冗余失效）也判成「冗余满足」——第三列 ok 只是"读取成功"，不是冗余状态。
+        #   这正是 v1.49.0 为 FAN_Redundancy 修掉的 `*ok*` 同类 bug（见 gen_acceptance.sh 注释），
+        #   PSU 侧当时漏修。实测该行格式：`PS_Redundant     | 0x01              | ok`。
+        #   数值列（0xNN）→ 按值判；非数值（旧格式/纯文本）→ 退回文本判定。
+        _red_val=$(printf '%s\n' "$_red_line" | awk -F'|' '{v=$2; gsub(/^[ \t]+|[ \t]+$/,"",v); print v}')
+        case "$_red_val" in
+            0[xX]1|0[xX]01) PSU_REDUNDANT="冗余满足（N+N）" ;;
+            0[xX]0|0[xX]00) PSU_REDUNDANT="⚠️ 冗余失效" ;;
+            *) case "$_red_line" in
+                   *ok*|*OK*|*Ok*) PSU_REDUNDANT="冗余满足（N+N）" ;;
+                   *) PSU_REDUNDANT="⚠️ 冗余失效" ;;
+               esac ;;
         esac
     fi
 fi
@@ -48,7 +58,79 @@ fi
 PSU_COUNT_DMI=0
 load_manifest "${PSU_DIR}" dmidecode_psu "dmidecode_psu.log"
 if [ -f "${dmidecode_psu}" ]; then
-    PSU_COUNT_DMI=$(grep -ci "System Power Supply" "${dmidecode_psu}" 2>/dev/null || echo 0)
+    # v1.49.18：去掉 `|| echo 0`——`grep -c` 无匹配时**既打印 0 又退出 1**，
+    #   原写法会把结果变成两行 "0\n0"（实测 len=3），渲染成断行文案，
+    #   且 `[ "0\n0" -ge 2 ]` 报错被 2>/dev/null 吞掉 → 验收的 SMBIOS 数量分支被跳过。
+    PSU_COUNT_DMI=$(grep -ci "System Power Supply" "${dmidecode_psu}" 2>/dev/null)
+    [ -n "$PSU_COUNT_DMI" ] || PSU_COUNT_DMI=0
+fi
+# ─── 每颗电源状态传感器（PS*_Status / PS* Status，v1.49.18）───
+# 为什么必须有：gen_acceptance.sh 的「电源状态」项（v1.49.17 取代「电源冗余（N+N）」）
+#   读的是 PSU_STATUS_OK/BAD/BAD_D/TEMP/PWR，但**全项目从未有任何代码给它们赋值**
+#   → FAIL 分支不可达（坏电源会被下面的 SMBIOS 在位数量分支判 PASS）、
+#     「N 颗电源状态正常（IPMI PS*_Status=0x1…）」分支永不执行、文案可能失真。
+#   本节是那五个变量的**唯一生产者**。
+# 命名实测两种形式（必须都认）：
+#   `PS1 Status | 0x01 | ok`                    （bmc/ipmi_sdr.log，空格式）
+#   `PS6_Status | 0x01 | ok`                    （psu/ipmi_sdr_psu.log，下划线式）
+#   `PS1 Status | 0x1 | discrete | 0x0100 | …`   （bmc/ipmi_sensors.log，sensor list）
+# 判定：数值列（0xNN）存在即按值判（0x01/0x1=正常，其余=异常）；数值列缺失时才退回状态列文本。
+#   注意**不能只匹配 ok**——`PS_Redundant | 0x00 | ok` 的教训（v1.49.18 同批修复）。
+PSU_STATUS_OK=0
+PSU_STATUS_BAD=0
+PSU_STATUS_BAD_D=""
+PSU_STATUS_TEMP=""
+PSU_STATUS_PWR=""
+_psu_st_src=""
+for _cand in "${PSU_DIR}/ipmi_sdr_psu.log" "${BMC_DIR}/ipmi_sdr.log" "${BMC_DIR}/ipmi_sensors.log" "${PSU_DIR}/ipmi_psu_sensors.log"; do
+    [ -f "$_cand" ] || continue
+    if grep -qE '^PS[0-9]+[ _]?Status' "$_cand" 2>/dev/null; then _psu_st_src="$_cand"; break; fi
+done
+if [ -n "$_psu_st_src" ]; then
+    _psu_st_out=$(grep -v "^#" "$_psu_st_src" 2>/dev/null | awk -F'|' '
+        $1 ~ /^PS[0-9]+[ _]?Status/ {
+            n=$1; gsub(/[^0-9]/, "", n); sub(/^0+([0-9])/, "\1", n)
+            if (n == "") next
+            v=$2; gsub(/^[ \t]+|[ \t]+$/, "", v); vv=tolower(v)
+            s=$3; gsub(/^[ \t]+|[ \t]+$/, "", s); ss=tolower(s)
+            if (vv ~ /^0x[0-9a-f]+$/) { ok = (vv == "0x1" || vv == "0x01") }
+            else if (vv == "")        { ok = (ss ~ /ok/) ? 1 : ((ss ~ /^(nc|cr|nr)$/) ? 0 : -1) }
+            else                      { ok = (vv ~ /^ok$/) ? 1 : 0 }
+            # 同一颗电源在同一份日志里出现多行时（sdr list 与 sensor list 混排等）**坏值优先**：
+            # 健康判定宁可报不可漏；ok=1 只在从未见过坏值时成立，ok=-1（无法判定）不覆盖已知结果。
+            if (!(n in st) || ok == 0) st[n] = ok
+            if (!(n in ord)) { ord[n] = ++c; seq[c] = n }
+        }
+        END {
+            for (i = 1; i <= c; i++) {
+                n = seq[i]; k = st[n]
+                if (k == 1) o++
+                else if (k == 0) { b++; bd = bd (bd ? " " : "") "PS" n }
+            }
+            printf "%d|%d|%s\n", o+0, b+0, bd
+        }
+    ')
+    PSU_STATUS_OK=$(printf '%s' "$_psu_st_out" | cut -d'|' -f1)
+    PSU_STATUS_BAD=$(printf '%s' "$_psu_st_out" | cut -d'|' -f2)
+    PSU_STATUS_BAD_D=$(printf '%s' "$_psu_st_out" | cut -d'|' -f3)
+    [ -n "$PSU_STATUS_OK" ] || PSU_STATUS_OK=0
+    [ -n "$PSU_STATUS_BAD" ] || PSU_STATUS_BAD=0
+    # 温度佐证（PS*_Temp 最高值）；功耗佐证（PSU* Power In / PS*_Pin / PWR_PSU* 合计）
+    _psu_temp_max=$(grep -vh "^#" "${PSU_DIR}/ipmi_psu_sensors.log" "${BMC_DIR}/ipmi_sensors_temp.log" 2>/dev/null \
+        | awk -F'|' 'tolower($1) ~ /^psu?[0-9]+[ _]?temp/ { v=$2; gsub(/ /,"",v); if (v ~ /^[0-9]+(\.[0-9]+)?$/) { if (v+0 > m) m = v+0 } } END { if (m > 0) printf "%.0f", m }')
+    [ -n "$_psu_temp_max" ] && PSU_STATUS_TEMP="最高 ${_psu_temp_max}°C"
+    _psu_pwr_sum=$(grep -vh "^#" "${PSU_DIR}/ipmi_psu_sensors.log" "${BMC_DIR}/ipmi_sensors_power.log" 2>/dev/null \
+        | awk -F'|' 'tolower($1) ~ /^psu?[0-9]+[ _]?pin$|^psu[0-9]+ power in|^pwr_psu[0-9]+[ _]?in/ { v=$2; gsub(/ /,"",v); if (v ~ /^[0-9]+(\.[0-9]+)?$/) { s += v+0; c++ } } END { if (c > 0 && s > 0) printf "%.0f", s }')
+    [ -n "$_psu_pwr_sum" ] && PSU_STATUS_PWR="输入合计 ${_psu_pwr_sum}W"
+fi
+# 「在位但无明细」的真实化（v1.49.18，v1.48.88「0 条 ≠ 没有」同源）：
+#   实测 B200 机头（B200-sample-c）：psu/ 无 PSU FRU、无 dmidecode Type 39 → PSU_DETAILS 为空，
+#   生成器原来写「无 PSU 数据…可能采集时 BMC 传感器不可读」，但 bmc/ipmi_sdr.log 明明有
+#   PS1..PS6 Status=0x01 → 6 颗电源在位且正常。把「没采到明细」说成「可能没数据」会让客户
+#   以为平台无电源或采集坏了。这里给出在位颗数，供生成器在无明细时改用如实文案。
+PSU_SENSOR_SEEN=$(( ${PSU_STATUS_OK:-0} + ${PSU_STATUS_BAD:-0} ))
+if [ -z "$PSU_DETAILS" ] && [ "${PSU_SENSOR_SEEN:-0}" -gt 0 ] 2>/dev/null; then
+    PSU_PLATFORM_NOTE="未取到单电源 FRU 与 SMBIOS Type 39 明细（型号/SN/额定容量缺），但 IPMI 电源状态传感器可见 ${PSU_SENSOR_SEEN} 颗在位${PSU_STATUS_BAD:+（其中 ${PSU_STATUS_BAD} 颗异常）}"
 fi
 if [ -f "$_fru_src" ]; then
     pdesc=""; pmfr=""; pmodel=""; ppn=""; psn=""; pending=""
@@ -314,17 +396,19 @@ if [ -f "$_fru_src" ]; then
         case "${_psu_src:-}" in
             fru) ;;    # 全部来自 IPMI FRU，无需平台限制说明
             fru+dmi)
-                _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_sdr_psu.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $3 ~ /ok/ {n++} END{print n+0}')
-                [ "${_ps_ok:-0}" -gt 0 ] 2>/dev/null || _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $2 ~ /^0x1$/ {n++} END{print n+0}')
-                PSU_PLATFORM_NOTE="部分 PSU 未暴露单电源 FRU（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位，其中 ${_psu_dmi_added:-?} 颗的型号/SN/额定容量取自 dmidecode${_ps_ok:+；PS 状态传感器均 ok}）"
+                # v1.49.18：原 `${_ps_ok:+；PS 状态传感器均 ok}` 是**恒真**的——
+                #   `_ps_ok` 由 awk `END{print n+0}` 产出，无匹配时是字符串 "0"（非空），
+                #   而 `:+` 判"非空"不判"非零"，于是没有状态传感器的机器也照写"均 ok"。
+                #   现改用上面真正统计出的 PSU_STATUS_OK（>0 才写），数值来源于同一份日志。
+                [ "${PSU_STATUS_OK:-0}" -gt 0 ] 2>/dev/null && _ps_st_note="；PS 状态传感器 ${PSU_STATUS_OK} 颗均 ok" || _ps_st_note=""
+                PSU_PLATFORM_NOTE="部分 PSU 未暴露单电源 FRU（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位，其中 ${_psu_dmi_added:-?} 颗的型号/SN/额定容量取自 dmidecode${_ps_st_note}）"
                 ;;
             sensor*)
                 PSU_PLATFORM_NOTE="平台未暴露单电源 FRU（传感器+SMBIOS 确认存在与功耗）"
                 ;;
             *)
-                _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_sdr_psu.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $3 ~ /ok/ {n++} END{print n+0}')
-                [ "${_ps_ok:-0}" -gt 0 ] 2>/dev/null || _ps_ok=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_sensors.log" 2>/dev/null | awk -F'|' '$1 ~ /^PS[0-9]+ Status/ && $2 ~ /^0x1$/ {n++} END{print n+0}')
-                PSU_PLATFORM_NOTE="平台未暴露单电源 FRU 与单 PSU 功率传感器（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位${PSU_EMPTY_FRU:+，其中 ${PSU_EMPTY_FRU} 条记录的 FRU 字段未填充（BIOS 未读到该颗 PSU 的型号/SN，供电状态不受影响）}，型号/SN/额定容量为 dmidecode 数据${_ps_ok:+，PS 状态传感器均 ok})"
+                [ "${PSU_STATUS_OK:-0}" -gt 0 ] 2>/dev/null && _ps_st_note="，PS 状态传感器 ${PSU_STATUS_OK} 颗均 ok" || _ps_st_note=""
+                PSU_PLATFORM_NOTE="平台未暴露单电源 FRU 与单 PSU 功率传感器（SMBIOS Type 39 确认 ${PSU_COUNT_DMI} 颗在位${PSU_EMPTY_FRU:+，其中 ${PSU_EMPTY_FRU} 条记录的 FRU 字段未填充（BIOS 未读到该颗 PSU 的型号/SN，供电状态不受影响）}，型号/SN/额定容量为 dmidecode 数据${_ps_st_note})"
                 ;;
         esac
         # v1.49.0：PSU「当前功耗」列的 N/A 说明（区别于「平台无该传感器」）。
@@ -419,13 +503,20 @@ if [ -f "$_fru_src" ]; then
     [ -n "$PSU_DCMI" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_DCMI}"$'\n'
     [ -n "$PSU_CPU_RAPL" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ${PSU_CPU_RAPL}"$'\n'
     [ -n "$PSU_PLATFORM_NOTE" ] && PSU_NOTE_TXT="${PSU_NOTE_TXT}  ⚠️ ${PSU_PLATFORM_NOTE}"$'\n'
-    # 每只 PSU 当前输入功率（Pwr_PSU<N>_In / PS<N>_Pin / PWR_PSU<N>，| W |），按编号匹配追加
-    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -qE "Pwr_PSU[0-9]|PS[0-9]_Pin|PWR_PSU[0-9]" "$psu_power_csv" 2>/dev/null; then
+    # 每只 PSU 当前输入功率（Pwr_PSU<N>_In / PS<N>_Pin / PWR_PSU<N> / PSU<N> Power In，| W |），按编号匹配追加
+    # v1.49.18：补 `PSU<N> Power In` 命名——实测 HGX 机头（headless-sample-a，AMAX 机箱，
+    #   6×DELTA 3000W）的
+    #   psu/ipmi_psu_sensors.log 只有 `PSU1 Power In | 144.000 | Watts | ok` 这一种写法，
+    #   原守卫（大小写敏感且无该分支）整体跳过 → **整列功耗丢失显示 —**，
+    #   而同一文件 96/99 与 273/277/282 行的另一份同名逻辑是认这个命名的（同源实现漂移）。
+    #   归档报告（v1.33.4）同输入显示 144/160/256/176/160/176 W，即回归点。
+    if [ -f "$psu_power_csv" ] && [ -n "$PSU_DETAILS" ] && grep -qiE "Pwr_PSU[0-9]|PS[0-9]_Pin|PWR_PSU[0-9]|psu[0-9]+ power in" "$psu_power_csv" 2>/dev/null; then
         # 一次性构建 编号→功率 映射，再一次性追加（避免逐行 echo|awk 嵌套性能灾难）
         PSU_DETAILS=$(awk -v psu_detail="$PSU_DETAILS" '
             BEGIN { FS="|"; OFS="|" }
-            /Pwr_PSU[0-9]+_In|PS[0-9]+_Pin|PWR_PSU[0-9]+[ \t]*\|/ {
-                num=$1; sub(/.*Pwr_PSU/, "", num); sub(/.*PWR_PSU/, "", num); sub(/.*PS/, "", num); sub(/[^0-9].*/, "", num)
+            /Pwr_PSU[0-9]+_In|PS[0-9]+_Pin|PWR_PSU[0-9]+[ \t]*\||^PSU[0-9]+ Power In/ {
+                # 编号提取取"所有数字"（`PSU1 Power In` 用旧的 sub(/.*PS/) 会得到空串）
+                num=$1; gsub(/[^0-9]/, "", num)
                 val=$2; gsub(/ /, "", val)
                 if (val ~ /\./) sub(/\.?0+$/, "", val)
                 power[num]=val "W"

@@ -574,7 +574,12 @@ $(if [ -n "$PSU_DETAILS" ]; then
           printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "$pcap_d" "$ppwr_d"
     done < <(printf '%s\n' "$PSU_DETAILS")
 else
-    echo "| — | N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读） | — | — | — | — | — |"
+    # v1.49.18：无 FRU/型号明细 ≠ 平台没有电源——IPMI 状态传感器可见在位颗数时如实区分
+    if [ "${PSU_SENSOR_SEEN:-0}" -gt 0 ] 2>/dev/null; then
+        echo "| — | N/A（未取到单电源 FRU/型号明细；但 IPMI PS*_Status 可见 ${PSU_SENSOR_SEEN} 颗电源在位，供电状态见下方说明） | — | — | — | — | — |"
+    else
+        echo "| — | N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读） | — | — | — | — | — |"
+    fi
 fi)
 $(
     # PSU 尾注（冗余/整机功耗/DCMI/平台说明），合并块避免空输出堆积空行

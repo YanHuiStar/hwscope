@@ -350,7 +350,14 @@ $(if [ -n "$PSU_DETAILS" ]; then
         ppwr_d="${ppower:-}"; case "$ppwr_d" in N/A|n/a|"") ppwr_d="—" ;; esac
         printf '  %s. %s  %s  PN:%s  SN:%s  容量:%s  当前功耗:%s\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "$pcap_d" "$ppwr_d"
     done < <(printf '%s\n' "$PSU_DETAILS")
-else echo "  N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读）"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)$(if [ -n "$PWR_CUR" ] || [ -n "$PWR_ENERGY" ]; then
+else
+    # v1.49.18：无 FRU/型号明细 ≠ 平台没有电源（同 gen_md.sh）
+    if [ "${PSU_SENSOR_SEEN:-0}" -gt 0 ] 2>/dev/null; then
+        echo "  N/A（未取到单电源 FRU/型号明细；但 IPMI PS*_Status 可见 ${PSU_SENSOR_SEEN} 颗电源在位，供电状态见下方说明）"
+    else
+        echo "  N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读）"
+    fi
+fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)$(if [ -n "$PWR_CUR" ] || [ -n "$PWR_ENERGY" ]; then
     printf '\n[能耗台账]\n'
     [ -n "$PWR_CUR" ] && printf '  当前功耗 : %s\n' "$PWR_CUR"
     [ -n "$PWR_MIN" ] && printf '  采样最小 : %s\n' "$PWR_MIN"
