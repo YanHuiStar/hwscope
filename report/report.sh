@@ -86,4 +86,10 @@ esac
 [ "$BMC_VERIFY" -eq 1 ] && gen_bmc_verify
 
 echo -e "${GREEN}[REPORT] 生成完成${NC}"
+# v1.50.6：验收清单是独立分支（v1.48.91）——只跑报告会让验收件停留在旧版本生成结果，
+#   表现成"改动没生效"（实测踩过）。此处显式提示，避免静默踩坑。
+case "${FORMAT:-}" in
+    --acceptance) ;;
+    *) echo -e "${CYAN}[REPORT] 提示：验收清单（hwscope_acceptance.*）需单独调用 report.sh <采集目录> --acceptance 生成${NC}" ;;
+esac
 echo ""

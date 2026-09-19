@@ -142,3 +142,12 @@ bash tools/agent/repo_realign.sh --protect --auto     # 再自动 cherry-pick（
 - **预检未通过不再等于放弃推送（v1.48.92）**：预检探的是 `https://github.com` **首页**，而 git push 走 `/<owner>/<repo>.git` 的 **git 端点**，两者不是同一条路径（首页 curl 更易被 schannel 拖累）。实测连续两次「预检判不可达、手工 push 20s 成功」，故预检失败会降级（`pre_degraded`）并继续：试 1 次直连 → 代理兜底 → 仍失败才上报。
 - 预检超时可用 `GIT_PUSH_PRECHECK_TIMEOUT` 覆盖（默认 15s）；历史上预检已三次放宽（3s→5s→15s）。
 
+### report_regression.sh 样本根与覆盖力（v1.50.6）
+
+- **默认样本根是 `${PROJECT_DIR}/output`**，而多机样本通常不在那里 —— **务必用
+  `HWSCOPE_SAMPLE_ROOT=<多机样本根>` 显式指定**（桌面样本：`HWSCOPE_SAMPLE_ROOT=/mnt/c/Users/<user>/Desktop`）。
+- **默认根下会自动跳过非样本目录**（`testdata` / `tmp` / `test` / `bak` / `logs` / `report` 等）并打印 `[SKIP]`。
+  此前 `output/testdata/` 会被当成一个样本，语义误配后只吐「1 个样本，0 个差异，1 个跳过」——
+  **看着像通过，实际零覆盖**。
+- **仅发现 1 个样本时会告警**（单样本结果不具横向覆盖力）。
+- 判断回归是否真的跑到了内容：看 `汇总: N 个样本` 的 **N**，以及有无 `[SKIP]/[WARN]` 行。

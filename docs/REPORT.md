@@ -146,3 +146,7 @@ logs/remote_logs/                          # 远程采集归档（独立）
 | **额定速率 vs 实际速率** | `IB 额定速率`（卡能力，取自 `mlxlink` 的 Enabled Link Speed）与 `IB 活动口` 的协商速率**语义不同**：例如额定 `800G (XDR)` 的卡跑以太 100G 属正常配置，不是数据异常。 |
 
 > 关于「验证状态」：NVIDIA / AMD 路径已由真机样本回归；**昇腾 / Intel / 国产加速卡为待真机验证**（代码与工具探测已实现，尚无真机样本）。
+
+> **生成顺序提示（v1.50.6）**：`report.sh <采集目录>` 与 `report.sh <采集目录> --acceptance` 是**两个独立分支**，
+> 批量重生成必须**各调一次**。只跑前者时验收清单（`hwscope_acceptance.*`）会停留在旧版本生成结果，
+> 表现成"改动没生效"。现在 `report.sh` 跑完会打印一行提示，参考实现见 `tools/agent/regen_reports.sh`。

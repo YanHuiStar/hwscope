@@ -252,9 +252,19 @@ if [ "$ALL" -eq 1 ]; then
     # 基线文件，逐台比对会把机器间固有差异（网卡/盘数不同）当成解析回归误报；本次只比对首台，
     # 后续同名样本跳过并提示（要单独验证某台用 --samples <SN> 显式指定）
     _seen_sem=""
+    # v1.50.6：默认根（output/）下排除明显非样本目录——曾把 output/testdata/ 当成一个样本，
+    #   语义误配成 headless 后只吐「1 个样本，0 个差异，1 个跳过」，**看着像通过其实零覆盖**。
+    #   机器样本目录名是 SN（字母数字串），不会与下列名字冲突；确需比对时用 HWSCOPE_SAMPLE_ROOT 显式指定。
+    _SKIP_DIR_RE='^(testdata|tmp|temp|test|tests|bak|backup|archive|old|logs|report|reports)$'
+    _skipped_dir=""
     for d in "${root}"/*/; do
         [ -d "$d" ] || continue
         if [ ! -d "${d}gpu" ] && [ ! -d "${d}motherboard" ] && [ ! -f "${d}hwscope_report.md" ]; then
+            continue
+        fi
+        _bn=$(basename "${d%/}")
+        if printf '%s' "$_bn" | grep -qE "$_SKIP_DIR_RE"; then
+            _skipped_dir="${_skipped_dir}${_skipped_dir:+, }${_bn}"
             continue
         fi
         _sem_cur=$(sn_to_semantic "${d%/}")
@@ -270,9 +280,14 @@ if [ "$ALL" -eq 1 ]; then
         [ "$LAST_RESULT" = "skip" ] && skipn=$((skipn+1))
         echo ""
     done
+    [ -n "$_skipped_dir" ] && echo "[SKIP] 已跳过非样本目录: ${_skipped_dir}（默认根下的临时/测试目录；确需比对请用 HWSCOPE_SAMPLE_ROOT 显式指定）"
     if [ "$found" -eq 0 ]; then
-        echo "[WARN] 未找到采集样本目录（可用 HWSCOPE_SAMPLE_ROOT=<目录> 指定多机样本根）"
+        echo "[WARN] 未找到采集样本目录（可用 HWSCOPE_SAMPLE_ROOT=<目录> 指定多机样本根；root=${root}）"
         exit 2
+    fi
+    # v1.50.6：样本数过少时告警——默认根 output/ 常不是多机样本目录，此时「0 个差异」几乎不具覆盖力
+    if [ "$found" -eq 1 ]; then
+        echo "[WARN] 仅发现 1 个样本（root=${root}）——若预期为多机样本，请用 HWSCOPE_SAMPLE_ROOT=<目录> 指定；单样本结果不具横向覆盖力"
     fi
     echo "汇总: ${found} 个样本，${fail} 个差异，${skipn} 个不同源跳过（同型号其他机器，机器固有差异非回归）"
     [ "$fail" -eq 0 ] || exit 1
