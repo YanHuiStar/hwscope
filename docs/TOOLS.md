@@ -49,7 +49,7 @@
 |------|------|
 | `nvlink_verify.sh` | NVLink 完整性校验（拓扑比对） |
 | `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前）；v1.49.21 起严重事件计数排除 `Deasserted` 自愈行 |
-| `sync_time.sh` | SSH 时间同步 | 本机时间基准 → 目标机（epoch 秒无时区歧义；停 NTP + date -s + hwclock -w） |
+| `sync_time.sh` | SSH 时间同步：本机时间基准 → 目标机（epoch 秒无时区歧义；停 NTP + date -s + hwclock -w）；v1.50.5 起支持 `-h` |
 | `sync_version.sh` | 版本号三处同步（hwscope.sh 注释/变量 + README 徽章） |
 
 ### 开发 / Agent 协作（v1.36.1+）
@@ -80,7 +80,7 @@
 | `bmc_tool.sh` | BMC 管理：凭据/密码 |
 | `install_ai.sh` | AI 推理引擎安装：vLLM / SGLang / TRT-LLM / Ollama / llama.cpp |
 | `install_tool.sh` | 环境安装：采集依赖工具（dmidecode/lspci/ipmitool/...）；`-c <1,2,...> -y` 非交互安装（远程自动安装用，v1.42.0） |
-| `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认） |
+| `cleanup.sh` | 清理：output/ + logs/ 删除（显示大小 + 输入 yes 确认）；v1.50.5 起支持 `-h` 且未知参数明确报错（原静默忽略后直接进清理流程） |
 - **`tools/agent/regen_reports.sh`（v1.48.18）**：批量重生成报告（agent 专用）——无参=桌面默认样本（自动发现）；`<目录...>` 指定；`--samples SN1,SN2` 选跑；`--regression` 生成后跑回归对比 / `--update` 顺带刷新基线；输出每样本判定 + 汇总（agent 直接消费）。**桌面路径三级探测（v1.48.87）**：`DESKTOP_OVERRIDE` 环境变量 → `USERPROFILE` 推导 → 扫 `/mnt/c/Users/*/Desktop`（不硬编码用户名）
 - **`tools/agent/report_regression.sh`（v1.48.3，v1.48.14 迁 tools/agent/）**：报告解析回归测试——固定样本跑报告 + 10 组指标与基线比对，防解析/渲染静默回归；用法 `bash tools/agent/report_regression.sh <采集目录> [--update] [--all] [--samples SN1,SN2]`，基线 `tools/agent/baseline/<语义名>.txt`（h200/a100/b200/b300/amd_oam/headless，v1.48.27 起语义名、零真实 SN）；**同源判定（v1.48.74）**：同型号多台机器共用一个基线文件，比对前先查机器指纹（GPU/网卡/内存/盘/PSU/PCIe 计数）——不符则 `[SKIP] 不同源`（机器固有差异不报为回归）；每机型以一份权威样本为基线源；改解析器前后各跑一次（解析/渲染/输出格式改动必跑，纯文档/版本不跑）。需 Linux 环境（fork 密集脚本在 git-bash 下易崩）
 - **`tools/agent/repo_realign.sh`（v1.48.75）**：仓库对齐——git 历史被重写（filter-repo 清 SN 等）后，其他机器 clone 会分叉（pull/push/rebase 全失败）。体检 `bash tools/agent/repo_realign.sh`（`--no-fetch` 离线可用）、`--sync` 纯同步机安全对齐、`--protect [--auto]` 有本地提交时自动备份分支+stash+对齐+**逐提交扫 SN 后再搬回**（防把已清除的 SN 带回历史）

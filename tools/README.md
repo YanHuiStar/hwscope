@@ -1,7 +1,7 @@
 # HwScope 运维工具库（tools/）
 
 > 服务器运维操作脚本。**部分脚本会修改系统配置，使用前请先阅读本节标注的 ⚠️ 写入类**。
-> 脚本均支持 `-h` / `--help` 查看详细帮助（例外：`cleanup.sh` 只有 `--force`，无帮助分支）；工具定位：运维机/服务器侧操作，不参与采集。
+> 脚本均支持 `-h` / `--help` 查看详细帮助（v1.50.5 起补全，此前 `cleanup.sh` / `sync_time.sh` 无帮助分支）；工具定位：运维机/服务器侧操作，不参与采集。
 > **参数解析约定（v1.49.21）**：带值参数缺参时**明确报错退出**——原 `shift 2` 在只剩 1 个参数时静默无效会导致死循环（`install_tool.sh -c`、`regen_reports.sh --samples`、`test/report.sh --channels` 等 7 处实测卡死）；`-h/--help` 作为首个参数也会正确出帮助（`power_monitor.sh`/`dhcp_server.sh`）。
 > 工具概览索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）；Windows 配套工具见 [docs/WIN_TOOLS.md](../docs/WIN_TOOLS.md)。
 > **报告体系已独立为 `report/` 模块**（v1.35.0）：报告生成/验收清单/在线预览/多机对比迁移至 `report/`（详见 [report/README](../report/README.md)）；`tools/` 下不再保留同名文件（v1.35.3 移除兼容 wrapper，统一 `report/` 路径）。
@@ -68,9 +68,10 @@
 ---
 
 ### `sync_time.sh` — SSH 时间同步
-- **用法**：`bash tools/sync_time.sh root@10.0.0.1 [root@10.0.0.2 ...]`
+- **用法**：`bash tools/sync_time.sh root@10.0.0.1 [root@10.0.0.2 ...]`；`-h` / `--help` 显示帮助
 - **功能**：以运维机时间为基准，SSH 同步目标机系统时间 + 硬件时钟（RTC）——解决内网无 NTP 时的目标机时钟偏差（采集时间戳可信度）
 - **实现**：epoch 秒传递（无时区歧义）；先停 NTP 防冲突，`date -s @epoch` + `hwclock -w`（重启不丢）；交互式密码 + ControlMaster 复用
+- **参数校验（v1.50.5）**：`-h/--help` 先于 HOST 解析（此前 `-h` 会被当成目标机去 `ssh -h`）；其余 `-` 开头未知参数明确报错退出
 
 ## 🟡 远程采集
 
@@ -101,8 +102,9 @@
 - **依赖**：git（排序用 sort -V）；协作规则见 AGENTS.md"多机器/多 Agent 协作规则"
 
 ### `cleanup.sh` — 清理采集输出
-- **用法**：`bash tools/cleanup.sh`（输入 yes 确认）；`--force` 跳过确认
+- **用法**：`bash tools/cleanup.sh`（输入 yes 确认）；`--force` 跳过确认；`-h` / `--help` 显示帮助
 - **功能**：删除 `output/` 与 `logs/`（显示各目录大小/文件数后确认），不碰源码
+- **参数校验（v1.50.5）**：补 `-h/--help` 分支 + 未知参数**明确报错退出（rc=1）**——此前仅识别 `--force`，其他参数被静默忽略后仍进入清理流程（破坏性工具不宜）
 - **依赖**：无（Windows 版 `tools/win/cleanup.bat`）
 
 ---

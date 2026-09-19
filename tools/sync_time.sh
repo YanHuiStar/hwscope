@@ -3,6 +3,7 @@
 # HwScope — 通过 SSH 将本机时间同步到目标机
 # tools/sync_time.sh
 # 用法: bash tools/sync_time.sh root@10.0.0.1 [root@10.0.0.2 ...]
+#       bash tools/sync_time.sh -h                     # 显示帮助
 # 功能: 以本机（运维机）时间为基准，SSH 设置目标机系统时间 + 硬件时钟（RTC）。
 #       解决目标机时钟偏差（NTP 不可达内网场景）——采集时间戳可信度依赖时钟。
 # 实现要点:
@@ -18,12 +19,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 usage() {
     echo "用法: $0 <user@host> [user@host2 ...]"
     echo "功能: 将本机时间通过 SSH 同步到目标机（系统时间 + 硬件时钟）"
+    echo "选项:"
+    echo "  -h, --help    显示本帮助"
     echo "示例:"
     echo "  bash $0 root@10.0.0.1                        # 单台"
     echo "  bash $0 root@<test-host> root@<test-host>  # 多台"
     echo ""
 }
 
+# v1.50.5：-h/--help 先于 HOST 解析（此前仅判 $# -eq 0，`-h` 会被当目标机去 `ssh -h`）；
+#   同时拒绝其他未知 - 开头参数，避免误当成主机名
+for _arg in "$@"; do
+    case "$_arg" in
+        -h|--help) usage; exit 0 ;;
+        -*)        echo -e "\033[0;31m[ERROR] 未知参数: ${_arg}\033[0m"; usage; exit 1 ;;
+    esac
+done
 [ $# -eq 0 ] && { usage; exit 1; }
 
 SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"

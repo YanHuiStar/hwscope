@@ -136,7 +136,7 @@ field_vals() {
     printf '|------|%s\n' "$_sep"
     # 逐字段行
     for entry in "${FIELDS[@]}"; do
-        IFS='|' read -r fname fkey fblk <<< "$entry"
+        IFS='|' read -r fname fkey fblk < <(printf '%s\n' "$entry")
         vals=()
         for f in "${FILES[@]}"; do
             vals+=("$(field_vals "$f" "$entry")")
@@ -169,7 +169,7 @@ field_vals() {
     for lbl in "${LABELS[@]}"; do printf '  %-22s' "$lbl"; done
     echo ""
     for entry in "${FIELDS[@]}"; do
-        IFS='|' read -r fname fkey fblk <<< "$entry"
+        IFS='|' read -r fname fkey fblk < <(printf '%s\n' "$entry")
         vals=()
         for f in "${FILES[@]}"; do
             vals+=("$(field_vals "$f" "$entry")")

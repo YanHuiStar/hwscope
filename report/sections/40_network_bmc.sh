@@ -30,7 +30,7 @@ if [ -n "$IB_CA_LIST" ]; then
         inib && /State: Down/{down++}
         END { printf "%d %d %d %d", total+0, active+0, init+0, down+0 }
     ' "${ibstat}" 2>/dev/null)
-    read -r IB_COUNT IB_ACTIVE IB_INITIALIZING IB_LINK_DOWN <<< "${_ib_stats:-0 0 0 0}"
+    read -r IB_COUNT IB_ACTIVE IB_INITIALIZING IB_LINK_DOWN < <(printf '%s\n' "${_ib_stats:-0 0 0 0}")
     # 未插线缆统计同样限定 IB CA（CX5 以太口 mlxlink "unplugged" 不算 IB 线缆缺失）
     # 排除 *_module.log / *_counters.log（同前缀的伴随文件，非链路主输出）
     IB_UNPLUGGED=$(for f in "${NET_DIR}"/mlxlink_mlx5_*.log; do

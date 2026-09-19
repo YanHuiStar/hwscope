@@ -16,10 +16,11 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - `lib/platform.sh` — 平台检测：detect_machine_id / detect_platform / ipmi_preheat
 - `lib/nvlink.sh` — NVLink 拓扑解析库（纯解析，不执行命令；供 nvlink_verify.sh / report.sh 调用）
 - `modules/*.sh` — 17 个采集模块（01_motherboard … 16_power，99_os），每个一物理组件
+- `modules/gpu/` — 显卡多厂商适配器框架（`lib.sh` 统一接口 + 10 个 `adapter_<vendor>.sh`：nvidia / amd / intel / ascend / cambricon / metax / moorethreads / iluvatar / biren / generic）；由 `04_gpu.sh` 按 `detect_gpu_vendors` 结果 source，**非独立采集模块**（不在 MODULES 注册表，`--modules gpu` 走 04_gpu.sh）
 - `report/` — **报告模块（交付物本体，v1.35.0 自 tools/report.sh 拆分）**：`report.sh` 薄入口 + `lib/`（report_common 解析辅助 / gpu_spec 显存规格库 / md2html.awk）+ `sections/`（数据解析×9，source 顺序=原行序勿乱）+ `gen/`（生成器×7）+ `tools/`（batch_compare 多机对比 / report_server 在线预览）
 - `conf/hwscope.conf` — 模块开关、BMC 凭据、输出目录配置
 - `conf/fw_required.txt` — 固件推荐版本基线（15_firmware 模块判定 合规/落后 用，按厂商验收手册维护；全部注释 = 判未知不误报）
-- `test/` — 硬件压测（聚合与实现解耦，v1.41.3）：`test_all.sh` 纯聚合入口（菜单/--all）+ `test/<组件>/` 单工具脚本（可独立执行，如 `test/cpu/cpu_stress_ng.sh`）+ `lib/test_common.sh` 公共库（落盘 `logs/test/<SN>/`）；只测不改
+- `test/` — 硬件压测（聚合与实现解耦，v1.41.3）：`test_all.sh` 纯聚合入口（菜单/--all）+ `test/<组件>/` 单工具脚本（可独立执行，如 `test/cpu/cpu_stress_ng.sh`）+ `test/lib/test_common.sh` 公共库（落盘 `logs/test/<SN>/`）；只测不改
 - `tools/` — 运维操作脚本（BMC/网卡/安装），会修改系统
 - `tools/agent/` — **开发协作工具（agent/开发者用，agent 流程调用）**：`git_push.sh`/`.bat`（一键推送）、`agent_sync.sh`（多机/多会话状态同步）、`report_regression.sh`（报告解析回归 + 基线比对）、`regen_reports.sh`（批量重生成报告）、`repo_realign.sh`（历史重写后的仓库体检/对齐）、`sn_check.sh`（提交前 SN/MAC 自检）；**说明见 `tools/agent/README.md`**；Launch-DeepSeekHarness 属用户手动启动，留 `tools/win/`
 - `tools/win/` — Windows 配套工具（.ps1/.bat）

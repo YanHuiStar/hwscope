@@ -8,7 +8,7 @@ glossary_md() {
     local out=""
     local i=0
     for entry in "${GLOSSARY_ENTRIES[@]}"; do
-        IFS='|' read -r term def <<< "$entry"
+        IFS='|' read -r term def < <(printf '%s\n' "$entry")
         out="${out}| **${term}** | ${def} |"$'\n'
         ((i++))
     done
@@ -18,7 +18,7 @@ glossary_md() {
 glossary_txt() {
     local out=""
     for entry in "${GLOSSARY_ENTRIES[@]}"; do
-        IFS='|' read -r term def <<< "$entry"
+        IFS='|' read -r term def < <(printf '%s\n' "$entry")
         out="${out}  ${term}: ${def}"$'\n'
     done
     printf '%s' "$out"

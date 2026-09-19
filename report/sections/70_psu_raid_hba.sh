@@ -190,7 +190,7 @@ if [ -f "$_fru_src" ]; then
                 else
                     echo "$_pline"
                 fi
-            done <<< "$PSU_DETAILS")
+            done < <(printf '%s\n' "$PSU_DETAILS"))
         fi
     fi
     # 辅助日志走 manifest 解耦（模块 10 已声明 ipmi_psu_sensors/dmidecode_psu；BMC 模块声明 ipmi_sensors_power）
@@ -381,7 +381,7 @@ if [ -f "$_fru_src" ]; then
                         else
                             echo "$_pline"
                         fi
-                    done <<< "$PSU_DETAILS")
+                    done < <(printf '%s\n' "$PSU_DETAILS"))
                 fi
             fi
         fi

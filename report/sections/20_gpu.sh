@@ -181,7 +181,7 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
         fi
-    done <<< "$(grep -v '^#' "$GPU_CSV" | tail -n +2)"
+    done < <(grep -v '^#' "$GPU_CSV" | tail -n +2)
     # 逐卡魔改检测结果（覆盖仅第一卡的汇总警告：混插/伪装时列出具体卡）
     if [ -n "${GPU_MEM_MISMATCH_CARDS:-}" ]; then
         GPU_MEM_SPEC_NOTE="⚠️ ${GPU_MEM_MISMATCH_CARDS%,} 检测显存与额定不符（疑似显存魔改或伪装，需核实）"
@@ -201,7 +201,7 @@ if [ -n "$GPU_DETAILS" ]; then
     GPU_DETAILS=$(while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit; do
         [ -z "$gidx" ] && continue
         echo "${gidx}|${gname}|${gsn}|${gmem}|${gdraw}|${gtemp}|${gutil}|${gpcie}|${gmax}|${gused}|${glimit}|${GPU_VBIOS_MAP[$gidx]:-N/A}"
-    done <<< "$GPU_DETAILS")
+    done < <(printf '%s\n' "$GPU_DETAILS"))
 fi
 # ECC 模式与累计错误（列: 3=mode, 4-7=错误计数）
 if [ -f "$GPU_ECC_CSV" ]; then
@@ -301,7 +301,7 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
             _gsn=$(echo "$_amd_sns" | sed -n "$((_ai + 1))p")
             _gpcie="N/A"; _gpciemax="N/A"
             if [ -n "$_gbdf" ]; then
-                IFS='|' read -r _gp _gw _gmx _gwm <<< "$(_gpu_pcie_from_full "$_gbdf")"
+                IFS='|' read -r _gp _gw _gmx _gwm < <(_gpu_pcie_from_full "$_gbdf")
                 if [ "$_gp" != "N/A" ] && [ "$_gw" != "N/A" ]; then _gpcie="${_gp}x${_gw}"; fi
                 if [ "$_gmx" != "N/A" ] && [ "$_gwm" != "N/A" ]; then _gpciemax="${_gmx}x${_gwm}"; fi
                 # 降宽/降速检测（对齐 NVIDIA 分支：宽度降即标记 → 验收 GPU PCIe 项可判）
@@ -311,7 +311,7 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
             fi
             GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_gsn:-N/A}|${_amem_gb}GB|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|${_gpcie}|${_gpciemax}|N/A|N/A|${_gvb:-N/A}"$'\n'
             _ai=$((_ai + 1))
-        done <<< "$_amd_rows"
+        done < <(printf '%s\n' "$_amd_rows")
         GPU_DETAILS=$(printf '%s' "$GPU_DETAILS" | sed '/^$/d')
         # 汇总：温度/功耗从明细聚合（字段 5=功耗 6=温度）
         GPU_TEMP=$(printf '%s

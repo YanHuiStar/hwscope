@@ -440,7 +440,7 @@ fi
             # v1.48.42：多口 CA 聚合值（v1.45.17 CA_STATE 集合式，如 "Active,Down"）逐词归一
             *,*)
                 _norm=""
-                IFS=',' read -ra _nl_parts <<< "$nlink"
+                IFS=',' read -ra _nl_parts < <(printf '%s\n' "$nlink")
                 for _np in "${_nl_parts[@]}"; do
                     case "$_np" in
                         Active|yes|up|Up)   _np="Up" ;;
@@ -510,7 +510,7 @@ if [ "$NIC_MLX" -eq 1 ]; then
         fi
         _mlx_total=$((_mlx_total + 1))
         case "$npsid" in ""|N/A|—) _mlx_no_psid=$((_mlx_no_psid + 1)) ;; esac
-    done <<< "$NIC_DETAILS"
+    done < <(printf '%s\n' "$NIC_DETAILS")
     if [ "$_mlx_total" -gt 0 ] && [ "$_mlx_no_psid" -eq "$_mlx_total" ]; then
         PSID_NOTICE="⚠️ 有 ${_mlx_total} 张 Mellanox 卡未读到 PSID（采集时 MST 未启动或旧数据）；重新采集可获取"
     fi

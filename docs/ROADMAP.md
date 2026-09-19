@@ -78,9 +78,9 @@
 
 ## 工具层（tools/）
 
-- [ ] **[P2] 批量采集联动** — `remote_run.sh` + `remote_collect.sh` 组合：一行命令对 N 台机器远程采集并逐个回拉，自动 `batch_compare.sh` 汇总
-  - 依赖：remote_run（v1.31.0，v1.43.0 改名）+ remote_collect（v1.29.0）+ batch_compare（v1.29.0）
-  - 验收标准：`bash tools/remote_collect.sh -H h1 ... && batch_compare.sh output/SN1 output/SN2 output/SN3` 一键出对比表
+- [ ] **[P2] 批量采集联动** — `remote_run.sh` + `remote_collect.sh` 组合：一行命令对 N 台机器远程采集并逐个回拉，自动 `report/tools/batch_compare.sh` 汇总
+  - 依赖：remote_run（v1.31.0，v1.43.0 改名）+ remote_collect（v1.29.0）+ batch_compare（v1.29.0；v1.35.0 随报告体系迁至 `report/tools/`）
+  - 验收标准：`bash tools/remote_collect.sh -H h1 ... && bash report/tools/batch_compare.sh output/SN1 output/SN2 output/SN3` 一键出对比表
 
 - [ ] **[P2] CI 语法检查** — GitHub Actions 流水线：push 后对全部 .sh 跑 `bash -n` + shellcheck（若装），防 CRLF/语法回归
   - 依赖：GitHub Actions（仓库已托管）
@@ -113,6 +113,7 @@
   - v1.50.1：修复板载接口表末行与下一行黏连（命令替换剥尾换行）＋ 移除误纳的基线副本目录。
   - v1.50.2：**IB 活动口改按 `ibstat` 的 `Link layer` 判定**——旧实现直接数 `State: Active`，把以太模式的 RDMA 口也算成 IB 活动口，且计数与速率列表来自两条不同 grep，出现「活动口 4 却列出 12 个速率」的自相矛盾展示；现计数与速率**同源**、只计 `Link layer: InfiniBand`，并单独报告以太模式口数。另：**内存明细列出空槽行**（此前直接跳过，只报"已插 N/总 M"看不出哪几个槽空着）、**IB 链路质量移出健康检查表**（明细已在网络段独立表）。
   - v1.50.3：修复 v1.50.2 引入的回归——空槽值被「内存容量一致」判定当成一种容量（误报容量混插），且其全角字符进了表格单元格导致验收文件成为非法 UTF-8；改为 ASCII 内部标记 `EMPTY_SLOT`，统计端显式排除、渲染端才转中文。
+  - v1.50.5：**全量审查修复批次**（规范合规审计）——① `tools/cleanup.sh` 补 `-h/--help` 且**未知参数改为明确报错退出 rc=1**（此前仅识别 `--force`，`-h`/打错 flag 均被静默忽略后继续进入清理流程，破坏性工具不宜；违反 v1.32.0 全工具统一 `--help`，且 `-h` 实测会直接进清理流程）；② `tools/sync_time.sh` 补 `-h/--help` 并**先于 HOST 解析**（此前只判 `$# -eq 0`，`-h` 会被当成目标机去 `ssh -h`），其余 `-` 开头参数报错；③ `report/` 内 **herestring 残留 13 处**统一改回进程替换 `< <(printf '%s\n' "$VAR")`（v1.28.17 立规"勿改回"，后续编辑漏改：`gen_common`×2、`20_gpu`×4、`40_network_bmc`×1、`60_nic_fan_temp`×2、`70_psu_raid_hba`×2、`batch_compare`×2）；④ AGENTS.md 目录结构补记 `modules/gpu/`（多厂商适配器框架 11 文件，此前规范完全未提）＋ 修正 `lib/test_common.sh` → `test/lib/test_common.sh` 路径笔误；⑤ ROADMAP 待办项 `batch_compare.sh` 路径更新为 `report/tools/`。**验证方式**：HEAD 与新码 A/B 对照跑 4 样本——报告 md/html/txt/json **逐字节一致**（验收件仅"生成时间"差 2s），回归基线 h200 `[OK]` 0 解析差异，98 个 .sh 语法 0 失败。
 - v1.49.x — **交付细节打磨 + 隐私防线 + 多 Agent 协作**：
   - v1.49.8/9：IPMI 超时统一为可配置三级（`IPMI_TIMEOUT` 90s / `_FAST` 30s / `_SLOW` 240s）＋ **共享 IPMI 快照**（sensor/sdr 各查一次供多模块复用，慢 BMC 上采集成功率显著提升）＋ 并发降级。
   - v1.49.10：远程回拉告警噪音治理（降级 INFO + 真残留检测）。
@@ -149,4 +150,4 @@
 
 ---
 
-*最近更新: 2026-09-20 · 版本: v1.50.4*
+*最近更新: 2026-09-20 · 版本: v1.50.5*
