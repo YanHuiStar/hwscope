@@ -40,6 +40,7 @@ test/
 | `gpu/gpu_nvbandwidth.sh` | 带宽基准 | nvbandwidth | |
 | `gpu/gpu_partnerdiag.sh` | 出厂诊断 | partnerdiag | FLD 包 |
 | `nccl/nccl_test.sh` | 集合通信 | nccl-tests | 需编译产物 |
+| `test_server_info.sh` | 测试前服务器信息（v1.38.0，非压测项） | 无 | 机器 ID/型号/CPU/内存/GPU/OS ~10 行只读；**各单脚本 `test_init` 后自动调用**（日志自包含服务器身份），也可单独执行 |
 
 > **多平台提示（v1.46.x）**：GPU 压测工具均为 **CUDA/NVIDIA 生态**（bandwidthTest/gpu-burn/nvbandwidth/partnerdiag/nccl-tests），**AMD Instinct（ROCm）平台暂不适用**——采集与报告支持 AMD，压测扩展后续规划；GPU 压力测试请用采集侧 ROCm 路径（rocminfo/amd-smi ras）做基础核验。
 
@@ -96,7 +97,7 @@ HWSCOPE_SAMPLE_ROOT=<多机样本根> bash tools/agent/report_regression.sh --al
 
 - **10 组指标**：表格列数一致 / GPU / 内存 / PSU / PCIe 链路统计 / 磁盘 / NIC / JSON 字段与体积 / HTML 标签闭合 / 验收清单判定结果
 - **样本零污染**：仅备份并还原 6 个报告文件（不复制整个采集目录——数百日志文件复制极慢）
-- **基线**：`test/baseline/<机器ID>.txt`（指标摘要入库，几 KB）；采集数据不入仓库
+- **基线**：`tools/agent/baseline/<语义名>.txt`（h200/a100/b200/b300/amd_oam/headless；指标摘要入库、几 KB、**零真实 SN**）；采集数据不入仓库。（v1.49.23 更正：早期写 `test/baseline/<机器ID>.txt`，路径与命名都不对）
 - **退出码**：0=一致/已更新，1=存在差异（回归候选），2=无基线/无样本
 - **改动解析器/渲染层的正确姿势**：改动前跑一次（确认当前一致）→ 改完再跑一次 → 有差异则人工确认是预期改动还是回归；确认预期后 `--update` 刷新基线
 

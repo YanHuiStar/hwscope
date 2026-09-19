@@ -1,7 +1,8 @@
 # HwScope 运维工具库（tools/）
 
 > 服务器运维操作脚本。**部分脚本会修改系统配置，使用前请先阅读本节标注的 ⚠️ 写入类**。
-> 所有脚本均支持 `-h` / `--help` 查看详细帮助；工具定位：运维机/服务器侧操作，不参与采集。
+> 脚本均支持 `-h` / `--help` 查看详细帮助（例外：`cleanup.sh` 只有 `--force`，无帮助分支）；工具定位：运维机/服务器侧操作，不参与采集。
+> **参数解析约定（v1.49.21）**：带值参数缺参时**明确报错退出**——原 `shift 2` 在只剩 1 个参数时静默无效会导致死循环（`install_tool.sh -c`、`regen_reports.sh --samples`、`test/report.sh --channels` 等 7 处实测卡死）；`-h/--help` 作为首个参数也会正确出帮助（`power_monitor.sh`/`dhcp_server.sh`）。
 > 工具概览索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）；Windows 配套工具见 [docs/WIN_TOOLS.md](../docs/WIN_TOOLS.md)。
 > **报告体系已独立为 `report/` 模块**（v1.35.0）：报告生成/验收清单/在线预览/多机对比迁移至 `report/`（详见 [report/README](../report/README.md)）；`tools/` 下不再保留同名文件（v1.35.3 移除兼容 wrapper，统一 `report/` 路径）。
 
@@ -82,14 +83,14 @@
 - **输出**：本地 `output/remote_output/<机器ID>/`（对标本地 output/<SN> 结构）；归档包 → `logs/remote_logs/`；**v1.48.99：回拉改为"逐机器精准替换"**——先解到暂存目录，再对每台机器「有归档且归档不早于目录内容 → 清空旧目录后落地；否则保留旧目录增量覆盖并告警」。原因：原实现是纯覆盖式解包，**旧版本产生过、新版本不再产生的文件会永久残留**（实证 `remote_output/*/nvswitch/nvswitch_smi_*.log`），而报告端的兜底路径假设"目录内文件同属一次采集"，残留会让它把旧批次文件当本次数据渲染。**v1.49.10：告警噪音治理 + 残留检测**——归档被人工移走是常态操作，原「找不到归档就 WARN」纯属噪音 → 降级为 `[INFO]`；但**旧文件残留**是真风险（报告端按文件名找数据，会读到过期内容），故覆盖后用**文件清单差集**判定"本次没拉到的旧文件"，确有残留才 `[WARN]` 并列出前 5 个 + 总数 + 清理建议。**判定不用时间戳**：`cp -a`/Copy-Item 保留远端原始时间戳，远端采集时间常早于本次回拉，用时间比会把本次文件误判为残留。带护栏：目录名仅允许 `[A-Za-z0-9_-]`、长度 ≥4、绝不静默删未归档数据
 
 ### `regen_reports.sh` — 批量重生成报告（tools/agent/，agent 专用，v1.48.18）
-- **用法**：`bash tools/agent/regen_reports.sh`（桌面 6 份默认样本）；`bash tools/agent/regen_reports.sh <目录...>` 指定样本；`--samples SN1,SN2` 桌面选跑
+- **用法**：`bash tools/agent/regen_reports.sh`（无参=自动发现桌面/样例根下全部样本）；`bash tools/agent/regen_reports.sh <目录...>` 指定样本；`--samples SN1,SN2` 桌面选跑
 - **选项**：`--regression` 生成后跑回归对比（tools/agent/baseline/）；`--update` 顺带刷新基线；`--acceptance` 验收清单（默认已含）
 - **输出**：每样本报告/验收状态 + 验收判定 + 汇总（agent 直接消费）；桌面路径自动探测（git-bash / WSL）
 
 ### `git_push.sh` — 一键推送更新（tools/agent/，开发维护工具，AI agent 可用）
 - **用法**：`bash tools/agent/git_push.sh`（默认 fetch + 逐提交改动摘要审查，交互确认）；`-y` 跳过确认；`--no-fetch` 跳过前置 fetch；`--dry-run` 只审查；`-q/--quiet` 机器可读模式
-- **功能**：默认先 fetch 检测其他 agent 是否已推送（防推旧）→ 展示每个待推提交的改动摘要 → **版本单调检查**（本地版本 < 远程版本拒绝推送，防凭记忆回退版本号，v1.37.2）→ 直连重试 3 次 → 自动探测本机代理（v2ray/xray/clash 进程动态端口，一次性走代理）→ 失败输出 `[AI-ACTION]` 指引
-- **防死循环（v1.45.8-10）**：① 4s 网络预检（curl 直连+代理各 3s，断网秒败不空转 3×21s）② 连续 3 次失败触发 **5 分钟熔断冷却**（冷却期内调用秒拒，`GIT_PUSH_BYPASS_COOLDOWN=1` 手动绕过）③ 失败输出 `[PAUSE]`+`[REPORT]` 指令——**AI 停止自动重试并上报用户**（网络不通是用户侧问题，重试烧 token；AGENTS.md 已立"推送失败处理纪律"）④ 推送成功自动复位计数
+- **功能**：默认先 fetch 检测其他 agent 是否已推送（防推旧）→ 展示每个待推提交的改动摘要 → **版本单调检查**（本地版本 < 远程版本拒绝推送，防凭记忆回退版本号，v1.37.2）→ 预检未过时记 `pre_degraded`：**只试 1 次直连**（v1.48.92 实测预检误报率高，不盲试 3 次）→ 失败转代理 → 仍失败按真实失败上报 → 自动探测本机代理（v2ray/xray/clash 进程动态端口，一次性走代理）→ 失败输出 `[AI-ACTION]` 指引
+- **防死循环（v1.45.8-10）**：① 网络预检（`curl` GET，超时默认 **15s**——`GIT_PUSH_PRECHECK_TIMEOUT` 可调；v1.48.67 起 MSYS 用 `NUL` 避免退出码 23 误判）② 连续 3 次失败触发 **5 分钟熔断冷却**（冷却期内调用秒拒，`GIT_PUSH_BYPASS_COOLDOWN=1` 手动绕过）③ 失败输出 `[PAUSE]`+`[REPORT]` 指令——**AI 停止自动重试并上报用户**（网络不通是用户侧问题，重试烧 token；AGENTS.md 已立"推送失败处理纪律"）④ 推送成功自动复位计数
 - **WSL 支持（v1.39.1）**：WSL 下自动改用 Windows 的 `git.exe`（走 Windows 网络栈，`127.0.0.1` 可达 Windows 侧代理）+ interop（tasklist/netstat）探测 Windows 代理真实端口——解决 WSL2 NAT 下"WSL 内 127.0.0.1 访问不到 Windows 代理"的问题
 - **AI 接口**：末尾输出 `PUSH_STATUS=OK|FAIL|USER_ABORT|NOOP|DRY_RUN` 状态行；退出码 0=成功 1=失败 2=用户取消
 - **依赖**：git + 可选代理（本机代理客户端，端口自动探测）；Windows 版启动器 `tools/agent/git_push.bat`（双击可用）

@@ -101,6 +101,17 @@ extract_metrics() {
     echo "[psu]"
     echo "  psu_rows=$(awk '/^### 电源模块明细/{f=1;next} f&&/^\| [0-9]+ \|/{c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
 
+    # 4b. 明细表「真值 → 占位符」防回归（v1.49.23）
+    #   为什么需要：行数/字节数类指标**完全看不出**"整列真实值集体变成 —" 这种回归——本项目已两次踩到
+    #   （PSU「当前功耗」列因命名不匹配整列丢失、NIC PSID 因坏兜底整列 N/A），而 psu_rows / json_bytes
+    #   都没变。这里数"该列有多少个非占位符值"：值变少即说明解析退回了占位符，回归立刻可见。
+    echo "[values]"
+    echo "  psu_power_values=$(awk -F'|' '/^### 电源模块明细/{f=1;next} f&&/^\| [0-9]+ \|/{v=$(NF-1); gsub(/^[ \t]+|[ \t]+$/,"",v); if (v!="" && v!="—" && v!="N/A" && v!="-") c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+    echo "  nic_psid_values=$(awk -F'|' '/^### 网络适配器明细（NIC）$/{f=1;next} f&&/^\| [0-9]+ \|/{v=$12; gsub(/^[ \t]+|[ \t]+$/,"",v); if (v!="" && v!="—" && v!="N/A" && v!="-") c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+    echo "  nic_sn_values=$(awk -F'|' '/^### 网络适配器明细（NIC）$/{f=1;next} f&&/^\| [0-9]+ \|/{v=$7; gsub(/^[ \t]+|[ \t]+$/,"",v); if (v!="" && v!="—" && v!="N/A" && v!="-") c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+    echo "  dimm_sn_values=$(awk -F'|' '/^### 内存模块明细/{f=1;next} f&&/^\| [0-9]+ \|/{v=$6; gsub(/^[ \t]+|[ \t]+$/,"",v); if (v!="" && v!="—" && v!="N/A" && v!="-") c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+    echo "  nic_link_state_values=$(awk -F'|' '/^### 网络适配器明细（NIC）$/{f=1;next} f&&/^\| [0-9]+ \|/{v=$13; gsub(/^[ \t]+|[ \t]+$/,"",v); if (v!="" && v!="—" && v!="N/A" && v!="-") c++} f&&/^#/{f=0} END{print c+0}' "$md" 2>/dev/null)"
+
     # 5. PCIe 链路统计（抓 bridge 判定/降速数变化）
     echo "[pcie]"
     grep -m1 '^| 链路统计 |' "$md" 2>/dev/null | sed 's/^/  /'

@@ -10,6 +10,12 @@
   header: | # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
 [psu]
   psu_rows=2
+[values]
+  psu_power_values=2
+  nic_psid_values=8
+  nic_sn_values=8
+  dimm_sn_values=32
+  nic_link_state_values=8
 [pcie]
   pcie_appendix_rows=0
 [disk]

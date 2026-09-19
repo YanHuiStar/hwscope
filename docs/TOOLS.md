@@ -25,6 +25,7 @@
 | `gpu/gpu_nvbandwidth.sh` | 带宽基准 | nvbandwidth |
 | `gpu/gpu_partnerdiag.sh` | 出厂诊断 | partnerdiag（FLD 包） |
 | `nccl/nccl_test.sh` | 集合通信 | nccl-tests |
+| `report.sh` | 压测报告生成器：`bash test/report.sh <logs/test/<SN>/目录>` → `hwscope_test_report.{md,html}`（理论峰值/利用率/结论；v1.49.21 修正内存速率取数） |
 | `test_server_info.sh` | 测试前服务器信息（v1.38.0） | 机器 ID/型号/CPU/内存/GPU/OS ~10 行轻量只读；各单脚本 test_init 后自动调用；可单独执行 |
 
 用法：`bash test/test_all.sh`（菜单）/ `--all`（全部顺序）/ 单脚本直接 `bash test/<组件>/<工具>.sh [时长]`。结果落盘 `logs/test/<SN>/`。

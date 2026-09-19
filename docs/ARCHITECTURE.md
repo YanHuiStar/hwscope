@@ -30,19 +30,27 @@ report/report.sh（只读日志，不重新采集；报告体系独立模块，�
 ```
 hwscope/
 ├── hwscope.sh          # 主入口：参数解析、平台检测、并行执行、汇总、归档
+├── fixcrlf.sh          # Windows→Linux CRLF 换行修复
 ├── lib/
-│   ├── common.sh       # 公共函数：run_and_log / 并行执行 / check_cmd / 模块调度
-│   ├── platform.sh     # 平台检测：detect_machine_id / detect_platform
+│   ├── common.sh       # 公共函数：run_and_log / 并行执行 / IPMI 共享快照 / check_cmd / 模块调度
+│   ├── platform.sh     # 平台检测：detect_machine_id / detect_platform / ipmi_preheat
 │   └── nvlink.sh       # NVLink 拓扑解析库（纯解析）
 ├── modules/            # 17 个采集模块（01_motherboard … 16_power，99_os），每模块一物理组件
+│   └── gpu/            # GPU 多厂商适配器层（v1.47.0）：lib.sh + adapter_nvidia/amd/ascend/intel/国产×5/generic
 ├── report/             # 报告模块（交付物本体）：report.sh 入口 + lib(解析辅助/显存规格库/md2html)
 │                       #   + sections(数据解析×9) + gen(生成器×7) + tools(多机对比/在线预览)
 ├── conf/
 │   ├── hwscope.conf    # 模块开关、BMC 凭据、输出目录配置
 │   └── fw_required.txt # 固件推荐版本基线（15_firmware 判定用）
-├── test/               # 硬件压测脚本（cpu/memory/disk/network/ib/nccl），只测不改
+├── test/               # 硬件压测脚本（只测不改）
+│   ├── test_all.sh     # 聚合入口（菜单 / --all）
+│   ├── report.sh       # 压测报告生成器（test_report.md/html）
+│   ├── test_server_info.sh  # 测试前服务器信息（各单脚本 test_init 后自动调用）
+│   ├── lib/            # test_common.sh（日志目录 / test_init / test_record / test_finish）
+│   └── cpu/ memory/ disk/ network/ ib/ nccl/ gpu/   # 各组件单脚本（可独立执行）
 ├── tools/              # 运维操作脚本（Linux/WSL 侧）
-├── tools/agent/        # 开发协作工具（agent/开发者用）：git_push.sh/.bat、agent_sync.sh（多 agent 状态同步）
+├── tools/agent/        # 开发协作工具（agent/开发者用）：git_push · agent_sync · report_regression
+│                       #   · regen_reports · repo_realign · sn_check ＋ baseline/（语义名回归基线）
 ├── tools/win/          # Windows 配套工具（.ps1/.bat）
 ├── docs/               # 详细文档（本目录）
 ├── output/             # 采集结果（gitignored）

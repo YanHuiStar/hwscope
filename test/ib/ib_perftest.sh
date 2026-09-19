@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
 # HwScope — IB 数据面打流测试（perftest）
-# test/ib_test.sh
-# 用法: sudo bash test/ib_test.sh
+# test/ib/ib_perftest.sh（v1.41.3 起按组件分目录；早期注释写 test/ib_test.sh）
+# 用法: sudo bash test/ib/ib_perftest.sh
 # 功能: 自动发现 IB 设备，逐对用 ib_write_bw / ib_read_bw 打流验证数据面
 #   支持: 自动配对（serial 相同）/ 手动指定 / 单口回环
 # 日志: logs/test/<时间戳>/
