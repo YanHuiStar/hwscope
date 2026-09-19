@@ -311,7 +311,11 @@ push_main() {
     # SN 兜底检查（v1.49.4）：钩子靠自觉不可靠——`.git/hooks/` 不进仓库，换机器/新 clone 就没有，
     #   历史上三次泄漏都发生在"以为装了钩子"或"钩子没装"的时刻。而推送是进公开仓库的**唯一必经关口**，
     #   放这里不依赖任何人的自觉。扫「暂存区 + 待推提交」（--all-history 太慢，且推送只需保证本次内容干净）。
-    if [ -x "${SCRIPT_DIR}/sn_check.sh" ] && [ "${SKIP_SN_CHECK:-0}" != "1" ]; then
+    # v1.49.24：判定由 `-x` 改为 `-f`——**仓库里 98 个 .sh 全是 100644（无可执行位）**，
+    #   本机之所以"看着能用"是 Windows 检出把工作区文件都带了 exec 位；一旦在新 clone/Linux 上跑，
+    #   `[ -x ]` 为假 → 这道**隐私红线唯一必经关口**静默跳过（正是注释里说的"以为装了钩子"）。
+    #   调用本来就是 `bash sn_check.sh`，不依赖可执行位。
+    if [ -f "${SCRIPT_DIR}/sn_check.sh" ] && [ "${SKIP_SN_CHECK:-0}" != "1" ]; then
         info "推送前 SN/MAC 兜底检查（sn_check）..."
         _snlog=$(mktemp 2>/dev/null || echo /tmp/_snchk.$$)
         if ! bash "${SCRIPT_DIR}/sn_check.sh" >"$_snlog" 2>&1; then
