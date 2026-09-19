@@ -17,3 +17,6 @@ workspace/
 
 # Agent 本地协调状态（单机多会话用，勿提交）
 AGENT_STATE.md
+
+# 项目状态文档（本地上下文恢复用，含机器标识——不进公开仓库）
+PROJECT_STATE.md
