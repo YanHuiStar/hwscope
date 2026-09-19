@@ -704,7 +704,9 @@ fi)
 $(if [ -n "$BOARD_IFACE_MD" ] || [ -n "$BMC_IP" ]; then
     echo "| 类型 | 设备 | BDF | 说明 |"
     echo "|------|------|-----|------|"
-    printf '%s' "$BOARD_IFACE_MD"
+    # ⚠️ 必须 printf '%s\n'：BOARD_IFACE_MD 由 $( ) 命令替换赋值，尾换行已被剥掉，
+    #    用 %s 会让最后一行与下一行（BMC 管理口）黏成一行 → 表列数不一致
+    printf '%s\n' "$BOARD_IFACE_MD"
     [ -n "$BMC_IP" ] && echo "| BMC 管理口 | 带外管理网口 | — | IP ${BMC_IP}${BMC_MAC:+ · MAC ${BMC_MAC}}（远程管理/KVM，不经操作系统）|"
     echo ""
     echo "> 仅列出 lspci/lsusb 可见的接口；机箱后面板的具体接口数量与形态（USB 口数、VGA 口位、串口）以厂商机箱规格为准"

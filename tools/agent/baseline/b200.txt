@@ -1,31 +1,37 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=306
+  table_rows=368
 [gpu]
   gpu_detail_rows=8
   model:  NVIDIA B200
   gpu_json_count=8
 [memory]
-  dimm_rows=32
+  dimm_rows=24
   header: | # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
 [psu]
   psu_rows=12
+[values]
+  psu_power_values=0
+  nic_psid_values=20
+  nic_sn_values=22
+  dimm_sn_values=24
+  nic_link_state_values=22
 [pcie]
   | 链路统计 | 104 条 · 满速 97 · 降速/降宽 0 · bridge 协商 6 · 管理芯片 1 |
   pcie_appendix_rows=104
 [disk]
   disk_rows=2
 [nic]
-  nic_rows=22
+  nic_rows=32
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | 物理位置 |
 [json]
-  json_bytes=44310
+  json_bytes=42773
         1 "disk_count"
         1 "platform"
 [html]
-  html_table_open=24
-  html_table_close=24
-  html_bytes=47473
+  html_table_open=29
+  html_table_close=29
+  html_bytes=53482
 [acceptance]
         2 N/A
        14 PASS
