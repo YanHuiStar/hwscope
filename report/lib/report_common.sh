@@ -15,6 +15,17 @@ filter_log() {
     grep -v "^#" "$1" 2>/dev/null | grep -v "^$"
 }
 
+# ─── JSON 字符串转义（v1.49.19）───
+# 背景：gen_json.sh 里存在两种拼装风格——awk 分支转义了 `\` 与 `"`，bash 数组与 heredoc 标量
+#   没有 → 任一字段含引号/反斜杠（实测触发：nvidia-smi CSV 对含逗号的名称加引号后型号名带 `"`）
+#   就产出**不可解析**的 JSON，而 JSON 是机器消费产物（batch_compare.sh 等直接读），
+#   报错点还在解析侧、现场很难溯源。
+# 只做 JSON 必需的两件事：反斜杠与双引号；顺带去掉会破坏"单行值"的 CR。
+# 注意：**不去换行**——多行字段（如 PSU list）在调用点自行 tr 成单行，不在这里处理。
+jesc() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\r//g'
+}
+
 # ─── 清单加载：从 manifest.txt 读取模块输出文件名，回退到默认值 ───
 # 用法: load_manifest <目录> <key> [默认文件名]
 # 若 <目录>/manifest.txt 存在且含 <key>=<value>，设置 shell 变量 $key 为完整路径；

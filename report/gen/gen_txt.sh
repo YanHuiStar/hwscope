@@ -290,7 +290,7 @@ fi)
 [网络]
   IB设备 : ${IB_COUNT:-0}
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
-  Link状态: Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}${IB_UNPLUGGED:+（未插线缆 ${IB_UNPLUGGED}）}
+  Link状态: Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED")
   额定速率: ${IB_NOMINAL:-N/A}$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n  固件一致性: [警告] 同型号卡固件版本不一致（仅供核对，非故障判定）：%s' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ] || [ "${IB_BER_TRIED:-0}" -gt 0 ]; then printf '\n  链路质量: %s%s（原始值，未设阈值判定%s）' "${IB_BER_TEXT}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}" "${IB_ETH_MODE_PORTS:+；${IB_ETH_MODE_PORTS% } 为以太模式、无 IB BER}"; fi)
   网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)$(if printf '%s\n' "$nic_details_txt" | grep -q "能力 " 2>/dev/null; then printf '\n  注: PCIe(协商) 标"(能力 …)"= 卡能力高于当前协商，多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障\n'; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
     printf '\n  网卡明细（ibstat 回退，旧采集无 nic_inventory）:\n'
@@ -305,7 +305,7 @@ fi)
   固件   : ${BMC_FW:-N/A}
   IP     : ${BMC_IP:-N/A}
   MAC    : ${BMC_MAC:-N/A}
-  SEL    : $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} (Critical ${SEL_CRIT:-0})"; else echo "⚠️ 数据不可用"; fi)
+  SEL    : $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} (未解除 Critical ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+，已自愈 $SEL_CRIT_RECOVERED})"; else echo "⚠️ 数据不可用"; fi)
 $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
     echo "  ⚠️ SEL 数据不可用（ipmitool 采集失败或无权限），事件列表不完整"
 elif [ -n "$SEL_DETAILS" ]; then

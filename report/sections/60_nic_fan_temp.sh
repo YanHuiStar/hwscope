@@ -234,6 +234,11 @@ if [ -f "${nic_inventory}" ]; then
 declare -A FRU_NIC_SN_BY_PN
 declare -A FRU_NIC_PN_CNT
 load_manifest "${BMC_DIR}" ipmi_fru_all "ipmi_fru_all.log"
+# v1.49.19：devlink 采集件登记——268 行的 devlink PSID 兜底一直在等这个变量，
+#   而它从未被 load_manifest 赋值（`${devlink_dev_info:-}` 恒为空 → 兜底是死代码；
+#   采集端名 07_network.sh 确实产出 network/devlink_dev_info.log 并在 manifest 声明）。
+#   旧采集无该键时 load_manifest 回退默认文件名，逻辑不变。
+load_manifest "${NET_DIR}" devlink_dev_info "devlink_dev_info.log"
 if [ -f "${ipmi_fru_all}" ]; then
     while IFS="|" read -r _fpn _fsn; do
         [ -z "$_fpn" ] || [ -z "$_fsn" ] && continue
@@ -266,9 +271,12 @@ fi
         # v1.48.53：devlink 回查（内核标准接口——MST/mstflint 在新平台不可用时仍可取 PSID；
         # devlink dev info 输出 pci/0000:XX:YY.Z 段内 versions.fixed.fw.psid）
         if [ "$npsid" = "N/A" ] && [ -f "${devlink_dev_info:-}" ]; then
+            # v1.49.19：`fw.psid` 后**可能是空格而不是冒号**——devlink 的 versions 段两种写法都存在
+            #   （`fw.psid MT_0000000838` 与 `fw.psid: MT_0000000838`）。原正则要求冒号，
+            #   配合本节缺 load_manifest（同批修），该兜底等于双重死亡：既读不到文件、也匹配不上行。
             dvl_psid=$(awk -v bdf="${nnbdf%% (USB)*}" '
                 /^pci\/0000:/ { dev=$0; sub(/^pci\/0000:/, "", dev); sub(/:$/, "", dev) }
-                dev==bdf && /fw\.psid:/ { sub(/.*fw\.psid:[[:space:]]*/, ""); print; exit }
+                dev==bdf && /fw\.psid/ { sub(/.*fw\.psid:?[[:space:]]*/, ""); print; exit }
             ' "${devlink_dev_info}" 2>/dev/null)
             [ -n "$dvl_psid" ] && npsid="$dvl_psid"
         fi
@@ -544,8 +552,8 @@ if [ -f "${ipmi_fan_sensors}" ] && [ -s "${ipmi_fan_sensors}" ]; then
     _fan_lines=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | grep -cE "[^[:space:]]")
     [ "${_fan_lines:-0}" -gt 0 ] && FAN_DATA_OK=1
 fi
-FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+(\.[0-9]+)?$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | head -1)
-FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+(\.[0-9]+)?$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | tail -1)
+FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | head -1)
+FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | tail -1)
 FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 

@@ -29,6 +29,27 @@ if [ "${NVLINK_CAPABLE:-0}" -eq 0 ] && [ -f "${GPU_DIR}/gpu_topo.log" ]; then
     fi
 fi
 
+# ─── NVLink CRC / 误码计数（v1.49.19）───
+# 背景：健康检查、MD、JSON、验收四处早就引用 NVLINK_CRC（「(存在CRC错误)」/「nvlink_crc_errors」），
+#   但**全项目从未有任何代码给它赋值** → 该提示永远不会出现（声明了却没有的能力，与 v1.48.88
+#   「采了却没用」同类）。数据源用采集端已落盘的 nvswitch/nvlink_error_count.log
+#   （`nvidia-smi nvlink -e`，05_nvswitch.sh:57），行格式约定与 30_storage_gpu_extra.sh:282
+#   的既有解析一致（`<标签> Errors: <n>`）。
+# 判据**保守**：只认行内含 CRC 字样、且该行最后一个数字 > 0 的情况（健康盘的 `CRC Errors: 0`
+#   不触发；其他错误类别由 NVSWITCH_FABRIC 段汇总，不在这里重复报警）。
+# 注：不同驱动版本的该日志字段名有差异（本地样本里该文件或为旧版报错、或驱动不可用），
+#   故按"标签 + 末尾数值"容错解析；真机确认到更精确字段名后可收紧正则。
+NVLINK_CRC=""
+if [ -f "${NVS_DIR}/nvlink_error_count.log" ]; then
+    NVLINK_CRC=$(grep -v "^#" "${NVS_DIR}/nvlink_error_count.log" 2>/dev/null | awk '
+        tolower($0) ~ /crc/ {
+            line=$0; nv=""
+            while (match(line, /[0-9]+/)) { nv=substr(line, RSTART, RLENGTH); line=substr(line, RSTART+RLENGTH) }
+            if (nv != "" && nv+0 > 0) { c++; s += nv+0 }
+        }
+        END { if (c > 0) printf "%d 项非零（合计 %d）", c, s }')
+fi
+
 # ─── DCGM 诊断结果（dcgmi_diag_level1.log：区分硬件 Fail 与配置类 Fail） ───
 # Persistence Mode 未开启是环境配置问题（8 卡全 Fail 时常见），不属硬件故障，单独标注
 DCGM_SUMMARY="N/A"

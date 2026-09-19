@@ -87,7 +87,13 @@ else
     PCIE_LINK_TABLE=""
     PCIE_LINKS_TOTAL=0
 fi
-if [ -n "$PCIE_SLOW_LINKS" ]; then PCIE_LINKS_OK=0; else PCIE_LINKS_OK=1; fi
+# v1.49.19：只有真解析到链路时才给「通过」值——原实现无条件置 1，导致无 PCIe 数据的机器
+#   JSON 出现 links_total=0 / links_ok=1 的自相矛盾（MD/TXT/验收对同一情形都判 N/A）。
+if [ "${PCIE_LINKS_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
+    if [ -n "$PCIE_SLOW_LINKS" ]; then PCIE_LINKS_OK=0; else PCIE_LINKS_OK=1; fi
+else
+    PCIE_LINKS_OK=0
+fi
 GPU_DRIVER=$(grep -m1 "Driver Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 GPU_CUDA=$(grep -m1 "CUDA Version" "${gpu_full}" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
 
@@ -197,7 +203,7 @@ if [ -f "${dmidecode_memory_full}" ]; then
     MEM_DIMMS=$(awk '
         /^Memory Device/ { in_dimm=1; slot=""; size=""; mfr=""; sn=""; pn=""; nom=""; cur=""; rank=""; next }
         in_dimm && /^[[:space:]]*Locator:/ && !/Bank Locator/ {slot=$0;  sub(/^[[:space:]]*Locator:[[:space:]]*/,"",slot); next}
-        in_dimm && /^[[:space:]]*Size:/              {size=$0; sub(/^[[:space:]]*Size:[[:space:]]*/,"",size); sub(/ No Module.*/,"",size); next}
+        in_dimm && /^[[:space:]]*Size:/              {size=$0; sub(/^[[:space:]]*Size:[[:space:]]*/,"",size); if (size ~ /No Module|Not Installed/) size=""; next}
         in_dimm && /^[[:space:]]*Manufacturer:/      {mfr=$0;  sub(/^[[:space:]]*Manufacturer:[[:space:]]*/,"",mfr); next}
         in_dimm && /^[[:space:]]*Serial Number:/     {sn=$0;   sub(/^[[:space:]]*Serial Number:[[:space:]]*/,"",sn); next}
         in_dimm && /^[[:space:]]*Part Number:/       {pn=$0;   sub(/^[[:space:]]*Part Number:[[:space:]]*/,"",pn); sub(/[[:space:]]+$/,"",pn); next}

@@ -13,6 +13,9 @@ gen_json() {
         while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank dwidth; do
             [ -z "$dslot" ] && continue
             dseq=$((dseq+1))
+            # v1.49.19：JSON 转义（本文件 awk 分支已转义；bash 拼装分支统一走 jesc()）
+            dslot=$(jesc "$dslot"); dsize=$(jesc "$dsize"); dmfr=$(jesc "$dmfr"); dsn=$(jesc "$dsn")
+            dpn=$(jesc "$dpn"); dnom=$(jesc "$dnom"); dcur=$(jesc "$dcur"); drank=$(jesc "$drank"); dwidth=$(jesc "$dwidth")
             dimms_json="${dimms_json}      {\"index\": \"${dseq}\", \"slot\": \"${dslot}\", \"size\": \"${dsize}\", \"manufacturer\": \"${dmfr}\", \"serial\": \"${dsn}\", \"part_number\": \"${dpn}\", \"nominal_speed\": \"${dnom}\", \"current_speed\": \"${dcur}\", \"rank\": \"${drank:-N/A}\", \"chip_width\": \"${dwidth:-}\"},"$'\n'
         done < <(printf '%s\n' "$MEM_DIMMS")
         dimms_json=$(printf '%s' "$dimms_json" | sed '$ s/,$//')
@@ -25,6 +28,9 @@ gen_json() {
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
         while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
             [ -z "$gidx" ] && continue
+            gidx=$(jesc "$gidx"); gname=$(jesc "$gname"); gsn=$(jesc "$gsn"); gmem=$(jesc "$gmem")
+            gdraw=$(jesc "$gdraw"); gtemp=$(jesc "$gtemp"); gutil=$(jesc "$gutil"); gpcie=$(jesc "$gpcie")
+            gmax=$(jesc "$gmax"); gused=$(jesc "${gused:-N/A}"); glimit=$(jesc "${glimit:-N/A}"); gvb=$(jesc "${gvb:-N/A}")
             gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_used\": \"${gused:-N/A}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"power_limit\": \"${glimit:-N/A}\", \"temp\": \"${gtemp}\", \"utilization\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\", \"vbios\": \"${gvb:-N/A}\"},"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
@@ -34,6 +40,9 @@ gen_json() {
     if [ -n "$DISK_DETAILS" ]; then
         while IFS='|' read -r dname dtype dsize dmodel dsn dfw dbdf dpo dpc dspare dspec dhealth; do
             [ -z "$dname" ] && continue
+            dname=$(jesc "$dname"); dtype=$(jesc "$dtype"); dsize=$(jesc "$dsize"); dmodel=$(jesc "$dmodel")
+            dsn=$(jesc "$dsn"); dfw=$(jesc "$dfw"); dbdf=$(jesc "$dbdf"); dpo=$(jesc "$dpo")
+            dpc=$(jesc "$dpc"); dspare=$(jesc "$dspare"); dspec=$(jesc "$dspec"); dhealth=$(jesc "$dhealth")
             disk_details_json="${disk_details_json}      {\"name\": \"${dname}\", \"type\": \"${dtype}\", \"size\": \"${dsize}\", \"model\": \"${dmodel}\", \"serial\": \"${dsn}\", \"firmware\": \"${dfw}\", \"bdf\": \"${dbdf}\", \"power_on_h\": \"${dpo}\", \"power_cyc\": \"${dpc}\", \"spare\": \"${dspare}\", \"size_spec\": \"${dspec}\", \"health\": \"${dhealth}\"},"$'\n'
         done < <(printf '%s\n' "$DISK_DETAILS")
         disk_details_json=$(printf '%s' "$disk_details_json" | sed '$ s/,$//')
@@ -43,6 +52,7 @@ gen_json() {
     if [ -n "$RAID_VD_DETAILS" ]; then
         while IFS='|' read -r rvdname rvdmodel rvdsize rvdsn; do
             [ -z "$rvdname" ] && continue
+            rvdname=$(jesc "$rvdname"); rvdmodel=$(jesc "$rvdmodel"); rvdsize=$(jesc "$rvdsize"); rvdsn=$(jesc "${rvdsn:-N/A}")
             raid_vd_json="${raid_vd_json}      {\"dev\": \"${rvdname}\", \"raid_card\": \"${rvdmodel}\", \"size\": \"${rvdsize}\", \"sn\": \"${rvdsn:-N/A}\"},"$'\n'
         done < <(printf '%s\n' "$RAID_VD_DETAILS")
         raid_vd_json=$(printf '%s' "$raid_vd_json" | sed '$ s/,$//')
@@ -78,37 +88,15 @@ gen_json() {
     if [ -n "$NVS_DETAILS" ]; then
         while IFS='|' read -r nidx nstat ntemp nports; do
             [ -z "$nidx" ] && continue
+            nidx=$(jesc "$nidx"); nstat=$(jesc "$nstat"); ntemp=$(jesc "$ntemp"); nports=$(jesc "$nports")
             nvs_json="${nvs_json}      {\"id\": \"${nidx}\", \"state\": \"${nstat}\", \"temp\": \"${ntemp}\", \"ports\": \"${nports}\"},"$'\n'
         done < <(printf '%s\n' "$NVS_DETAILS")
         nvs_json=$(printf '%s' "$nvs_json" | sed '$ s/,$//')
     fi
-    # CPU 每 Socket 明细 JSON 数组
-    local cpu_details_json=""
-    if [ -n "$CPU_DETAILS" ]; then
-        while IFS='|' read -r csocket cmodel ccores cthreads cmaxspd ccurspd cstep; do
-            [ -z "$csocket" ] && continue
-            cpu_details_json="${cpu_details_json}      {\"socket\": \"${csocket}\", \"model\": \"${cmodel}\", \"cores\": \"${ccores}\", \"threads\": \"${cthreads}\", \"max_speed\": \"${cmaxspd}\", \"cur_speed\": \"${ccurspd}\", \"stepping\": \"${cstep}\"},"$'\n'
-        done < <(printf '%s\n' "$CPU_DETAILS")
-        cpu_details_json=$(printf '%s' "$cpu_details_json" | sed '$ s/,$//')
-    fi
-    # SEL 最近事件 JSON 数组
-    local sel_details_json=""
-    if [ -n "$SEL_DETAILS" ]; then
-        while IFS='|' read -r sid sdate stime stype sdesc; do
-            [ -z "$sid" ] && continue
-            sel_details_json="${sel_details_json}      {\"id\": \"${sid}\", \"date\": \"${sdate}\", \"time\": \"${stime}\", \"type\": \"${stype}\", \"description\": \"${sdesc}\"},"$'\n'
-        done < <(printf '%s\n' "$SEL_DETAILS")
-        sel_details_json=$(printf '%s' "$sel_details_json" | sed '$ s/,$//')
-    fi
-    # 风扇明细 JSON 数组
-    local fan_details_json=""
-    if [ -n "$FAN_DETAILS" ]; then
-        while IFS='|' read -r fname frpm fstatus; do
-            [ -z "$fname" ] && continue
-            fan_details_json="${fan_details_json}      {\"name\": \"${fname}\", \"rpm\": \"${frpm}\", \"status\": \"${fstatus}\"},"$'\n'
-        done < <(printf '%s\n' "$FAN_DETAILS")
-        fan_details_json=$(printf '%s' "$fan_details_json" | sed '$ s/,$//')
-    fi
+    # v1.49.19：删除三段**死代码**——cpu_details_json / sel_details_json / fan_details_json
+    #   只被自己赋值、从未被 heredoc 引用（heredoc 用 :220 / :306 / :321 的内联 emitter）。
+    #   它们是同一逻辑的第二份实现且已经漂移（死的那份 CPU 缺 serial 字段），留着既误导又
+    #   会让人以为"这里已经处理过转义"。转义统一走 jesc()，只保留在活路径上。
     # 固件合规 JSON 数组（component|device|current|baseline|status|note）；未启用基线（全未知）→ 空数组
     local fw_details_json=""
     if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
@@ -164,6 +152,13 @@ gen_json() {
                 printf "      {\"item\": \"%s\", \"status\": \"%s\", \"current\": \"%s\", \"baseline\": \"%s\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
     fi
+    # v1.49.19 两处语义修正（**注释必须写在这里**——下面的 heredoc 里写 `#` 会被原样写进 JSON，
+    #   本批次初版即因此产出不可解析的 JSON，靠 4 样本解析回归才发现）：
+    #   ① "links_ok"：默认值 1 → 0。无 PCIe 数据时 links_total=0 而 links_ok 原为 1（`:-1` 兜底），
+    #      JSON 出现"0 条链路里 1 条满速"的自相矛盾，机器消费方会当成通过；MD/TXT/验收同情形判 N/A。
+    #   ② "sel_critical"：改用**未解除**的 Critical 数（SEL_CRIT_UNRESOLVED）。原值 SEL_CRIT 是
+    #      `grep -ciE "critical|fatal"` 的行数，把 Deasserted（已自愈）行也算进去（v1.48.86 已判该
+    #      口径错误，验收端改了、JSON 端漏改）→ 消费方读到虚高的故障数。原口径留在 sel_critical_any。
     cat > "$f" << EOF
 {
   "hwscope": {
@@ -177,39 +172,39 @@ gen_json() {
     "timestamp": "${TIMESTAMP:-unknown}"
   },
   "environment": {
-    "os": "${OS_NAME:-N/A}",
-    "kernel": "${KERNEL:-N/A}",
-    "driver": "${GPU_DRIVER:-N/A}",
-    "cuda": "${GPU_CUDA:-N/A}"
+    "os": "$(jesc "${OS_NAME:-N/A}")",
+    "kernel": "$(jesc "${KERNEL:-N/A}")",
+    "driver": "$(jesc "${GPU_DRIVER:-N/A}")",
+    "cuda": "$(jesc "${GPU_CUDA:-N/A}")"
   },
   "timing": {
     "total": "${TIMING_TOTAL:-N/A}",
-    "top_modules": "${TIMING_TOP:-N/A}"
+    "top_modules": "$(jesc "${TIMING_TOP:-N/A}")"
   },
   "motherboard": {
-    "manufacturer": "${MB_MANUFACTURER:-N/A}",
-    "product": "${MB_PRODUCT:-N/A}",
-    "serial": "${MB_SN:-N/A}",
-    "board_serial": "${MB_BOARD_SN:-N/A}",
-    "bios": "${BIOS_VERSION:-N/A}",
-    "chassis_sn": "${CHASSIS_SN:-N/A}",
-    "fabric_switch": "${FABRIC_SW:-}"
+    "manufacturer": "$(jesc "${MB_MANUFACTURER:-N/A}")",
+    "product": "$(jesc "${MB_PRODUCT:-N/A}")",
+    "serial": "$(jesc "${MB_SN:-N/A}")",
+    "board_serial": "$(jesc "${MB_BOARD_SN:-N/A}")",
+    "bios": "$(jesc "${BIOS_VERSION:-N/A}")",
+    "chassis_sn": "$(jesc "${CHASSIS_SN:-N/A}")",
+    "fabric_switch": "$(jesc "${FABRIC_SW:-}")"
   },
   "pcie": {
-    "pex_switches": "${PCIE_PEX_DETAILS:-}",
+    "pex_switches": "$(jesc "${PCIE_PEX_DETAILS:-}")",
     "links_total": ${PCIE_LINKS_TOTAL:-0},
-    "links_ok": ${PCIE_LINKS_OK:-1},
+    "links_ok": ${PCIE_LINKS_OK:-0},
     "slow_count": ${PCIE_SLOW_COUNT:-0},
     "mgmt_chip_count": ${PCIE_MGMT_COUNT:-0},
     "slow_links": [
-      $(if [ -n "${PCIE_SLOW_LINKS:-}" ]; then printf '%s\n' "${PCIE_SLOW_LINKS}" | awk '{printf "      \"%s\",\n", $0}' | sed '$ s/,$//'; fi)
+      $(if [ -n "${PCIE_SLOW_LINKS:-}" ]; then printf '%s\n' "${PCIE_SLOW_LINKS}" | awk '{gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); printf "      \"%s\",\n", $0}' | sed '$ s/,$//'; fi)
     ],
     "link_details": [
       $(printf '%s' "${pcie_link_json:-}")
     ]
   },
   "cpu": {
-    "model": "${CPU_MODEL:-N/A}",
+    "model": "$(jesc "${CPU_MODEL:-N/A}")",
     "cores": "${CPU_CORES:-N/A}",
     "cores_total": "${CPU_TOTAL_CORES:-N/A}",
     "sockets": "${CPU_SOCKETS:-N/A}",
@@ -223,10 +218,10 @@ fi)
     ]
   },
   "memory": {
-    "total": "${MEM_TOTAL_PHYS:-${MEM_TOTAL:-N/A}}/${MEM_TOTAL:-N/A} 可见",
-    "type": "${MEM_TYPE:-N/A}",
-    "speed": "${MEM_SPEED:-N/A}",
-    "speed_note": "${MEM_SPEED_NOTE:-}",
+    "total": "$(jesc "${MEM_TOTAL_PHYS:-${MEM_TOTAL:-N/A}}/${MEM_TOTAL:-N/A} 可见")",
+    "type": "$(jesc "${MEM_TYPE:-N/A}")",
+    "speed": "$(jesc "${MEM_SPEED:-N/A}")",
+    "speed_note": "$(jesc "${MEM_SPEED_NOTE:-}")",
     "slots": "${MEM_SLOTS:-N/A}",
     "populated": "${MEM_POPULATED:-0}",
     "dimms": [
@@ -235,32 +230,32 @@ ${dimms_json}
   },
   "gpu": {
     "count": "${GPU_COUNT:-0}",
-    "models": "${GPU_NAMES:-N/A}",
-    "memory_total": "${GPU_MEM:-N/A}",
-    "memory_spec": "${GPU_MEM_SPEC:-N/A}",
-    "memory_spec_total": "${GPU_MEM_SPEC_TOTAL:-N/A}",
-    "memory_spec_note": "${GPU_MEM_SPEC_NOTE:-}",
-    "power_limit": "${GPU_POWER:-N/A}",
-    "temp": "${GPU_TEMP:-N/A}",
-    "ecc": "${GPU_ECC:-N/A}",
-    "remapped_rows": "${GPU_REMAP:-N/A}",
-    "ras": "${GPU_RAS:-N/A}",
-    "vbios": "${GPU_VBIOS:-N/A}",
-    "ascend_note": "${GPU_ASCEND_NOTE:-}",
+    "models": "$(jesc "${GPU_NAMES:-N/A}")",
+    "memory_total": "$(jesc "${GPU_MEM:-N/A}")",
+    "memory_spec": "$(jesc "${GPU_MEM_SPEC:-N/A}")",
+    "memory_spec_total": "$(jesc "${GPU_MEM_SPEC_TOTAL:-N/A}")",
+    "memory_spec_note": "$(jesc "${GPU_MEM_SPEC_NOTE:-}")",
+    "power_limit": "$(jesc "${GPU_POWER:-N/A}")",
+    "temp": "$(jesc "${GPU_TEMP:-N/A}")",
+    "ecc": "$(jesc "${GPU_ECC:-N/A}")",
+    "remapped_rows": "$(jesc "${GPU_REMAP:-N/A}")",
+    "ras": "$(jesc "${GPU_RAS:-N/A}")",
+    "vbios": "$(jesc "${GPU_VBIOS:-N/A}")",
+    "ascend_note": "$(jesc "${GPU_ASCEND_NOTE:-}")",
     "xid_count": "${GPU_XID_COUNT:-0}",
-    "xid_source": "${GPU_XID_SRC:-}",
-    "xgmi": "${GPU_XGMI_SUMMARY:-}",
-    "nvlink": "${NV_LINK_SUMMARY:-N/A}",
-    "serials": "${GPU_SERIALS:-N/A}",
+    "xid_source": "$(jesc "${GPU_XID_SRC:-}")",
+    "xgmi": "$(jesc "${GPU_XGMI_SUMMARY:-}")",
+    "nvlink": "$(jesc "${NV_LINK_SUMMARY:-N/A}")",
+    "serials": "$(jesc "${GPU_SERIALS:-N/A}")",
     "details": [
 ${gpu_details_json}
     ]
   },
   "storage": {
     "disk_count": "${STORAGE_COUNT:-0}",
-    "total_capacity": "${STORAGE_TOTAL:-N/A}",
-    "disk_models": "${STORAGE_MODELS:-N/A}",
-    "system_disk_excluded": "${SYS_DISK:-N/A}",
+    "total_capacity": "$(jesc "${STORAGE_TOTAL:-N/A}")",
+    "disk_models": "$(jesc "${STORAGE_MODELS:-N/A}")",
+    "system_disk_excluded": "$(jesc "${SYS_DISK:-N/A}")",
     "disks": [
 ${disk_details_json}
     ],
@@ -271,16 +266,16 @@ ${raid_vd_json}
   "network": {
     "ib_devices": "${IB_COUNT:-0}",
     "ib_active": "${IB_ACTIVE:-0}",
-    "ib_active_speed": "${IB_ACTIVE_SPEED:-N/A}",
-    "ib_nominal_speed": "${IB_NOMINAL:-N/A}",
+    "ib_active_speed": "$(jesc "${IB_ACTIVE_SPEED:-N/A}")",
+    "ib_nominal_speed": "$(jesc "${IB_NOMINAL:-N/A}")",
     "ib_initializing": "${IB_INITIALIZING:-0}",
-    "ib_fw_inconsistent": "${IB_FW_INCONSISTENT:-N/A}",
-    "ib_ber_summary": "${IB_BER_SUMMARY:-N/A}",
+    "ib_fw_inconsistent": "$(jesc "${IB_FW_INCONSISTENT:-N/A}")",
+    "ib_ber_summary": "$(jesc "${IB_BER_SUMMARY:-N/A}")",
     "ib_link_down_events": "${IB_LINK_DOWN_EVENTS:-0}",
     "eth_link_up": "${ETH_LINK_UP:-0}",
-    "cables": "${CABLE_SUMMARY:-N/A}",
-    "cable_pairs": "${CABLE_PAIRS:-N/A}",
-    "port_modes": "${LINKTYPE_SUMMARY:-N/A}",
+    "cables": "$(jesc "${CABLE_SUMMARY:-N/A}")",
+    "cable_pairs": "$(jesc "${CABLE_PAIRS:-N/A}")",
+    "port_modes": "$(jesc "${LINKTYPE_SUMMARY:-N/A}")",
     "nics": [
 ${nic_details_json}
     ],
@@ -289,6 +284,7 @@ $(if [ -n "$USB_NICS" ]; then
     ujson=""
     while IFS='|' read -r unnic unmac unpn unfw; do
         [ -z "$unnic" ] && continue
+        unnic=$(jesc "$unnic"); unmac=$(jesc "$unmac"); unpn=$(jesc "${unpn:-}"); unfw=$(jesc "${unfw:-}")
         ujson="${ujson}      {\"dev\": \"${unnic}\", \"mac\": \"${unmac}\", \"pn\": \"${unpn:-}\", \"firmware\": \"${unfw:-}\"},"$'\n'
     done < <(printf '%s\n' "$USB_NICS")
     printf '%s' "$ujson" | sed '$ s/,$//'
@@ -296,16 +292,18 @@ fi)
     ]
   },
   "bmc": {
-    "fru": "${BMC_FRU:-N/A}",
-    "firmware": "${BMC_FW:-N/A}",
-    "ip": "${BMC_IP:-N/A}",
-    "mac": "${BMC_MAC:-N/A}",
+    "fru": "$(jesc "${BMC_FRU:-N/A}")",
+    "firmware": "$(jesc "${BMC_FW:-N/A}")",
+    "ip": "$(jesc "${BMC_IP:-N/A}")",
+    "mac": "$(jesc "${BMC_MAC:-N/A}")",
     "sel_total": "${SEL_TOTAL:-0}",
-    "sel_critical": "${SEL_CRIT:-0}",
+    "sel_critical": "${SEL_CRIT_UNRESOLVED:-0}",
+    "sel_critical_recovered": "${SEL_CRIT_RECOVERED:-0}",
+    "sel_critical_any": "${SEL_CRIT:-0}",
     "sel_details": [
 $(if [ -n "$SEL_DETAILS" ]; then
     echo "$SEL_DETAILS" | while IFS='|' read -r sid sdate stime stype sdesc; do
-        printf '      {"id": "%s", "date": "%s", "time": "%s", "type": "%s", "description": "%s"},\n' "$sid" "$sdate" "$stime" "$stype" "$sdesc"
+        printf '      {"id": "%s", "date": "%s", "time": "%s", "type": "%s", "description": "%s"},\n' "$(jesc "$sid")" "$(jesc "$sdate")" "$(jesc "$stime")" "$(jesc "$stype")" "$(jesc "$sdesc")"
     done | sed '$ s/,$//'
 fi)
     ]
@@ -313,14 +311,14 @@ fi)
   "fan": {
     "count": "$(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A"; fi)",
     "data_ok": "${FAN_DATA_OK:-0}",
-    "source": "${FAN_SOURCE:-IPMI}",
-    "speed": "${FAN_SPEED:-N/A}",
+    "source": "$(jesc "${FAN_SOURCE:-IPMI}")",
+    "speed": "$(jesc "${FAN_SPEED:-N/A}")",
     "redundancy": "",
     "redundancy_extra": "",
     "details": [
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "$FAN_DETAILS" | while IFS='|' read -r fname fval fstatus; do
-        printf '      {"name": "%s", "rpm": "%s", "status": "%s"},\n' "$fname" "$fval" "$fstatus"
+        printf '      {"name": "%s", "rpm": "%s", "status": "%s"},\n' "$(jesc "$fname")" "$(jesc "$fval")" "$(jesc "$fstatus")"
     done | sed '$ s/,$//'
 fi)
     ]
@@ -333,21 +331,21 @@ $(if [ -n "$PSU_DETAILS" ]; then
     while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s", "capacity": "%s", "power_in": "%s"},' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "${pcap:-N/A}" "${ppower:-N/A}"
+        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s", "capacity": "%s", "power_in": "%s"},' "$pseq" "$(jesc "$pdesc")" "$(jesc "$pmodel")" "$(jesc "$ppn")" "$(jesc "$psn")" "$(jesc "${pcap:-N/A}")" "$(jesc "${ppower:-N/A}")"
         echo ""
     done < <(printf '%s\n' "$PSU_DETAILS") | sed '$ s/,$//'
 fi)
     ]
   },
   "psu_system": {
-    "total_power": "${PSU_EXTRA:-}",
-    "dcmi": "${PSU_DCMI:-}"
+    "total_power": "$(jesc "${PSU_EXTRA:-}")",
+    "dcmi": "$(jesc "${PSU_DCMI:-}")"
   },
   "raid": [
 $(if [ -n "$RAID_DETAILS" ]; then
     echo "$RAID_DETAILS" | while IFS='|' read -r ridx rmodel rsn rfw rvd rvd_list; do
         [ -z "$ridx" ] && continue
-        printf '    {"controller": "%s", "model": "%s", "serial": "%s", "firmware": "%s", "virtual_disks": "%s", "vd_list": "%s"},\n' "$ridx" "$rmodel" "$rsn" "$rfw" "$rvd" "$rvd_list"
+        printf '    {"controller": "%s", "model": "%s", "serial": "%s", "firmware": "%s", "virtual_disks": "%s", "vd_list": "%s"},\n' "$(jesc "$ridx")" "$(jesc "$rmodel")" "$(jesc "$rsn")" "$(jesc "$rfw")" "$(jesc "$rvd")" "$(jesc "$rvd_list")"
     done | sed '$ s/,$//'
 fi)
   ],
@@ -355,7 +353,7 @@ fi)
 $(if [ -n "$HBA_DETAILS" ]; then
     echo "$HBA_DETAILS" | while IFS='|' read -r hname htype hfw hsn hstat hsas hports; do
         [ -z "$hname" ] && continue
-        printf '    {"controller": "%s", "model": "%s", "firmware": "%s", "serial": "%s", "status": "%s", "sas_address": "%s", "ports": "%s"},\n' "$hname" "$htype" "$hfw" "$hsn" "$hstat" "$hsas" "$hports"
+        printf '    {"controller": "%s", "model": "%s", "firmware": "%s", "serial": "%s", "status": "%s", "sas_address": "%s", "ports": "%s"},\n' "$(jesc "$hname")" "$(jesc "$htype")" "$(jesc "$hfw")" "$(jesc "$hsn")" "$(jesc "$hstat")" "$(jesc "$hsas")" "$(jesc "$hports")"
     done | sed '$ s/,$//'
 fi)
   ],
