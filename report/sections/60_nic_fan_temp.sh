@@ -154,14 +154,40 @@ if [ -f "${nic_inventory}" ]; then
         _slots_file="${dmidecode_slot:-$_slots_file}"
     fi
     if [ -f "$_slots_file" ]; then
-        while IFS='|' read -r _sd _sa; do
+        # v1.49.6：多个槽位可能共享同一 Bus Address（实测 DGX A100：NIC3 与 U.2_NVMe2 同为 bus 51、
+        #   NIC7 与 U.2_NVMe6 同为 bus bf、U.2_NVMe0/3/4/7 四个全是 ff:00.0、M.2_0/1 与 OCulink 都是 20）。
+        #   原实现 `SLOT_BY_BUS[$bus]=$name` 是一对多压成一对一、**后写覆盖先写**，导致网卡的「物理位置」
+        #   被显示成硬盘槽名（实测该机 ibp84s0 → U.2_NVMe2）。改为按优先级取优：
+        #   真扩展槽（PCI Express 且名字不像存储）= 3 > 中立（Proprietary 等）= 2 > 存储槽 = 1。
+        #   判据用 SMBIOS 客观的 Type 字段 + Designation 名，不靠单一名猜测。
+        declare -A _slot_pri
+        while IFS='|' read -r _sd _st _sa; do
             [ -z "$_sd" ] && continue
             _sbus=$(printf '%s' "$_sa" | sed 's/^[0-9a-fA-F]*://; s/:.*//')
-            [ -n "$_sbus" ] && SLOT_BY_BUS[$_sbus]="$_sd"
+            [ -z "$_sbus" ] && continue
+            _pri=3
+            # ① Type 明确是存储槽类型
+            case "$_st" in
+                *SFF-8639*|*M.2*|*SATA*|*SAS*) _pri=1 ;;
+            esac
+            # ② Designation 名字像存储槽（覆盖 OCulink 这种 Type 写作 "x8 PCI Express x8" 的）
+            case "$_sd" in
+                *U.2*|*NVMe*|*M.2*|*OCulink*) _pri=1 ;;
+            esac
+            # ③ 既非 PCI Express 也非存储 → 中立（不给满优先级）
+            case "$_st" in
+                *"PCI Express"*) : ;;
+                *) [ "$_pri" -eq 3 ] && _pri=2 ;;
+            esac
+            if [ "${_slot_pri[$_sbus]:-0}" -le "$_pri" ]; then
+                SLOT_BY_BUS[$_sbus]="$_sd"
+                _slot_pri[$_sbus]=$_pri
+            fi
         done < <(awk '
-            /^System Slot Information/ {d=""; inslot=1; next}
+            /^System Slot Information/ {d=""; t=""; inslot=1; next}
             inslot && /Designation:/ {sub(/.*: /,""); d=$0}
-            inslot && /Bus Address:/ {sub(/.*: /,""); printf "%s|%s\n", d, $0; inslot=0}
+            inslot && /^[ \t]*Type:/ {sub(/.*: /,""); t=$0}
+            inslot && /Bus Address:/ {sub(/.*: /,""); printf "%s|%s|%s\n", d, t, $0; inslot=0}
         ' "$_slots_file" 2>/dev/null)
         [ "${#SLOT_BY_BUS[@]}" -gt 0 ] && NIC_SLOT_AVAIL=1
     fi
