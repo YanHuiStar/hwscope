@@ -144,6 +144,17 @@ else
     info "版本: 本地 v${L_VER:-?} / 远程 v${R_VER:-?}"
 fi
 
+# ─── 提交前自检钩子提醒（v1.49.11，隐私红线防复发）───
+# 真实 SN/MAC 进 git 已多次发生（含提交信息），每次都需重写远程历史 + 全网机器对齐。
+# 把提醒放在"开工第一步"最省事：没装钩子就当场装，提交那一刻自动拦住。
+if [ ! -f "${PROJECT_DIR}/.git/hooks/pre-commit" ] || ! grep -q "sn_check" "${PROJECT_DIR}/.git/hooks/pre-commit" 2>/dev/null; then
+    echo ""
+    echo -e "${C_YELLOW}[提醒] 提交前 SN/MAC 自检钩子未安装${C_NC}"
+    echo -e "${C_YELLOW}  → bash tools/agent/sn_check.sh --install-hook${C_NC}"
+    echo "    作用：提交时自动扫【暂存改动 + 提交信息】里的真实 SN/MAC，命中即拦下"
+    echo "    注意：提交信息同样是泄漏渠道——历史已因此重写远程历史多次"
+fi
+
 # 更新状态文件（未推送标记由 --mark/--clear 维护，此处只刷新最新提交/版本）
 init_state
 update_state "- 最新本地提交" "${L_HASH} $(git log -1 --pretty=%s 2>/dev/null | cut -c1-60)"

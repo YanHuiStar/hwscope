@@ -8,7 +8,7 @@
 
 | 工具 | 用途 | 关键用法 |
 |------|------|---------|
-| `agent_sync.sh` | 开工同步：fetch + 显示远程/本地 HEAD、版本、ahead/behind、版本回退警告 | `bash tools/agent/agent_sync.sh`；`--mark` 提交后标记；`--clear` 推送后清状态 |
+| `agent_sync.sh` | 开工同步：fetch + 显示远程/本地 HEAD、版本、ahead/behind、版本回退警告；**并检测 SN/MAC 自检钩子是否安装（未装即提醒）** | `bash tools/agent/agent_sync.sh`；`--mark` 提交后标记；`--clear` 推送后清状态 |
 | `git_push.sh` | 推送（内置防死循环：网络预检 + 3 败熔断 + `[PAUSE]` 纪律；**v1.49.5 起推送前自动跑 `sn_check` 兜底**） | `bash tools/agent/git_push.sh -y`；`GIT_PUSH_BYPASS_COOLDOWN=1` 绕熔断；`SKIP_SN_CHECK=1` 绕 SN 检查 |
 | `report_regression.sh` | **报告解析回归测试**（改解析/渲染后必跑） | `bash tools/agent/report_regression.sh <采集目录>`；`--all` / `--samples SN1,SN2` / `--update` |
 | `regen_reports.sh` | 批量重生成报告（agent 调用，样本自动发现） | `bash tools/agent/regen_reports.sh`；`--samples SN1,SN2`；`--regression`；桌面路径三级探测（`DESKTOP_OVERRIDE` 环境变量 > `USERPROFILE` 推导 > 扫 `/mnt/c/Users/*/Desktop`）|
