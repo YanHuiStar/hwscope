@@ -471,7 +471,7 @@ fi
         nloc=""
         [ "$NIC_SLOT_AVAIL" -eq 1 ] && nloc="$(nic_slot_name "${nnbdf%%.*}")"
         [ -z "$nloc" ] && nloc="—"
-        NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}|${nport}|${nlink}|${nloc}"$'\n'
+                NIC_DETAILS="${NIC_DETAILS}${nnic}|${nnbdf}|${nmac}|${nsn}|${npn}|${nfw}|${npcie_cap}|${npsid}|${gd_mark}|${nchip}|${nport}|${nlink}|${nloc}"$'\n'
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
 fi
 # 网卡明细回退：nic_inventory.csv 空但 ibstat 有 CA（旧采集 v1.x 未生成 csv）→ 从 ibstat 构建简化明细

@@ -53,7 +53,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 
 ```bash
 bash report/report.sh <采集目录>                          # json/md/txt/html 四件套
-bash report/report.sh <采集目录> --acceptance             # 验收清单 md/html（17 项判定）
+bash report/report.sh <采集目录> --acceptance             # 验收清单 md/html（14 项判定）
 bash report/report.sh <采集目录> --baseline <历史目录>     # 时序差异对比
 bash report/report.sh <采集目录> --test-dir <压测目录>     # 关联压测归档
 bash report/report.sh <采集目录> --fld-dir <FLD日志目录>    # 关联 DGX FLD 诊断日志（logs-<TS>/，生成"FLD 诊断参考"段，v1.37.0）
