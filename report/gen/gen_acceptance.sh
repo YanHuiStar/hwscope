@@ -357,16 +357,17 @@ gen_acceptance() {
     # 17. 内存容量一致（类A 自洽校验：全槽同容量为对称配置；混插 WARN 提示）
     if [ -n "$MEM_DIMMS" ]; then
         # 按行计数（size 值含空格如 "64 GB"——不能用 wc -w 空格分词；空槽 "No Module Installed" 排除）
-        _mem_sizes=$(printf '%s\n' "$MEM_DIMMS" | awk -F'|' '$2!="" && $2!="N/A" && $2 !~ /No Module/{print $2}' | sort -u)
+        # v1.50.3：排除空槽（EMPTY_SLOT 标记）与缺失值，否则空槽会被当成一种"容量"→ 误报混插
+        _mem_sizes=$(printf '%s\n' "$MEM_DIMMS" | awk -F'|' '$2!="" && $2!="N/A" && $2!="EMPTY_SLOT" && $2 !~ /No Module/{print $2}' | sort -u)
         _mem_kind=$(printf '%s\n' "$_mem_sizes" | grep -c .)
         # v1.48.42 修复：已插条数排除空槽（原 grep -c '|' 数全部行——32 槽插 16 条报"已插 32 条"）
-        _mem_cnt=$(printf '%s\n' "$MEM_DIMMS" | awk -F'|' '$2!="" && $2!="N/A" && $2 !~ /No Module/{c++} END{print c+0}')
+        _mem_cnt=$(printf '%s\n' "$MEM_DIMMS" | awk -F'|' '$2!="" && $2!="N/A" && $2!="EMPTY_SLOT" && $2 !~ /No Module/{c++} END{print c+0}')
         if [ "${_mem_kind:-0}" -eq 0 ] 2>/dev/null; then
             add_item "内存容量一致" "N/A" "无容量数据（采集缺失）"
         elif [ "$_mem_kind" -le 1 ] 2>/dev/null; then
             add_item "内存容量一致" "PASS" "已插 ${_mem_cnt} 条同容量（$(printf '%s\n' "$_mem_sizes" | head -1)）"
         else
-            add_item "内存容量一致" "WARN" "容量混插（$(printf '%s\n' "$_mem_sizes" | tr '\n' '|' | sed 's/|$//')）——建议对称配置"
+            add_item "内存容量一致" "WARN" "容量混插（$(printf '%s\n' "$_mem_sizes" | tr '\n' '、' | sed 's/、$//')）——建议对称配置"
         fi
     else
         add_item "内存容量一致" "N/A" "无内存明细（采集缺失）"

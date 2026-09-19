@@ -12,6 +12,8 @@ gen_txt() {
         local dseq=0
         while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank dwidth; do
             [ -z "$dslot" ] && continue
+            # v1.50.3：空槽内部标记 -> 展示文案
+            [ "$dsize" = "EMPTY_SLOT" ] && dsize="（未插）"
             dseq=$((dseq+1))
             dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  额定${dnom}/现${dcur}  Rank:${drank:-N/A}${dwidth:+ ${dwidth}}"$'\n'
         done < <(printf '%s\n' "$MEM_DIMMS")

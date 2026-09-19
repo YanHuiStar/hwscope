@@ -216,7 +216,8 @@ if [ -f "${dmidecode_memory_full}" ]; then
                 printf "%s|%s|%s|%s|%s|%s|%s|%s\n", slot, size, mfr, sn, pn, nom, cur, rank
             } else if (slot != "") {
                 # v1.50.2：空槽也列一行——只报「已插 N/总 M」看不出哪几个槽位空着（用户反馈不直观）
-                printf "%s|（未插）|—|—|—|—|—|—\n", slot
+                # 用 ASCII 内部标记：统计端据此排除（中文/全角在表格与容量统计里都会出问题）
+                printf "%s|EMPTY_SLOT|—|—|—|—|—|—\n", slot
             }
             in_dimm=0
         }

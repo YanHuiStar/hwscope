@@ -15,6 +15,8 @@ gen_md() {
         local dseq=0
         while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank dwidth; do
             [ -z "$dslot" ] && continue
+            # v1.50.3：空槽内部标记 -> 展示文案（统计端已排除该标记，仅渲染时转换）
+            [ "$dsize" = "EMPTY_SLOT" ] && dsize="（未插）"
             dseq=$((dseq+1))
             if [ "$d_width_any" -eq 1 ]; then
                 dimms_md="${dimms_md}| ${dseq} | ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dnom} | ${dcur} | ${drank:-N/A} | ${dwidth:-N/A} |"$'\n'
