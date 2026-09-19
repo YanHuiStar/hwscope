@@ -282,3 +282,41 @@ for _mce_c in "${OS_DIR}/journal_mce.log" "${OS_DIR}/journal_kernel_hw.log" "${O
         break
     fi
 done
+
+# ─── v1.50.0：板载 / 外部物理接口（VGA、USB 控制器、板载网口）───
+#   数据源：pcie/lspci_all.log（lspci 枚举，已全量落盘）+ os/lsusb.log（USB 设备）；
+#   零新采集——旧采集目录同样生效。BMC 管理口行由报告端用 BMC_IP/BMC_MAC 补。
+#   ⚠️ lspci_all.log 首部有 HwScope 命令头（# 开头），必须排除（v1.48.95 教训：
+#      命令头含被搜索的关键词，直接 grep 会自匹配）
+BOARD_IFACE=""
+BOARD_USB_DEV=""
+_lsp="${PCIE_DIR}/lspci_all.log"
+if [ -f "$_lsp" ]; then
+    # 显示输出（VGA/Display 控制器 = 机器对外 VGA 口）
+    while IFS= read -r _ln; do
+        [ -z "$_ln" ] && continue
+        _bdf="${_ln%% *}"
+        _dev=$(printf '%s' "$_ln" | cut -d' ' -f2- | sed 's/^.*: //; s/ \[[0-9a-f]\{4\}:[0-9a-f]\{4\}\].*$//; s/ (rev .*)$//')
+        BOARD_IFACE="${BOARD_IFACE}显示输出|${_dev}|${_bdf}|板载显示控制器（VGA/D-sub 口，BMC 或独立显卡提供）"$'\n'
+    done < <(grep -E "^[0-9a-f]+:[0-9a-f]+\.[0-9] .*(VGA compatible controller|Display controller)" "$_lsp" | grep -v "^#")
+    # USB 控制器（每个控制器对应一组外置 USB 口）
+    while IFS= read -r _ln; do
+        [ -z "$_ln" ] && continue
+        _bdf="${_ln%% *}"
+        _dev=$(printf '%s' "$_ln" | cut -d' ' -f2- | sed 's/^.*: //; s/ \[[0-9a-f]\{4\}:[0-9a-f]\{4\}\].*$//; s/ (rev .*)$//')
+        BOARD_IFACE="${BOARD_IFACE}USB 控制器|${_dev}|${_bdf}|外置 USB 口（具体口数见机箱面板/厂商规格）"$'\n'
+    done < <(grep -E "^[0-9a-f]+:[0-9a-f]+\.[0-9] .*USB controller" "$_lsp" | grep -v "^#")
+    # 板载/其他网口（非 Mellanox 的以太网控制器；Mellanox 计算网卡已入网卡明细）
+    while IFS= read -r _ln; do
+        [ -z "$_ln" ] && continue
+        case "$_ln" in *Mellanox*) continue ;; esac
+        _bdf="${_ln%% *}"
+        _dev=$(printf '%s' "$_ln" | cut -d' ' -f2- | sed 's/^.*: //; s/ \[[0-9a-f]\{4\}:[0-9a-f]\{4\}\].*$//; s/ (rev .*)$//')
+        BOARD_IFACE="${BOARD_IFACE}板载/其他网口|${_dev}|${_bdf}|非 GPU 直连网卡（多为管理/业务口）"$'\n'
+    done < <(grep -E "^[0-9a-f]+:[0-9a-f]+\.[0-9] .*Ethernet controller" "$_lsp" | grep -v "^#")
+fi
+# USB 已接设备（lsusb；排除命令头行）
+_lsub="${OUT}/os/lsusb.log"
+if [ -f "$_lsub" ]; then
+    BOARD_USB_DEV=$(grep -vE "^#" "$_lsub" | sed -n 's/^Bus \([0-9]*\) Device \([0-9]*\): ID \([0-9a-f:]\+\) \(.*\)$/\1|\2|\3|\4/p')
+fi

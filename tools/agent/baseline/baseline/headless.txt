@@ -1,0 +1,39 @@
+# 报告解析回归指标（tools/agent/report_regression.sh）
+[table_columns]
+  table_rows=107
+[gpu]
+  gpu_detail_rows=2
+  model: Microsoft Corporation Basic Render Driver
+  gpu_json_count=2
+[memory]
+  dimm_rows=0
+  header: | # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
+[psu]
+  psu_rows=0
+[pcie]
+  pcie_appendix_rows=0
+[disk]
+  disk_rows=4
+[nic]
+  nic_rows=0
+  header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
+[json]
+  json_bytes=5253
+        1 "disk_count"
+        1 "platform"
+[html]
+  html_table_open=20
+  html_table_close=20
+  html_bytes=12192
+[acceptance]
+       24 N/A
+        1 PASS
+        2 WARN
+[acceptance_hw]
+  准系统 | 台 | 1
+  CPU | 颗 | 1
+  内存 | 条 | 0
+  GPU模组 | 张 | 2
+  存储 | 块 | 4
+  电源模块 | 个 | 0
+  系统管理 | 套 | 1

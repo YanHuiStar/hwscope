@@ -650,3 +650,14 @@ for hf in "${RAID_DIR}"/sas3_hba*.log "${RAID_DIR}"/sas2_hba*.log; do
 done
 # HBA 硬件存在性（lspci SAS controller，排除 MegaRAID 已计入 RAID_PCI_PRESENT、Intel VMD 与 PCIe Switch 管理端点）
 HBA_PCI_PRESENT=$(grep -iE "SAS controller|Serial Attached SCSI|SAS3008|SAS3108|SAS3508" "${lspci_all}" 2>/dev/null | grep -viE "MegaRAID|VMD|Volume Management|PCIe Switch management endpoint|PEX89|PEX97" | head -1)
+
+# ─── v1.50.0：电源槽位总数（BMC SDR 里 PSn_Status 编号最大值）───
+#   用途：交付验收时场地供电可能不满配（机柜单路供电等），报告如实标注「在位/槽位」，
+#         由验收人对照采购配置单确认；不做"必须插满"硬判定——机型槽位数差异大（8/12 槽等），
+#         硬判会把出厂即部分配置的机器误报为故障。
+PSU_SLOT_TOTAL=""
+for _psf in "${BMC_DIR}/ipmi_sensors.log" "${BMC_DIR}/ipmi_sensors_power.log" "${PSU_DIR}/ipmi_psu_sensors.log"; do
+    [ -f "$_psf" ] || continue
+    _slot=$(grep -oE "PS[0-9]+_Status" "$_psf" 2>/dev/null | grep -oE "[0-9]+" | sort -n | tail -1)
+    [ -n "$_slot" ] && { PSU_SLOT_TOTAL="$_slot"; break; }
+done

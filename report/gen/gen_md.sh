@@ -139,6 +139,139 @@ gen_md() {
             fan_details_md="${fan_details_md}| ${fn} | ${fname} | ${frpm} | ${fstatus} |"$'\n'
         done < <(printf '%s\n' "$FAN_DETAILS")
     fi
+
+    # ══════════════════════════════════════════════════════════════════════
+    # v1.50.0 新增明细表（报告端聚合既有采集数据，零新采集；旧采集目录同样生效）
+    #   ⚠️ 以下变量必须非 local：函数外的 heredoc 读不到 local 变量（v1.48.53 教训）
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ── ① 网卡卡级明细（每张卡一行；按 BDF 去掉 function 后聚合端口级 NIC_DETAILS）
+    #      口数 = 同 BDF 前缀的端口行数（物理口实测，非型号名推断）；叫法用行业术语
+    NIC_CARD_MD=""
+    if [ -n "$NIC_DETAILS" ]; then
+        NIC_CARD_MD=$(printf '%s\n' "$NIC_DETAILS" | awk -F'|' '
+            function ptxt(n) {
+                if (n == 1) return "单口"
+                if (n == 2) return "双口"
+                if (n == 3) return "三口"
+                if (n == 4) return "四口"
+                if (n == 8) return "八口"
+                return n " 口"
+            }
+            {
+                bdf = $2
+                sub(/\.[0-9]+$/, "", bdf)
+                if (bdf == "") next
+                if (!(bdf in seen)) {
+                    seen[bdf] = 1
+                    order[++n] = bdf
+                    # 型号：去掉 60 段追加的「（双口）」类后缀——口数已有独立列，避免重复
+                    m = $5
+                    _i = index(m, "（")
+                    if (_i > 0) m = substr(m, 1, _i - 1)
+                    model[bdf] = m
+                    chip[bdf] = $10
+                    # 固件：去掉附带的 (PSID)——PSID 已有独立列
+                    f = $6
+                    _j = index(f, " (")
+                    if (_j > 0) f = substr(f, 1, _j - 1)
+                    fw[bdf] = f
+                    psid[bdf] = $8; loc[bdf] = $13; bdf0[bdf] = $2
+                }
+                cnt[bdf]++
+            }
+            END {
+                # BDF 升序（格式等宽 xx:xx.x，字符串比较即可；n 很小，冒泡足够）
+                for (i = 1; i <= n; i++)
+                    for (j = i + 1; j <= n; j++)
+                        if (order[j] < order[i]) { t = order[i]; order[i] = order[j]; order[j] = t }
+                for (i = 1; i <= n; i++) {
+                    b = order[i]
+                    c = chip[b]; if (c == "") c = "—"
+                    l = loc[b];  if (l == "") l = "—"
+                    f = fw[b];   if (f == "") f = "—"
+                    p = psid[b]; if (p == "") p = "—"
+                    printf "| %d | %s | %s | %s | %s | %s | %s | %s |\n", i, model[b], ptxt(cnt[b]), bdf0[b], c, f, p, l
+                }
+            }')
+    fi
+
+    # ── ② 功耗读数表（不同口径分行展示、不并排——AGENTS v1.48.97 立规）
+    #      数据源均为既有文本变量（格式「标签: 值」），报告端拆分；旧采集目录同样生效
+    PWR_TABLE_MD=""
+    # 取「标签: 值」的值部分并去掉首尾空白（BMC 输出常带前导空格）
+    _ptrim() { printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
+    if [ -n "$PSU_EXTRA" ]; then
+        case "$PSU_EXTRA" in
+            *": "*) _pl="${PSU_EXTRA%%: *}"; _pv="$(_ptrim "${PSU_EXTRA#*: }")" ;;
+            *)      _pl="整机功耗";          _pv="$(_ptrim "$PSU_EXTRA")" ;;
+        esac
+        PWR_TABLE_MD="${PWR_TABLE_MD}| ${_pl} | ${_pv} | 各 PSU 输入功率合计 |"$'\n'
+    fi
+    if [ -n "$PSU_DCMI" ]; then
+        _dv="$(_ptrim "${PSU_DCMI#*: }")"; [ "$_dv" = "$PSU_DCMI" ] && _dv="$(_ptrim "$PSU_DCMI")"
+        case "$_dv" in
+            *"｜"*)
+                PWR_TABLE_MD="${PWR_TABLE_MD}| DCMI 平台功耗（瞬时） | $(_ptrim "${_dv%%｜*}") | dcmi power reading 瞬时值 |"$'\n'
+                PWR_TABLE_MD="${PWR_TABLE_MD}| DCMI 窗口统计 | $(_ptrim "${_dv#*｜}") | BMC 采样窗口内 Min/Max/Avg |"$'\n'
+                ;;
+            *)
+                PWR_TABLE_MD="${PWR_TABLE_MD}| DCMI 平台功耗 | ${_dv} | dcmi power reading |"$'\n'
+                ;;
+        esac
+    fi
+    if [ -n "$PSU_CPU_RAPL" ]; then
+        case "$PSU_CPU_RAPL" in
+            *": "*) _rl="${PSU_CPU_RAPL%%: *}"; _rv="$(_ptrim "${PSU_CPU_RAPL#*: }")" ;;
+            *)      _rl="CPU 功耗（RAPL）";      _rv="$(_ptrim "$PSU_CPU_RAPL")" ;;
+        esac
+        PWR_TABLE_MD="${PWR_TABLE_MD}| ${_rl} | ${_rv} | CPU 内部 RAPL 计数器（不含 GPU）|"$'\n'
+    fi
+
+    # ── ③ IB 链路质量（逐 CA）/ 端口模式（逐端口）明细表
+    #      数据源为 40/50 段既有汇总变量，从健康检查表的长串拆出为独立表（观感 + 可逐行读）
+    IB_BER_TABLE_MD=""
+    if [ -n "$IB_BER_SUMMARY" ]; then
+        IB_BER_TABLE_MD=$(printf '%s\n' "$IB_BER_SUMMARY" | tr ' ' '\n' | awk -F':' '
+            NF >= 2 && $1 != "" { printf "| %s | %s |\n", $1, $2 }')
+    fi
+    IB_PORTMODE_MD=""
+    if [ -n "$LINKTYPE_SUMMARY" ]; then
+        IB_PORTMODE_MD=$(printf '%s\n' "$LINKTYPE_SUMMARY" | tr ',' '\n' | awk '
+            {
+                c = index($0, ":")
+                if (c == 0) next
+                ca = substr($0, 1, c - 1)
+                rest = substr($0, c + 1)
+                nb = split(rest, pp, " ")
+                for (i = 1; i <= nb; i++) {
+                    e = index(pp[i], "=")
+                    if (e == 0) continue
+                    printf "| %s | %s | %s |\n", ca, substr(pp[i], 1, e - 1), substr(pp[i], e + 1)
+                }
+            }')
+    fi
+    # IB 链路质量摘要（健康检查行用，替代原来的整串 BER）
+    IB_BER_BRIEF=""
+    if [ -n "$IB_BER_SUMMARY" ]; then
+        _bnb=$(printf '%s\n' "$IB_BER_SUMMARY" | tr ' ' '\n' | awk -F':' 'NF >= 2 { print $2 }' | sed '/^$/d')
+        _bcnt=$(printf '%s\n' "$_bnb" | grep -c .)
+        _bbest=$(printf '%s\n' "$_bnb" | sort -g | head -1)
+        _bworst=$(printf '%s\n' "$_bnb" | sort -g | tail -1)
+        IB_BER_BRIEF="${_bcnt} 个 CA 有读数 · 最优 ${_bbest} / 最差 ${_bworst}"
+    fi
+
+    # ── ④ 板载 / 外部接口表（VGA、USB、板载网口；BMC 管理口行在渲染时用 BMC_IP/BMC_MAC 补）
+    #      数据源：10 段从 lspci_all/lsusb 解析所得（零新采集）
+    BOARD_IFACE_MD=""
+    if [ -n "$BOARD_IFACE" ]; then
+        BOARD_IFACE_MD=$(printf '%s' "$BOARD_IFACE" | awk -F'|' 'NF >= 4 { printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }')
+    fi
+    BOARD_USB_MD=""
+    if [ -n "$BOARD_USB_DEV" ]; then
+        BOARD_USB_MD=$(printf '%s\n' "$BOARD_USB_DEV" | awk -F'|' 'NF >= 4 { printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }')
+    fi
+
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
 
@@ -449,10 +582,19 @@ fi)
 | IB 设备数 | ${IB_COUNT:-0} |
 | IB 活动口 | ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})} |
 | IB Link 状态 | Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED") |
-| IB 额定速率 | ${IB_NOMINAL:-N/A} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ] || [ "${IB_BER_TRIED:-0}" -gt 0 ]; then printf '\n| IB 链路质量 | %s%s（原始值，未设阈值判定%s） |' "${IB_BER_TEXT}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}" "${IB_ETH_MODE_PORTS:+；${IB_ETH_MODE_PORTS% } 为以太模式、无 IB BER}"; fi)
+| IB 额定速率 | ${IB_NOMINAL:-N/A} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ] || [ "${IB_BER_TRIED:-0}" -gt 0 ]; then printf '\n| IB 链路质量 | %s%s（原始值，未设阈值判定%s；逐 CA 明细见网络段） |' "${IB_BER_BRIEF:-${IB_BER_TEXT}}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}" "${IB_ETH_MODE_PORTS:+；${IB_ETH_MODE_PORTS% } 为以太模式、无 IB BER}"; fi)
 | 以太网口 up | ${ETH_LINK_UP:-0} |
 $(net_extra_md)
 
+### 网络适配器明细（卡级）
+$(if [ -n "$NIC_CARD_MD" ]; then
+    echo "| # | 型号 | 口数 | BDF | 芯片 | 固件 | PSID | 物理位置 |"
+    echo "|---|------|------|-----|------|------|------|-----------|"
+    printf '%s' "$NIC_CARD_MD"
+    echo ""
+    echo "> 口数 = 该卡在系统中实际呈现的物理端口数（按同 BDF 前缀的端口行统计）；逐口链路状态见下表。GPU 直连标记在端口级表中"
+    echo ""
+fi)
 ### 网络适配器明细（NIC）
 $(if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -eq 0 ]; then
     echo "> GPU直连 列已隐藏：本机无 GPU 直连网卡（网卡均不与 GPU 同 PCIe Switch；H200/B200 类 1:1 直连或 B300 板载网卡形态才会标记）"
@@ -478,6 +620,26 @@ $(if [ -z "$nic_details_md" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
         nfb=$((nfb+1))
         echo "| ${nfb} | ${fca} | ${ftype} | ${fguid} | ${fstate} |"
     done
+fi)
+
+$(if [ -n "$IB_BER_TABLE_MD" ]; then
+    echo "### IB 链路质量（每 CA）"
+    echo "| CA | 物理 BER |"
+    echo "|----|---------|"
+    printf '%s' "$IB_BER_TABLE_MD"
+    echo ""
+    echo "> 取自 mlxlink 的 Raw Physical BER 原始计数器值，未设阈值判定（数值越小越好）；Link Down 累计 ${IB_LINK_DOWN_EVENTS:-0} 次为该机所有 CA 合计。以太模式端口无 IB BER 读数${IB_ETH_MODE_PORTS:+（本机 ${IB_ETH_MODE_PORTS}）}"
+    echo ""
+fi)
+
+$(if [ -n "$IB_PORTMODE_MD" ]; then
+    echo "### 端口模式（每端口）"
+    echo "| CA | 端口 | 模式 |"
+    echo "|----|------|------|"
+    printf '%s' "$IB_PORTMODE_MD"
+    echo ""
+    echo "> 取自 \`mlxconfig\` 的 LINK_TYPE_P1/P2：ETH = 以太模式，IB = InfiniBand，「未配置」= 该口未启用（交付时按采购配置核对）"
+    echo ""
 fi)
 
 $(if [ -n "$USB_NICS" ]; then
@@ -538,6 +700,24 @@ $(if [ -n "$BMC_CONSISTENCY" ]; then
     done
 fi)
 
+## 板载与外部接口
+$(if [ -n "$BOARD_IFACE_MD" ] || [ -n "$BMC_IP" ]; then
+    echo "| 类型 | 设备 | BDF | 说明 |"
+    echo "|------|------|-----|------|"
+    printf '%s' "$BOARD_IFACE_MD"
+    [ -n "$BMC_IP" ] && echo "| BMC 管理口 | 带外管理网口 | — | IP ${BMC_IP}${BMC_MAC:+ · MAC ${BMC_MAC}}（远程管理/KVM，不经操作系统）|"
+    echo ""
+    echo "> 仅列出 lspci/lsusb 可见的接口；机箱后面板的具体接口数量与形态（USB 口数、VGA 口位、串口）以厂商机箱规格为准"
+    echo ""
+fi)
+$(if [ -n "$BOARD_USB_MD" ]; then
+    echo "### USB 已接设备"
+    echo "| 总线 | 设备 | VID:PID | 描述 |"
+    echo "|------|------|---------|------|"
+    printf '%s' "$BOARD_USB_MD"
+    echo ""
+fi)
+
 ## 风扇
 | 项 | 值 |
 |----|----|
@@ -582,16 +762,35 @@ else
     fi
 fi)
 $(
-    # PSU 尾注（冗余/整机功耗/DCMI/平台说明），合并块避免空输出堆积空行
-    if [ "$PSU_REDUNDANT" != "N/A" ] || [ -n "$PSU_EXTRA" ] || [ -n "$PSU_DCMI" ]; then
+    # PSU 尾注（电源冗余/平台说明）；功耗读数移至下方独立表（v1.50.0）
+    if [ "$PSU_REDUNDANT" != "N/A" ] || [ -n "$PSU_PLATFORM_NOTE" ]; then
         echo ""
     fi
     [ "$PSU_REDUNDANT" != "N/A" ] && echo "**电源冗余: ${PSU_REDUNDANT}**"
-    [ -n "$PSU_EXTRA" ] && echo "**${PSU_EXTRA}**"
-    [ -n "$PSU_DCMI" ] && echo "**${PSU_DCMI}**"
-    [ -n "$PSU_CPU_RAPL" ] && echo "**${PSU_CPU_RAPL}**"
+    # v1.50.0：在位/槽位对比——场地供电受限时可能不满配，如实标注供验收人核对，不做硬判定
+    if [ -n "$PSU_SLOT_TOTAL" ]; then
+        _pn=${PSU_SENSOR_SEEN:-0}
+        [ "$_pn" -eq 0 ] 2>/dev/null && _pn=${PSU_COUNT_DMI:-0}
+        if [ "$_pn" -gt 0 ] 2>/dev/null; then
+            if [ "$_pn" -lt "$PSU_SLOT_TOTAL" ] 2>/dev/null; then
+                printf '**电源配置: %s / %s 个槽位在位**\n' "$_pn" "$PSU_SLOT_TOTAL"
+                printf '> ⚠️ 该机型共 %s 个电源槽位、当前 %s 个在位。若因场地供电限制（机柜单路/双路供电等）降配运行，请确认仍满足当前负载的冗余要求（N+1 / N+N），并在验收单备注\n' "$PSU_SLOT_TOTAL" "$_pn"
+            else
+                printf '**电源配置: %s / %s 个槽位（全部在位）**\n' "$_pn" "$PSU_SLOT_TOTAL"
+            fi
+        fi
+    fi
     [ -n "$PSU_PLATFORM_NOTE" ] && echo "> ⚠️ ${PSU_PLATFORM_NOTE}"
 )
+$(if [ -n "$PWR_TABLE_MD" ]; then
+    echo ""
+    echo "### 功耗读数"
+    echo "| 来源 | 读数 | 口径 |"
+    echo "|------|------|------|"
+    printf '%s' "$PWR_TABLE_MD"
+    echo ""
+    echo "> 各读数口径与时间基准不同（PSU 输入合计 / BMC DCMI 瞬时与窗口统计 / CPU 内部计数器），仅作对照参考，不互相印证；逐颗 PSU 实时功率见上表"
+fi)
 
 $(if [ -n "$PWR_CUR" ] || [ -n "$PWR_ENERGY" ]; then
     echo ""
@@ -792,7 +991,9 @@ $(if [ -n "$NIC_MLX" ]; then
     echo "| MT4123 | ConnectX-6 Dx |"
     echo "| MT4121 / MT4122 | ConnectX-6 |"
     echo "| MT2892 / MT2893 | ConnectX-5 |"
-    echo "| MT2884 / MT2883 | ConnectX-4 |"
+    echo "| MT2884 / MT2883 | ConnectX-4 |
+
+> ConnectX-9 / BlueField-4（NVIDIA Rubin 平台配套，SuperNIC 达 1.6 Tb/s RoCE）已发布，其 MT 编号待厂商资料确认后补入——未确认前不猜编号，避免误标"
 fi)
 ---
 *由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）*

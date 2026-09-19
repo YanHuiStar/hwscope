@@ -126,6 +126,43 @@ gen_txt() {
             fan_details_txt="${fan_details_txt}    ${fname}  ${frpm} RPM  ${fstatus}"$'\n'
         done < <(printf '%s\n' "$FAN_DETAILS")
     fi
+    # ── v1.50.0：卡级网卡文本明细（每张卡一行；口数为同 BDF 前缀端口统计）──
+    #    ⚠️ 非 local：函数外 heredoc 读不到（v1.48.53 教训）
+    NIC_CARD_TXT=""
+    if [ -n "$NIC_DETAILS" ]; then
+        NIC_CARD_TXT=$(printf '%s\n' "$NIC_DETAILS" | awk -F'|' '
+            function ptxt(n) {
+                if (n == 1) return "单口"
+                if (n == 2) return "双口"
+                if (n == 3) return "三口"
+                if (n == 4) return "四口"
+                if (n == 8) return "八口"
+                return n " 口"
+            }
+            {
+                bdf = $2; sub(/\.[0-9]+$/, "", bdf)
+                if (bdf == "") next
+                if (!(bdf in seen)) {
+                    seen[bdf] = 1; order[++n] = bdf
+                    m = $5; _i = index(m, "（")
+                    if (_i > 0) m = substr(m, 1, _i - 1)
+                    model[bdf] = m; chip[bdf] = $10; bdf0[bdf] = $2; loc[bdf] = $13
+                }
+                cnt[bdf]++
+            }
+            END {
+                for (i = 1; i <= n; i++)
+                    for (j = i + 1; j <= n; j++)
+                        if (order[j] < order[i]) { t = order[i]; order[i] = order[j]; order[j] = t }
+                for (i = 1; i <= n; i++) {
+                    b = order[i]
+                    c = chip[b]; if (c == "") c = "—"
+                    l = loc[b];  if (l == "") l = "—"
+                    printf "    %d. %s  %s  BDF:%s  芯片:%s  位置:%s\n", i, model[b], ptxt(cnt[b]), bdf0[b], c, l
+                }
+            }')
+    fi
+
     cat > "$f" << EOF
 ============================================
 HwScope 硬件巡检报告
@@ -291,8 +328,9 @@ fi)
   IB设备 : ${IB_COUNT:-0}
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
   Link状态: Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED")
-  额定速率: ${IB_NOMINAL:-N/A}$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n  固件一致性: [警告] 同型号卡固件版本不一致（仅供核对，非故障判定）：%s' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ] || [ "${IB_BER_TRIED:-0}" -gt 0 ]; then printf '\n  链路质量: %s%s（原始值，未设阈值判定%s）' "${IB_BER_TEXT}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}" "${IB_ETH_MODE_PORTS:+；${IB_ETH_MODE_PORTS% } 为以太模式、无 IB BER}"; fi)
-  网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)$(if [ -n "$nic_details_txt" ]; then printf '\n%s' "$nic_details_txt"; fi)$(if printf '%s\n' "$nic_details_txt" | grep -q "能力 " 2>/dev/null; then printf '\n  注: PCIe(协商) 标"(能力 …)"= 卡能力高于当前协商，多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障\n'; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
+  额定速率: ${IB_NOMINAL:-N/A}$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n  固件一致性: [警告] 同型号卡固件版本不一致（仅供核对，非故障判定）：%s' "${IB_FW_INCONSISTENT}"; fi)$(if [ -n "${IB_BER_SUMMARY}" ] || [ "${IB_LINK_DOWN_EVENTS:-0}" -gt 0 ] || [ "${IB_BER_TRIED:-0}" -gt 0 ]; then printf '\n  链路质量: %s%s（原始值，未设阈值判定%s）' "${IB_BER_BRIEF:-${IB_BER_TEXT}}" "${IB_LINK_DOWN_EVENTS:+${IB_BER_SUMMARY:+；}Link Down 累计 ${IB_LINK_DOWN_EVENTS} 次}" "${IB_ETH_MODE_PORTS:+；${IB_ETH_MODE_PORTS% } 为以太模式、无 IB BER}"; fi)
+  网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)
+  网卡(卡级):$(if [ -n "$NIC_CARD_TXT" ]; then printf '\n%s' "$NIC_CARD_TXT"; else printf ' N/A'; fi)$(if [ -n "$nic_details_txt" ]; then printf '\n  网卡(端口级):%s' "$nic_details_txt"; fi)$(if printf '%s\n' "$nic_details_txt" | grep -q "能力 " 2>/dev/null; then printf '\n  注: PCIe(协商) 标"(能力 …)"= 卡能力高于当前协商，多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障\n'; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
     printf '\n  网卡明细（ibstat 回退，旧采集无 nic_inventory）:\n'
     echo "$NIC_FALLBACK_DETAILS" | while IFS='|' read -r fca ftype fguid fstate; do
         [ -z "$fca" ] && continue

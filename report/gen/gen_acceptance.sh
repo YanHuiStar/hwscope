@@ -226,15 +226,26 @@ gen_acceptance() {
     #   附：冗余等级有数据才提，不再作为独立判定。
     _pwr_red=""
     [ -n "${PSU_REDUNDANT:-}" ] && [ "${PSU_REDUNDANT}" != "N/A" ] && _pwr_red="；冗余等级：${PSU_REDUNDANT}"
+    # v1.50.0：在位/槽位对比——交付验收常遇场地供电受限导致不满配，把"插了几个槽位"
+    #   写进判定说明供验收人对照采购配置单；不做"必须插满"硬判（机型槽位差异大，硬判必误报）
+    _pwr_slot=""
+    if [ -n "${PSU_SLOT_TOTAL:-}" ]; then
+        _pn=${PSU_SENSOR_SEEN:-0}
+        [ "$_pn" -eq 0 ] 2>/dev/null && _pn=${PSU_COUNT_DMI:-0}
+        if [ "$_pn" -gt 0 ] 2>/dev/null; then
+            _pwr_slot="；在位 ${_pn}/${PSU_SLOT_TOTAL} 个电源槽位"
+            [ "$_pn" -lt "$PSU_SLOT_TOTAL" ] 2>/dev/null && _pwr_slot="${_pwr_slot}（若因场地供电受限降配，请确认仍满足冗余要求并在验收单备注）"
+        fi
+    fi
     if [ "${PSU_STATUS_BAD:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "电源状态" "FAIL" "检测到 ${PSU_STATUS_BAD} 颗电源状态异常（IPMI PS*_Status 非 0x1）${PSU_STATUS_BAD_D:+：${PSU_STATUS_BAD_D}}${_pwr_red}"
+        add_item "电源状态" "FAIL" "检测到 ${PSU_STATUS_BAD} 颗电源状态异常（IPMI PS*_Status 非 0x1）${PSU_STATUS_BAD_D:+：${PSU_STATUS_BAD_D}}${_pwr_slot}${_pwr_red}"
     elif [ "${PSU_STATUS_OK:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "电源状态" "PASS" "${PSU_STATUS_OK} 颗电源状态正常（IPMI PS*_Status=0x1${PSU_STATUS_TEMP:+；温度 ${PSU_STATUS_TEMP}}${PSU_STATUS_PWR:+；功耗 ${PSU_STATUS_PWR}}）${_pwr_red}"
+        add_item "电源状态" "PASS" "${PSU_STATUS_OK} 颗电源状态正常（IPMI PS*_Status=0x1${PSU_STATUS_TEMP:+；温度 ${PSU_STATUS_TEMP}}${PSU_STATUS_PWR:+；功耗 ${PSU_STATUS_PWR}}）${_pwr_slot}${_pwr_red}"
     elif [ "${PSU_COUNT_DMI:-0}" -ge 2 ] 2>/dev/null; then
-        add_item "电源状态" "PASS" "SMBIOS 确认 ${PSU_COUNT_DMI} 颗电源在位（该平台 IPMI 未暴露电源状态传感器，按在位数量判定）${_pwr_red}"
+        add_item "电源状态" "PASS" "SMBIOS 确认 ${PSU_COUNT_DMI} 颗电源在位（该平台 IPMI 未暴露电源状态传感器，按在位数量判定）${_pwr_slot}${_pwr_red}"
     elif [ -n "${PSU_DETAILS:-}" ]; then
         _pc=$(printf '%s\n' "$PSU_DETAILS" | grep -c .)
-        add_item "电源状态" "PASS" "PSU 明细 ${_pc} 条（电源 FRU/传感器可见，IPMI 无状态等级数据）${_pwr_red}"
+        add_item "电源状态" "PASS" "PSU 明细 ${_pc} 条（电源 FRU/传感器可见，IPMI 无状态等级数据）${_pwr_slot}${_pwr_red}"
     else
         add_item "电源状态" "N/A" "该平台未暴露电源状态（IPMI 无 PS*_Status、SMBIOS 无 Type 39、FRU 无 PSU 条目；平台固有，不计数）" 1
     fi

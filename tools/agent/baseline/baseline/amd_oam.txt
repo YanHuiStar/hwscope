@@ -1,0 +1,48 @@
+# 报告解析回归指标（tools/agent/report_regression.sh）
+[table_columns]
+  MISMATCH line 192: header 4 cols, row 9 cols: | USB 控制器 | Advanced Micro Devices, Inc. [AMD] Device | 71:0
+  table_rows=360
+[gpu]
+  gpu_detail_rows=8
+  model: AMD Instinct MI300X
+  gpu_json_count=8
+[memory]
+  dimm_rows=12
+  header: | # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
+[psu]
+  psu_rows=8
+[values]
+  psu_power_values=8
+  nic_psid_values=10
+  nic_sn_values=10
+  dimm_sn_values=12
+  nic_link_state_values=10
+[pcie]
+  | 链路统计 | 125 条 · 满速 120 · 降速/降宽 0 · bridge 协商 4 · 管理芯片 1 |
+  pcie_appendix_rows=125
+[disk]
+  disk_rows=4
+[nic]
+  nic_rows=19
+  header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
+[json]
+  json_bytes=39672
+        1 "disk_count"
+        1 "platform"
+[html]
+  html_table_open=29
+  html_table_close=29
+  html_bytes=49327
+[acceptance]
+        3 N/A
+       12 PASS
+[acceptance_hw]
+  准系统 | 台 | 1
+  CPU | 颗 | 2
+  内存 | 条 | 12
+  GPU模组 | 张 | 8
+  计算网卡 | 张 | 8（单口×8，共 8 口）
+  网卡&端口 | 张 | 1（双口×1，共 2 口）
+  存储 | 块 | 4
+  电源模块 | 个 | 8
+  系统管理 | 套 | 1
