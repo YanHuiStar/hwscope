@@ -14,13 +14,13 @@
 | `memory/mem_stress_ng.sh` | 内存压力 | stress-ng vm 80% |
 | `memory/mem_memtester.sh` | 位翻转 | memtester |
 | `memory/mem_sysbench.sh` | 内存带宽 | sysbench |
-| `disk/disk_fio.sh` | IOPS/延迟 | fio（选盘交互） |
+| `disk/disk_fio.sh` | IOPS/延迟 | fio（选盘交互）；v1.49.21 起**未挂载的盘直接 SKIP**（原静默回落 /tmp，等于测系统盘） |
 | `disk/disk_hdparm.sh` | 缓存读 | hdparm |
-| `disk/disk_dd.sh` | 顺序读 | dd |
+| `disk/disk_dd.sh` | 顺序读 | dd；v1.49.21 起日志名带设备名（参数指定盘时不再互相覆盖） |
 | `network/net_iperf3.sh` | TCP 吞吐 | iperf3 |
 | `network/net_mtr.sh` | 路径质量 | mtr |
 | `ib/ib_perftest.sh` | IB 打流 | 自动配对 serial |
-| `gpu/gpu_bandwidth.sh` | GPU 带宽 | bandwidthTest 逐卡+P2P |
+| `gpu/gpu_bandwidth.sh` | GPU 带宽 | bandwidthTest 逐卡+P2P；v1.49.21 起补 `test_finish`（manifest 有 summary=，压测报告可读） |
 | `gpu/gpu_burn_test.sh` | GPU 长压测 | gpu-burn（默认 1800s，-tc 张量核心） |
 | `gpu/gpu_nvbandwidth.sh` | 带宽基准 | nvbandwidth |
 | `gpu/gpu_partnerdiag.sh` | 出厂诊断 | partnerdiag（FLD 包） |
@@ -47,7 +47,7 @@
 | 脚本 | 说明 |
 |------|------|
 | `nvlink_verify.sh` | NVLink 完整性校验（拓扑比对） |
-| `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前） |
+| `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前）；v1.49.21 起严重事件计数排除 `Deasserted` 自愈行 |
 | `sync_time.sh` | SSH 时间同步 | 本机时间基准 → 目标机（epoch 秒无时区歧义；停 NTP + date -s + hwclock -w） |
 | `sync_version.sh` | 版本号三处同步（hwscope.sh 注释/变量 + README 徽章） |
 
@@ -63,7 +63,7 @@
 | 脚本 | 说明 |
 |------|------|
 | `remote_collect.sh` | 远程采集：tar 推送 → 远端执行 → 回拉（交互式密码 + ControlMaster）；`--install <1,2,...>` 先远端非交互装依赖再采集（v1.42.0） |
-| `remote_run.sh` | 远程执行：多机命令 / 推送文件 / 推送执行脚本（--script）+ 日志回拉（--pull-logs）；v1.43.0 由 remote_batch.sh 改名 |
+| `remote_run.sh` | 远程执行：多机命令 / 推送文件 / 推送执行脚本（--script）+ 日志回拉（--pull-logs，v1.49.21 起逐机先清空再解包 + 归档校验）；v1.43.0 由 remote_batch.sh 改名 |
 
 ### 运维操作（含写操作，执行前二次确认）
 

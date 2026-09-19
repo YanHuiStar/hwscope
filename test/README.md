@@ -29,13 +29,13 @@ test/
 | `memory/mem_stress_ng.sh` | 内存压力 | stress-ng | vm 80% |
 | `memory/mem_memtester.sh` | 内存位翻转 | memtester | 内存一半 ×2 轮 |
 | `memory/mem_sysbench.sh` | 内存带宽基准 | sysbench | |
-| `disk/disk_fio.sh` | IOPS/延迟 | fio | ⚠️ 选盘 + 写测试文件（自动清理） |
+| `disk/disk_fio.sh` | IOPS/延迟 | fio | ⚠️ 选盘 + 写测试文件（自动清理）；**v1.49.21**：盘未挂载时**直接 SKIP**（原来静默回落 /tmp —— 等于测系统盘/内存盘，还绕过系统盘保护） |
 | `disk/disk_hdparm.sh` | 缓存/盘面读取 | hdparm | |
-| `disk/disk_dd.sh` | 顺序读吞吐 | dd | |
+| `disk/disk_dd.sh` | 顺序读吞吐 | dd | v1.49.21：日志名带设备名（`disk_dd_<dev>.log`），参数指定盘时不再与其它盘互相覆盖 |
 | `network/net_iperf3.sh` | TCP 吞吐 | iperf3 | 需服务端地址 |
 | `network/net_mtr.sh` | 路径质量 | mtr | |
 | `ib/ib_perftest.sh` | IB 打流配对 | perftest, mlxlink | 自动配对 serial 相同端口 |
-| `gpu/gpu_bandwidth.sh` | GPU 带宽 | bandwidthTest | 逐卡 + P2P |
+| `gpu/gpu_bandwidth.sh` | GPU 带宽 | bandwidthTest | 逐卡 + P2P；v1.49.21：补 `test_finish`（此前 manifest 无 `summary=`，压测报告读不到结论） |
 | `gpu/gpu_burn_test.sh` | GPU 长压测 | gpu-burn | 默认 1800s（-tc 张量核心） |
 | `gpu/gpu_nvbandwidth.sh` | 带宽基准 | nvbandwidth | |
 | `gpu/gpu_partnerdiag.sh` | 出厂诊断 | partnerdiag | FLD 包 |
@@ -60,10 +60,11 @@ bash test/cpu/cpu_stress_ng.sh 60
 
 - 所有测试输出：`logs/test/<SN>/`（含 `test_report.txt` 汇总 + 各测试项 detail 日志 + manifest.txt）
 - 报告归档：采集后可用 `report/report.sh <out> --test-dir <压测目录>` 将压测结果并入交付报告
-- **标准测试报告**（v1.45.0）：`bash test/report.sh <logs/test/<SN>/目录>` 生成 `hwscope_test_report.{md,html}`——测试环境/工具方法/理论峰值/结果对比/分析/结论/附录，数据口径科学可追溯（内存理论峰值 = 通道×速率×8B，STREAM 利用率评价；HTML 可浏览器打印 PDF）
+- **标准测试报告**（v1.45.0；**v1.49.21** 修正内存速率取数与峰值守卫——原来 `awk '{print $NF}'` 会把 dmidecode 的 `MT/s` 当成速率，插值进公式触发除零、利用率列整列空白）：`bash test/report.sh <logs/test/<SN>/目录>` 生成 `hwscope_test_report.{md,html}`——测试环境/工具方法/理论峰值/结果对比/分析/结论/附录，数据口径科学可追溯（内存理论峰值 = 通道×速率×8B，STREAM 利用率评价；HTML 可浏览器打印 PDF）
 - **单组件测试 + 单组件报告**（v1.45.1）：只跑单个脚本（如 `bash test/memory/mem_sysbench.sh`）→ 日志目录只有该组件 → `bash test/report.sh <该目录>` 即出单组件报告（目录自适应，不需要额外参数）
 - **目录组织语义**（v1.45.2-5）：**`logs/test/<SN>/` 稳定按机器累积**（用户方案）——单测/菜单/--all 全部落同一 SN 目录，文件名带时间戳（`<测试名>-<时间戳>.log`）区分重复测试；无 SN 平台兜底 `logs/test/<时间戳>/`；手动累积可 `export HW_TEST_SESSION_DIR=<目录>` 指定
 - **磁盘测试默认屏蔽系统盘**（v1.45.1）：fio/dd 交互列表自动排除系统盘；参数指定系统盘时警告并要求输入 YES 确认（`--force` 跳过）——防写测试压垮系统盘/数据安全
+- **聚合入口日志根修正**（**v1.49.21**）：`test_all.sh --all` 此前把自身 `SCRIPT_DIR`（=仓库根/test）当仓库根，`test/lib/test_common.sh` 里 `source <root>/test/lib/common.sh` 静默失败（文件不存在）→ `detect_machine_id` 不可用，整轮日志落到 `test/logs/test/<时间戳>/`，偏离上面的 `logs/test/<SN>/` 约定；现由 `test_common.sh` 从 `BASH_SOURCE` 自行推根，独立执行与聚合执行一致
 
 ## 依赖安装
 

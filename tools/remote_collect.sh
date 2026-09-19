@@ -125,7 +125,10 @@ echo -e "\033[0;33m[INFO] 回拉采集结果 + 归档包 → ${LOCAL_OUT}/remote
 mkdir -p "${LOCAL_OUT}/remote_output"
 # 回拉：2>/dev/null 丢弃 stderr（旧版 tar 无 --warning=no-timestamp 支持时 future 时间戳警告刷屏；
 # 警告无害——tar 失败有 exit code 检查 + 本地解包校验双重兜底）
-if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "${SUDO} tar czf - --warning=no-timestamp -C ${REMOTE_DIR}/output . -C ${REMOTE_DIR} logs; rm -rf ${REMOTE_DIR}" > "/tmp/hwscope_pull_${TS}.tgz" 2>/dev/null; then
+# v1.49.21：远端清理用 `&&` 而不是 `;`——`; rm -rf` 会把 ssh 的退出码替换成 rm 的（rm 几乎总成功），
+#   于是下面 `if ! ssh …` 的"结果回拉失败"判定在 tar 真失败时**永不触发**（静默拿到半包，
+#   再叠加 2>/dev/null 连报错都看不到）。tar 失败即不回拉、保留远端目录便于人工复查。
+if ! ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "${SUDO} tar czf - --warning=no-timestamp -C ${REMOTE_DIR}/output . -C ${REMOTE_DIR} logs && rm -rf ${REMOTE_DIR}" > "/tmp/hwscope_pull_${TS}.tgz" 2>/dev/null; then
     echo -e "\033[0;31m[ERROR] 结果回拉失败\033[0m"; exit 1
 fi
 # 本地解包同样丢弃 stderr：旧版 tar 对未来时间戳（目标机时钟偏差）解包也警告刷屏——v1.43.5 实测根因

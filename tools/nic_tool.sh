@@ -32,7 +32,7 @@ OPS=(
     "1:查看所有设备状态:mlxlink -d DEV 2>&1 | head -25:只读"
     "2:查看光模块信息:mlxlink -d DEV -m 2>&1 | head -25:只读"
     "3:查询固件版本:mlxfwmanager --query 2>&1 | grep -E 'Device|Firmware|PSID' | head -10:只读"
-    "4:查看配置:mlxconfig query -d DEV 2>&1 | head -20:只读"
+    "4:查看配置:mlxconfig -d DEV query 2>&1 | head -20:只读"
     "5:端口复位:mlxlink -d DEV -r 2>&1:写入操作"
     "6:设置 MTU (9000):ip link set DEV mtu 9000 2>&1:写入操作"
     "7:切换端口模式 (IB↔ETH):模式切换子菜单:写入操作"
@@ -50,8 +50,11 @@ read -p "选择操作 (1-7, 逗号分隔): " -r choices
 [ -z "$choices" ] && echo "跳过" && exit 0
 
 # ─── 选择设备（校验在列表内，防任意路径经 bash -c 执行——v1.33.3） ───
-read -p "选择设备 (默认 ${DEVS%% *}): " -r dev
-[ -z "$dev" ] && dev="${DEVS%% *}"
+# v1.49.21：`${DEVS%% *}` 按**空格**截断，而 DEVS 是**换行**分隔（第 22 行 `DEVS=$(...)`）——
+#   多设备机器上"默认值"会变成整段两行文本，既污染提示/校验，也让第 140 行把换行注入 bash -c。
+DEVS_FIRST=$(printf '%s\n' "$DEVS" | head -1)
+read -p "选择设备 (默认 ${DEVS_FIRST}): " -r dev
+[ -z "$dev" ] && dev="$DEVS_FIRST"
 if ! echo "$DEVS" | grep -qw "$dev"; then
     echo -e "${RED}[ERROR] 无效设备 ${dev}（可用: ${DEVS//$'\n'/ }）${NC}"; exit 1
 fi
@@ -66,7 +69,7 @@ switch_port_mode() {
 
     # 当前模式
     local modes
-    modes=$(mlxconfig query -d "$dev" 2>/dev/null | grep -E "LINK_TYPE_P[12]")
+    modes=$(mlxconfig -d "$dev" query 2>/dev/null | grep -E "LINK_TYPE_P[12]")
     if [ -z "$modes" ]; then
         echo -e "${YELLOW}[WARN] 未获取到 LINK_TYPE 配置（该设备可能不支持或需 mst start）${NC}"
         return 1

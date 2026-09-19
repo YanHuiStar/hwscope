@@ -41,3 +41,5 @@ if [ "$GPU_COUNT" -ge 2 ]; then
     test_record "bandwidthTest_p2p" "${REPORT_DIR}/bandwidthTest_p2p.log" "$start_ts" "$?"
 fi
 echo "bandwidth 测试完成（逐卡 + P2P 已记录）" | tee -a "$REPORT_LOG"
+# v1.49.21：补 test_finish——原来缺失，manifest.txt 无 `summary=`，压测报告（report/report.sh 读 test 目录）拿不到结论。
+test_finish "gpu_bandwidth"

@@ -22,12 +22,12 @@ if [ -z "$DISK" ]; then
     DISK="/dev/${disk_sel}"
 fi
 [ -b "$DISK" ] || { echo -e "${RED}[ERROR] $DISK 不是块设备${NC}"; exit 1; }
+# v1.49.21：参数直接给盘时（bash disk_hdparm.sh /dev/sdb）原来不会设置 disk_sel，
+#   日志名退化成 disk_hdparm_.log —— 多盘测试互相覆盖，事后无法区分是哪块盘。
+[ -z "$disk_sel" ] && disk_sel=$(basename "$DISK")
 
-# ─── fio 测试文件位置：挂载点或 /tmp ───
-mount_point=$(findmnt -no TARGET "$DISK" 2>/dev/null | head -1)
-[ -z "$mount_point" ] && mount_point="/tmp"
-FIO_DIR="${mount_point}/hwscope_fio_$$"
-mkdir -p "$FIO_DIR" 2>/dev/null
+# v1.49.21：删除本脚本**用不到**的 fio 目录准备块（FIO_DIR 在 hdparm 里从未被引用）——
+#   它原本 findmnt 取挂载点、取不到就落到 /tmp 并 mkdir，既是无用副作用，也容易让人误读为"测的就是该盘"。
 
 test_init "disk_hdparm"
 bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true
@@ -37,6 +37,5 @@ echo "" | tee -a "$REPORT_LOG"
 echo -e "${CYAN}━━━ 缓存/盘面读取速度（hdparm） ($DISK) ━━━${NC}" | tee -a "$REPORT_LOG"
 run_and_log "hdparm -Tt ${DISK} 2>&1" "$LOGFILE"
 rc=$?
-rm -rf "$FIO_DIR" 2>/dev/null
 test_record "disk_hdparm" "$LOGFILE" "$start_ts" "$rc"
 test_finish "disk_hdparm"

@@ -36,21 +36,28 @@ CONF_FILE="/etc/dnsmasq.d/hwscope-dhcp.conf"
 LEASE_DEBIAN="/var/lib/misc/dnsmasq.leases"
 LEASE_RHEL="/var/lib/dnsmasq/dnsmasq.leases"
 
-ACTION="${1:-help}"; shift 2>/dev/null || shift   # 只移动作本身（shift 2 会吞掉动作后第一个选项，如 config --dry-run 的 --dry-run——v1.33.3 修复）
+# v1.49.21：同 power_monitor——`-h`/`--help` 作为首个参数时原来被当成动作名（"未知动作: -h" exit 1）。
+case "${1:-}" in
+    -h|--help) ACTION="help" ;;
+    *)         ACTION="${1:-help}" ;;
+esac
+shift 2>/dev/null || shift   # 只移动作本身（shift 2 会吞掉动作后第一个选项，如 config --dry-run 的 --dry-run——v1.33.3 修复）
 IFACE="eth0"; SUBNET="192.168.50"; START=100; END=200; GW=1; LEASE="12h"; DRY=0
 LEASE_FILE=""; POSARGS=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --interface) IFACE="$2"; shift 2 ;;
-        --subnet) SUBNET="$2"; shift 2 ;;
-        --start) START="$2"; shift 2 ;;
-        --end) END="$2"; shift 2 ;;
-        --gateway) GW="$2"; shift 2 ;;
-        --lease) LEASE="$2"; shift 2 ;;
-        --lease-file) LEASE_FILE="$2"; shift 2 ;;   # 自定义租约文件（非默认路径/测试用）
+        # v1.49.21：所有带值参数加"末位缺参"守卫——`shift 2` 在只剩 1 个参数时是静默 no-op，
+        #   while 永不前进 → 死循环（实测 `status -h`/`start --help` 卡死且零输出）。
+        --interface) [ $# -ge 2 ] || { echo "[ERROR] --interface 需要网卡名" >&2; exit 1; }; IFACE="$2"; shift 2 ;;
+        --subnet) [ $# -ge 2 ] || { echo "[ERROR] --subnet 需要网段" >&2; exit 1; }; SUBNET="$2"; shift 2 ;;
+        --start) [ $# -ge 2 ] || { echo "[ERROR] --start 需要起始地址" >&2; exit 1; }; START="$2"; shift 2 ;;
+        --end) [ $# -ge 2 ] || { echo "[ERROR] --end 需要结束地址" >&2; exit 1; }; END="$2"; shift 2 ;;
+        --gateway) [ $# -ge 2 ] || { echo "[ERROR] --gateway 需要地址" >&2; exit 1; }; GW="$2"; shift 2 ;;
+        --lease) [ $# -ge 2 ] || { echo "[ERROR] --lease 需要时长" >&2; exit 1; }; LEASE="$2"; shift 2 ;;
+        --lease-file) [ $# -ge 2 ] || { echo "[ERROR] --lease-file 需要路径" >&2; exit 1; }; LEASE_FILE="$2"; shift 2 ;;   # 自定义租约文件（非默认路径/测试用）
         --dry-run) DRY=1; shift ;;
-        -h|--help) ACTION="help" ;;
+        -h|--help) ACTION="help"; shift ;;
         *) POSARGS+=("$1"); shift ;;   # 位置参数（leases-export 的 CSV、reconcile 的采集目录）
     esac
 done

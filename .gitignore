@@ -1,15 +1,25 @@
 # HwScope - Git Ignore
 output/
+logs/
+# remote_run.sh 默认输出目录（<host>.out 原始远端输出 + --pull-logs 回拉树，可能含 SN/MAC）
+# v1.49.21：此前未忽略，与 output//logs/ 的处理不一致（AGENTS 远程采集回拉段落要求落盘位置统一）
+run_output/
 *.tmp
 *.swp
 *~
-*.bak-*              # fw_baseline_import --apply 的固件基线备份（conf/fw_required.txt.bak-<TS>）
+# v1.49.21：行内注释在 .gitignore 里**不是注释**——`*.bak-*              # xxx` 会被当成一个含空格与
+#   # 的模式，实际匹配不到任何文件（实测 conf/fw_required.txt.bak-<TS> 未被忽略）。
+#   注释必须独占一行。同时补 *.bak（sync_version.sh 的 README.md.bak 之前也不在忽略内）。
+*.bak-*
+*.bak
 .DS_Store
-logs/
 
 # 开发/测试工具（不进仓库）
 fakebin/
 scripts/
+
+# Windows 工具本机状态文件（运维机自身 IP/网段/网关，v1.49.21 起忽略）
+tools/win/*_state.txt
 
 # AI agent 工具残留（DeepSeek Harness 会话记忆等）
 .workbuddy/

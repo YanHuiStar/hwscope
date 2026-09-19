@@ -25,7 +25,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --update) UPDATE=1; shift ;;
         --all)    ALL=1; shift ;;
-        --samples) SAMPLES="$2"; shift 2 ;;
+        --samples) [ $# -ge 2 ] || { echo "[ERROR] --samples 需要 SN 列表（如 --samples SN1,SN2）" >&2; exit 1; }; SAMPLES="$2"; shift 2 ;;
         --keep)   KEEP=1; shift ;;
         -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) [ -z "$SAMPLE" ] && SAMPLE="$1"; shift ;;

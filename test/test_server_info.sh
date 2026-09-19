@@ -27,8 +27,8 @@ APPEND=""      # --append 目标文件
 OUT_DIR=""     # --out 输出目录
 while [ $# -gt 0 ]; do
     case "$1" in
-        --append) APPEND="$2"; shift 2 ;;
-        --out)    OUT_DIR="$2"; shift 2 ;;
+        --append) [ $# -ge 2 ] || { echo "[ERROR] --append 需要目标文件" >&2; exit 1; }; APPEND="$2"; shift 2 ;;
+        --out)    [ $# -ge 2 ] || { echo "[ERROR] --out 需要输出目录" >&2; exit 1; }; OUT_DIR="$2"; shift 2 ;;
         --*)      echo -e "${YELLOW}[WARN] 未知参数: $1${NC}" >&2; shift ;;
         *)        break ;;
     esac

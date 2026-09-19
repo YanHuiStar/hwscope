@@ -20,15 +20,21 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
 [ -f "${SCRIPT_DIR}/conf/hwscope.conf" ] && source "${SCRIPT_DIR}/conf/hwscope.conf"
 
-ACTION="${1:-help}"; shift 2>/dev/null || true
+# v1.49.21：`-h`/`--help` 作为**首个参数**时原来会被当成动作名（ACTION="-h" → "未知动作: -h" + exit 1），
+#   只有"动作 + -h"（如 `status -h`）才被选项循环接住——与 tools/README「所有脚本支持 -h/--help」不符。
+case "${1:-}" in
+    -h|--help) ACTION="help" ;;
+    *)         ACTION="${1:-help}" ;;
+esac
+shift 2>/dev/null || true
 INTERVAL=60; DURATION=0; OUT_DIR="${SCRIPT_DIR}/logs/power_monitor"; USE_REDFISH=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --interval) INTERVAL="$2"; [[ "$INTERVAL" =~ ^[1-9][0-9]*$ ]] || { echo "[ERROR] --interval 需正整数秒数"; exit 1; }; shift 2 ;;
-        --duration) DURATION="$2"; [[ "$DURATION" =~ ^[0-9]+$ ]] || { echo "[ERROR] --duration 需非负整数秒数（0=持续）"; exit 1; }; shift 2 ;;
-        --output) OUT_DIR="$2"; shift 2 ;;
+        --interval) [ $# -ge 2 ] || { echo "[ERROR] --interval 需要秒数" >&2; exit 1; }; INTERVAL="$2"; [[ "$INTERVAL" =~ ^[1-9][0-9]*$ ]] || { echo "[ERROR] --interval 需正整数秒数"; exit 1; }; shift 2 ;;
+        --duration) [ $# -ge 2 ] || { echo "[ERROR] --duration 需要秒数" >&2; exit 1; }; DURATION="$2"; [[ "$DURATION" =~ ^[0-9]+$ ]] || { echo "[ERROR] --duration 需非负整数秒数（0=持续）"; exit 1; }; shift 2 ;;
+        --output) [ $# -ge 2 ] || { echo "[ERROR] --output 需要目录" >&2; exit 1; }; OUT_DIR="$2"; shift 2 ;;
         --redfish) USE_REDFISH=1; shift ;;
-        -h|--help) ACTION="help" ;;
+        -h|--help) ACTION="help"; shift ;;
         *) echo "[WARN] 未知参数: $1"; shift ;;
     esac
 done

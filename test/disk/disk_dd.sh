@@ -26,6 +26,9 @@ if [ -z "$DISK" ]; then
     DISK="/dev/${disk_sel}"
 fi
 [ -b "$DISK" ] || { echo -e "${RED}[ERROR] $DISK 不是块设备${NC}"; exit 1; }
+# v1.49.21：参数直接给盘时（bash disk_dd.sh /dev/sdb）原来不会设置 disk_sel，
+#   日志名退化成 disk_dd_.log —— 多盘测试互相覆盖，事后无法区分是哪块盘。
+[ -z "$disk_sel" ] && disk_sel=$(basename "$DISK")
 # 参数指定的盘是系统盘 → 警告确认（dd 写测试有风险；--force 跳过）
 if [ "$(basename "$DISK")" = "$SYS_DISK" ]; then
     echo -e "${YELLOW}[WARN] $DISK 是系统盘！dd 写测试会压垮系统盘并影响数据安全${NC}"
@@ -35,11 +38,8 @@ if [ "$(basename "$DISK")" = "$SYS_DISK" ]; then
     fi
 fi
 
-# ─── fio 测试文件位置：挂载点或 /tmp ───
-mount_point=$(findmnt -no TARGET "$DISK" 2>/dev/null | head -1)
-[ -z "$mount_point" ] && mount_point="/tmp"
-FIO_DIR="${mount_point}/hwscope_fio_$$"
-mkdir -p "$FIO_DIR" 2>/dev/null
+# v1.49.21：删除本脚本**用不到**的 fio 目录准备块（FIO_DIR 在 dd 里从未被引用）——
+#   它原本 findmnt 取挂载点、取不到就落到 /tmp 并 mkdir，既是无用副作用，也容易让人误读为"测的就是该盘"。
 
 test_init "disk_dd"
 bash "${SCRIPT_DIR}/test/test_server_info.sh" --append "$REPORT_LOG" --out "$REPORT_DIR" 2>/dev/null || true
@@ -49,6 +49,5 @@ echo "" | tee -a "$REPORT_LOG"
 echo -e "${CYAN}━━━ 顺序读取吞吐（dd） ($DISK) ━━━${NC}" | tee -a "$REPORT_LOG"
 run_and_log "dd if=${DISK} of=/dev/null bs=1M count=1024 2>&1" "$LOGFILE"
 rc=$?
-rm -rf "$FIO_DIR" 2>/dev/null
 test_record "disk_dd" "$LOGFILE" "$start_ts" "$rc"
 test_finish "disk_dd"

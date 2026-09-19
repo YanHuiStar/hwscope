@@ -20,8 +20,8 @@ MEM_SPEED=""      # 内存速率 MT/s
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help) sed -n '2,/^[^#]/p' "$0" | sed 's/^# \?//' | sed '/^$/d'; exit 0 ;;
-        --channels) MEM_CHANNELS="$2"; shift 2 ;;
-        --speed) MEM_SPEED="$2"; shift 2 ;;
+        --channels) [ $# -ge 2 ] || { echo "[ERROR] --channels 需要通道数（如 --channels 12）" >&2; exit 1; }; MEM_CHANNELS="$2"; shift 2 ;;
+        --speed) [ $# -ge 2 ] || { echo "[ERROR] --speed 需要速率（如 --speed 5600）" >&2; exit 1; }; MEM_SPEED="$2"; shift 2 ;;
         *) TEST_DIR="$1"; shift ;;
     esac
 done
@@ -53,14 +53,21 @@ if [ -z "$MEM_CHANNELS" ] || [ -z "$MEM_SPEED" ]; then
                 END{ n=0; for(c in chan) n++; print (n>0?n:"") }')
             [ -n "$MEM_CHANNELS" ] && MEM_CHAN_SRC="探测(Bank Locator 去重)"
         fi
-        [ -z "$MEM_SPEED" ] && MEM_SPEED=$(dmidecode -t memory 2>/dev/null | grep -m1 "Configured Memory Speed" | awk '{print $NF}')
+        # v1.49.21：原来是 `awk '{print $NF}'` —— dmidecode 输出 `Configured Memory Speed: 5600 MT/s`，
+        #   $NF 取到的是 **"MT/s"**（不是速率）。该值随后被**文本插值**进 awk 公式，
+        #   `MT/s` 被解析成 `MT / s`（s=0）→ awk fatal: division by zero → MEM_PEAK 为空 →
+        #   "与理论峰值比"整列消失（实测）。改为提取数字并校验。
+        [ -z "$MEM_SPEED" ] && MEM_SPEED=$(dmidecode -t memory 2>/dev/null | grep -m1 "Configured Memory Speed" | grep -oE "[0-9]+" | head -1)
     fi
 fi
 if [ -z "$MEM_CHANNELS" ]; then
     MEM_CHANNELS=8
     MEM_CHAN_SRC="默认估算（8 通道；--channels N 手动指定更准）"
 fi
+# 速率/通道必须为纯数字，否则不插值进 awk（防注入 + 防除零）
+[[ "$MEM_CHANNELS" =~ ^[0-9]+$ ]] || MEM_CHANNELS=8
 MEM_SPEED=${MEM_SPEED:-5600}
+[[ "$MEM_SPEED" =~ ^[0-9]+$ ]] || MEM_SPEED=5600
 [ -n "$MEM_CHAN_SRC" ] || MEM_CHAN_SRC="参数指定"
 # 理论峰值 = 通道 × 速率 × 8 字节（业界口径，示例报告同款公式）
 MEM_PEAK=$(awk "BEGIN{printf \"%.1f\", $MEM_CHANNELS * $MEM_SPEED * 8 / 1000}")
@@ -98,8 +105,14 @@ parse_stream() {
         while IFS= read -r r; do
             local name val pct
             name=$(echo "$r" | cut -d'|' -f2 | xargs); val=$(echo "$r" | cut -d'|' -f3 | xargs)
-            pct=$(awk "BEGIN{printf \"%.1f\", $val / $MEM_PEAK * 100}")
-            out="${out}| ${name} | ${val} GB/s | ${pct}% |\n"
+            # v1.49.21：MEM_PEAK 为空/0 时不做除法（原实现会 awk 除零/语法错，导致整列空白；
+            #   触发条件正是上面修掉的 "MT/s" 取值）
+            if [ -n "$MEM_PEAK" ] && [ "$MEM_PEAK" != "0.0" ] && [ "$MEM_PEAK" != "0" ]; then
+                pct=$(awk "BEGIN{printf \"%.1f\", $val / $MEM_PEAK * 100}")
+                out="${out}| ${name} | ${val} GB/s | ${pct}% |\n"
+            else
+                out="${out}| ${name} | ${val} GB/s | N/A |\n"
+            fi
         done < <(printf '%b' "$rows")
         printf '%b' "$out"
         return 0

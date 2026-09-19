@@ -18,7 +18,7 @@ parse_help "$@"
 CHOICES=""; AUTO_YES=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        -c) CHOICES="$2"; shift 2 ;;
+        -c) [ $# -ge 2 ] || { echo "[ERROR] -c 需要参数（如 -c 1,2,3）" >&2; exit 1; }; CHOICES="$2"; shift 2 ;;
         -y) AUTO_YES=1; shift ;;
         *) shift ;;
     esac
@@ -104,6 +104,10 @@ for sel in "${SELECTED[@]}"; do
                 # 管道退出码是 tail 的——检查真实安装结果（v1.33.3）
                 if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
                     echo -e "${RED}[ERROR] ${PKG_MGR} 安装失败（${OS} 下部分包依赖 EPEL/额外源）${NC}"
+                    # v1.49.21：累计失败标记，收尾以非零退出——否则 remote_collect --install 的
+                    #   `install_tool … && bash hwscope.sh …` 短路**永不生效**（本脚本原来无论成败都 exit 0，
+                    #   与 AGENTS「安装失败 && 短路中止不采集」的说明不符）。
+                    INSTALL_FAILED=$(( ${INSTALL_FAILED:-0} + 1 ))
                 fi
                 ;;
             manual)
@@ -197,3 +201,8 @@ done
 
 echo -e "${GREEN}安装流程结束${NC}"
 echo -e "${YELLOW}提示: 安装后重新运行 hwscope.sh 可采集到新增工具的信息${NC}"
+# v1.49.21：有安装失败则以非零退出（供 remote_collect --install 的 && 短路判定）
+if [ "${INSTALL_FAILED:-0}" -gt 0 ]; then
+    echo -e "${RED}[ERROR] 有 ${INSTALL_FAILED} 项安装失败，退出码置 1${NC}"
+    exit 1
+fi

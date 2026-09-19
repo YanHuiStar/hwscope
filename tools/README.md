@@ -37,7 +37,7 @@
 
 ### `sel_monitor.sh` — SEL 事件增量巡检
 - **用法**：`sudo bash tools/sel_monitor.sh [--reset]`
-- **功能**：记录 SEL 基线，后续运行只报告**新增**事件（按 ID 单调递增判定，比整行匹配可靠）；严重事件/PCIe 事件高亮分类
+- **功能**：记录 SEL 基线，后续运行只报告**新增**事件（按 ID 单调递增判定，比整行匹配可靠）；严重事件/PCIe 事件高亮分类（**v1.49.21**：严重计数不再把 `Deasserted` 自愈事件算进去——原模式含 `assert`，是 `Deasserted` 的子串）
 - **输出**：`logs/sel_monitor/`
 
 ### `cable_map.sh` — 线缆拓扑图（对线神器）
@@ -56,12 +56,12 @@
 | 脚本 | 用法 | 功能 | 修改内容 |
 |------|------|------|---------|
 | `bmc_tool.sh` | `sudo bash tools/bmc_tool.sh` | BMC 运维菜单：FRU/传感器/SEL 查看、SEL 清空、BMC 重启、改密码 | BMC（写入项有二次确认）|
-| `nic_tool.sh` | `sudo bash tools/nic_tool.sh` | 网卡运维菜单：状态/光模块/固件查询、端口复位、MTU、**IB↔ETH 模式切换** | 网卡配置 |
+| `nic_tool.sh` | `sudo bash tools/nic_tool.sh` | 网卡运维菜单：状态/光模块/固件查询、端口复位、MTU、**IB↔ETH 模式切换**；**v1.49.21**：`mlxconfig -d <dev> query` 命令形式修正（原 `query -d` 从不生效，选项 4/模式切换白跑）、多设备默认值按行取首个 | 网卡配置 |
 | `net_dhcp.sh` | `sudo bash tools/net_dhcp.sh` | 一键配置网口 DHCP（Ubuntu netplan，自动识别插线网口、备份回滚） | /etc/netplan |
 | `dhcp_server.sh` | `sudo bash tools/dhcp_server.sh` | DHCP 服务器（dnsmasq 封装）：安装/配置网段/启停/租约查询导出 | dnsmasq 配置 |
-| `install_tool.sh` | `sudo bash tools/install_tool.sh` | 安装采集/压测/IB 诊断依赖（1-3 真装）、DCGM/MFT/推理指引（4-6）；**7-9 实验自动安装默认注释态**（真机验证后取消注释启用）；**`-c <1,2,...> -y` 非交互安装**（远程自动安装用，v1.42.0）| 系统软件包 |
+| `install_tool.sh` | `sudo bash tools/install_tool.sh` | 安装采集/压测/IB 诊断依赖（1-3 真装）、DCGM/MFT/推理指引（4-6）；**7-9 实验自动安装默认注释态**（真机验证后取消注释启用）；**`-c <1,2,...> -y` 非交互安装**（远程自动安装用，v1.42.0）；**v1.49.21**：任一安装失败**以非零退出**——`remote_collect --install` 的「安装失败 `&&` 短路不采集」才真正成立 | 系统软件包 |
 | `install_ai.sh` | `sudo bash tools/install_ai.sh` | AI 推理环境安装（vLLM/SGLang/TRT-LLM/Ollama/llama.cpp） | Docker/系统 |
-| `remote_run.sh` | `bash tools/remote_run.sh` | 多机远程执行（命令/推送/脚本执行 + 日志回拉；v1.43.0 由 remote_batch.sh 改名）| 远程主机 |
+| `remote_run.sh` | `bash tools/remote_run.sh` | 多机远程执行（命令/推送/脚本执行 + 日志回拉；v1.43.0 由 remote_batch.sh 改名）；**v1.49.21**：`--pull-logs` 改为逐机**先清空再解包** + 归档可读性校验 + 主机名护栏（对齐 remote_collect v1.48.99，防旧批次残留被当本次数据）；默认输出目录 `run_output/` 已加入 .gitignore | 远程主机 |
 | `fw_baseline_import.sh` | `bash tools/fw_baseline_import.sh` | 固件基线自动导入（firmware_check 基线管理）| 基线文件 |
 
 ---
@@ -105,6 +105,11 @@
 - **依赖**：无（Windows 版 `tools/win/cleanup.bat`）
 
 ---
+
+## 参数解析约定（v1.49.21）
+
+- **带值参数缺参必须明确报错退出**：`shift 2` 在只剩 1 个参数时是静默 no-op，会让 `while` 永不前进 → **死循环**（实测 `install_tool.sh -c`、`regen_reports.sh --samples`、`report_regression.sh --samples`、`test/report.sh --channels/--speed`、`test_server_info.sh --append/--out` 全部卡死且零输出）。现统一为 `[ $# -ge 2 ] || { echo "[ERROR] … 需要参数" >&2; exit 1; }`。
+- **`-h/--help` 作为首个参数也应可用**：`power_monitor.sh` / `dhcp_server.sh` 原来把它当动作名（"未知动作: -h" exit 1），仅"动作 + -h"能出帮助；已修。
 
 ## 其他
 

@@ -69,7 +69,10 @@ if [ "$NEW_COUNT" -gt 0 ]; then
     echo "$NEW_EVENTS" | tee "$REPORT"
     echo "--------------------------------------------"
     # 分类统计（严重事件高亮）
-    CRIT=$(echo "$NEW_EVENTS" | grep -ciE "critical|fatal|assert|uncorrectable")
+    # v1.49.21：原 `critical|fatal|assert|uncorrectable` 里 **`assert` 是 `Deasserted` 的子串**——
+    #   已自愈（Deasserted）的事件被计成"严重"，正是 v1.48.86 在报告端判定并修掉的错误口径（当时漏了这里）。
+    #   现要求含 Asserted 但**排除** Deasserted，保留 critical/fatal/uncorrectable 关键词。
+    CRIT=$(echo "$NEW_EVENTS" | grep -iE "critical|fatal|uncorrectable|(^|[^a-z])assert" 2>/dev/null | grep -vic "deassert" || true)
     PCIE=$(echo "$NEW_EVENTS" | grep -ciE "pcie|aer")
     [ "$CRIT" -gt 0 ] && echo -e "${RED}  其中严重事件: ${CRIT} 条${NC}"
     [ "$PCIE" -gt 0 ] && echo -e "${YELLOW}  其中 PCIe 相关: ${PCIE} 条${NC}"

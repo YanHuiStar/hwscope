@@ -11,15 +11,21 @@
 # 垃圾值过滤词少 "System Serial"，同机 output/<SN>/ 与 logs/test/<SN>/ 可能不一致）
 test_new_dir() {
     local _mid=""
+    # v1.49.21：原来用调用方的 ${SCRIPT_DIR}——test/test_all.sh 里 SCRIPT_DIR=<root>/test，
+    #   于是 `source <root>/test/lib/common.sh` 与 platform.sh **都不存在**（静默失败），
+    #   detect_machine_id 不可用 → 目录退化成 logs/test/<时间戳>/（应为 <SN>）。
+    #   改为从本文件位置推仓库根：无论谁调用、无论独立执行都正确。
+    local _root
+    _root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
     # shellcheck disable=SC1091
-    source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+    source "${_root}/lib/common.sh" 2>/dev/null || true
     # shellcheck disable=SC1091
-    source "${SCRIPT_DIR}/lib/platform.sh" 2>/dev/null || true
+    source "${_root}/lib/platform.sh" 2>/dev/null || true
     if command -v detect_machine_id >/dev/null 2>&1; then
         _mid="$(detect_machine_id)"
     fi
     [ -z "$_mid" ] && _mid=$(date '+%Y%m%d%H%M%S')
-    local base="${SCRIPT_DIR}/logs/test/${_mid}"
+    local base="${_root}/logs/test/${_mid}"
     mkdir -p "$base"
     echo "$base"
 }

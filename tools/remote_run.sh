@@ -109,10 +109,23 @@ for host in "${HOSTS[@]}"; do
         pull_name=$(basename "$pull_target")
         pull_tgz="${OUT_DIR}/${safe}_logs.tgz"
         if ssh $SSH_OPTS "$host" "cd ${pull_parent} && tar czf - ${pull_name}" > "$pull_tgz" 2>/dev/null && [ -s "$pull_tgz" ]; then
-            mkdir -p "${OUT_DIR}/${safe}_logs"
-            tar xzf "$pull_tgz" -C "${OUT_DIR}/${safe}_logs" 2>/dev/null
+            # v1.49.21：对齐 remote_collect v1.48.99 的「逐机器精准替换」——原来是 mkdir -p + 纯覆盖解包，
+            #   旧批次残留文件会被当成本次数据渲染（AGENTS 远程回拉段明令）；这里补：目录名护栏 +
+            #   归档可读性校验 + 先清空再解包。
+            case "$safe" in
+                ""|*/*|*..*|*[!A-Za-z0-9._-]*)
+                    echo -e "  \033[0;31m[ERROR] 主机名含异常字符，拒绝解包: ${safe}\033[0m" ;;
+                *)
+                    if tar tzf "$pull_tgz" >/dev/null 2>&1; then
+                        rm -rf "${OUT_DIR}/${safe}_logs"
+                        mkdir -p "${OUT_DIR}/${safe}_logs"
+                        tar xzf "$pull_tgz" -C "${OUT_DIR}/${safe}_logs" 2>/dev/null
+                        echo -e "  \033[0;32m[OK] 日志已回拉（已清空旧目录）: ${OUT_DIR}/${safe}_logs/\033[0m"
+                    else
+                        echo -e "  \033[1;33m[WARN] 回拉归档无法读取（tar 校验失败），已丢弃: ${safe}\033[0m"
+                    fi ;;
+            esac
             rm -f "$pull_tgz"
-            echo -e "  \033[0;32m[OK] 日志已回拉: ${OUT_DIR}/${safe}_logs/\033[0m"
         else
             rm -f "$pull_tgz"
             echo -e "  \033[1;33m[WARN] 远端日志不存在: ${PULL_LOGS}（脚本可能未生成日志）\033[0m"

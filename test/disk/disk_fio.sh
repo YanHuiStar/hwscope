@@ -26,6 +26,9 @@ if [ -z "$DISK" ]; then
     DISK="/dev/${disk_sel}"
 fi
 [ -b "$DISK" ] || { echo -e "${RED}[ERROR] $DISK 不是块设备${NC}"; exit 1; }
+# v1.49.21：参数直接给盘时（bash disk_fio.sh /dev/sdb）原来不会设置 disk_sel，
+#   日志名退化成 disk_fio_.log —— 多盘测试互相覆盖，事后无法区分是哪块盘。
+[ -z "$disk_sel" ] && disk_sel=$(basename "$DISK")
 # 参数指定的盘是系统盘 → 警告确认（fio 写测试有风险；--force 跳过）
 if [ "$(basename "$DISK")" = "$SYS_DISK" ]; then
     echo -e "${YELLOW}[WARN] $DISK 是系统盘！fio 写测试会压垮系统盘并影响数据安全${NC}"
@@ -35,9 +38,16 @@ if [ "$(basename "$DISK")" = "$SYS_DISK" ]; then
     fi
 fi
 
-# ─── fio 测试文件位置：挂载点或 /tmp ───
+# ─── fio 测试文件位置：必须落在**被选中的盘**上 ───
+# v1.49.21：原来取不到挂载点就静默回落 /tmp —— "测盘"实际测的是系统盘（或 tmpfs 内存盘），
+#   既拿不到目标盘数据，又绕过本脚本的系统盘保护。裸设备直写（--filename=/dev/xxx）会破坏数据，
+#   故这里**明确跳过**并说明，而不是给出一个错盘的漂亮数字。
 mount_point=$(findmnt -no TARGET "$DISK" 2>/dev/null | head -1)
-[ -z "$mount_point" ] && mount_point="/tmp"
+if [ -z "$mount_point" ]; then
+    echo -e "${YELLOW}[SKIP] $(basename "$DISK") 未挂载（findmnt 无挂载点），fio 无法在目标盘建立测试文件${NC}"
+    echo "  说明: 本工具以文件方式压测（不直写裸设备，避免破坏数据）；请先挂载该盘或用已挂载的分区重试。"
+    exit 2
+fi
 FIO_DIR="${mount_point}/hwscope_fio_$$"
 mkdir -p "$FIO_DIR" 2>/dev/null
 

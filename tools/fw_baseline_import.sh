@@ -71,7 +71,9 @@ else
             BMC|NVSWITCH) pat="" ;;
             *)         pat="" ;;
         esac
-        echo "${comp}|${pat}|${cur}|自动导入自基准机 ${SRC_DIR}" >> "$TMP_GEN"
+        # v1.49.21：备注里原来直接写 ${SRC_DIR}（约定是 output/<SN>/）——而 conf/fw_required.txt 是
+        #   **受版本管理**的文件，--apply 会把真实序列号写进仓库（隐私红线）。改用不含机器标识的措辞。
+        echo "${comp}|${pat}|${cur}|自动导入自基准机采集" >> "$TMP_GEN"
     done < <(grep -v "^#" "$CSV" 2>/dev/null | grep -v "^$" | grep -v "^summary:")
     # 去重（同组件+型号模式只留一条）
     awk -F'|' '!seen[$1"|"$2]++' "$TMP_GEN" > "${TMP_GEN}.u" && mv "${TMP_GEN}.u" "$TMP_GEN"
