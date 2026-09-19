@@ -19,13 +19,13 @@
   nic_rows=13
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | 物理位置 |
 [json]
-  json_bytes=53247
+  json_bytes=53292
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=23
   html_table_close=23
-  html_bytes=55375
+  html_bytes=55421
 [acceptance]
         4 N/A
        13 PASS
@@ -34,8 +34,8 @@
   CPU | 颗 | 2
   内存 | 条 | 16
   GPU模组 | 张 | 8
-  计算网卡 | 张 | 8（8 口）
-  网卡&端口 | 张 | 3（5 口）
+  计算网卡 | 张 | 8（1 口×8，共 8 口）
+  网卡&端口 | 张 | 3（1 口×1 + 2 口×2，共 5 口）
   存储 | 块 | 6
   电源模块 | 个 | 6
   系统管理 | 套 | 1

@@ -449,6 +449,14 @@ fi
             NIC_PORT_IDX[$_bd_pre]=$(( ${NIC_PORT_IDX[$_bd_pre]:-0} + 1 ))
             nport="${NIC_PORT_IDX[$_bd_pre]}/${NIC_PORT_TOTAL[$_bd_pre]}"
         fi
+        # v1.49.15：型号列标注口数（用户要求"一看就知道是几口网卡"）。
+        #   口数 = 同 BDF 前缀的接口行数（NIC_PORT_TOTAL，v1.44.0 物理口聚合，实测可靠：
+        #   B300 的 CX8 在 ibstat 里 Number of ports:1 = 单口；CX6 Dx 的 4e:00.0/.1 = 双口）。
+        #   仅对**多口卡**加后缀——单口是常态，标出来只是噪音，且「端口」列已写 1/1。
+        _npt="${NIC_PORT_TOTAL[${nnbdf%%.*}]:-0}"
+        if [ "${_npt:-0}" -gt 1 ] 2>/dev/null; then
+            npn="${npn}（${_npt} 口）"
+        fi
         # 物理位置（v1.48.53）：槽位表上溯（GPU 直连卡命中 SXM*_GPU* 槽位；标准卡命中 SLOTn/LAN）
         nloc=""
         [ "$NIC_SLOT_AVAIL" -eq 1 ] && nloc="$(nic_slot_name "${nnbdf%%.*}")"
