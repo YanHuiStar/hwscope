@@ -108,6 +108,18 @@
 
 > 按版本倒序排列；同一主版本的多轮迭代合并为一条。
 
+- v1.50.x — **报告交付观感与判定口径修正**：
+  - v1.50.0：新增 **卡级网卡明细表**（每卡一行：型号/口数/BDF/芯片/固件/PSID/物理位置；口数按同 BDF 前缀的端口实测统计，叫法用行业术语 单口·双口·三口·四口·八口）、**IB 链路质量逐 CA 表** 与 **端口模式逐端口表**（从健康检查表/概览表的长串拆出，不再拉伸表格）、**功耗读数表**（DCMI 瞬时 / DCMI 窗口统计 / PSU 输入合计 / CPU RAPL **分行并各自标注口径**）、**板载与外部接口表**（VGA / USB 控制器 / 板载网口 / BMC 管理口 / USB 已接设备——全部由 lspci/lsusb/IPMI 既有数据聚合，**零新增采集**）；电源段与验收清单增加 **在位 N / 槽位 M** 标注（交付现场常因场地供电受限不满配，如实呈现但不做"必须插满"硬判定）。
+  - v1.50.1：修复板载接口表末行与下一行黏连（命令替换剥尾换行）＋ 移除误纳的基线副本目录。
+  - v1.50.2：**IB 活动口改按 `ibstat` 的 `Link layer` 判定**——旧实现直接数 `State: Active`，把以太模式的 RDMA 口也算成 IB 活动口，且计数与速率列表来自两条不同 grep，出现「活动口 4 却列出 12 个速率」的自相矛盾展示；现计数与速率**同源**、只计 `Link layer: InfiniBand`，并单独报告以太模式口数。另：**内存明细列出空槽行**（此前直接跳过，只报"已插 N/总 M"看不出哪几个槽空着）、**IB 链路质量移出健康检查表**（明细已在网络段独立表）。
+  - v1.50.3：修复 v1.50.2 引入的回归——空槽值被「内存容量一致」判定当成一种容量（误报容量混插），且其全角字符进了表格单元格导致验收文件成为非法 UTF-8；改为 ASCII 内部标记 `EMPTY_SLOT`，统计端显式排除、渲染端才转中文。
+- v1.49.x — **交付细节打磨 + 隐私防线 + 多 Agent 协作**：
+  - v1.49.8/9：IPMI 超时统一为可配置三级（`IPMI_TIMEOUT` 90s / `_FAST` 30s / `_SLOW` 240s）＋ **共享 IPMI 快照**（sensor/sdr 各查一次供多模块复用，慢 BMC 上采集成功率显著提升）＋ 并发降级。
+  - v1.49.10：远程回拉告警噪音治理（降级 INFO + 真残留检测）。
+  - v1.49.11–13：`sn_check.sh` 提交前自检扩展至**内网 IP**（此前只查 SN/MAC），白名单补正，真实测试地址脱敏；`agent_sync.sh` 开工时提醒安装 pre-commit 钩子。
+  - v1.49.14–17：`regen_reports.sh` 跨账号样本探测与调用方式修复；网卡型号标注口数；Windows 远程采集输错密码时的输出排版；4 个报告缺陷修复（SEL 有效性误判「数据不可用」、PSU 缺厂商、无盘机渲染空表、电源冗余改多级判据「电源状态」）。
+  - v1.49.18–20：PSU 逐颗实时功率与电源状态判定；JSON 转义、空 DIMM 槽、风扇 RPM、SEL/CRC 判定修正；模块超时由 300s 提到 600s（慢 BMC 上 sensor+sdr 两份快照本身需 240+240s）。
+  - v1.49.21–24：工具参数解析挂死、远程回拉、子网解析、SSH 主机键策略修复；`git_push.sh` 推送前 SN 兜底检查不依赖可执行位；文档与验收项对齐。
 - v1.48.x — **全 GPU 厂商生态 + 质量工程**：多厂商适配器框架（v1.47.0：adapter_nvidia/amd/ascend/intel/国产×5/generic，统一 18 列 CSV 报告端零改动）；AMD OAM 模组识别（v1.48.0：x86_64_OAM 平台 + device ID 判定 + xGMI 拓扑）；报告解析回归测试体系（v1.48.3：10 指标组 vs 基线，抓出 29 处表格错位/AMD 多卡失真；`tools/agent/report_regression.sh` + 6 份真实样本基线）；OFED 冲突 ROCm 环境（amd-smi/rocm-smi bashrc 环境自动补加载，v1.48.14）；check_cmd_flex 通用工具检测（PATH → 候选目录试跑 → bashrc，v1.48.16）；WSL 实测修复（并行子进程函数继承 + nvidia-smi 兜底，v1.48.17）；regen_reports.sh agent 批量报告重生成（v1.48.18）；CUDA 行非 NVIDIA 平台隐藏（v1.48.19）；平台分类修复（Processing accelerators [1200] 类目码）+ GPU 型号规范化（lspci [营销名]）+ generic 额定显存兜底（v1.48.15）；**隐私红线清理**（v1.48.27：真实 SN 全史清除 + 回归基线语义化命名，force push 重写历史 + 多机同步规则入 AGENTS）；**Windows 远程采集链修复**（v1.48.47/48/51/53：首连 host key 免交互、NativeCommandError 噪音抑制、显式 System32 bsdtar 防 GNU tar 静默失败、恢复管道流式输出）；**厂商感知 GPU 字段**（v1.48.36/37：NVIDIA ECC/退役行 vs AMD RAS，RAS 命令链修正为 `amd-smi metric -e -P`）；**NIC Link 状态归一**（v1.48.39：Up/Down + 表尾附注）；**验收体系 15→18 项 + 平台感知展示**（v1.48.40/41/42：CPU 配置一致/内存容量一致/内存 ECC；消费级 GPU 能力感知判 N/A；口径行 + 固有 N/A 折叠）；**回归体系稳定化**（v1.48.35/50：语义名基线 + `--all` 同名去重 + 样本集自动发现）；**PSID 采集修复**（v1.48.54：新增 `devlink dev info`——MST/mstflint 在新平台（CX8/NV access）不可用时的固件信息源，回退链 devlink→mstflint→mlxfwmanager）；**网卡物理位置列**（v1.48.54：SMBIOS Type 9 槽位表 + PCIe 上游桥链上溯——GPU 直连卡标注 SXM*_GPU* 物理落点，标准卡 SLOTn/LAN）；**推送纪律工程化**（v1.48.52：git_push 假失败修复——推送超时 30s→180s、预检 3s→5s、代理重试）；**采集命令正确性修复**（v1.48.57-73，真机驱动：DCGM 两条 dcgmi 命令无效致 PARSE ERROR、mlxconfig 子命令顺序错致 per-port LINK_TYPE 从未采集、nvswitch fallback 的无效 nvidia-smi 命令；**29 处 ipmitool 补 `timeout 10`**——此前慢 BMC 会挂死单条命令直到 300s 模块上限，一次拖垮 PSU/风扇/BMC/功耗四模块）；**IB 链路质量 + 固件一致性采集**（v1.48.6x：`mlxlink -c` 计数器；驱动场景为一份报告的 IB 汇总漏掉 8 个端口）；**NVSwitch 判定重做**（v1.48.72：失效的 nvidia-smi fallback 换成 Fabric-domain 判定）；**内存速率按 DPC 判定** + RAID 固定路径 + 平台固有 N/A 收敛（v1.48.71）；**Windows 远程采集单密码模式**（v1.48.7x：推送/执行/回拉走一条 ssh，不再输三次密码；临时 tar 自动清理；修复"采集目录显示成历史目录里别的机器"）；**git_push 预检加固**（v1.48.66/68：HEAD→GET（代理下 HEAD 恒 000 误判断网）、空设备按环境选择（MSYS 用 NUL，否则 curl 退出码 23 被 pipefail 判失败）、预检说"仅代理"时跳过多余直连重试）；**回归基线同源判定**（v1.48.74：机器指纹比对——同型号多台机器不再互报满屏假差异，不同源输出 `[SKIP]`）；**agent 工程文档与仓库恢复脚本**（v1.48.75：`tools/agent/README.md` 基线机制说明、`docs/AGENT_ENV.md` 开发环境坑清单、`tools/agent/repo_realign.sh` 历史重写后的仓库对齐与 SN 自查）
 - v1.46.x — **多厂商 GPU 检测 + 函数化 + 设备形态**：厂商无关 GPU 检测（v1.46.0：AMD/Intel 卡不再误报无 GPU，无 GPU 段隐藏）；AMD/ROCm 全链路（v1.46.1：rocm-smi/amd-smi 采集 + JSON 解析 + MI 系列显存规格库 + 魔改检测 + 验收适配）；detect_gpu_vendors/verify_gpu_mem 函数化单一实现 + 设备形态分类（v1.46.2：chassis/ECC/BMC/GPU 信号 → 笔记本~GB300 10 类）
 - v1.45.x — **测试报告生成器 + 目录语义 + 报告完善 + 推送纪律**：`test/report.sh` 压测报告生成器（v1.45.0：STREAM 理论峰值 = 通道×速率×8B，利用率判定）；磁盘测默认屏蔽系统盘（v1.45.1）；logs/test/<SN>/ 稳定累积 + 采集默认覆盖 --stamp（v1.45.5-6）；DIMM 位宽列（v1.45.13：部件号推断 x4/x8 + 动态隐藏）；NIC PCIe 通路设计注（v1.45.14）；网卡 Link 状态列（v1.45.15）；整机温度 OS 侧 lm-sensors 兜底（v1.45.16）；git_push 防死循环三层防线（v1.45.8-10：4s 预检 + 熔断冷却 + [PAUSE] 纪律）
@@ -137,4 +149,4 @@
 
 ---
 
-*最近更新: 2026-09-20 · 版本: v1.49.23*
+*最近更新: 2026-09-20 · 版本: v1.50.4*

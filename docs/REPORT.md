@@ -36,7 +36,7 @@
 - 多版本型号（如 A100 40|80）自动选近者
 - **检测与额定不符 → `⚠️ 疑似显存魔改或伪装`**（PCIe 魔改卡识别；NVIDIA/AMD 统一 verify_gpu_mem 检测）
 - **AMD 平台**：04 模块走 ROCm（rocm-smi/amd-smi + rocminfo）采集，报告按厂商解析；验收 NVLink/DCGM 判 N/A（AMD 无 NVLink/DCGM，ROCm 诊断走 rocminfo + amd-smi ras）
-- **多厂商适配器（v1.47.0）**：昇腾（npu-smi + HCCS 拓扑/health 日志）/ Intel（xpu-smi）/ 国产（cnmon·bmt-smi·mthreads-gmi·mx-smi·ix-smi）全量日志落盘 + 统一 `gpu_inventory.csv`（lspci 层，PCIe 链路判定可用）；厂商 SMI 解析标注【待真机校准】；无工具自动 lspci 兜底，卡不丢失
+- **多厂商适配器（v1.47.0；昇腾/Intel/国产待真机验证）**：昇腾（npu-smi + HCCS 拓扑/health 日志）/ Intel（xpu-smi）/ 国产（cnmon·bmt-smi·mthreads-gmi·mx-smi·ix-smi）全量日志落盘 + 统一 `gpu_inventory.csv`（lspci 层，PCIe 链路判定可用）；厂商 SMI 解析标注【待真机校准】；无工具自动 lspci 兜底，卡不丢失
 - **型号文本规范化（v1.48.15）**：从 lspci 厂商行提取 marketing 括号内的短型号（如 `AMD Instinct MI300X` / `NVIDIA B200`），明细与规格库匹配更稳定（不再带 `[AMD/ATI]` 等噪音）
 - **无工具兜底的额定显存显示（v1.48.15）**：generic 降级（无厂商 SMI）时检测显存为 N/A、魔改验证不触发，但型号已知 → 规格库仍给出额定（如"检测 N/A / 额定 1504GB"），报告不显示全空
 - **VBIOS 文案 AMD 感知（v1.48.15）**：AMD 平台固件版本按厂商语义表述（AMD 无 VBIOS 概念，显示固件版本而非 VBIOS 字样）
@@ -135,3 +135,14 @@ logs/remote_logs/                          # 远程采集归档（独立）
 | 板载与外部接口 | 板载与外部接口 | VGA / USB 控制器 / 板载网口（来自 lspci）+ BMC 管理口（IP/MAC）+ USB 已接设备（lsusb） |
 
 **电源配置完整性**：PSU 段与验收清单会标注「在位 N / 槽位 M」（槽位数取自 BMC SDR 的 `PS*_Status` 编号最大值）。交付现场常因场地供电受限不满配，报告**如实标注但不做"必须插满"的硬判定**——机型槽位数差异大（8/12 槽等），硬判会把出厂即部分配置的机器误报为故障。
+
+## 判定口径修正（v1.50.2 / v1.50.3）
+
+| 项 | 变更 |
+|----|------|
+| **IB 活动口** | 改按 `ibstat` 的 **`Link layer: InfiniBand`** 判定（per-port、驱动当前状态，不依赖 mlxconfig 查询成功）。旧实现直接数 `State: Active`，把**以太模式的 RDMA 口也算作 IB 活动口**，且计数与速率列表来自两条不同 grep，会出现「活动口 4 却列出 12 个速率」的自相矛盾展示。现计数与速率**同源**；以太模式口数单独列出，便于理解「活动口为何少于设备数」。 |
+| **内存空槽** | DIMM 明细**列出空槽行**（容量列显示 `（未插）`）。此前空槽直接跳过，只报「已插 24/32 槽」，看不出空的是哪几个槽位。空槽在数据层用 ASCII 内部标记 `EMPTY_SLOT`，**统计端显式排除**（否则会被当成一种容量而误报"容量混插"），渲染时才转成中文；汇总的已插数与容量统计不受影响。 |
+| **IB 链路质量** | 从**健康检查表移出**（长串拉伸表格宽度），只保留网络段的「IB 链路质量（每 CA）」表。 |
+| **额定速率 vs 实际速率** | `IB 额定速率`（卡能力，取自 `mlxlink` 的 Enabled Link Speed）与 `IB 活动口` 的协商速率**语义不同**：例如额定 `800G (XDR)` 的卡跑以太 100G 属正常配置，不是数据异常。 |
+
+> 关于「验证状态」：NVIDIA / AMD 路径已由真机样本回归；**昇腾 / Intel / 国产加速卡为待真机验证**（代码与工具探测已实现，尚无真机样本）。

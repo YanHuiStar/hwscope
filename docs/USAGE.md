@@ -45,7 +45,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 
 > 单模块调试：`bash modules/<NN>_<模块>.sh <输出目录>`；开关默认全开（`conf/hwscope.conf` 置 0 关闭对应模块）。
 
-**GPU 多厂商适配器（v1.47.0）**：04 模块按 `GPU_PLATFORM` 分发到 `modules/gpu/adapter_<vendor>.sh`——NVIDIA（nvidia-smi，金标准）/ AMD（amd-smi·rocm-smi）/ 昇腾（npu-smi）/ Intel（xpu-smi）/ 寒武纪·壁仞·摩尔线程·沐曦·天数智芯（cnmon·bmt-smi·mthreads-gmi·mx-smi·ix-smi）。每个适配器输出**统一 `gpu_inventory.csv`**（列与 nvidia-smi 18 列一致），报告/显存魔改检测/验收 GPU PCIe 项跨厂商零改动生效。厂商工具未装时自动降级 **lspci 层兜底**（PCIe 链路可判，卡不丢失），工具依赖见 `docs/DEPENDENCIES.md` §3.6。
+**GPU 多厂商适配器（v1.47.0）**：04 模块按 `GPU_PLATFORM` 分发到 `modules/gpu/adapter_<vendor>.sh`——NVIDIA（nvidia-smi，已真机验证；**昇腾/Intel/国产待真机验证**，金标准）/ AMD（amd-smi·rocm-smi）/ 昇腾（npu-smi）/ Intel（xpu-smi）/ 寒武纪·壁仞·摩尔线程·沐曦·天数智芯（cnmon·bmt-smi·mthreads-gmi·mx-smi·ix-smi）。每个适配器输出**统一 `gpu_inventory.csv`**（列与 nvidia-smi 18 列一致），报告/显存魔改检测/验收 GPU PCIe 项跨厂商零改动生效。厂商工具未装时自动降级 **lspci 层兜底**（PCIe 链路可判，卡不丢失），工具依赖见 `docs/DEPENDENCIES.md` §3.6。
 
 ## 报告生成
 

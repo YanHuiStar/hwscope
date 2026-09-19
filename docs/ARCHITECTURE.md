@@ -65,19 +65,21 @@ hwscope/
 | x86_64_PCIe | nvidia-smi 无 NVSwitch | NVIDIA PCIe GPU 服务器 |
 | x86_64_PCIe（AMD） | lspci 3D controller AMD + 无 nvidia-smi（v1.46.6） | AMD Instinct / ROCm GPU 服务器（GPU_PLATFORM=amd） |
 | x86_64_OAM（AMD） | lspci 3D controller AMD + device ID 属 OAM 型号（MI250X/MI300X/MI325X，v1.48.0） | AMD Instinct OAM 模组（GPU_PLATFORM=amd，xGMI/Infinity Fabric 互联） |
-| x86_64_PCIe（昇腾） | lspci Processing accelerators Huawei/HiSilicon + 无 nvidia-smi（v1.46.7） | Atlas 昇腾加速服务器（GPU_PLATFORM=ascend） |
+| x86_64_PCIe（昇腾）**〔待真机验证〕** | lspci Processing accelerators Huawei/HiSilicon + 无 nvidia-smi（v1.46.7） | Atlas 昇腾加速服务器（GPU_PLATFORM=ascend） |
 | x86_64_head | PEX89/PEX97 Switchtec + 无 GPU | HGX 机头（模组单独采集） |
 | x86_64_none | 无 GPU 无 Switch | 传统服务器/虚拟机 |
 | aarch64_SXM | ARM + GPU | 国产/ARM 平台 |
 
-> GPU 平台（GPU_PLATFORM，v1.46.x）：nvidia / amd / ascend / intel / mixed / other / none——采集与报告按厂商分路径（NVIDIA=DCGM/NVLink，AMD=ROCm/rocminfo，昇腾=HCCS/npu-smi）。识别类目：NVIDIA/AMD/Intel 独立卡=lspci "3D controller"，华为昇腾卡=lspci "Processing accelerators"（v1.46.7）。AMD OAM 模组标记（v1.48.0）：device ID 属 MI250X/MI300X/MI325X OAM 型号 → GPU_OAM=1 → PLATFORM=x86_64_OAM（ID 表待真机校准）。
+> GPU 平台（GPU_PLATFORM，v1.46.x）：nvidia / amd / ascend / intel / mixed / other / none——采集与报告按厂商分路径。
+>
+> **⚠️ 验证状态**：NVIDIA / AMD 已真机验证（多份真机样本回归）；**ascend（昇腾）/ intel / 国产适配层为「待真机验证」**——代码路径与工具探测已实现，但尚无真机样本回归，型号识别与输出解析可能与实际有偏差。（NVIDIA=DCGM/NVLink，AMD=ROCm/rocminfo，昇腾=HCCS/npu-smi）。识别类目：NVIDIA/AMD/Intel 独立卡=lspci "3D controller"，华为昇腾卡=lspci "Processing accelerators"（v1.46.7）。AMD OAM 模组标记（v1.48.0）：device ID 属 MI250X/MI300X/MI325X OAM 型号 → GPU_OAM=1 → PLATFORM=x86_64_OAM（ID 表待真机校准）。
 
 机器 ID（目录命名）：SN → baseboard SN → UUID → 时间戳兜底（四层保证非空且路径安全）。
 
 ## 模块架构
 
 - **采集/报告分离**：`modules/*.sh` 只生成数据；`report/report.sh` 只读生成报告（不重新采集）；采集与报告分属 `modules/`（数据）与 `report/`（交付物）两个平级模块
-- **GPU 多厂商适配器层（v1.47.0）**：`modules/gpu/adapter_*.sh` 按 `GPU_PLATFORM` 分发（NVIDIA/AMD/昇腾/Intel/国产/通用兜底），统一输出 `gpu_inventory.csv`（列与 nvidia-smi 18 列一致）→ 报告/魔改检测/验收跨厂商零改动消费；识别类目：独立卡=lspci "3D controller"，昇腾等加速卡="Processing accelerators"
+- **GPU 多厂商适配器层（v1.47.0）**：`modules/gpu/adapter_*.sh` 按 `GPU_PLATFORM` 分发（NVIDIA/AMD 已真机验证；**昇腾/Intel/国产待真机验证**；通用兜底），统一输出 `gpu_inventory.csv`（列与 nvidia-smi 18 列一致）→ 报告/魔改检测/验收跨厂商零改动消费；识别类目：独立卡=lspci "3D controller"，昇腾等加速卡="Processing accelerators"
 - **持久化内核日志（v1.48.90）**：99_os 采 `journalctl -k --since "7 days ago"`（限内核消息+时间窗+tail），落 `journal_kernel_hw.log` / `journal_xid.log` / `journal_mce.log`——dmesg 重启即丢，GPU XID / CPU MCE 这类历史故障证据只能靠 journal 回溯
 - **IB 链路性能计数器（v1.48.90）**：07_network 采 `perfquery -x`，ibstat 看不见误码，只有计数器能反映链路真实质量（SymbolError/LinkDowned/RcvErrors 等）
 - **NVMe 错误日志（v1.48.90）**：08_storage 逐盘 `nvme error-log`，SMART 只给健康度，错误日志才有每次错误的类型/时间戳/LBA
