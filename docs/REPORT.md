@@ -27,6 +27,7 @@
 - **NIC PSID 来源（v1.48.56）**：`ethtool -i` 固件字符串括号值（如 `40.46.5500 (NVD0000000072)` → `NVD0000000072`）为**权威来源**——内核按 netdev 提供、每卡每口都有、零额外命令；MST 路径（`mstflint` → `mlxfwmanager`）作为补充，新平台（CX8/NV access）及多口卡常残缺（实测获取率 0%~88%，MST 设备↔BDF 误配还会读到他卡 PSID）；多口卡按同 BDF 前缀共享（MST 只注册 function 0）；报告端 `devlink`（`versions.fixed.fw.psid`）兜底旧采集
 - **多厂商 GPU（v1.46.0–v1.48.0）**：统一 `gpu_inventory.csv`（18 列对齐 nvidia-smi schema）驱动——NVIDIA/AMD/昇腾/Intel/国产卡明细同表渲染（型号/SN/BDF/显存/功耗/温度/利用率/PCIe 链路），显存魔改检测与验收 GPU PCIe 项跨厂商生效；AMD OAM 模组平台标记 `x86_64_OAM` + xGMI 拓扑章节（对标 NVLink 拓扑）；昇腾 Atlas 附 HCCS 拓扑日志（解析待真机校准）
 - **设备形态行（v1.46.2+）**：报告头部按 chassis/ECC/BMC/GPU 信号自动分类（笔记本/一体机/台式机/工作站（消费版·服务器版）/传统服务器/NVIDIA·AMD·其他 GPU 服务器/GB300 机架），JSON 同步输出 `machine_class` 字段
+- **Compute Mode / ECC Mode 行（v1.49.3+）**：环境表展示 DCGM 配置的 GPU 计算模式与 ECC 开关，取自 `dcgm/dcgmi_config.log`（`dcgmi config -g 0 --get`，v1.48.59 起语法才正确）。该数据此前一直在采集但报告端从未读取。取值取表格行 `| Compute Mode | Not Specified | <Current> |` 的 Current 列（注意行尾有 `|`，末列为 `$(NF-1)`）；带 `Non-homogenous settings across group` 时追加说明「-g 0 为整个 GPU 组汇总，组内不一致时显示共识值」（`-g 0` 是整组查询，非逐卡）。**旧采集（< v1.48.59）**的该文件内容是不存在的 `--list` 参数报出的 `PARSE ERROR` 用法帮助——此类机器两行均显示「未取到（该机采集版本早于 v1.48.59，dcgmi config --list 语法错）」，**不显示为 N/A**；无 DCGM 数据（如 AMD 平台、未装 DCGM）则两行都不输出
 
 ### GPU 额定显存规格库
 

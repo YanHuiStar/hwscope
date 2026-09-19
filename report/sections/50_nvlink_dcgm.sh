@@ -60,6 +60,30 @@ if [ -f "${dcgmi_diag_level1}" ]; then
     fi
 fi
 
+# ─── DCGM 配置（dcgmi_config.log：Compute Mode / ECC Mode，v1.49.3） ───
+# v1.48.59 起采集 `dcgmi config -g 0 --get`（此前为 `config --list`，dcgmi 无该参数 → PARSE ERROR）。
+# 数据一直采着但报告端从未读取，属"采了没用"。取值注意行尾有 `|`，末列是 $(NF-1) 不是 $NF。
+DCGM_COMPUTE_MODE=""
+DCGM_ECC_MODE=""
+DCGM_CONFIG_NOTE=""
+load_manifest "${DCGM_DIR}" dcgmi_config "dcgmi_config.log"
+if [ -f "${dcgmi_config}" ]; then
+    if grep -q "PARSE ERROR" "${dcgmi_config}" 2>/dev/null; then
+        # 旧采集（< v1.48.59）用的是不存在的 --list，输出的是用法帮助而非数据。
+        # 两项都给出，避免客户只看得到 Compute Mode 而以为 ECC Mode 漏采。
+        DCGM_COMPUTE_MODE="未取到（该机采集版本早于 v1.48.59，dcgmi config --list 语法错）"
+        DCGM_ECC_MODE="未取到（同上）"
+    else
+        DCGM_COMPUTE_MODE=$(grep -E '^\|[[:space:]]*Compute Mode' "${dcgmi_config}" 2>/dev/null | head -1 \
+            | awk -F'|' '{v=$(NF-1); gsub(/^[ \t]+|[ \t]+$/,"",v); print v}')
+        DCGM_ECC_MODE=$(grep -E '^\|[[:space:]]*ECC Mode' "${dcgmi_config}" 2>/dev/null | head -1 \
+            | awk -F'|' '{v=$(NF-1); gsub(/^[ \t]+|[ \t]+$/,"",v); print v}')
+        # `-g 0` 是整组汇总：组内不一致时 dcgmi 只给共识值并打 Non-homogenous 提示
+        grep -q "Non-homogenous" "${dcgmi_config}" 2>/dev/null \
+            && DCGM_CONFIG_NOTE="（-g 0 为整个 GPU 组汇总，组内不一致时显示共识值）"
+    fi
+fi
+
 # 健康检查文本（变量拼接，避免 $( ) 命令替换剥离尾换行导致排版错乱）
 HEALTH_TXT=""
 if [ "$GPU_COUNT" -eq 0 ]; then

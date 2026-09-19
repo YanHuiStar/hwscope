@@ -136,7 +136,7 @@ HwScope 硬件巡检报告
   OS     : ${OS_NAME:-N/A}
   内核   : ${KERNEL:-N/A}
   驱动   : ${GPU_DRIVER:-N/A}
-形态   : ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}}
+形态   : ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}}$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then printf '\n  Compute Mode : %s' "${DCGM_COMPUTE_MODE}"; fi)$(if [ -n "${DCGM_ECC_MODE:-}" ]; then printf '\n  ECC Mode     : %s%s' "${DCGM_ECC_MODE}" "${DCGM_CONFIG_NOTE:-}"; fi)
   CUDA   : ${GPU_CUDA:-N/A}
   采集耗时 : ${TIMING_TOTAL:-N/A}
 

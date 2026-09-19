@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=268
+  table_rows=270
 [gpu]
   gpu_detail_rows=8
   model:  NVIDIA B200
@@ -25,7 +25,7 @@
 [html]
   html_table_open=23
   html_table_close=23
-  html_bytes=40492
+  html_bytes=40663
 [acceptance]
         4 N/A
        13 PASS

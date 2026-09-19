@@ -151,7 +151,9 @@ gen_md() {
 | 内核 | ${KERNEL:-N/A} |
 | 驱动 | ${GPU_DRIVER:-N/A} |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
 | CUDA | ${GPU_CUDA:-N/A} |"; fi)
-| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |
+| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then echo "
+| Compute Mode | ${DCGM_COMPUTE_MODE} |"; fi)$(if [ -n "${DCGM_ECC_MODE:-}" ]; then echo "
+| ECC Mode | ${DCGM_ECC_MODE}${DCGM_CONFIG_NOTE} |"; fi)
 | 采集耗时 | ${TIMING_TOTAL:-N/A} |
 
 ## 主板
