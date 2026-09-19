@@ -201,6 +201,32 @@ if [ -f "${nic_inventory}" ]; then
     done < <(grep -v "^#" "${nic_inventory}" 2>/dev/null)
     declare -A NIC_PORT_IDX
     GPU_DIRECT_COUNT=0
+# ─── v1.49.4：BMC FRU 网卡 SN 兜底 ───
+# BMC 的 FRU 表按槽位登记板卡（PCIE_NIC0/NIC1...），提供 Board/Product Serial——这是**带外**读取，
+#  不依赖 OS 驱动或 MST，是 CX8（sysfs 给占位值 + mstflint 不认）这类平台的最后一路 SN 来源。
+# 保守规则：仅当某 PN 在 FRU 中**恰好 1 条**时才采用（多条无法确定对应哪张卡，宁可留白不配错）。
+declare -A FRU_NIC_SN_BY_PN
+declare -A FRU_NIC_PN_CNT
+load_manifest "${BMC_DIR}" ipmi_fru_all "ipmi_fru_all.log"
+if [ -f "${ipmi_fru_all}" ]; then
+    while IFS="|" read -r _fpn _fsn; do
+        [ -z "$_fpn" ] || [ -z "$_fsn" ] && continue
+        FRU_NIC_PN_CNT["$_fpn"]=$(( ${FRU_NIC_PN_CNT["$_fpn"]:-0} + 1 ))
+        FRU_NIC_SN_BY_PN["$_fpn"]="$_fsn"
+    done < <(grep -v "^#" "${ipmi_fru_all}" 2>/dev/null | awk '
+        /^FRU Device Description/ {
+            if (nic == 1 && pn != "" && sn != "") print pn "|" sn
+            nic = (index($0, "NIC") > 0) ? 1 : 0
+            pn = ""; sn = ""
+            next
+        }
+        nic != 1 { next }
+        /Part Number/ { if (pn == "") { split($0, a, /:[ \t]*/); pn = a[2]; gsub(/[ \t]+$/, "", pn) } }
+        /Serial/      { if (sn == "") { split($0, a, /:[ \t]*/); sn = a[2]; gsub(/[ \t]+$/, "", sn) } }
+        END { if (nic == 1 && pn != "" && sn != "") print pn "|" sn }
+    ')
+fi
+
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw nspd nwd npsid ncapspd ncapwd; do
         [ -z "$nnic" ] || [ "$nnic" = "N/A" ] && continue
         [ "$nnic" = "#" ] && continue
@@ -296,6 +322,14 @@ if [ -f "${nic_inventory}" ]; then
         _nchip_ca="${NETDEV_CA[$nnic]:-}"
         if [ -n "$_nchip_ca" ]; then
             nchip="${CA_MODEL[$_nchip_ca]:-}"
+        fi
+        # v1.49.4：BMC FRU 兜底——必须放在 IB/非 IB 分支**之前**，所有接口都要过。
+        #   实测教训：初版写在 ibp*/ibs* 分支内，而 CX8 的以太口名是 enp112s0np0，根本进不到那段。
+        if [ -z "$nsn" ] || [ "$nsn" = "N/A" ] || [[ "$nsn" == 195* ]]; then
+            _fpn_key="${npn%% *}"
+            if [ -n "$_fpn_key" ] && [ "${FRU_NIC_PN_CNT[$_fpn_key]:-0}" = "1" ]; then
+                nsn="${FRU_NIC_SN_BY_PN[$_fpn_key]}"
+            fi
         fi
         # IB 设备（ibp*/ibs*）的专属补充：Mellanox 标志 + SN 为占位时的 Node GUID 兜底
         if [[ "$nnic" == ibp* || "$nnic" == ibs* ]]; then
