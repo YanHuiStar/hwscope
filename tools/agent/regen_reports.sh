@@ -30,13 +30,22 @@ if [ -z "$DESKTOP" ] && [ -n "${USERPROFILE:-}" ]; then
     [ -d "${_up}/Desktop" ] && DESKTOP="${_up}/Desktop"
 fi
 if [ -z "$DESKTOP" ]; then
+    # v1.49.14：同机多账号时不能取"第一个非公共账号"——glob 按字典序展开，
+    #   实测 /mnt/c/Users/Star/Desktop（另一账号，空目录）排在 yanhu 之前被锁定 →
+    #   自动发现 0 份 → [ERROR] 无有效样本目录。改为：优先选**真正含采集目录**的候选，
+    #   都为空才退回第一个存在的（保证探测不返回空）。
+    _best=""; _fallback=""
     for _cand in /mnt/c/Users/*/Desktop /c/Users/*/Desktop "C:/Users/"*/Desktop; do
         [ -d "$_cand" ] || continue
         case "$_cand" in
             *Public*|*Default*|*"All Users"*) continue ;;
         esac
-        DESKTOP="$_cand"; break
+        [ -z "$_fallback" ] && _fallback="$_cand"
+        if ls "$_cand"/*/hwscope_report.md >/dev/null 2>&1; then
+            _best="$_cand"; break
+        fi
     done 2>/dev/null
+    DESKTOP="${_best:-$_fallback}"
 fi
 
 # v1.48.27：默认自动发现（隐私红线：真实 SN 不进 git——不硬编码样本 SN；
@@ -89,8 +98,12 @@ for d in "${TARGETS[@]}"; do
     echo ""
     echo "── ${sn} ──"
     # 报告四件套 + 验收（capture 输出，失败不影响下一份）
-    out_json=$("${PROJECT_DIR}/report/report.sh" "$d" 2>&1 | grep -cE "生成完成" )
-    out_acc=$("${PROJECT_DIR}/report/report.sh" "$d" --acceptance 2>&1 | grep -cE "验收清单.*(md|html)" )
+    # v1.49.14：显式 bash 调用——report.sh 在仓库里没有可执行位（100644），
+    #   直接执行报 Permission denied → 输出为空 → grep -c=0 → 明明成功却标 FAIL
+    out_json=$(bash "${PROJECT_DIR}/report/report.sh" "$d" 2>&1 | grep -cE "生成完成" )
+    # v1.49.14：原判据 "验收清单.*(md|html)" 与 report.sh 的实际输出格式不符 → 恒为 0
+    #   → 验收明明生成成功却报 "验收: FAIL"。（--acceptance 与默认分支独立，必须单独调用）
+    out_acc=$(bash "${PROJECT_DIR}/report/report.sh" "$d" --acceptance 2>&1 | grep -cE "生成完成|验收清单")
     verdict=$(grep -oE "\*\*判定\*\* \| [^|]+" "$d/hwscope_acceptance.md" 2>/dev/null | sed 's/\*\*判定\*\* | //')
     [ -z "$verdict" ] && verdict="（验收未生成）"
     echo "  报告: $([ "$out_json" -gt 0 ] 2>/dev/null && echo OK || echo FAIL) | 验收: $([ "$out_acc" -gt 0 ] 2>/dev/null && echo OK || echo FAIL)"
