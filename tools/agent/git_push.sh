@@ -308,6 +308,22 @@ push_main() {
         ai "先 git pull --rebase $REMOTE $BRANCH，在远程 v${rver} 基础上升级版本（tools/sync_version.sh），再重推"
         return 1
     fi
+    # SN 兜底检查（v1.49.4）：钩子靠自觉不可靠——`.git/hooks/` 不进仓库，换机器/新 clone 就没有，
+    #   历史上三次泄漏都发生在"以为装了钩子"或"钩子没装"的时刻。而推送是进公开仓库的**唯一必经关口**，
+    #   放这里不依赖任何人的自觉。扫「暂存区 + 待推提交」（--all-history 太慢，且推送只需保证本次内容干净）。
+    if [ -x "${SCRIPT_DIR}/sn_check.sh" ] && [ "${SKIP_SN_CHECK:-0}" != "1" ]; then
+        info "推送前 SN/MAC 兜底检查（sn_check）..."
+        _snlog=$(mktemp 2>/dev/null || echo /tmp/_snchk.$$)
+        if ! bash "${SCRIPT_DIR}/sn_check.sh" >"$_snlog" 2>&1; then
+            fail "SN 兜底检查未通过——待推内容里检出疑似真实机器标识"
+            grep -E '^\[SN-CHECK\]|^ +[0-9]+:|命中' "$_snlog" | head -12 | sed 's/^/    /'
+            ai "改用语义名（B300-sample-a / A100-sample-a / <test-host> 等）后重新提交；确属误报可加入 sn_check.sh 的 NOISE 表并说明原因"
+            rm -f "$_snlog"
+            return 1
+        fi
+        grep -E '^\[OK\]' "$_snlog" | head -1 | sed 's/^/    /'
+        rm -f "$_snlog"
+    fi
     # 策略（v1.48.73 修正）：优先按预检结论走——
     #   预检显示"直连不可达 + 代理可用"时直接走代理，跳过直连重试。原实现无条件先试 3 次直连，
     #   而直连失败每次要等 21s（`http.connectTimeout=6` 对本机网络无效，实测仍是 21s），
