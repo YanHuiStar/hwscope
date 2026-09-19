@@ -27,8 +27,114 @@ NC='\033[0m' # No Color
 #   在 30s 全部超时（exit 124、0 行）→ 风扇、电压、SDR 类数据整批丢失；
 #   ipmi_sensors_power 刚好 17.61s 赶上才保住。30s 对这类平台不够。
 #   代价：极慢平台单命令最坏等待翻倍；可用环境变量按需调回。
-IPMI_TIMEOUT="${HWSCOPE_IPMI_TIMEOUT:-60}"
+IPMI_TIMEOUT="${HWSCOPE_IPMI_TIMEOUT:-90}"
 export IPMI_TIMEOUT
+
+# ─── 分级 IPMI 超时（v1.49.9）───
+# 一刀切超时的根本问题是：不同 IPMI 命令的代价差一个数量级，取一个值必然两头不讨好。
+#   实测同一台慢 BMC 上：chassis/guid/power 类 < 1s，fru print 22s，
+#   **sdr list / sensor list 200~230s**（逐条读 SDR 仓库，条目越多越慢）。
+#   取 30s → 慢命令全被砍（实测 DGX A100 6 条超时整齐卡在 30.01s、0 行）；
+#   取 240s → 快命令卡住时白等 4 分钟。
+# 故分三级，按命令实际代价给余量：
+#   IPMI_TIMEOUT_FAST —— chassis status / chassis power / lan print / bmc guid / user list / mc info
+#   IPMI_TIMEOUT      —— sel list / sel elist / fru print
+#   IPMI_TIMEOUT_SLOW —— sdr list / sensor list（逐条读 SDR，慢机可达 230s+）
+# 另注：并发不解决慢的问题——IPMI 走 KCS 单通道，多个 ipmitool 并发只在 BMC 侧排队，
+#   反而互相拖慢；采集端并发已由 4 降到 2，且 sensor list 由 5 次调用减为 1 次（其余派生）。
+IPMI_TIMEOUT_FAST="${HWSCOPE_IPMI_TIMEOUT_FAST:-30}"
+IPMI_TIMEOUT_SLOW="${HWSCOPE_IPMI_TIMEOUT_SLOW:-240}"
+export IPMI_TIMEOUT_FAST IPMI_TIMEOUT_SLOW
+
+# ─── IPMI 快照缓存（v1.49.9）───
+# 问题：BMC 上最贵的两条命令 sdr list / sensor list 会**逐条读 SDR 仓库**，慢机单次 200~230s
+#   （实测 A100-sample-b 无超时版 sdr list 跑 200.49s）。而全项目对它们的调用点极多：
+#   12_bmc(2) + 10_psu(4) + 11_fan(2) + 16_power(2) —— 合计 7 次 sensor list + 3 次 sdr list。
+#   慢机上等于把同一个 BMC 反复拷打 1000+ 秒，并把超时概率放到最大。
+#   并发也救不了：IPMI 走 KCS 单通道，多个 ipmitool 只在 BMC 侧排队，反而互相拖慢。
+# 方案：进程内**惰性缓存**——第一次调用真跑并把结果存到 $OUTPUT_BASE/<mod>/ 下的固定文件，
+#   之后的调用直接返回缓存路径（本地 grep，秒级）。不改模块执行顺序，各模块按需调用。
+# 用法：ipmi_snapshot sensors   → 回显 ipmi_sensors.log 的路径（不存在或已过期则采集）
+#       ipmi_snapshot sdr       → 回显 ipmi_sdr.log 的路径
+#       ipmi_snapshot_derive <源文件> <目标文件> <grep 模式>   → 从快照派生一个子集（含 HwScope 头）
+#       ipmi_snapshot_cleanup   → 采集结束时清理快照（避免被打进 logs/ 归档）
+# 生命周期与隔离：
+#   ① 默认落在 $OUTPUT_BASE/.ipmi_snapshot/ —— 而 hwscope.sh 每次采集都会先归档再 rm -rf 该目录，
+#      故跨采集天然隔离，不会拿到上次的数据。
+#   ② 单独跑某个模块（--modules psu 等）时，惰性缓存让**该模块自己采**，无需别的模块先跑。
+#   ③ 过期兜底：手工在固定目录里反复跑模块（不走 hwscope.sh）时，目录不会被清，
+#      若不加时效会用上次采的快照。故按 mtime 判过期（默认 3600s，HWSCOPE_IPMI_SNAPSHOT_TTL 可调）。
+_ipmi_snapshot_dir() {
+    printf '%s' "${IPMI_SNAPSHOT_DIR:-${OUTPUT_BASE:-${OUT:-/tmp}}/.ipmi_snapshot}"
+}
+
+# 判断快照是否已过期（$1=快照文件路径）→ 0=过期/不可用，1=仍有效
+_ipmi_snapshot_stale() {
+    local f="$1" ttl="${HWSCOPE_IPMI_SNAPSHOT_TTL:-3600}"
+    [ -s "$f" ] || return 0
+    local now mt age
+    now=$(date +%s 2>/dev/null || echo 0)
+    mt=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)
+    [ "$mt" -gt 0 ] 2>/dev/null || return 1        # 取不到 mtime 就不判过期（宁可复用也别丢数据）
+    age=$(( now - mt ))
+    [ "$age" -gt "$ttl" ] 2>/dev/null && return 0
+    return 1
+}
+
+# 采集结束清理快照（hwscope.sh 收尾调用；避免被打进 logs/ 归档、也防跨次误用）
+ipmi_snapshot_cleanup() {
+    local sdir; sdir="$(_ipmi_snapshot_dir)"
+    [ -d "$sdir" ] && rm -rf "$sdir" 2>/dev/null
+    return 0
+}
+
+ipmi_snapshot() {   # $1=sensors|sdr —— 回显该快照的文件路径
+    local kind="$1"
+    local sdir; sdir="$(_ipmi_snapshot_dir)"
+    local cache=""
+    case "$kind" in
+        sensors) cache="${sdir}/ipmi_sensors.log" ;;
+        sdr)     cache="${sdir}/ipmi_sdr.log" ;;
+        *) return 1 ;;
+    esac
+    if ! _ipmi_snapshot_stale "$cache"; then
+        printf '%s' "$cache"; return 0
+    fi
+    rm -f "$cache" 2>/dev/null
+    mkdir -p "$sdir"
+    check_cmd ipmitool || return 1
+    local to=""; check_cmd timeout && to="timeout ${IPMI_TIMEOUT_SLOW:-240}"
+    local cmd="ipmitool sensor list 2>&1"
+    [ "$kind" = "sdr" ] && cmd="ipmitool sdr list 2>&1"
+    {
+        printf '# ============================================================\n'
+        printf '# Command  : %s %s\n' "${to:-}" "$cmd"
+        printf '# Hostname : %s\n' "$(hostname 2>/dev/null || echo unknown)"
+        printf '# Version  : HwScope %s\n' "${HWSCOPE_VERSION:-unknown}"
+        printf '# Timestamp: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+        printf '# Encoding : UTF-8\n'
+        printf '# ============================================================\n'
+        printf '# --- shared snapshot (ipmi_snapshot, v1.49.9) ---\n'
+        printf '# --- output start ---\n'
+        if [ -n "$to" ]; then $to bash -c "$cmd" 2>&1; else bash -c "$cmd" 2>&1; fi
+        printf '# --- output end ---\n'
+    } > "$cache" 2>/dev/null || { rm -f "$cache"; return 1; }
+    [ -s "$cache" ] && printf '%s' "$cache" || return 1
+}
+
+ipmi_snapshot_derive() {   # $1=源快照 $2=目标文件 $3=grep 模式（-iE）
+    local src="$1" dst="$2" pat="$3"
+    [ -f "$src" ] || return 1
+    mkdir -p "$(dirname "$dst")"
+    {
+        sed -n '1,9p' "$src" 2>/dev/null | grep '^#'
+        printf '# --- output start ---\n'
+        grep -v '^#' "$src" 2>/dev/null | grep -iE --line-buffered "$pat"
+        printf '# --- output end ---\n'
+    } > "$dst" 2>/dev/null && return 0
+    return 1
+}
+
 
 # ─── 脚本帮助（统一 -h/--help：打印脚本头部注释块） ───
 # 提取 $0 的注释头（跳过 shebang 与 ==== 装饰线），作为帮助文本；调用后 exit 0

@@ -30,8 +30,8 @@ run_fan() {
         #   另 16 台为空；报告端原 `*ok*` 分支还会误判成「冗余满足」。而这两个命令在慢 BMC 上
         #   各自跑满超时（实测该机 exit=124 / 30s 一个），等于每轮白等 30~60 秒换一个无人用的空文件。
         run_and_log_parallel 2 \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'FAN|RPM|PWM|Duty'\"" "${dir}/ipmi_fan_sensors.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'FAN.*Status|FAN.*Mode'\"" "${dir}/ipmi_fan_status.log" \
+            "${ipmi_fast} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'FAN|RPM|PWM|Duty'\"" "${dir}/ipmi_fan_sensors.log" \
+            "${ipmi_fast} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'FAN.*Status|FAN.*Mode'\"" "${dir}/ipmi_fan_status.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi

@@ -22,15 +22,20 @@ run_psu() {
 
     # ─── 1. IPMI PSU 传感器 ───
     if check_cmd ipmitool; then
-        # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
-        local ipmi_to="timeout ${IPMI_TIMEOUT:-30}"; check_cmd timeout || ipmi_to=""
-        run_and_log_parallel 4 \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'PSU|Pwr|PSC|PS[0-9]|PSU.*Status'\"" "${dir}/ipmi_psu_sensors.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'PSU.*Temp|PS[0-9].*Temp'\"" "${dir}/ipmi_psu_temp.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons|PS[0-9]_Pin|PS[0-9]_Pout'\"" "${dir}/ipmi_psu_power.log" \
+        # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块
+        # v1.49.9：三条 sensor list 改从**全项目共享快照**派生（原为各跑一次，慢机每次 200s+
+        #   → 本模块就吃掉 600s），并发 4 → 2（KCS 单通道，并发只会互相排队）。
+        local ipmi_fast="timeout ${IPMI_TIMEOUT_FAST:-30}"; check_cmd timeout || ipmi_fast=""
+        local ipmi_to="timeout ${IPMI_TIMEOUT:-90}"; check_cmd timeout || ipmi_to=""
+        _pss=$(ipmi_snapshot sensors 2>/dev/null)
+        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_sensors.log" 'PSU|Pwr|PSC|PS[0-9]|PSU.*Status' 2>/dev/null || : > "${dir}/ipmi_psu_sensors.log"
+        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_temp.log" 'PSU.*Temp|PS[0-9].*Temp' 2>/dev/null || : > "${dir}/ipmi_psu_temp.log"
+        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_power.log" 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons|PS[0-9]_Pin|PS[0-9]_Pout' 2>/dev/null || : > "${dir}/ipmi_psu_power.log"
+        _psd=$(ipmi_snapshot sdr 2>/dev/null)
+        ipmi_snapshot_derive "$_psd" "${dir}/ipmi_sdr_psu.log" 'PSU|PS[0-9]|Power' 2>/dev/null || : > "${dir}/ipmi_sdr_psu.log"
+        run_and_log_parallel 2 \
             "${ipmi_to} bash -c \"ipmitool fru print 2>/dev/null | grep --line-buffered -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply'\"" "${dir}/ipmi_psu_fru.log" \
-            "${ipmi_to} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/ipmi_dcmi_power.log" \
-            "${ipmi_to} bash -c \"ipmitool sdr list 2>/dev/null | grep --line-buffered -iE 'PSU|PS[0-9]|Power' \"" "${dir}/ipmi_sdr_psu.log"
+            "${ipmi_fast} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/ipmi_dcmi_power.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found${NC}"
     fi

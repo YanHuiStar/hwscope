@@ -26,12 +26,16 @@ run_power() {
 
     # ─── 1. IPMI 本地：累计能耗传感器（Pwr_Energy / *Energy* / kWh / Joules） ───
     if check_cmd ipmitool; then
-        # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
-        local ipmi_to="timeout ${IPMI_TIMEOUT:-30}"; check_cmd timeout || ipmi_to=""
-        run_and_log_parallel 3 \
-            "${ipmi_to} bash -c \"ipmitool sdr list 2>&1 | grep --line-buffered -iE 'energy|kwh|joule'\"" "${dir}/energy_sdr.log" \
-            "${ipmi_to} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>&1 | grep --line-buffered -iE 'power|watt|total'\"" "${dir}/sensors_power.log"
+        # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块
+        # v1.49.9：sdr list 改从**全项目共享快照**派生（原为再跑一次，慢机 200s+）；
+        #   sensor list 同理走快照；并发 3 → 2（KCS 单通道，并发只会互相排队）。
+        local ipmi_fast="timeout ${IPMI_TIMEOUT_FAST:-30}"; check_cmd timeout || ipmi_fast=""
+        _pos=$(ipmi_snapshot sensors 2>/dev/null)
+        ipmi_snapshot_derive "$_pos" "${dir}/sensors_power.log" 'power|watt|total' 2>/dev/null || : > "${dir}/sensors_power.log"
+        _pod=$(ipmi_snapshot sdr 2>/dev/null)
+        ipmi_snapshot_derive "$_pod" "${dir}/energy_sdr.log" 'energy|kwh|joule' 2>/dev/null || : > "${dir}/energy_sdr.log"
+        run_and_log_parallel 2 \
+            "${ipmi_fast} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log"
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found（能耗台账依赖 BMC 传感器）${NC}"
     fi

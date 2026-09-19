@@ -22,27 +22,37 @@ run_bmc() {
     # ─── 本地 IPMI（OS 内 /dev/ipmi0） ───
     if check_cmd ipmitool; then
         # v1.48.57：IPMI 命令统一加超时——BMC 慢/无响应时单命令无限挂起会拖垮整模块（曾致 PSU/FAN/BMC/Power 4 模块 300s 超时）
-        local ipmi_to="timeout ${IPMI_TIMEOUT:-30}"; check_cmd timeout || ipmi_to=""
-        # 本地 IPMI（BMC 通道限制 max_jobs=4）
-        run_and_log_parallel 4 \
-            "${ipmi_to} bash -c \"ipmitool mc info 2>&1\"" "${dir}/ipmi_mc.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>&1\"" "${dir}/ipmi_sensors.log" \
-            "${ipmi_to} bash -c \"ipmitool sdr list 2>&1\"" "${dir}/ipmi_sdr.log" \
+        # v1.49.9：分级超时 + 全项目共享 IPMI 快照（详见 lib/common.sh 的 ipmi_snapshot 说明）。
+        #   ① 最贵的 sensor list / sdr list 走快照：全项目原共 7 次 sensor list + 3 次 sdr list，
+        #      慢机单次 200s+ → 累计 1000s+，把 BMC 打满。现改为全局只跑一次、各模块派生。
+        #   ② 其余命令按代价分三级超时：轻（chassis/guid/power/lan/mc）30s、
+        #      中（sel/fru）90s、慢（sdr/sensor）240s。一刀切 30s 会把慢机的 sdr/sensor 全砍掉。
+        local ipmi_fast="timeout ${IPMI_TIMEOUT_FAST:-30}"; check_cmd timeout || ipmi_fast=""
+        local ipmi_to="timeout ${IPMI_TIMEOUT:-90}"; check_cmd timeout || ipmi_to=""
+        # 并发 4 → 2：IPMI 走 KCS 单通道，多个 ipmitool 并发只在 BMC 侧排队，反而互相拖慢。
+        run_and_log_parallel 2 \
+            "${ipmi_fast} bash -c \"ipmitool mc info 2>&1\"" "${dir}/ipmi_mc.log" \
             "${ipmi_to} bash -c \"ipmitool sel list 2>&1\"" "${dir}/ipmi_sel.log" \
             "${ipmi_to} bash -c \"ipmitool sel elist 2>&1\"" "${dir}/ipmi_sel_elist.log" \
-            "${ipmi_to} bash -c \"ipmitool chassis status 2>&1\"" "${dir}/ipmi_chassis.log" \
-            "${ipmi_to} bash -c \"ipmitool chassis power status 2>&1\"" "${dir}/ipmi_power.log" \
-            "${ipmi_to} bash -c \"ipmitool lan print 1 2>&1\"" "${dir}/ipmi_lan1.log" \
-            "${ipmi_to} bash -c \"ipmitool lan print 2 2>&1\"" "${dir}/ipmi_lan2.log" \
-            "for ch in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do echo \"=== Channel \$ch ===\"; ipmitool lan print \\$ch 2>&1 | grep --line-buffered -E 'IP Address |MAC Address|IP Address Source' ; done" "${dir}/ipmi_lan_all.log" \
-            "${ipmi_to} bash -c \"ipmitool bmc guid 2>&1\"" "${dir}/ipmi_bmc_guid.log" \
-            "${ipmi_to} bash -c \"ipmitool user list 2>&1\"" "${dir}/ipmi_users.log" \
+            "${ipmi_fast} bash -c \"ipmitool chassis status 2>&1\"" "${dir}/ipmi_chassis.log" \
+            "${ipmi_fast} bash -c \"ipmitool chassis power status 2>&1\"" "${dir}/ipmi_power.log" \
+            "${ipmi_fast} bash -c \"ipmitool lan print 1 2>&1\"" "${dir}/ipmi_lan1.log" \
+            "${ipmi_fast} bash -c \"ipmitool lan print 2 2>&1\"" "${dir}/ipmi_lan2.log" \
+            "for ch in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do echo \"=== Channel \$ch ===\"; ipmitool lan print \\\$ch 2>&1 | grep --line-buffered -E 'IP Address |MAC Address|IP Address Source' ; done" "${dir}/ipmi_lan_all.log" \
+            "${ipmi_fast} bash -c \"ipmitool bmc guid 2>&1\"" "${dir}/ipmi_bmc_guid.log" \
+            "${ipmi_fast} bash -c \"ipmitool user list 2>&1\"" "${dir}/ipmi_users.log" \
             "${ipmi_to} bash -c \"ipmitool fru print 2>&1\"" "${dir}/ipmi_fru_all.log" \
-            "echo '=== Product (整机) ==='; ipmitool fru print 2>/dev/null | grep --line-buffered -E 'Product Manufacturer|Product Name|Product Part Number|Product Serial|Product Asset' || true; echo ''; echo '=== Board (主板) ==='; ipmitool fru print 2>/dev/null | grep --line-buffered -E 'Board Mfg|Board Product|Board Serial|Board Part Number' || true; echo ''; echo '=== Chassis (机箱) ==='; ipmitool fru print 2>/dev/null | grep --line-buffered -E 'Chassis Serial|Chassis Part' || true" "${dir}/ipmi_fru_summary.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -i temp\"" "${dir}/ipmi_sensors_temp.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -i fan\"" "${dir}/ipmi_sensors_fan.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -i volt\"" "${dir}/ipmi_sensors_volt.log" \
-            "${ipmi_to} bash -c \"ipmitool sensor list 2>/dev/null | grep --line-buffered -iE 'power|watt'\"" "${dir}/ipmi_sensors_power.log"
+            "echo '=== Product (整机) ==='; ipmitool fru print 2>/dev/null | grep --line-buffered -E 'Product Manufacturer|Product Name|Product Part Number|Product Serial|Product Asset' || true; echo ''; echo '=== Board (主板) ==='; ipmitool fru print 2>/dev/null | grep --line-buffered -E 'Board Mfg|Board Product|Board Serial|Board Part Number' || true; echo ''; echo '=== Chassis (机箱) ==='; ipmitool fru print 2>/dev/null | grep --line-buffered -E 'Chassis Serial|Chassis Part' || true" "${dir}/ipmi_fru_summary.log"
+        # 共享快照：sensor list / sdr list 各只跑一次（全项目共用），本模块先落盘两份主日志
+        _ss=$(ipmi_snapshot sensors 2>/dev/null)
+        [ -n "$_ss" ] && [ -f "$_ss" ] && cp "$_ss" "${dir}/ipmi_sensors.log" 2>/dev/null || : > "${dir}/ipmi_sensors.log"
+        _sd=$(ipmi_snapshot sdr 2>/dev/null)
+        [ -n "$_sd" ] && [ -f "$_sd" ] && cp "$_sd" "${dir}/ipmi_sdr.log" 2>/dev/null || : > "${dir}/ipmi_sdr.log"
+        # v1.49.9：temp/fan/volt/power 四份**从快照派生**（原为各跑一次 sensor list，慢机上等于多拷打 BMC 4 次）
+        for _kind in temp fan volt; do
+            ipmi_snapshot_derive "$_ss" "${dir}/ipmi_sensors_${_kind}.log" "$_kind" 2>/dev/null || : > "${dir}/ipmi_sensors_${_kind}.log"
+        done
+        ipmi_snapshot_derive "$_ss" "${dir}/ipmi_sensors_power.log" 'power|watt' 2>/dev/null || : > "${dir}/ipmi_sensors_power.log"
         # ipmi_fru.log 与 ipmi_fru_all.log 内容相同（同一条命令），只跑一次后复制，省一次 2-5s 的 BMC 查询
         cp "${dir}/ipmi_fru_all.log" "${dir}/ipmi_fru.log" 2>/dev/null || true
     else

@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.49.8 (2026-08)
+# Version : 1.49.9 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.49.8"
+HWSCOPE_VERSION="v1.49.9"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -501,6 +501,11 @@ if [ -f "${SCRIPT_DIR}/report/report.sh" ]; then
         bash "${SCRIPT_DIR}/report/report.sh" "$OUTPUT_BASE" --acceptance
     fi
 fi
+
+# ─── 共享 IPMI 快照清理（v1.49.9）───
+# 快照是采集中间产物（sensor list / sdr list 的共用缓存，见 lib/common.sh），
+# 归档前删掉：① 避免被打进 logs/ 归档（几 MB 冗余）② 防手工重跑时误用旧快照。
+ipmi_snapshot_cleanup 2>/dev/null || true
 
 # ─── 打包归档（与 REPORT 阶段分隔，独立排版；空行由 report.sh 末尾提供，避免双空行） ───
 echo -e "${CYAN}========================================${NC}"
