@@ -97,15 +97,55 @@ ipmi_snapshot() {   # $1=sensors|sdr —— 回显该快照的文件路径
         sdr)     cache="${sdir}/ipmi_sdr.log" ;;
         *) return 1 ;;
     esac
+    mkdir -p "$sdir" 2>/dev/null
     if ! _ipmi_snapshot_stale "$cache"; then
         printf '%s' "$cache"; return 0
     fi
-    rm -f "$cache" 2>/dev/null
-    mkdir -p "$sdir"
-    check_cmd ipmitool || return 1
+    # ─── v1.49.20：加锁 + 原子发布（原实现两个缺陷，都在默认并行模式下必现）───
+    # ① 无锁：默认并行模式 10_psu / 11_fan / 12_bmc / 16_power **同时启动**，各自发现无缓存 →
+    #    各自跑一遍 240s 的 sensor list。IPMI 走 KCS 单通道，并发只在 BMC 侧排队互相拖慢
+    #    （common.sh 顶部已记该教训）——"共享快照" 的优化在慢机上直接归零。
+    # ② 非原子写：原实现 `{ ...; } > "$cache"` 从第一毫秒起文件就非空，而 `_ipmi_snapshot_stale`
+    #    只判 `-s` + mtime → 并发的 12_bmc 可能复制到一个**只有 header 的进行中文件**，
+    #    于是 bmc/ipmi_sensors.log 变成"0 数据行"，且不计 WARN、无 exit code 行
+    #    （正是 v1.48.88/v1.48.98「0 条 ≠ 没有」要防的形态）。
+    # 用 mkdir 做锁（原子、比 flock 可移植）；写完先落 .tmp.$$ 再 mv 发布。
+    local lock="${sdir}/.${kind}.lock"
+    if ! mkdir "$lock" 2>/dev/null; then
+        # 别人在采：轮询等它写好（最多 SLOW+60s）；持锁者被 SIGKILL 时按 ts 抢占
+        local waited=0 got=0
+        local max_wait=$(( ${IPMI_TIMEOUT_SLOW:-240} + 60 ))
+        local now=0 lt=0 age=0
+        while [ "$waited" -lt "$max_wait" ]; do
+            sleep 2; waited=$((waited + 2))
+            if ! _ipmi_snapshot_stale "$cache"; then
+                printf '%s' "$cache"; return 0
+            fi
+            if [ ! -d "$lock" ]; then
+                mkdir "$lock" 2>/dev/null && { got=1; break; }
+                continue
+            fi
+            now=$(date +%s 2>/dev/null || echo 0)
+            lt=$(cat "${lock}/ts" 2>/dev/null || echo 0)
+            age=$(( now - lt ))
+            if [ "${now:-0}" -gt 0 ] && [ "${lt:-0}" -gt 0 ] && [ "$age" -gt "$max_wait" ]; then
+                rm -rf "$lock" 2>/dev/null
+                mkdir "$lock" 2>/dev/null && { got=1; break; }
+            fi
+        done
+        # 等不到就返回失败——不阻塞整轮采集，缺失的数据由调用方按"未取到"如实标注
+        [ "$got" -eq 1 ] || return 1
+    fi
+    date +%s > "${lock}/ts" 2>/dev/null || true
+    # 拿到锁后复查：等锁期间可能已被别的进程采好
+    if ! _ipmi_snapshot_stale "$cache"; then
+        rm -rf "$lock" 2>/dev/null; printf '%s' "$cache"; return 0
+    fi
+    if ! check_cmd ipmitool; then rm -rf "$lock" 2>/dev/null; return 1; fi
     local to=""; check_cmd timeout && to="timeout ${IPMI_TIMEOUT_SLOW:-240}"
     local cmd="ipmitool sensor list 2>&1"
     [ "$kind" = "sdr" ] && cmd="ipmitool sdr list 2>&1"
+    local tmp="${cache}.tmp.$$"
     {
         printf '# ============================================================\n'
         printf '# Command  : %s %s\n' "${to:-}" "$cmd"
@@ -118,8 +158,23 @@ ipmi_snapshot() {   # $1=sensors|sdr —— 回显该快照的文件路径
         printf '# --- output start ---\n'
         if [ -n "$to" ]; then $to bash -c "$cmd" 2>&1; else bash -c "$cmd" 2>&1; fi
         printf '# --- output end ---\n'
-    } > "$cache" 2>/dev/null || { rm -f "$cache"; return 1; }
+    } > "$tmp" 2>/dev/null
+    # 只有写完整（含结束标记）才发布；半成品直接丢弃
+    if [ -s "$tmp" ] && grep -q '^# --- output end ---' "$tmp" 2>/dev/null; then
+        mv -f "$tmp" "$cache" 2>/dev/null
+    else
+        rm -f "$tmp" 2>/dev/null
+    fi
+    rm -rf "$lock" 2>/dev/null
     [ -s "$cache" ] && printf '%s' "$cache" || return 1
+}
+
+# ─── 采集端「未取到数据」的说明性占位（v1.49.20）───
+# 背景：快照派生失败时原来写 `: > file`（0 字节）。0 字节与「该平台本来就没有这类传感器」
+#   在报告端**无法区分**，正是 AGENTS v1.48.88「采集失败必须与平台固有形态区分」要防的形态。
+#   写一行注释说明原因；报告端一律 `grep -v '^#'` 取数据行，故注释不会被当成数据。
+snapshot_na() {   # $1=原因文本  $2=目标文件
+    printf '# --- N/A: %s ---\n' "$1" > "$2"
 }
 
 ipmi_snapshot_derive() {   # $1=源快照 $2=目标文件 $3=grep 模式（-iE）
@@ -127,7 +182,10 @@ ipmi_snapshot_derive() {   # $1=源快照 $2=目标文件 $3=grep 模式（-iE�
     [ -f "$src" ] || return 1
     mkdir -p "$(dirname "$dst")"
     {
-        sed -n '1,9p' "$src" 2>/dev/null | grep '^#'
+        # v1.49.20：只拷贝头部 8 行（第 9 行是快照自己的 `# --- output start ---`）——
+        #   原来连它一起拷，再打印一次自己的 start marker，派生日志里出现**两个** start
+        #   （实测所有 ipmi_*_* 派生文件都有），也让人误以为中间有截断。
+        sed -n '1,8p' "$src" 2>/dev/null | grep '^#'
         printf '# --- output start ---\n'
         grep -v '^#' "$src" 2>/dev/null | grep -iE --line-buffered "$pat"
         printf '# --- output end ---\n'

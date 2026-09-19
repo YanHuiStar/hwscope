@@ -31,9 +31,9 @@ run_power() {
         #   sensor list 同理走快照；并发 3 → 2（KCS 单通道，并发只会互相排队）。
         local ipmi_fast="timeout ${IPMI_TIMEOUT_FAST:-30}"; check_cmd timeout || ipmi_fast=""
         _pos=$(ipmi_snapshot sensors 2>/dev/null)
-        ipmi_snapshot_derive "$_pos" "${dir}/sensors_power.log" 'power|watt|total' 2>/dev/null || : > "${dir}/sensors_power.log"
+        ipmi_snapshot_derive "$_pos" "${dir}/sensors_power.log" 'power|watt|total' 2>/dev/null || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/sensors_power.log"
         _pod=$(ipmi_snapshot sdr 2>/dev/null)
-        ipmi_snapshot_derive "$_pod" "${dir}/energy_sdr.log" 'energy|kwh|joule' 2>/dev/null || : > "${dir}/energy_sdr.log"
+        ipmi_snapshot_derive "$_pod" "${dir}/energy_sdr.log" 'energy|kwh|joule' 2>/dev/null || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/energy_sdr.log"
         run_and_log_parallel 2 \
             "${ipmi_fast} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log"
     else

@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.49.19 (2026-08)
+# Version : 1.49.20 (2026-08)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.49.19"
+HWSCOPE_VERSION="v1.49.20"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -102,7 +102,7 @@ usage() {
     echo "  --parallel                      并行执行所有模块（默认开启）"
     echo "  --serial                        串行执行（实时输出每模块结果）"
     echo "  --no-parallel                   禁用模块内命令并行（降级为逐条执行）"
-    echo "  --module-timeout N              单模块超时秒数（默认 300）"
+    echo "  --module-timeout N              单模块超时秒数（默认 600）"
     echo "  --sim [N]                       模拟模式：每模块等待 N 秒（默认 5）"
     echo "  --no-module                     跳过光模块查询（仅影响 07_network 光模块部分，缩短采集约 48s；不影响其他模块）"
     echo "  --test-dir /path/to/test         关联压测目录（logs/test/<SN>/），报告生成压测章节"
@@ -292,14 +292,25 @@ echo "========================================"
 echo ""
 
 TOTAL_COUNT=0; FILE_COUNT=0
+# v1.49.20：单模块超时默认 300 → 600（conf 亦为 600）。原因见 conf/hwscope.conf 注释：
+#   慢 BMC 上 sensor list + sdr list 两份共享快照本身就要 240+240s，300s 必然把模块杀在中途。
+#   集中定义常量，避免四处 `:-300` 各自漂移（本次即顺手统一）。
+MODULE_TIMEOUT_DEFAULT=600
 START_TS=$(date +%s); MOD_TIMES=""
 export SIM_DELAY   # 模拟模式秒数（conf 读取，--sim 覆盖），子 shell 继承
 export HWSCOPE_VERSION   # 版本号（模块独立进程 source common.sh 时写日志 header，缺失则显示 unknown）
 export MODULE_PARALLEL   # 模块内命令并行开关（--no-parallel 置 0；模块在独立 bash 子进程执行，必须 export 才能继承）
 export QUIET             # 静默模式（--quiet 置 1；模块子进程 run_and_log 需继承以抑制逐命令输出）
 export NO_MODULE         # 跳光模块开关（--no-module 置 1；07_network 子进程需继承才生效，v1.33.5 修复）
+# v1.49.20：OUTPUT_BASE 必须 export——共享 IPMI 快照、以及其它依赖"这次采集的输出目录"的逻辑都在
+#   模块子进程里跑，而模块只拿到位置参数（$1=output_dir），`OUTPUT_BASE` 在子进程里是空的。
+#   后果实证（v1.49.9 引入共享快照时埋下）：子进程把快照落到 `${OUTPUT_BASE:-${OUT:-/tmp}}/.ipmi_snapshot`
+#   = **/tmp/.ipmi_snapshot**（全机共用），而父进程末尾的 `ipmi_snapshot_cleanup` 删的是
+#   `<OUTPUT_BASE>/.ipmi_snapshot`（不存在）→ 清理恒为空操作、快照残留；TTL 3600s 内二次采集
+#   会**静默复用上一轮的 BMC 传感器数据**（写进新输出目录，报告当本次数据渲染）。
+export OUTPUT_BASE
 # timeout 兜底：精简容器可能无 timeout（coreutils）——缺失时直接执行（无超时保护，但模块不会因命令缺失而静默失败）
-TIMEOUT_PREFIX="timeout ${MODULE_TIMEOUT:-300}"
+TIMEOUT_PREFIX="timeout ${MODULE_TIMEOUT:-${MODULE_TIMEOUT_DEFAULT}}"
 check_cmd timeout || TIMEOUT_PREFIX=""
 
 if [ "$PARALLEL" -eq 1 ]; then
@@ -337,7 +348,7 @@ if [ "$PARALLEL" -eq 1 ]; then
                 # 超时(124)/信号中断(128+)时 module_end 不执行、WARN 不落盘 → 补记，避免超时模块误显示 0 WARN/OK
                 if [ "$mod_rc" -eq 124 ] 2>/dev/null || [ "$mod_rc" -gt 128 ] 2>/dev/null; then
                     warn=$((warn + 1))
-                    echo "[WARN] 模块超时/中断（exit=${mod_rc}，时限 ${MODULE_TIMEOUT:-300}s）——采集可能不完整，请检查对应模块日志" >> "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
+                    echo "[WARN] 模块超时/中断（exit=${mod_rc}，时限 ${MODULE_TIMEOUT:-${MODULE_TIMEOUT_DEFAULT}}s）——采集可能不完整，请检查对应模块日志" >> "${OUTPUT_BASE}/.${id}_log" 2>/dev/null
                 fi
                 echo "$warn" > "${OUTPUT_BASE}/.${id}_warn"
                 rm -f "${OUTPUT_BASE}/${id}/.warn_count"   # 不计入模块文件数
@@ -352,7 +363,7 @@ if [ "$PARALLEL" -eq 1 ]; then
     total=${#MODULE_INFO[@]}
     declared=0; chars='/-\|'; i=0
     # 总 deadline 兜底：模块子 shell 异常死亡（OOM/无 timeout 挂死）时防止无限转圈
-    WAIT_DEADLINE=$(( $(date +%s) + total * ${MODULE_TIMEOUT:-300} + 120 ))
+    WAIT_DEADLINE=$(( $(date +%s) + total * ${MODULE_TIMEOUT:-${MODULE_TIMEOUT_DEFAULT}} + 120 ))
     while [ "$declared" -lt "$total" ]; do
         # 超时兜底：强制收尾缺失模块（打 WARN，不再等待）
         if [ "$(date +%s)" -gt "$WAIT_DEADLINE" ]; then
@@ -427,7 +438,7 @@ else
             # 超时/信号中断补记（并行分支同逻辑）
             if [ "$mod_rc" -eq 124 ] 2>/dev/null || [ "$mod_rc" -gt 128 ] 2>/dev/null; then
                 warn_count=$((warn_count + 1))
-                echo -e "${YELLOW}[WARN] 模块超时/中断（exit=${mod_rc}，时限 ${MODULE_TIMEOUT:-300}s）——采集可能不完整${NC}"
+                echo -e "${YELLOW}[WARN] 模块超时/中断（exit=${mod_rc}，时限 ${MODULE_TIMEOUT:-${MODULE_TIMEOUT_DEFAULT}}s）——采集可能不完整${NC}"
             fi
             rm -f "${OUTPUT_BASE}/${id}/.warn_count"
             end_ts=$(date +%s); elapsed=$((end_ts - start_ts))

@@ -91,7 +91,12 @@ ipmi_preheat() {
     if [ "${IPMI_PREHEAT:-1}" -ne 1 ] 2>/dev/null || ! check_cmd ipmitool; then
         return 0
     fi
-    ipmitool mc info >/dev/null 2>&1
+    # v1.49.20：加超时。原来是无界调用，且**在主脚本里、任何模块超时生效之前**执行——
+    #   BMC 无响应时会把整轮采集卡在开局（模块级 timeout 保护不到这里）。
+    #   预热只是"顺手触发驱动加载"，失败无害，故用快速级超时并忽略结果。
+    local _to="timeout ${IPMI_TIMEOUT_FAST:-30}"; check_cmd timeout || _to=""
+    if [ -n "$_to" ]; then $_to ipmitool mc info >/dev/null 2>&1 || true
+    else ipmitool mc info >/dev/null 2>&1 || true; fi
 }
 
 

@@ -83,9 +83,13 @@ run_firmware() {
     # v1.48.69：移除 `nvidia-smi nvswitch --version`——nvidia-smi 无 nvswitch 子命令（580.105.08 实测
     # "ERROR: Option nvswitch is not valid for this command"，exit=2 → 误报 WARN），NVSwitch 版本统一由
     # `nvswitch --version`（独立 CLI，有则采）提供，与 05_nvswitch.sh 的口径一致（v1.48.61 立）。
+    # v1.49.20：`ipmitool mc info` 原来没有超时——BMC 无响应时该条会一直挂到 300s 模块级超时，
+    #   连带把本模块其余固件采集（GPU VBIOS / 网卡固件 / NVSwitch 版本）一起拖没。
+    #   统一走 IPMI 快速级超时（mc info 属快命令，见 lib/common.sh 分级说明）。
+    local fw_ipmi_fast="timeout ${IPMI_TIMEOUT_FAST:-30}"; check_cmd timeout || fw_ipmi_fast=""
     run_and_log_parallel 4 \
         "nvidia-smi --query-gpu=index,name,vbios_version --format=csv,noheader 2>&1" "${dir}/gpu_vbios.csv" \
-        "ipmitool mc info 2>&1" "${dir}/bmc_mc.log" \
+        "${fw_ipmi_fast} bash -c \"ipmitool mc info 2>&1\"" "${dir}/bmc_mc.log" \
         "mlxfwmanager --query 2>&1" "${dir}/nic_fwmanager.log" \
         "nvswitch --version 2>&1" "${dir}/nvswitch_version.log"
 
