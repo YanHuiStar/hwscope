@@ -104,17 +104,32 @@ if ($Action -eq 'Set') {
     }
     $st = @{}
     Get-Content $stateFile | ForEach-Object { if ($_ -match '^(\w+)=(.*)$') { $st[$matches[1]] = $matches[2] } }
+    # v1.49.22：恢复必须落在**记录时那块网卡**上。原来虽然把 `adapter=` 写进了状态文件，恢复时却直接
+    #   用当前自动探测到的 $adapter.ifIndex（探测逻辑会优先"插着线的网卡"）——插拔/改线后恢复会把
+    #   另一块网卡的 IPv4 清掉、再把旧 IP 装到它身上。这里按名字找回原网卡，找不到就拒绝动手。
+    if ($st['adapter']) {
+        $orig = Get-NetAdapter -Name $st['adapter'] -ErrorAction SilentlyContinue
+        if (-not $orig) {
+            Write-Host "✗ 状态文件记录的是网卡 '$($st['adapter'])'，当前系统找不到该网卡——为防误改其它网卡，已中止恢复。" -ForegroundColor Red
+            Write-Host "  如确认原网卡已移除，可手动删除状态文件后重新 Set：$stateFile" -ForegroundColor Yellow
+            exit 1
+        }
+        if ($orig.ifIndex -ne $adapter.ifIndex) {
+            Write-Host "  提示: 恢复目标改为记录中的网卡 '$($orig.Name)'（自动探测到的是 '$($adapter.Name)'）" -ForegroundColor Yellow
+        }
+        $adapter = $orig
+    }
     Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -Dhcp Disabled
     Remove-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue
     if ($st['wasDhcp'] -eq 'True') {
         Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -Dhcp Enabled
-        Write-Host "已恢复 DHCP。" -ForegroundColor Green
+        Write-Host "已恢复 DHCP（$($adapter.Name)）。" -ForegroundColor Green
     } else {
         New-NetIPAddress -InterfaceIndex $adapter.ifIndex -IPAddress $st['ip'] -PrefixLength $st['prefix'] | Out-Null
         if ($st['gateway']) {
             Set-NetRoute -InterfaceIndex $adapter.ifIndex -DestinationPrefix '0.0.0.0/0' -NextHop $st['gateway'] -ErrorAction SilentlyContinue | Out-Null
         }
-        Write-Host "已恢复静态 IP: $($st['ip'])" -ForegroundColor Green
+        Write-Host "已恢复静态 IP: $($st['ip'])（$($adapter.Name)）" -ForegroundColor Green
     }
     Remove-Item $stateFile -ErrorAction SilentlyContinue
 }

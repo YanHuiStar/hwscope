@@ -36,29 +36,38 @@ function Test-Port([string]$ip, [int]$port, [int]$timeoutMs = 800) {
     return $false
 }
 
-$arp = @{}
-foreach ($line in (arp -a)) {
-    if ($line -match '^\s*(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f\-]{17})') { $arp[$matches[1]] = $matches[2] }
-}
-
+# v1.49.22：ARP 表必须**在探测之后**读——ARP 缓存是 TCP 探测（Test-Port 发包）才填充的，
+#   原来先读 arp -a，于是 $mac 几乎总是 '-'、MAC 前缀那 2 分永远拿不到，真实 BMC 被从
+#   「★ 很可能是 BMC」降级成「可能是 BMC」（scan_ip.ps1 的 ping 之后再读 arp 才是对的顺序）。
 Write-Host "探测 $((($Hosts -split ',') | Where-Object { $_ }).Count) 个 IP 的端口: $($Ports -join ',')" -ForegroundColor Cyan
 $rows = @()
 foreach ($ip in ($Hosts -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
     $open = @()
     foreach ($p in $Ports) { if (Test-Port $ip $p) { $open += $p } }
+    $rows += [PSCustomObject]@{ IP = $ip; 开放端口 = ($open -join ',') }
+}
+
+# 探测完成后再取 ARP（此时缓存已被上面的连接尝试填充）
+$arp = @{}
+foreach ($line in (arp -a)) {
+    if ($line -match '^\s*(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f\-]{17})') { $arp[$matches[1]] = $matches[2] }
+}
+$scored = foreach ($row in $rows) {
+    $ip = $row.IP
+    $open = if ($row.开放端口) { $row.开放端口 -split ',' } else { @() }
     $mac = if ($arp.ContainsKey($ip)) { $arp[$ip] } else { '-' }
     $macHex = ($mac -replace '[^0-9a-fA-F]', '').ToLower()
     $macHit = ($bmcMacPrefix | Where-Object { $macHex.StartsWith($_) }).Count -gt 0
     # 评分：IPMI(623) +2, Web(80/443) +1, noVNC(5900) +1, MAC 前缀 +2, SSH(22) +1
     $score = 0
-    if ($open -contains 623) { $score += 2 }
-    if ($open -contains 443 -or $open -contains 80) { $score += 1 }
-    if ($open -contains 5900) { $score += 1 }
+    if ($open -contains '623') { $score += 2 }
+    if ($open -contains '443' -or $open -contains '80') { $score += 1 }
+    if ($open -contains '5900') { $score += 1 }
     if ($macHit) { $score += 2 }
-    if ($open -contains 22) { $score += 1 }
-    $rows += [PSCustomObject]@{
+    if ($open -contains '22') { $score += 1 }
+    [PSCustomObject]@{
         IP = $ip; MAC = $mac; 开放端口 = ($open -join ',');
         评分 = $score; 判断 = if ($score -ge 3) { '★ 很可能是 BMC' } elseif ($score -ge 2) { '可能是 BMC' } else { '-' }
     }
 }
-$rows | Sort-Object 评分 -Descending | Format-Table -AutoSize
+$scored | Sort-Object 评分 -Descending | Format-Table -AutoSize

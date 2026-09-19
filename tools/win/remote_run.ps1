@@ -12,7 +12,7 @@
 .PARAMETER Command
   要执行的命令（默认: uptime）
 .PARAMETER Timeout
-  单台超时秒数（默认 15）
+  SSH 连接超时秒数（默认 15；对应 ssh -o ConnectTimeout，**不是**每台命令的总时长上限）
 .EXAMPLE
   .\remote_run.ps1 -Hosts root@192.168.1.100,root@192.168.1.101 -Command "uptime"
   .\remote_run.ps1 -Hosts root@192.168.1.100 -Command "bash /opt/hwscope/hwscope.sh --parallel"
@@ -43,13 +43,22 @@ foreach ($t in $targets) {
         [PSCustomObject]@{ Host = $hostStr; Exit = $LASTEXITCODE; Output = ($out -join "`n") }
     } -ArgumentList $t, $Command, $Timeout
 }
-$results = $jobs | Wait-Job | Receive-Job
-$jobs | Remove-Job -Force
-
-foreach ($r in $results) {
-    $color = if ($r.Exit -eq 0) { 'Green' } else { 'Red' }
-    Write-Host "── $($r.Host)  (exit=$($r.Exit)) ──" -ForegroundColor $color
-    if ($r.Output) { Write-Host $r.Output -ForegroundColor Gray }
-    Write-Host ""
+# v1.49.22：**完成一台即输出一台**。原来 `$jobs | Wait-Job | Receive-Job` 会把所有主机的输出攒到
+#   全部结束后才一次打印——本工具示例就是分钟级的 `hwscope.sh --parallel`，表现为长时间无输出、
+#   被当成卡死（正是 AGENTS v1.48.53「native 输出必须流式」要防的回归；同机 Linux 版 remote_run.sh
+#   本来就是逐台输出）。改为 `Wait-Job -Any` 循环，按完成顺序即时打印。
+$pending = [System.Collections.ArrayList]::new()
+foreach ($j in $jobs) { [void]$pending.Add($j) }
+while ($pending.Count -gt 0) {
+    $done = Wait-Job -Job $pending -Any
+    $r = Receive-Job -Job $done
+    [void]$pending.Remove($done)
+    Remove-Job -Job $done -Force
+    if ($null -ne $r) {
+        $color = if ($r.Exit -eq 0) { 'Green' } else { 'Red' }
+        Write-Host "── $($r.Host)  (exit=$($r.Exit)) ──" -ForegroundColor $color
+        if ($r.Output) { Write-Host $r.Output -ForegroundColor Gray }
+        Write-Host ""
+    }
 }
 Write-Host "完成。注：默认交互式密码（生产标准）；SSH key 免密仅建议受信内部网络（私钥泄露风险扩散）" -ForegroundColor Cyan

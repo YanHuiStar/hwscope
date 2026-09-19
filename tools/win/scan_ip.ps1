@@ -41,7 +41,12 @@ if (-not $Subnet) {
 }
 
 # ── 解析网段与范围 ──
-$s = $Subnet.TrimEnd('.').TrimEnd('/24')
+# v1.49.22：原来 `$Subnet.TrimEnd('.').TrimEnd('/24')` —— TrimEnd 的参数是**字符集**（'/', '2', '4'），
+#   会把网段尾部的 2/4 一起削掉：192.168.2 → 192.168.、192.168.12 → 192.168.1、192.168.4 → 192.168.（实测）。
+#   自动检测路径直接取网卡 IP，于是 192.168.2.x 主机会被扫成 192.168..1，SendPingAsync 对非法 IP 静默返回空
+#   → 工具安静地报"在线主机 0 个"。改为先剥 /NN 后缀，再 TrimEnd('.')。
+if ($Subnet -match '^(.*)/\d+$') { $Subnet = $Matches[1] }
+$s = $Subnet.TrimEnd('.')
 if ($s -match '/') { $s = ($s -split '/')[0] }
 try { $start, $end = ($Range -split '-') | ForEach-Object { [int]$_ } } catch {
     Write-Host "范围格式错误: $Range（应为 1-254）" -ForegroundColor Yellow; exit 1
