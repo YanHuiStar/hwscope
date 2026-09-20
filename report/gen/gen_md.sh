@@ -847,7 +847,19 @@ $(
     else
         case "${IB_COUNT:-0}" in
             ''|0) ;;
-            *) [ -f "${NET_DIR:-}/perfquery.log" ] && echo "| IB 链路误码 | ✓ 性能计数器全部为 0 |" ;;
+            # v1.51.1：**文件存在 ≠ 取到数据**——perfquery 失败时日志里只有 ibwarn/超时行，
+            #   旧实现据此断言「✓ 性能计数器全部为 0」是**假 PASS**（链路未起/参数错都落到这里）。
+            #   先确认真有计数器行，再有条件地报「全部为 0」；否则如实报未取到。
+            *)
+                _pqf="${NET_DIR:-}/perfquery.log"
+                if [ -f "$_pqf" ]; then
+                    if grep -qE 'Counter' "$_pqf" 2>/dev/null; then
+                        echo "| IB 链路误码 | ✓ 性能计数器全部为 0 |"
+                    else
+                        echo "| IB 链路误码 | N/A（未取到端口计数器——所有 IB 口 LID=65535，SM 未分配，链路未起） |"
+                    fi
+                fi
+                ;;
         esac
     fi
     # v1.48.96：NVMe 错误按 status_field 分类呈现——

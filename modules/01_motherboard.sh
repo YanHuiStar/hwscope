@@ -53,7 +53,11 @@ run_motherboard() {
     local _ob_probe
     _ob_probe=$(dmidecode -t 41 2>/dev/null | grep -c "DMI type 41")
     if [ "${_ob_probe:-0}" -gt 0 ]; then
-        run_and_log "dmidecode -t onboard 2>/dev/null" "${dir}/dmidecode_onboard.log"
+        # v1.51.1：真采命令原写 `-t onboard`，而 `onboard` **不是 dmidecode 的合法 type keyword**
+        #   （实测 `dmidecode -t onboard` → "Invalid type keyword: onboard" exit=2）。
+        #   探测用 -t 41 通过、真采必然失败 → 凡有 Type 41 的平台每次都刷 [WARN] (exit=2)。
+        #   v1.48.69 那次只修了「没有 Type 41」的一侧，这侧漏掉了。统一为 -t 41。
+        run_and_log "dmidecode -t 41 2>/dev/null" "${dir}/dmidecode_onboard.log"
     else
         { echo "# --- N/A: 平台未实现 SMBIOS Type 41（Onboard Devices Extended Information）---"
           echo "# 该平台 dmidecode -t onboard 无输出且 exit=2，属固有能力缺失，非采集失败（不计 WARN）"; } \

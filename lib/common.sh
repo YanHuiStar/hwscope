@@ -146,6 +146,9 @@ ipmi_snapshot() {   # $1=sensors|sdr —— 回显该快照的文件路径
     local cmd="ipmitool sensor list 2>&1"
     [ "$kind" = "sdr" ] && cmd="ipmitool sdr list 2>&1"
     local tmp="${cache}.tmp.$$"
+    # v1.51.2：把「本次真的跑了 ipmitool」打到 stderr（stdout 是本函数的返回通道，
+    #   绝不能污染）。让采集输出里能看出快照何时被建、由哪个模块建。
+    echo -e "\\033[0;32m[SNAP]\\033[0m ipmi_${kind} 实采（共享快照，其余模块复用）" >&2
     {
         printf '# ============================================================\n'
         printf '# Command  : %s %s\n' "${to:-}" "$cmd"
@@ -189,8 +192,10 @@ ipmi_snapshot_derive() {   # $1=源快照 $2=目标文件 $3=grep 模式（-iE�
         printf '# --- output start ---\n'
         grep -v '^#' "$src" 2>/dev/null | grep -iE --line-buffered "$pat"
         printf '# --- output end ---\n'
-    } > "$dst" 2>/dev/null && return 0
-    return 1
+    } > "$dst" 2>/dev/null || return 1
+    # v1.51.2：每个派生件打一行，便于在采集输出里核对"这次到底落了哪些文件"
+    echo -e "\\033[0;32m[SNAP]\\033[0m $(basename "$dst") 派生（共享快照子集）" >&2
+    return 0
 }
 
 

@@ -35,10 +35,10 @@ run_fan() {
         #   最贵的命令（逐条读 SDR，慢机 200s+），且 IPMI 走 KCS 单通道——并发只会在 BMC 侧排队
         #   互相拖慢，所以快照只采一次、各模块共用（12_bmc/10_psu/16_power 同源）。
         local _fan_snap="" _fan_ok=0
-        _fan_snap=$(ipmi_snapshot sensors 2>/dev/null)
+        _fan_snap=$(ipmi_snapshot sensors)
         if [ -n "$_fan_snap" ] && [ -f "$_fan_snap" ]; then
-            ipmi_snapshot_derive "$_fan_snap" "${dir}/ipmi_fan_sensors.log" 'FAN|RPM|PWM|Duty' 2>/dev/null && _fan_ok=1
-            ipmi_snapshot_derive "$_fan_snap" "${dir}/ipmi_fan_status.log" 'FAN.*Status|FAN.*Mode' 2>/dev/null || true
+            ipmi_snapshot_derive "$_fan_snap" "${dir}/ipmi_fan_sensors.log" 'FAN|RPM|PWM|Duty' && _fan_ok=1
+            ipmi_snapshot_derive "$_fan_snap" "${dir}/ipmi_fan_status.log" 'FAN.*Status|FAN.*Mode' || true
         fi
         if [ "$_fan_ok" -ne 1 ]; then
             # v1.49.20：不可用时写**说明性占位**而非 0 字节文件——0 字节与「平台无风扇传感器」在报告端

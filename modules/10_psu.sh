@@ -27,12 +27,12 @@ run_psu() {
         #   → 本模块就吃掉 600s），并发 4 → 2（KCS 单通道，并发只会互相排队）。
         local ipmi_fast="timeout ${IPMI_TIMEOUT_FAST:-30}"; check_cmd timeout || ipmi_fast=""
         local ipmi_to="timeout ${IPMI_TIMEOUT:-90}"; check_cmd timeout || ipmi_to=""
-        _pss=$(ipmi_snapshot sensors 2>/dev/null)
-        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_sensors.log" 'PSU|Pwr|PSC|PS[0-9]|PSU.*Status' 2>/dev/null || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/ipmi_psu_sensors.log"
-        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_temp.log" 'PSU.*Temp|PS[0-9].*Temp' 2>/dev/null || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/ipmi_psu_temp.log"
-        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_power.log" 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons|PS[0-9]_Pin|PS[0-9]_Pout' 2>/dev/null || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/ipmi_psu_power.log"
-        _psd=$(ipmi_snapshot sdr 2>/dev/null)
-        ipmi_snapshot_derive "$_psd" "${dir}/ipmi_sdr_psu.log" 'PSU|PS[0-9]|Power' 2>/dev/null || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/ipmi_sdr_psu.log"
+        _pss=$(ipmi_snapshot sensors)
+        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_sensors.log" 'PSU|Pwr|PSC|PS[0-9]|PSU.*Status' || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/ipmi_psu_sensors.log"
+        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_temp.log" 'PSU.*Temp|PS[0-9].*Temp' || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/ipmi_psu_temp.log"
+        ipmi_snapshot_derive "$_pss" "${dir}/ipmi_psu_power.log" 'PSU.*Power|PSU.*In|PSU.*Out|Total.*Power|Pwr Cons|PS[0-9]_Pin|PS[0-9]_Pout' || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/ipmi_psu_power.log"
+        _psd=$(ipmi_snapshot sdr)
+        ipmi_snapshot_derive "$_psd" "${dir}/ipmi_sdr_psu.log" 'PSU|PS[0-9]|Power' || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/ipmi_sdr_psu.log"
         run_and_log_parallel 2 \
             "${ipmi_to} bash -c \"ipmitool fru print 2>/dev/null | grep --line-buffered -iE 'FRU Device Description|Product Name|Product Part Number|Product Serial|Power Supply'\"" "${dir}/ipmi_psu_fru.log" \
             "${ipmi_fast} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/ipmi_dcmi_power.log"

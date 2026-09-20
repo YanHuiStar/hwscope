@@ -39,8 +39,14 @@ run_network() {
     # 为什么必需：ibstat/ibstatus 只给链路状态与速率，**看不见误码**。链路「ACTIVE 400Gb」也可能是
     #   在坏线缆上反复纠错达成的，只有 perfquery 的 SymbolError/PortRcvErrors/PortXmitDiscards/
     #   LinkDowned 才能真正反映链路质量（这些计数增长 = 线缆/光模块/交换机端口问题）。
-    # -x 取扩展计数集；裸 perfquery 只读本地端口，无需 LID 参数。
-    check_cmd perfquery && ib_jobs+=("perfquery -x" "${dir}/perfquery.log")
+    # -x 取扩展计数集。**perfquery 必须用 -C 指定 CA**：不带 -C 时它用 (null):0 打 UMAD 端口，
+    #   必然失败（v1.51.1 实机实测：`perfquery -x` → "can't open UMAD port ((null):0)" exit=255）。
+    #   逐 CA 采并只采**链路已起**的口：Base lid 为 **0 或 65535** 都表示子网管理器(SM)未分配 LID
+    #   （链路未起），此时没有端口计数器可读，采了只会得到 classportinfo 超时/UMAD 打不开。
+    #   （v1.51.1 实测 DGX A100：8 张 CX6 全 Down，Base lid=0 → 修好参数也读不到，
+    #   属平台当前状态而非采集缺陷；注意 LID 不是只有 65535 一种"未分配"表现。）
+    #   全部未起时只在日志末尾留一行注释说明，报告端据此判「未取到」而非「全部为 0」。
+    check_cmd perfquery && check_cmd ibstat && ib_jobs+=("_pq_seen=0; for ca in \$(ibstat -l 2>/dev/null); do lid=\$(ibstat \$ca 2>/dev/null | grep -m1 'Base lid' | grep -oE '[0-9]+\$'); case \"\${lid:-}\" in \"\"|0|65535) continue;; esac; echo \"=== \$ca (LID \$lid) ===\"; perfquery -C \$ca -P 1 -x 2>&1; _pq_seen=1; done; [ \"\${_pq_seen:-0}\" = 0 ] && echo '# --- 无端口计数器（所有 IB 口 Base lid 为 0/65535，子网管理器未分配 → 链路未起）---'; true" "${dir}/perfquery.log")
     # v1.48.53：devlink 固件信息（内核标准接口）——取 fw.psid（PSID）；MST/mstflint 在新平台
     # （CX8/NV access）不可用时 devlink 仍可用，作为 PSID 主来源（回退链 devlink → mstflint → mlxfwmanager）
     check_cmd devlink && ib_jobs+=("devlink dev info" "${dir}/devlink_dev_info.log")
