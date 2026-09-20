@@ -287,13 +287,19 @@ try {
         Copy-Item (Join-Path $sd.FullName '*') -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
         # v1.49.10：残留检测——本次没拉到的旧文件会留下，报告端可能读到过期数据。只列前 5 个 + 总数。
         if ($residCheck) {
-            $rel = { param($p) $p.Substring($dst.Length).TrimStart('\', '/') }
+            # v1.50.9：相对路径必须**各以自己的基准目录**切，不能用固定的 $dst 长度。
+            #   原实现 `$rel = { $p.Substring($dst.Length) }` 对 $sd（暂存目录，路径更长，
+            #   如 %TEMP%\hwscope_stage_<TS>\<SN>）切出来是脏字符串，而 $dst 那侧切出来是对的
+            #   → 两侧键格式不一致 → HashSet.Contains 恒 false → **目录里全部文件都被判为残留**
+            #   （实测 333 个文件的目录报「333 个未拉到」，正好等于文件总数）。
+            #   sh 版用 `cd <dir> && find .` 取相对路径，天然没这个问题。
+            $relFrom = { param($base, $p) $p.Substring($base.Length).TrimStart('\', '/') }
             $pulled = New-Object System.Collections.Generic.HashSet[string]
             Get-ChildItem $sd.FullName -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
-                [void]$pulled.Add((& $rel $_.FullName))
+                [void]$pulled.Add((& $relFrom $sd.FullName $_.FullName))
             }
             $resid = Get-ChildItem $dst -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object {
-                -not $pulled.Contains((& $rel $_.FullName))
+                -not $pulled.Contains((& $relFrom $dst $_.FullName))
             }
             if ($resid -and $resid.Count -gt 0) {
                 Write-Host "[WARN] ${sn}: 有 $($resid.Count) 个旧文件本次未拉到，仍留在目录里（报告端可能读到过期数据）：" -ForegroundColor Yellow
