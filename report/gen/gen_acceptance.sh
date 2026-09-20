@@ -146,15 +146,24 @@ gen_acceptance() {
         add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
     fi
 
-    # 5. 内存运行速率（v1.48.69 判据修正：超过 1DPC——已插 > 槽位/2——降速属平台规范，
-    #    典型 24 根插 32 槽；仅 ≤1DPC 每通道 1 条仍降速才需核查。无数据 → N/A）
+    # 5. 内存运行速率（v1.48.69 先定 DPC 口径；v1.51.9 增「混插」独立一档）
+    #   ① 混插（部件号/额定档/Rank 不统一）→ WARN：控制器只能按最低额定训练，属**配置问题**
+    #      而非故障；文案必须点明「混插」，不能笼统写"降速…建议核查 BIOS"（用户实测：3 种型号
+    #      混插 4800×7+6400×9，现速 4800 恰为该配置下限，本就无更高可能，跟 BIOS 无关）。
+    #   ② 非混插 + >1DPC → PASS（平台规范，典型 24 根插 32 槽）
+    #   ③ 非混插 + ≤1DPC 仍降速 → WARN（真问题，建议核查 BIOS）
+    #   额定基线用 MEM_NOM = 整机最低额定（v1.51.9 起，不再是第一条的额定）
     if [ -z "$MEM_SPEED" ] || [ "$MEM_SPEED" = "N/A" ]; then
         add_item "内存运行速率" "N/A" "内存速率数据不可用"
+    elif [ "${MEM_MIXED:-0}" -eq 1 ]; then
+        _mix_at_min=""
+        [ "$MEM_SPEED" = "$MEM_NOM" ] && _mix_at_min="；现速 ${MEM_SPEED} 已达该配置的最低额定，无额外降速"
+        add_item "内存运行速率" "WARN" "内存型号混插（${MEM_PN_KINDS} 种部件号 / ${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank），控制器按最低额定 ${MEM_NOM} 训练${_mix_at_min}——建议统一内存型号"
     elif [ -n "$MEM_SPEED_NOTE" ]; then
         if [ "${MEM_OVER_1DPC:-0}" -eq 1 ] || [ "${MEM_FULL:-0}" -eq 1 ]; then
             add_item "内存运行速率" "PASS" "降速运行（额定 ${MEM_NOM}，现速 ${MEM_SPEED}；已插 ${MEM_POPULATED}/${MEM_SLOTS} 槽属 >1DPC 配置，降速为平台规范正常现象）"
         else
-            add_item "内存运行速率" "WARN" "降速运行（额定 ${MEM_NOM}，现速 ${MEM_SPEED}；仅插 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽 ≤1DPC 仍降速，建议核查 BIOS 设置或混插兼容性）"
+            add_item "内存运行速率" "WARN" "降速运行（额定 ${MEM_NOM}，现速 ${MEM_SPEED}；仅插 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽 ≤1DPC 仍降速，建议核查 BIOS 设置）"
         fi
     else
         add_item "内存运行速率" "PASS" "额定速率运行（${MEM_SPEED:-N/A}）"

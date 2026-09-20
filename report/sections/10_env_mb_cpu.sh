@@ -206,7 +206,38 @@ MEM_SPEED_NOTE=""
 #   超过 1DPC（已插 > 槽位/2，即至少部分通道插 2 条）时内存控制器必须降频，属平台规范；
 #   典型如 24 根插 32 槽（8 通道 2DPC + 8 通道 1DPC）降速完全正常，不该报警；
 #   只有 ≤1DPC（每通道仅 1 条）仍降速才需核查（BIOS 设置 / 混插兼容性）。
-MEM_NOM=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
+# v1.51.9：额定取「整机最低额定」而非第一条——混插时控制器只能按最慢的条子训练，
+#   拿第一条的额定当整机额定会得出「额定 6400 却跑 4800」的假降速（实测 3 种型号混插：
+#   4800×7 + 6400×9，实际 4800 = 最低额定，本就没有更高可能）。
+MEM_NOM=$(awk '
+    /^Memory Device/ {in_d=1; next}
+    in_d && /^\S/ && !/^[[:space:]]/ {in_d=0}
+    in_d && /^[[:space:]]*Size:/ { sz=$0; sub(/^[[:space:]]*Size:[[:space:]]*/,"",sz); inst = (sz ~ /No Module|Not Installed/) ? 0 : 1; next }
+    in_d && inst && /^[[:space:]]*Speed:/ { v=$0; sub(/^[[:space:]]*Speed:[[:space:]]*/,"",v); n=v+0; if (n>0 && (min==0 || n<min)) min=n }
+    END { if (min>0) print min " MT/s" }
+' "${dmidecode_memory_full}" 2>/dev/null)
+[ -z "$MEM_NOM" ] && MEM_NOM=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
+# 混插检测（v1.51.9）：在位条子的部件号 / 额定速率 / Rank 各有几种——>1 即混插
+MEM_MIXED=0
+MEM_PN_KINDS=0
+MEM_NOM_KINDS=0
+MEM_RANK_KINDS=0
+if [ -f "${dmidecode_memory_full}" ]; then
+    read -r MEM_PN_KINDS MEM_NOM_KINDS MEM_RANK_KINDS <<EOF
+$(awk '
+    /^Memory Device/ {in_d=1; next}
+    in_d && /^\S/ && !/^[[:space:]]/ {in_d=0}
+    in_d && /^[[:space:]]*Size:/ { sz=$0; sub(/^[[:space:]]*Size:[[:space:]]*/,"",sz); inst = (sz ~ /No Module|Not Installed/) ? 0 : 1; next }
+    in_d && inst && /^[[:space:]]*Part Number:/ { v=$0; sub(/^[[:space:]]*Part Number:[[:space:]]*/,"",v); gsub(/[[:space:]]+$/,"",v); if (v != "") pn[v]=1; next }
+    in_d && inst && /^[[:space:]]*Speed:/ && !/Configured/ { v=$0; sub(/^[[:space:]]*Speed:[[:space:]]*/,"",v); if (v != "") nom[v]=1; next }
+    in_d && inst && /^[[:space:]]*Rank:/ { v=$0; sub(/^[[:space:]]*Rank:[[:space:]]*/,"",v); if (v != "") rk[v]=1 }
+    END { printf "%d %d %d\n", length(pn), length(nom), length(rk) }
+' "${dmidecode_memory_full}" 2>/dev/null)
+EOF
+    [ "${MEM_PN_KINDS:-0}" -gt 1 ] 2>/dev/null && MEM_MIXED=1
+    [ "${MEM_NOM_KINDS:-0}" -gt 1 ] 2>/dev/null && MEM_MIXED=1
+    [ "${MEM_RANK_KINDS:-0}" -gt 1 ] 2>/dev/null && MEM_MIXED=1
+fi
 # 插槽数：锚定 "Memory Device" 段头（子串匹配会命中 type20 "Memory Device Mapped Address"，插槽数恒为总槽+已插 → MEM_FULL 恒 0 误判 WARN）
 MEM_SLOTS=$(grep -cE "^[[:space:]]*Memory Device$" "${dmidecode_memory_full}" 2>/dev/null)
 MEM_POPULATED=$(grep -cE "^[[:space:]]*Size: [0-9]" "${dmidecode_memory_full}" 2>/dev/null)
@@ -218,12 +249,18 @@ MEM_OVER_1DPC=0
 if [ "${MEM_SLOTS:-0}" -gt 0 ]; then
     [ "$(( ${MEM_POPULATED:-0} * 2 ))" -gt "${MEM_SLOTS:-0}" ] 2>/dev/null && MEM_OVER_1DPC=1
 fi
+# v1.51.9：三分文案——① 混插（型号/速率/Rank 不统一，控制器按最低档跑，属配置问题而非故障）
+#   ② 非混插且 ≤1DPC 仍降速（真问题，建议核查 BIOS）③ >1DPC 降速（平台规范）
 if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null; then
-    if [ "$MEM_OVER_1DPC" -eq 1 ]; then
+    if [ "$MEM_MIXED" -eq 1 ]; then
+        MEM_SPEED_NOTE="⚠️ 内存型号混插（${MEM_PN_KINDS} 种部件号 / ${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank）——控制器按最低额定 ${MEM_NOM} 训练，建议统一型号以获得更高速率"
+    elif [ "$MEM_OVER_1DPC" -eq 1 ]; then
         MEM_SPEED_NOTE="（降速运行：额定 ${MEM_NOM}，已插 ${MEM_POPULATED}/${MEM_SLOTS} 槽属 >1DPC 配置，为平台规范正常现象）"
     else
-        MEM_SPEED_NOTE="⚠️ 降速运行（额定 ${MEM_NOM}；仅 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽 ≤1DPC 仍降速，建议核查）"
+        MEM_SPEED_NOTE="⚠️ 降速运行（额定 ${MEM_NOM}；仅 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽 ≤1DPC 仍降速，建议核查 BIOS 设置）"
     fi
+elif [ "$MEM_MIXED" -eq 1 ] && [ -n "$MEM_SPEED" ]; then
+    MEM_SPEED_NOTE="（内存型号混插：${MEM_PN_KINDS} 种部件号 / ${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank，当前按最低额定 ${MEM_NOM} 运行）"
 fi
 # 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率|Rank）
 # v1.50.2：空槽也输出一行（容量列「（未插）」）——只报汇总数看不出哪几个槽空着
