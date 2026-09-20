@@ -360,10 +360,27 @@ if [ -f "$_fru_src" ]; then
         [ -z "$_pin_src" ] && [ -f "$psu_power_csv2" ] && grep -qiE "ps[0-9]+_pin|psu[0-9]+_pin|psu_pin_[0-9]+" "$psu_power_csv2" 2>/dev/null && _pin_src="$psu_power_csv2"
         if [ -n "$_temp_src" ]; then
             _psu_src="sensor"
-            PSU_DETAILS=$(grep -v "^#" "$_temp_src" 2>/dev/null | awk -F'|' '
+            # v1.50.8：本段是**整体重建** PSU_DETAILS（`PSU%s|N/A|...`），会把此前（:209 传感器
+            #   占位行）已从传感器第 8 列取到的额定容量抹成 N/A——实测 DGX A100：源数据
+            #   PWR_PSU0~5 第 8 列 = 3315.000，报告却渲染成「—」。故先抽出现有「编号→容量」，
+            #   重建时按编号回填；无既有值仍为 N/A。
+            _prev_cap=$(printf '%s\n' "${PSU_DETAILS:-}" | awk -F'|' '
+                $1 ~ /^PSU[0-9]+$/ {
+                    n=$1; sub(/^PSU/,"",n)
+                    c=$5; gsub(/^[ \t]+|[ \t]+$/,"",c)
+                    if (c != "" && c != "N/A") printf "%s:%s ", n, c
+                }')
+            PSU_DETAILS=$(grep -v "^#" "$_temp_src" 2>/dev/null | awk -F'|' -v prev="$_prev_cap" '
+                BEGIN {
+                    nf = split(prev, _a, " ")
+                    for (i = 1; i <= nf; i++) { m = split(_a[i], _b, ":"); if (m >= 2 && _b[1] != "") P[_b[1]] = _b[2] }
+                }
                 tolower($1) ~ /psu[0-9]+_temp|psu_pin_[0-9]+|ps[0-9]+_pin|psu[0-9]+ power in/ {
                     num=$1; gsub(/[^0-9]/, "", num); sub(/^0+/, "", num)
-                    if(num!="" && !seen[num]++) printf "PSU%s|N/A|N/A|N/A|N/A|N/A\n", num
+                    if(num!="" && !seen[num]++) {
+                        c = (num in P) ? P[num] : "N/A"
+                        printf "PSU%s|N/A|N/A|N/A|%s|N/A\n", num, c
+                    }
                 }' )
             # 功耗补全（PS*_Pin / PSU* Power In → PSU 行当前功耗）：先收集 pin 映射，再逐行追加
             if [ -n "$_pin_src" ] && [ -n "$PSU_DETAILS" ]; then
@@ -530,13 +547,24 @@ if [ -f "$_fru_src" ]; then
                     desc=f[1]
                     pnum=""
                     if(desc ~ /PSU[0-9]+/) { pnum=desc; sub(/.*PSU/, "", pnum); sub(/[^0-9].*/, "", pnum) }
-                    # 额定容量：从型号提取 3-4 位容量数字（锚定边界，防 "PS-2800" 被 /800/ 误配为 800W；3000W 也覆盖）
+                    # 额定容量：优先沿用既有 cap 字段（传感器占位行已从第 8 列取到容量，
+                    #   v1.50.8 修复：旧实现只看 model 提取，把占位行填好的容量覆盖成 N/A）；
+                    #   无既有值才从型号提取 3-4 位容量数字（锚定边界，防 "PS-2800" 被 /800/ 误配）
                     model=f[2]
-                    cap="N/A"
-                    if (match(model, /(^|[^0-9])[0-9]{3,4}([^0-9]|$)/)) {
-                        _capstr = substr(model, RSTART, RLENGTH)
-                        gsub(/[^0-9]/, "", _capstr)
-                        cap = _capstr "W"
+                    cap=""
+                    # v1.50.8：**必须用 split() 的返回值判字段数，绝不能用 NF**——此行位于 END 块，
+                    #   NF 指的是「最后读入的记录（$0）」的字段数，而 $0 是日志末尾的注释行
+                    #   `# --- output end ---`（按 FS="|" 只有 1 段）→ NF 恒为 1 → 守卫恒假
+                    #   → 容量回落到空型号提取 → N/A。实测 DGX：源数据第 8 列 3315.000 明明在 f[5] 里。
+                    _nf = split(line, f, "|")
+                    if (_nf >= 5) cap=f[5]
+                    if (cap == "" || cap == "N/A") {
+                        cap="N/A"
+                        if (match(model, /(^|[^0-9])[0-9]{3,4}([^0-9]|$)/)) {
+                            _capstr = substr(model, RSTART, RLENGTH)
+                            gsub(/[^0-9]/, "", _capstr)
+                            cap = _capstr "W"
+                        }
                     }
                     cur_power="N/A"
                     if(pnum!="" && (pnum in power)) cur_power=power[pnum]
