@@ -271,16 +271,19 @@ for _mce_c in "${OS_DIR}/journal_mce.log" "${OS_DIR}/journal_kernel_hw.log" "${O
     #   自身就含 "mce"/"machine check" 字样，不排除必然自匹配出假阳性。
     #   实测 B300（B300-sample-a）：journal_mce.log 内容全是 EDAC 驱动初始化
     #   （`EDAC MC: Ver: 3.0.0` / `EDAC MC0: Giving out device ...`），却因命令头被判 WARN。
-    # v1.49.7：**裸 `mce:` 前缀过宽**，会把内核启动信息当成故障——实测 DGX A100
-    #   （A100-sample-a）journal_mce.log 只有一行
-    #   `Sep 19 07:17:25 ubuntu kernel: MCE: In-kernel MCE decoding enabled.`
-    #   （内核说"MCE 解码已启用"，是正常启动信息、零 MCE），却被报成
-    #   「CPU MCE 检出 1 条机器检查异常」→ 整机被误判「有条件通过」。
-    #   收紧为：真 MCE 必然带 `Machine Check` / `Hardware Error` / `MCA: ` /
-    #   `mce: [Hardware Error]` 之一（AMD 平台形态），裸 `mce:` / `MCE:` 不算；
-    #   再加一层已知启动噪音排除表兜底。
-    _mce_re="Machine Check|Hardware Error|MCA: |mce: *\\[Hardware Error\\]"
-    _mce_noise="In-kernel MCE decoding|mce: CPU supports|EDAC MC: Ver|EDAC MC[0-9]+: Giving out|Machine Check: Disabled"
+    # v1.49.7：裸 `mce:` 前缀过宽，会把内核启动信息当成故障，故收紧为真 MCE 标志。
+    # v1.50.7：**收窄过头** —— 上一版把裸 `Hardware Error` 也当成了「真 MCE 标志」，
+    #   但 `[Hardware Error]` 同样是 **PCIe AER / APEI-GHES** 记录的前缀。实测
+    #   A100/AMD 样本（A100-sample 系列）的 `dmesg_hardware.log` 里 10 行
+    #   `[Hardware Error]: ... section_type: PCIe error / fru_text: PcieError /
+    #   event severity: corrected / It has been corrected by h/w and requires no further action`
+    #   被整批判成「CPU MCE 检出 10 条机器检查异常」→ 整机降级为「有条件通过」。
+    #   而该机 CPU 侧零 MCE（`journal_mce.log` 都不存在，dmesg 里只有 PCIe 正确性事件）。
+    #   故：**去掉裸 `Hardware Error`**，只留 CPU MCE 专有标志——
+    #   真 MCE 必含 `Machine Check` / `MCA: ` / `mce: [Hardware Error]`（后者是 mce 子系统
+    #   自己的前缀，PCIe 记录不会以 `mce:` 开头）。PCIe 错误特征进排除表兜底。
+    _mce_re="Machine Check|MCA: |mce: *\\[Hardware Error\\]"
+    _mce_noise="In-kernel MCE decoding|mce: CPU supports|EDAC MC: Ver|EDAC MC[0-9]+: Giving out|Machine Check: Disabled|section_type: PCIe error|fru_text: *PcieError|APEI Generic Hardware Error"
     _mce_hit=$(grep -vE "^#" "$_mce_c" 2>/dev/null | grep -vE "$_mce_noise" | grep -icE "$_mce_re")
     if [ "${_mce_hit:-0}" -gt 0 ]; then
         MCE_SRC="$(basename "$_mce_c")"
