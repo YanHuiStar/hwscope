@@ -726,7 +726,7 @@ fi)
 | 项 | 值 |
 |----|----|
 | 数量 | $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A（未取到数据）"; fi) |
-| 转速 | ${FAN_SPEED:-N/A} |
+| 转速 | ${FAN_SPEED:-N/A（该平台风扇转速未经标准 IPMI 传感器暴露，详见下方说明）} |
 | 温度 | ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}} |$(if [ -n "$FAN_DETAILS" ]; then echo "
 | 数据来源 | ${FAN_SOURCE:-IPMI} |"; fi)
 $(if [ -n "$FAN_DETAILS" ]; then
@@ -887,7 +887,7 @@ $(
     fi
 )
 | SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |
-| 线缆配对 | ${CABLE_PAIRS:-N/A} |
+| 线缆配对 | ${CABLE_PAIRS:-N/A（未取到模块 EEPROM 序列号——IB 链路未起，或该口未插光模块）} |
 
 $(if [ -n "$TEST_DETAILS" ]; then
     echo ""

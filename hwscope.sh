@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.51.3"
+HWSCOPE_VERSION="v1.51.4"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -256,6 +256,11 @@ fi
 mkdir -p "$OUTPUT_BASE"
 
 # ─── 执行日志 ───
+# ⚠️ TTY 判断必须在此处**执行之前**完成并存下来。
+#   原因：`exec > >(tee ...)` 会把本进程的 stdout 换成**进程替换的管道**，
+#   此后 `[ -t 1 ]` 恒假——而转圈动画与清行动画都靠它判断（曾因此**从未显示过**）。
+#   tee 会照常把内容写到终端，视觉上一切正常，所以这个失效长期无人察觉。
+if [ -t 1 ]; then IS_TTY=1; else IS_TTY=0; fi
 LOG_FILE="${OUTPUT_BASE}/hwscope.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
@@ -378,13 +383,13 @@ if [ "$PARALLEL" -eq 1 ]; then
             break
         fi
         # 动画行（仅 TTY）
-        [ -t 1 ] && printf "\r\033[36m%c\033[0m 正在并行采集... %s/%s 模块完成" "${chars:$((i%4)):1}" "$declared" "$total"
+        [ "$IS_TTY" -eq 1 ] && printf "\r\033[36m%c\033[0m 正在并行采集... %s/%s 模块完成" "${chars:$((i%4)):1}" "$declared" "$total"
         # 新完成模块 → 立即输出该模块日志
         for info in "${MODULE_INFO[@]}"; do
             IFS='|' read -r num id desc <<< "$info"
             [ -f "${OUTPUT_BASE}/.${id}_done" ] || continue
             [ -f "${OUTPUT_BASE}/.${id}_printed" ] && continue
-            [ -t 1 ] && printf "\r\033[K"
+            [ "$IS_TTY" -eq 1 ] && printf "\r\033[K"
             if [ "$QUIET" -eq 1 ]; then
                 # 静默：模块完成输出摘要行（耗时 + 状态）+ 异常细节
                 mtime=$(cat "${OUTPUT_BASE}/.${id}_time" 2>/dev/null || echo 0)
@@ -402,9 +407,14 @@ if [ "$PARALLEL" -eq 1 ]; then
         [ "$declared" -ge "$total" ] && break
         i=$((i+1)); sleep 0.2
     done
-    [ -t 1 ] && printf "\r\033[K"
+    [ "$IS_TTY" -eq 1 ] && printf "\r\033[K"
 
     # 汇总（summary.txt 按注册表顺序）
+    # SUMMARY_TABLE：**按模块注册序号**（01→16→99）的表行，循环后统一打印到控制台。
+    # 为什么需要它：并行模式下模块日志是「谁先完成谁先输出」，屏幕顺序随耗时变化、
+    #   同一台机器两次采集都不一样，导致两份日志无法直接对比。这张表顺序固定，
+    #   弥补实时输出无法排序的固有代价（实时性本身要保留：慢机上先看到快模块完成）。
+    SUMMARY_TABLE=""
     for info in "${MODULE_INFO[@]}"; do
         IFS='|' read -r num id desc <<< "$info"
         warn=$(cat "${OUTPUT_BASE}/.${id}_warn" 2>/dev/null || echo 0)
@@ -414,8 +424,23 @@ if [ "$PARALLEL" -eq 1 ]; then
         summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${files} files, ${mtime}s, ${warn} WARN"
         MOD_TIMES="${MOD_TIMES}${num}.${id}|${mtime}"$'\n'
         TOTAL_COUNT=$((TOTAL_COUNT + 1))
+        _st="OK"; [ "${warn:-0}" -gt 0 ] 2>/dev/null && _st="WARN"
+        SUMMARY_TABLE="${SUMMARY_TABLE}$(printf '%-14s %-5s %9s %7s' "${num}/${id}" "$_st" "${mtime}s" "${files}")"$'\n'
         rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_files" "${OUTPUT_BASE}/.${id}_time" "${OUTPUT_BASE}/.${id}_done" "${OUTPUT_BASE}/.${id}_printed"
     done
+    if [ -n "$SUMMARY_TABLE" ]; then
+        echo ""
+        echo -e "${CYAN}════════════ 采集汇总（按模块序号，与上方输出顺序无关）════════════${NC}"
+        # 表头列宽换算（踩过一次坑）：printf 的 %-Ns 对多字节字符是按**字节数**补齐的，
+        #   不是按显示宽度——中文 1 字 = 3 字节 = 2 显示列。
+        #   设目标显示列为 W、中文串有 C 个字，则宽度参数应取 W + C（字节），这样
+        #   「3C 字节 + (W+C-3C)=W-2C 个空格」= 显示 2C+(W-2C) = W 列，与数据行对齐。
+        #   数据行为 %-14s %-5s %9s %7s（纯 ASCII，字节=列），故表头取：
+        #     模块(2字)→%-16s、状态(2字)→%-7s、耗时(2字)→%11s、文件数(3字)→%-10s
+        printf '  %-16s %-7s %11s %-10s\n' "模块" "状态" "耗时" "文件数"
+        printf '%s' "$SUMMARY_TABLE" | sed 's/^/  /'
+        echo -e "${CYAN}════════════════════════════════════════════════════════════════${NC}"
+    fi
 else
     # ═══════════════ 串行模式 ═══════════════
     for mod_info in "${MODULES[@]}"; do
@@ -447,6 +472,9 @@ else
             summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${mod_file_count} files, ${elapsed}s, ${warn_count} WARN"
             MOD_TIMES="${MOD_TIMES}${num}.${id}|${elapsed}"$'\n'
             TOTAL_COUNT=$((TOTAL_COUNT + 1))
+            # v1.51.4：与并行分支一致，收集「按模块序号」的汇总表行（串行时顺序本就一致，表格仍便于纵览）
+            _st="OK"; [ "${warn_count:-0}" -gt 0 ] 2>/dev/null && _st="WARN"
+            SUMMARY_TABLE="${SUMMARY_TABLE}$(printf '%-14s %-5s %9s %7s' "${num}/${id}" "$_st" "${elapsed}s" "${mod_file_count}")"$'\n'
         else
             echo -e "${RED}[ERROR] 函数 ${fn} 未在 ${MODULE_SCRIPT} 中定义${NC}"
         fi

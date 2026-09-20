@@ -366,7 +366,7 @@ fi)
 
 [风扇]
   数量   : $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A（未取到数据）"; fi)
-  转速   : ${FAN_SPEED:-N/A}
+  转速   : ${FAN_SPEED:-N/A（该平台风扇转速未经标准 IPMI 传感器暴露）}
   温度   : ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}}
 $(if [ -n "$FAN_DETAILS" ]; then echo "  来源   : ${FAN_SOURCE:-IPMI}"; fi)
 $(if [ -n "$FAN_DETAILS" ]; then
@@ -410,7 +410,7 @@ fi)
 [健康检查]
 $(printf '%s' "$HEALTH_TXT")
   SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
-  线缆配对 : ${CABLE_PAIRS:-N/A}$(if [ -n "${GPU_XID:-}" ]; then printf '\n  GPU XID  : ⚠️ 检出 %s 类（来源: %s）' "${GPU_XID_COUNT}" "${GPU_XID_SRC}"; fi)$(if [ -n "${MCE_HITS:-}" ]; then printf '\n  CPU MCE  : ⚠️ 检出 %s 条机器检查异常（来源: %s）' "${MCE_COUNT}" "${MCE_SRC}"; fi)$(if [ -n "${IB_PERF_NONZERO:-}" ]; then printf '\n  IB 误码  : ⚠️ %s' "${IB_PERF_NONZERO}"; fi)$(if [ "${NVME_ERR_MEDIA:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 介质错误: ⚠️ %s（介质/盘自身类，建议复查）' "${NVME_ERR_MEDIA_D}"; fi)$(if [ "${NVME_ERR_SHUTDOWN:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 掉电   : ⚠️ %s（Unsafe Shutdown，建议排查供电）' "${NVME_ERR_SHUTDOWN_D}"; fi)$(if [ "${NVME_ERR_CMD:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 命令兼容: %s Invalid Field（主机侧命令不兼容，非介质故障）' "${NVME_ERR_CMD_D}"; fi)$(if [ -n "${RAID_BBU_SUMMARY:-}" ]; then printf '\n  RAID电池 : %s%s' "${RAID_BBU_SUMMARY}" "$([ "${RAID_BBU_WARN:-0}" -eq 1 ] 2>/dev/null && echo '（⚠️ 异常）')"; fi)$(if [ -n "${RAID_CACHE_POLICY:-}" ]; then printf '\n  写缓存   : %s' "${RAID_CACHE_POLICY}"; fi)$(if [ -n "$TEST_DETAILS" ]; then
+  线缆配对 : ${CABLE_PAIRS:-N/A（未取到模块 EEPROM 序列号——IB 链路未起，或该口未插光模块）}$(if [ -n "${GPU_XID:-}" ]; then printf '\n  GPU XID  : ⚠️ 检出 %s 类（来源: %s）' "${GPU_XID_COUNT}" "${GPU_XID_SRC}"; fi)$(if [ -n "${MCE_HITS:-}" ]; then printf '\n  CPU MCE  : ⚠️ 检出 %s 条机器检查异常（来源: %s）' "${MCE_COUNT}" "${MCE_SRC}"; fi)$(if [ -n "${IB_PERF_NONZERO:-}" ]; then printf '\n  IB 误码  : ⚠️ %s' "${IB_PERF_NONZERO}"; fi)$(if [ "${NVME_ERR_MEDIA:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 介质错误: ⚠️ %s（介质/盘自身类，建议复查）' "${NVME_ERR_MEDIA_D}"; fi)$(if [ "${NVME_ERR_SHUTDOWN:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 掉电   : ⚠️ %s（Unsafe Shutdown，建议排查供电）' "${NVME_ERR_SHUTDOWN_D}"; fi)$(if [ "${NVME_ERR_CMD:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 命令兼容: %s Invalid Field（主机侧命令不兼容，非介质故障）' "${NVME_ERR_CMD_D}"; fi)$(if [ -n "${RAID_BBU_SUMMARY:-}" ]; then printf '\n  RAID电池 : %s%s' "${RAID_BBU_SUMMARY}" "$([ "${RAID_BBU_WARN:-0}" -eq 1 ] 2>/dev/null && echo '（⚠️ 异常）')"; fi)$(if [ -n "${RAID_CACHE_POLICY:-}" ]; then printf '\n  写缓存   : %s' "${RAID_CACHE_POLICY}"; fi)$(if [ -n "$TEST_DETAILS" ]; then
     printf '\n\n[压测归档]  目录: %s\n' "$TEST_DIR_LABEL"
     echo "$TEST_DETAILS" | while IFS='|' read -r tname tstatus telapsed tfile; do
         [ -z "$tname" ] && continue

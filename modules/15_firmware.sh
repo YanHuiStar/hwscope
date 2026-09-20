@@ -205,8 +205,9 @@ run_firmware() {
         done
     fi
 
-    # NVSwitch 版本（v1.51.3：来源为 `nvswitch-audit --help | head -1`，输出形如
-    # "NVIDIA NVSwitch audit tool version 570.86.15"——该工具属 nvidia-fabricmanager 包，
+    # NVSwitch 版本（v1.51.3 起来源为 `nvswitch-audit --help`——注意**不加 `| head -1`**：
+    # 其 --help 首行是**空行**，加了会让下方解析链整体落空、固件表该行消失，v1.51.3 实测踩坑。
+    # 输出形如 "NVIDIA NVSwitch audit tool version 570.86.15"——该工具属 nvidia-fabricmanager 包，
     # 版本号与驱动配套。原来源 `nvswitch --version` 的命令**不存在**，恒为空；
     # v1.48.69 已移除 nvidia-smi nvswitch --version 兜底——该子命令同样不存在，实测 exit=2）
     # 注意：必须先 grep -v '^#' 过滤日志头（"# Command  : ..." 含

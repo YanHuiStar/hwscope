@@ -31,7 +31,7 @@
 [html]
   html_table_open=28
   html_table_close=28
-  html_bytes=44568
+  html_bytes=44643
 [acceptance]
         3 N/A
        12 PASS
