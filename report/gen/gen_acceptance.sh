@@ -147,18 +147,23 @@ gen_acceptance() {
     fi
 
     # 5. 内存运行速率（v1.48.69 先定 DPC 口径；v1.51.9 增「混插」独立一档）
-    #   ① 混插（部件号/额定档/Rank 不统一）→ WARN：控制器只能按最低额定训练，属**配置问题**
-    #      而非故障；文案必须点明「混插」，不能笼统写"降速…建议核查 BIOS"（用户实测：3 种型号
-    #      混插 4800×7+6400×9，现速 4800 恰为该配置下限，本就无更高可能，跟 BIOS 无关）。
-    #   ② 非混插 + >1DPC → PASS（平台规范，典型 24 根插 32 槽）
-    #   ③ 非混插 + ≤1DPC 仍降速 → WARN（真问题，建议核查 BIOS）
-    #   额定基线用 MEM_NOM = 整机最低额定（v1.51.9 起，不再是第一条的额定）
+    #   v1.51.10 判据顺序修正（用户口径："内存插满/超过 1DPC 降速很正常，不该一刀切；
+    #   只是料号不同仍能用，最多兼容性风险；额定或 Rank 不同才是真混插"）：
+    #   ① >1DPC（含插满）→ PASS：降速属平台规范，与是否混插无关，**优先于混插判定**
+    #   ② 真混插（额定档或 Rank 不同）→ WARN：控制器只能按最低档训练，兼容性风险实质存在
+    #   ③ 仅部件号不同（额定/Rank 一致）→ PASS：同规格不同料号
+    #   ④ 不混插 + ≤1DPC 仍降速 → WARN（真问题，建议核查 BIOS）
     if [ -z "$MEM_SPEED" ] || [ "$MEM_SPEED" = "N/A" ]; then
         add_item "内存运行速率" "N/A" "内存速率数据不可用"
-    elif [ "${MEM_MIXED:-0}" -eq 1 ]; then
-        _mix_at_min=""
-        [ "$MEM_SPEED" = "$MEM_NOM" ] && _mix_at_min="；现速 ${MEM_SPEED} 已达该配置的最低额定，无额外降速"
-        add_item "内存运行速率" "WARN" "内存型号混插（${MEM_PN_KINDS} 种部件号 / ${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank），控制器按最低额定 ${MEM_NOM} 训练${_mix_at_min}——建议统一内存型号"
+    elif [ "${MEM_OVER_1DPC:-0}" -eq 1 ] || [ "${MEM_FULL:-0}" -eq 1 ]; then
+        _mix_tail=""
+        [ "${MEM_MIXED_SPEC:-0}" -eq 1 ] && _mix_tail="；另有规格混插（${MEM_NOM_KINDS} 档额定 / ${MEM_RANK_KINDS} 种 Rank）"
+        add_item "内存运行速率" "PASS" "降速运行（现速 ${MEM_SPEED}，额定 ${MEM_NOM}；已插 ${MEM_POPULATED}/${MEM_SLOTS} 槽属 >1DPC 配置，降速为平台规范正常现象${_mix_tail}）"
+    elif [ "${MEM_MIXED_SPEC:-0}" -eq 1 ]; then
+        _at_min=""
+        [ "$MEM_SPEED" = "$MEM_NOM" ] && _at_min="；现速 ${MEM_SPEED} 即该配置的最低额定，无额外降速"
+        add_item "内存运行速率" "WARN" "内存规格混插（${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank / ${MEM_PN_KINDS} 种部件号），控制器按最低额定 ${MEM_NOM} 训练${_at_min}"
+    # 注：料号差异（规格一致）不单独提示（市场常态），直接走「额定速率运行」分支
     elif [ -n "$MEM_SPEED_NOTE" ]; then
         if [ "${MEM_OVER_1DPC:-0}" -eq 1 ] || [ "${MEM_FULL:-0}" -eq 1 ]; then
             add_item "内存运行速率" "PASS" "降速运行（额定 ${MEM_NOM}，现速 ${MEM_SPEED}；已插 ${MEM_POPULATED}/${MEM_SLOTS} 槽属 >1DPC 配置，降速为平台规范正常现象）"

@@ -235,8 +235,16 @@ $(awk '
 ' "${dmidecode_memory_full}" 2>/dev/null)
 EOF
     [ "${MEM_PN_KINDS:-0}" -gt 1 ] 2>/dev/null && MEM_MIXED=1
-    [ "${MEM_NOM_KINDS:-0}" -gt 1 ] 2>/dev/null && MEM_MIXED=1
-    [ "${MEM_RANK_KINDS:-0}" -gt 1 ] 2>/dev/null && MEM_MIXED=1
+    # v1.51.10：把「混插」分两档（用户口径）——
+    #   MEM_MIXED_SPEC=1：额定速率或 Rank 不同 = **真混插**，控制器只能按最低档训练，兼容性风险实质存在
+    #   MEM_MIXED_PN=1  ：仅部件号不同、额定与 Rank 一致 = **同规格不同料号**，能用，最多兼容性
+    #                    （JEDEC SPD 有 Module Revision Code 可区分修订批次，但 dmidecode 不输出，
+    #                     故只能表述为「不同料号」，不臆断为"仅修订版本差异"）
+    MEM_MIXED_SPEC=0
+    MEM_MIXED_PN=0
+    [ "${MEM_NOM_KINDS:-0}" -gt 1 ] 2>/dev/null && MEM_MIXED_SPEC=1
+    [ "${MEM_RANK_KINDS:-0}" -gt 1 ] 2>/dev/null && MEM_MIXED_SPEC=1
+    if [ "$MEM_MIXED_SPEC" -eq 0 ] && [ "${MEM_PN_KINDS:-0}" -gt 1 ] 2>/dev/null; then MEM_MIXED_PN=1; fi
 fi
 # 插槽数：锚定 "Memory Device" 段头（子串匹配会命中 type20 "Memory Device Mapped Address"，插槽数恒为总槽+已插 → MEM_FULL 恒 0 误判 WARN）
 MEM_SLOTS=$(grep -cE "^[[:space:]]*Memory Device$" "${dmidecode_memory_full}" 2>/dev/null)
@@ -251,16 +259,21 @@ if [ "${MEM_SLOTS:-0}" -gt 0 ]; then
 fi
 # v1.51.9：三分文案——① 混插（型号/速率/Rank 不统一，控制器按最低档跑，属配置问题而非故障）
 #   ② 非混插且 ≤1DPC 仍降速（真问题，建议核查 BIOS）③ >1DPC 降速（平台规范）
-if [ -n "$MEM_SPEED" ] && [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null; then
-    if [ "$MEM_MIXED" -eq 1 ]; then
-        MEM_SPEED_NOTE="⚠️ 内存型号混插（${MEM_PN_KINDS} 种部件号 / ${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank）——控制器按最低额定 ${MEM_NOM} 训练，建议统一型号以获得更高速率"
-    elif [ "$MEM_OVER_1DPC" -eq 1 ]; then
+# v1.51.10 文案分档（用户口径）：
+#   真混插（额定/Rank 不同）→ ⚠️ 必须提示     同规格不同料号 → 普通括注，不加 ⚠️
+#   降速本身：>1DPC 属平台规范 → 不加 ⚠️；≤1DPC 降速才是真问题 → ⚠️
+if [ -n "$MEM_SPEED" ]; then
+    _down=""
+    [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null && _down=1
+    if [ "$MEM_MIXED_SPEC" -eq 1 ]; then
+        MEM_SPEED_NOTE="⚠️ 内存规格混插（${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank / ${MEM_PN_KINDS} 种部件号），控制器按最低额定 ${MEM_NOM} 训练"
+    elif [ -n "$_down" ] && [ "$MEM_OVER_1DPC" -eq 1 ]; then
         MEM_SPEED_NOTE="（降速运行：额定 ${MEM_NOM}，已插 ${MEM_POPULATED}/${MEM_SLOTS} 槽属 >1DPC 配置，为平台规范正常现象）"
-    else
+    elif [ -n "$_down" ]; then
         MEM_SPEED_NOTE="⚠️ 降速运行（额定 ${MEM_NOM}；仅 ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} 槽 ≤1DPC 仍降速，建议核查 BIOS 设置）"
     fi
-elif [ "$MEM_MIXED" -eq 1 ] && [ -n "$MEM_SPEED" ]; then
-    MEM_SPEED_NOTE="（内存型号混插：${MEM_PN_KINDS} 种部件号 / ${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank，当前按最低额定 ${MEM_NOM} 运行）"
+    # 注：料号差异（规格一致）不做提示——市场上完全统一批次不现实，能前段一致已属良好；
+    #     仅「规格混插」（额定速率或 Rank 不同）作为例外标出。
 fi
 # 每槽 DIMM 明细（插槽|容量|厂商|SN|部件号|原速率|现速率|Rank）
 # v1.50.2：空槽也输出一行（容量列「（未插）」）——只报汇总数看不出哪几个槽空着
