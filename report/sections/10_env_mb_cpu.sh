@@ -39,11 +39,31 @@ PCIE_LINK_TABLE=""       # 全量链路行：BDF|设备|LnkCap|LnkSta|判定（�
 PCIE_SLOW_COUNT=0
 PCIE_MGMT_COUNT=0
 PCIE_BRIDGE_NEG_COUNT=0  # bridge 下游协商行数（v1.44.3：附录标注"协商（下游能力）"，从"满速"统计中分离）
+# v1.51.8：上游父桥端口能力表（child_bus → 该父桥 LnkCap 原文）
+#   判据依据：Root Port / Switch 端口的 Link Capabilities 描述「它到下游设备这条链路」的能力上限。
+#   为什么需要：端点自己报的 LnkCap 是芯片能力（实测 Mellanox CX-7 报 Gen4 x2，而它所在
+#   root port 只支持 Gen3 x2）——拿芯片能力当基准会把「已跑满端口天花板」误判成降速。
+PCIE_UP_CAP=""
 if [ -f "${pcie_full}" ]; then
-    PCIE_LINK_TABLE=$(awk '
+    PCIE_UP_CAP=$(awk '
+        /^([0-9a-f]+:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]/ {
+            if (sec != "" && cap != "") { s2=sec; sub(/^0+/,"",s2); if (s2=="") s2="0"; print s2"|"cap }
+            sec=""; cap=""
+            isbr = ($0 ~ /PCI bridge|PCIe bridge|Host bridge/) ? 1 : 0
+            next
+        }
+        isbr && /LnkCap:/ { cap = $0 }
+        isbr && /Bus: primary/ { if (match($0, /secondary=[0-9a-f]+/)) sec = substr($0, RSTART+10, RLENGTH-10) }
+        END { if (sec != "" && cap != "") { s2=sec; sub(/^0+/,"",s2); if (s2=="") s2="0"; print s2"|"cap } }
+    ' "${pcie_full}" 2>/dev/null | sort -u)
+fi
+
+if [ -f "${pcie_full}" ]; then
+    PCIE_LINK_TABLE=$(awk -v upmap="${PCIE_UP_CAP}" '
         # v1.51.5：BDF 块头兼容两位域（00:00.0）与四位域（0000:00:00.0）——lspci 在**多 PCI 域平台**
         #   默认输出带域名，旧写法 [0-9a-f]{2}: 只认两位 → 块头永不匹配 → check() 从不被调用
         #   → 链路表恒空 → 报告误写「旧采集无 pcie_full」（实测该机 pcie_full.log 有 16203 行/179 条 LnkCap）
+        BEGIN { nu = split(upmap, _L, "\n"); for (_i = 1; _i <= nu; _i++) { if (_L[_i] == "") continue; split(_L[_i], _kv, "|"); if (_kv[1] != "") UPM[_kv[1]] = _kv[2] } }
         /^([0-9a-f]+:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]/ { if (b != "") check(); b=$1; d=substr($0,index($0,$2)); c=""; s="" }
         /LnkCap:/ { c=$0 }
         /LnkSta:/ { s=$0 }
@@ -52,10 +72,17 @@ if [ -f "${pcie_full}" ]; then
         function wdt(x,   t) { t=x; sub(/.*Width /,"",t); sub(/,.*/,"",t); gsub(/[^0-9]/,"",t); return t+0 }
         function gname(x) { if (x >= 31.9) return "Gen5"; if (x >= 15.9) return "Gen4"; if (x >= 7.9) return "Gen3"; if (x >= 4.9) return "Gen2"; return "Gen1" }
         function fmt(w, s) { return "x" w " " gname(s) }
-        function check(   csp,cwd,ssp,swd,mgmt,verdict,isbridge) {
+        function mn(a, b) { return (a < b) ? a : b }
+        function check(   csp,cwd,ssp,swd,mgmt,verdict,isbridge,devbus,uc,bases,basew) {
             if (c == "" || s == "") return
             csp=spd(c); cwd=wdt(c); ssp=spd(s); swd=wdt(s)
             if (swd == 0) return            # x0 = 端口未连接（PEX 下行空置）
+            # v1.51.8：本链路可达上限 = min(设备芯片能力, 上游父桥端口能力)。
+            #   找不到父桥映射时退回设备自身能力（保持旧行为，不劣化）。
+            devbus = b; sub(/^[0-9a-f]+:/, "", devbus); sub(/:.*/, "", devbus)
+            sub(/^0+/, "", devbus); if (devbus == "") devbus = "0"
+            bases = csp; basew = cwd
+            if (devbus in UPM) { uc = UPM[devbus]; bases = mn(csp, spd(uc)); basew = mn(cwd, wdt(uc)); }
             isbridge = (d ~ /PCI bridge|PCIe bridge|Host bridge/) ? 1 : 0
             if (isbridge && ssp <= 5 && swd == 16) return  # bridge 端口空闲（Gen1/2 全宽未训练 = 下行未接）
             total++
@@ -66,8 +93,8 @@ if [ -f "${pcie_full}" ]; then
             # Gen4 口接 Gen3 卡均属正常协商（超微 AS-4124GO-NART 实证：PEX880xx 下行挂 Gen3 设备，
             # v1.44.2）。真问题（线缆/接触/插槽）会体现在下游端点自身 LnkCap vs LnkSta——端点判定已覆盖。
             # 故 bridge 一律不判异常（仅附录展示）；端点设备（NIC/GPU/RAID 卡）速率+宽度降均判异常
-            } else if (!isbridge && (ssp < csp || swd < cwd)) {
-                verdict = (swd < cwd && ssp < csp) ? "⚠️ 降宽+降速" : ((swd < cwd) ? "⚠️ 降宽" : "⚠️ 降速")
+            } else if (!isbridge && (ssp < bases || swd < basew)) {
+                verdict = (swd < basew && ssp < bases) ? "⚠️ 降宽+降速" : ((swd < basew) ? "⚠️ 降宽" : "⚠️ 降速")
             # v1.44.3：bridge 降速标注"协商（下游能力）"——附录显示不再误写"✓ 满速"（判定仍不计异常）
             } else if (ssp < csp || swd < cwd) {
                 verdict = "协商（下游能力）"
