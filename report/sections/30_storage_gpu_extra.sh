@@ -236,20 +236,27 @@ if [ -f "${gpu_nvlink_status}" ]; then
     fi
 fi
 
-# NVSwitch（nvswitch_N.log：状态/温度/端口；只匹配数字索引，避免把 nvswitch_smi_status.log 混入）
+# ─── NVSwitch 可达性矩阵（v1.51.3：数据源由不存在的 nvswitch CLI 换成 nvswitch-audit）───
+# 旧实现解析 nvswitch_N.log 的 "Switch State / Temperature / Active Nvlink Ports"——那是
+#   **NVIDIA 不存在的命令**的输出格式，该命令从未在本项目任何平台上跑过，解析长期空转
+#   （与 v1.51.1 修的那四条采集命令同源）。改读 nvswitch-audit 落盘的两份：
+#     nvswitch_audit_csv.log     矩阵 CSV（每对 GPU 之间实际编程的 NVLink 条数）
+#     nvswitch_audit_verbose.log 含 `Switch Arch = N` 与 devId/phyid/switchId 表
+#   结论并入下方 NVSWITCH_FABRIC 合成句——**不塞进 NVS_DETAILS**：那 4 个字段是
+#   「ID|状态|温度|端口」，语义对不上可达性矩阵，硬塞会让三个渲染端都显示错列。
 NVS_DIR="${OUT}/nvswitch"
 NVS_DETAILS=""
-if ls ${NVS_DIR}/nvswitch_[0-9]*.log >/dev/null 2>&1; then
-    for nf in ${NVS_DIR}/nvswitch_[0-9]*.log; do
-        nidx=$(basename "$nf" | sed 's/nvswitch_//; s/\.log//')
-        nstate=$(grep -m1 "Switch State" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
-        ntemp=$(grep -m1 "Temperature" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ' | sed 's/C$//')
-        nports=$(grep -m1 "Active Nvlink Ports" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
-        ntotal=$(grep -m1 "Total Nvlink Ports" "$nf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
-        nstat="${nstate:-N/A}"
-        [ "$nstat" != "Active" ] && [ "$nstat" != "N/A" ] && nstat="${nstat} ⚠️"
-        NVS_DETAILS="${NVS_DETAILS}${nidx}|${nstat}|${ntemp:-N/A}°C|${nports:-N/A}/${ntotal:-N/A}"$'\n'
-    done
+NSA_LINKS=""; NSA_CNT=""; NSA_ARCH=""; NSA_NOPATH=0
+_nsa_csv="${NVS_DIR}/nvswitch_audit_csv.log"
+_nsa_ver="${NVS_DIR}/nvswitch_audit_verbose.log"
+if [ -f "$_nsa_csv" ]; then
+    NSA_ARCH=$(grep -m1 'Switch Arch' "$_nsa_ver" 2>/dev/null | sed 's/.*= *//' | tr -d ' ')
+    if [ -f "$_nsa_ver" ]; then
+        NSA_CNT=$(grep -vE '^#|^Switch Arch|^devId' "$_nsa_ver" 2>/dev/null | awk -F'\t' 'NF>=3 && $3 ~ /^[0-9]+$/ {print $3}' | sort -u | wc -l)
+        [ "${NSA_CNT:-0}" -eq 0 ] && NSA_CNT=""
+    fi
+    NSA_LINKS=$(grep -vE '^#|^GPU' "$_nsa_csv" 2>/dev/null | tr ',' '\n' | grep -E '^[0-9]+$' | grep -v '^0$' | sort -nu | tr '\n' '/' | sed 's|/$||')
+    NSA_NOPATH=$(grep -vE '^#|^GPU' "$_nsa_csv" 2>/dev/null | tr ',' '\n' | grep -c '^-1$')
 fi
 # ─── NVSwitch 域（Fabric）健康判定（v1.48.72）───
 # 原实现解析 nvswitch_smi_status.log 的 "Switch N:" 段——该文件自 v1.48.61 起不再生成（nvidia-smi
@@ -291,5 +298,21 @@ if [ -f "$_fq" ] || [ -f "$_nr" ]; then
         NVSWITCH_FABRIC="⚠️ Fabric Manager 运行中，但 ${_pg}/${_pt} 条 NVLink 对端不可见（FFFFFFFF）——核查 NVSwitch 供电/复位状态与 FM 版本匹配"
     elif [ "$_fmst" = "active" ] && [ "${_nerr:-0}" -gt 0 ]; then
         NVSWITCH_FABRIC="⚠️ NVLink 链路错误计数非零（${_nerr} 项，详见 nvlink_error_count.log）"
+    else
+        # v1.51.3：以上皆无异常时，用 nvswitch-audit 的可达性矩阵给一句结论
+        #   （矩阵里「GPU 之间的连接数」排除 X 自身、0 空槽、-1 无路径后的集合）
+        if [ -n "$NSA_LINKS" ]; then
+            _nsa_uniq=$(printf '%s' "$NSA_LINKS" | tr '/' '\n' | grep -c .)
+            _nsa_txt="${NSA_LINKS} 条 NVLink/对"
+            [ -n "${NSA_CNT:-}" ] && _nsa_txt="${_nsa_txt}，NVSwitch ${NSA_CNT} 颗"
+            [ -n "${NSA_ARCH:-}" ] && _nsa_txt="${_nsa_txt}、Arch ${NSA_ARCH}"
+            if [ "${_nsa_uniq:-0}" -eq 1 ] && [ "${NSA_NOPATH:-0}" -eq 0 ]; then
+                NVSWITCH_FABRIC="✅ NVSwitch 域正常：可达性矩阵各对一致（${_nsa_txt}），无不可达项"
+            elif [ "${_nsa_uniq:-0}" -eq 1 ]; then
+                NVSWITCH_FABRIC="✅ NVSwitch 域正常：可达性矩阵各对一致（${_nsa_txt}）；另有 ${NSA_NOPATH} 格为非 GPU 槽位（-1，正常）"
+            else
+                NVSWITCH_FABRIC="⚠️ NVSwitch 域连接数不一致（${_nsa_txt}）——部分 GPU 对之间未建立全部链路，核查 NVSwitch 与线缆"
+            fi
+        fi
     fi
 fi
