@@ -163,8 +163,18 @@ if [ -f "${nic_inventory}" ]; then
         declare -A _slot_pri
         while IFS='|' read -r _sd _st _sa; do
             [ -z "$_sd" ] && continue
+            # v1.51.7：跳过占位/未填充的 Bus Address，否则会把上溯到根总线的设备全部误配。
+            #   bus 00 是根总线（host bridge），任何设备逐级上溯到顶都会经过它——若 SMBIOS 里有一条
+            #   地址未填充的槽位记录（BIOS 写 0000:00:00.0 / ff:00.0），剥出 bus 后就是 00，于是
+            #   **所有**上溯到根总线的设备都会命中该槽位名（实测 B200 平台：01:00 的 ConnectX-7 与
+            #   04:00 的 X710 同时被标成 NGFF2；而 db:00 因在自身 bus 就命中 NIC_8 而未受影响）。
+            case "$_sa" in
+                ""|*:00:00.0|*:ff:00.0|*:0000:00:00.0) continue ;;
+            esac
             _sbus=$(printf '%s' "$_sa" | sed 's/^[0-9a-fA-F]*://; s/:.*//')
             [ -z "$_sbus" ] && continue
+            # 根总线本身不作为槽位（双保险：即使地址格式有变）
+            case "$_sbus" in 0|00|000|0000) continue ;; esac
             _pri=3
             # ① Type 明确是存储槽类型
             case "$_st" in
