@@ -261,53 +261,18 @@ try {
         if ($sn -notmatch '^[A-Za-z0-9_-]+$') { Write-Host "[WARN] 跳过非法的机器目录名: $sn" -ForegroundColor Yellow; continue }
         if ($sn.Length -lt 4) { Write-Host "[WARN] 跳过过短的机器目录名: $sn" -ForegroundColor Yellow; continue }
         $dst = Join-Path $remoteOutDir $sn
-        $residCheck = $false
-        if (Test-Path $dst) {
-            # 覆盖前归档校验（对标 hwscope.sh v1.45.10）：有归档且归档不早于目录内容 → 可安全清空；
-            # 否则保留旧目录改为增量覆盖，**绝不静默删除未归档数据**。
-            # v1.49.10：归档被人工移走是常规操作，原先每次都打 WARN → 纯噪音，降级为 INFO；
-            #   同时补一道真风险检查：增量覆盖会留下"本次没拉到"的旧文件，而报告端按文件名找数据，
-            #   会读到过期内容。覆盖后用**文件清单差集**判定（不用时间戳——Copy-Item 保留原始
-            #   时间戳，远端采集时间常早于本次回拉，用时间比会把本次文件误判为残留）。
-            $arch = Get-ChildItem $remoteLogsDirEarly -Filter "$sn-*.tar.gz" -ErrorAction SilentlyContinue |
-                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            $newerThanArch = if ($arch) {
-                Get-ChildItem $dst -Recurse -File -Force -ErrorAction SilentlyContinue |
-                    Where-Object { $_.LastWriteTime -gt $arch.LastWriteTime } | Select-Object -First 1
-            } else { $null }
-            if ($arch -and -not $newerThanArch) {
-                Remove-Item $dst -Recurse -Force
-                Write-Host "[INFO] ${sn}: 已清空旧目录（历史留存于 $($arch.Name)）" -ForegroundColor Yellow
-            } else {
-                Write-Host "[INFO] ${sn}: 旧目录已存在、无归档可比对（归档常被人工移走）→ 增量覆盖，不删任何文件" -ForegroundColor Yellow
-                $residCheck = $true
-            }
-        }
+        # v1.51.0：回拉一律**清空重建**（对齐 hwscope.sh 的 `rm -rf $OUTPUT_BASE` 覆盖语义）。
+        #   原先「有归档才敢删、无归档就增量覆盖 + 残留检测」整体删除，原因：
+        #     ① 归档被人工移走是常态 → 绝大多数回拉到不了"可安全清空"，全部落到"不删"分支；
+        #     ② 报告端「按文件名找数据」的前提是「目录内文件同属一次采集」→ 残留的旧文件被当本次数据读，
+        #        新采集数据被污染（本次未采的模块、已拔掉的外设日志等），报告给出错误结论且从外观看不出来；
+        #     ③ 「保护旧数据」实无必要——历史留存由 logs/remote_logs/ 的归档承担（每次回拉都归档一份），
+        #        output/remote_output/<SN>/ 只是回拉的落脚点，不是唯一副本；
+        #     ④ 那套逻辑还带来过一次误报（两侧相对路径基准不一致 → 全部文件被判为残留）。
+        #   结论：多余的复杂度换来了数据错乱风险，删掉。
+        if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $dst | Out-Null
         Copy-Item (Join-Path $sd.FullName '*') -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
-        # v1.49.10：残留检测——本次没拉到的旧文件会留下，报告端可能读到过期数据。只列前 5 个 + 总数。
-        if ($residCheck) {
-            # v1.50.9：相对路径必须**各以自己的基准目录**切，不能用固定的 $dst 长度。
-            #   原实现 `$rel = { $p.Substring($dst.Length) }` 对 $sd（暂存目录，路径更长，
-            #   如 %TEMP%\hwscope_stage_<TS>\<SN>）切出来是脏字符串，而 $dst 那侧切出来是对的
-            #   → 两侧键格式不一致 → HashSet.Contains 恒 false → **目录里全部文件都被判为残留**
-            #   （实测 333 个文件的目录报「333 个未拉到」，正好等于文件总数）。
-            #   sh 版用 `cd <dir> && find .` 取相对路径，天然没这个问题。
-            $relFrom = { param($base, $p) $p.Substring($base.Length).TrimStart('\', '/') }
-            $pulled = New-Object System.Collections.Generic.HashSet[string]
-            Get-ChildItem $sd.FullName -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
-                [void]$pulled.Add((& $relFrom $sd.FullName $_.FullName))
-            }
-            $resid = Get-ChildItem $dst -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object {
-                -not $pulled.Contains((& $relFrom $dst $_.FullName))
-            }
-            if ($resid -and $resid.Count -gt 0) {
-                Write-Host "[WARN] ${sn}: 有 $($resid.Count) 个旧文件本次未拉到，仍留在目录里（报告端可能读到过期数据）：" -ForegroundColor Yellow
-                $resid | Select-Object -First 5 | ForEach-Object { Write-Host "        $((& $rel $_.FullName))" -ForegroundColor Yellow }
-                if ($resid.Count -gt 5) { Write-Host "        …另有 $($resid.Count - 5) 个（完整列表见 $dst）" -ForegroundColor Yellow }
-                Write-Host "        如需干净目录：删除 $dst 后重跑本次回拉" -ForegroundColor Yellow
-            }
-        }
     }
     Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 
