@@ -308,6 +308,21 @@ push_main() {
         ai "先 git pull --rebase $REMOTE $BRANCH，在远程 v${rver} 基础上升级版本（tools/sync_version.sh），再重推"
         return 1
     fi
+
+    # 版本三处一致检查（v1.51.5）：HWSCOPE_VERSION 是唯一权威源，另两处（hwscope.sh 头部注释
+    #   + README 徽章）应由 tools/sync_version.sh 同步。其他 agent 会话常只改变量、忘记跑 sync
+    #   → GitHub 页面徽章与文件注释停在旧版（实测 v1.51.3/.4 连漏两次，用户发现后才补）。
+    #   推送是进公开仓库的唯一必经关口，放这里不依赖任何人记得跑 sync。
+    _v_var=$(grep '^HWSCOPE_VERSION=' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | head -1 | sed 's/.*"v\?\([0-9.]*\).*/\1/')
+    _v_cmt=$(grep '^# Version : ' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    _v_bdg=$(grep -oE 'Version-[0-9]+\.[0-9]+\.[0-9]+' "${PROJECT_DIR}/README.md" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    if [ -n "${_v_var}" ] && { [ "${_v_var}" != "${_v_cmt}" ] || [ "${_v_var}" != "${_v_bdg}" ]; }; then
+        warn "版本三处不一致: 变量 ${_v_var} / hwscope.sh 注释 ${_v_cmt:-缺} / README 徽章 ${_v_bdg:-缺}"
+        ai "跑 bash tools/sync_version.sh 对齐（它把注释与徽章同步到变量的值），再重推"
+        fail "版本三处不一致，拒绝推送（避免 GitHub 徽章/文件注释与代码版本脱节）"
+    else
+        [ -n "${_v_var}" ] && info "版本三处一致: ${_v_var}"
+    fi
     # SN 兜底检查（v1.49.4）：钩子靠自觉不可靠——`.git/hooks/` 不进仓库，换机器/新 clone 就没有，
     #   历史上三次泄漏都发生在"以为装了钩子"或"钩子没装"的时刻。而推送是进公开仓库的**唯一必经关口**，
     #   放这里不依赖任何人的自觉。扫「暂存区 + 待推提交」（--all-history 太慢，且推送只需保证本次内容干净）。

@@ -41,7 +41,10 @@ PCIE_MGMT_COUNT=0
 PCIE_BRIDGE_NEG_COUNT=0  # bridge 下游协商行数（v1.44.3：附录标注"协商（下游能力）"，从"满速"统计中分离）
 if [ -f "${pcie_full}" ]; then
     PCIE_LINK_TABLE=$(awk '
-        /^[0-9a-f]{2}:/ { if (b != "") check(); b=$1; d=substr($0,index($0,$2)); c=""; s="" }
+        # v1.51.5：BDF 块头兼容两位域（00:00.0）与四位域（0000:00:00.0）——lspci 在**多 PCI 域平台**
+        #   默认输出带域名，旧写法 [0-9a-f]{2}: 只认两位 → 块头永不匹配 → check() 从不被调用
+        #   → 链路表恒空 → 报告误写「旧采集无 pcie_full」（实测该机 pcie_full.log 有 16203 行/179 条 LnkCap）
+        /^[0-9a-f]{2,4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]/ { if (b != "") check(); b=$1; d=substr($0,index($0,$2)); c=""; s="" }
         /LnkCap:/ { c=$0 }
         /LnkSta:/ { s=$0 }
         END { if (b != "") check() }
