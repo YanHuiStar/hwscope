@@ -58,10 +58,15 @@ run_raid() {
         fi
     fi
     if check_cmd sas3ircu; then
-        hba_count=$(sas3ircu list 2>/dev/null | grep -cE "^[0-9]+\\.|^Index" || true)
+        # v1.52.3（C3）：原模式 "^[0-9]+\.|^Index" 两个分支都匹配不上 sas3ircu 的实际输出
+        #   ——表头是「   Index  Adapter Type ...」（前导空格），数据行是「   0   SAS3008 ...」
+        #   （索引后跟空格，而非点号）。结果是恒为 0，下面的 for 循环一次都不执行、
+        #   per-HBA 明细全部丢失。改判据为「行首（可带空白）+ 索引数字 + 空白 + 型号字母」。
+        hba_count=$(sas3ircu list 2>/dev/null | awk '/^[[:space:]]*[0-9]+[[:space:]]+[A-Za-z]/ {n++} END {print n+0}')
     fi
     if check_cmd sas2ircu; then
-        hba2_count=$(sas2ircu list 2>/dev/null | grep -c "^Index" || true)
+        # v1.52.3（C3）：同上——旧模式要求行首即 Index，而实际表头带前导空格
+        hba2_count=$(sas2ircu list 2>/dev/null | awk '/^[[:space:]]*[0-9]+[[:space:]]+[A-Za-z]/ {n++} END {print n+0}')
     fi
     raid_buses=$(lspci -D 2>/dev/null | grep --line-buffered -iE 'RAID|SAS|MegaRAID|Broadcom.*SAS' | awk '{print $1}')
 
