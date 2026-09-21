@@ -265,6 +265,35 @@ write_header() {
 }
 
 # ─── 执行命令并写入日志 ───
+# ─── 纳秒时间戳（v1.52.3 C5）───
+# GNU date 的 %s%N 给出纳秒；BusyBox 的 date **不报错**、直接把 %N 原样输出成
+#   "秒数字 + 字面 N"（如 1695432000N），原来那句 `|| date +%s` 兜底因此永不触发，
+#   后续按"长度 > 10"判纳秒分支 → awk 拿带字母的值做差 → 得到与真实耗时无关的数字
+#   （本机实测该表达式给出 1.70，既不是 0 也不是真实秒数）。
+#   这里显式校验纯数字，非纯数字一律退回整秒。
+_ns_now() {
+    local _v
+    _v=$(date +%s%N 2>/dev/null)
+    case "$_v" in
+        ''|*[!0-9]*) _v=$(date +%s) ;;
+    esac
+    printf '%s' "$_v"
+}
+
+# ─── 退出码是否"良性"（v1.52.3 C2）───
+# 原先一律把 exit=1 当 grep 无匹配豁免，于是**命令自身失败**（smartctl/ipmitool 等
+#   返回 1）也被静默成 [~]（no match），既不进 WARN 计数、也不进 summary.txt。
+#   判据收紧：只有命令文本里真的调用了 grep 时，exit=1 才可能是"无匹配"。
+#   $1=退出码  $2=命令文本
+_rc_is_benign() {
+    local _rc="$1" _cmd="${2:-}"
+    case "$_rc" in
+        0|127) return 0 ;;
+        1) printf '%s' "$_cmd" | grep -qE '(^|[|;&[:space:]])grep([[:space:]]|$)' ;;
+        *) return 1 ;;
+    esac
+}
+
 run_and_log() {
     local cmd="$1"
     local logfile="$2"
@@ -274,7 +303,7 @@ run_and_log() {
     echo "# --- output start ---" >> "$logfile"
 
     local start_ns
-    start_ns=$(date +%s%N 2>/dev/null || date +%s)
+    start_ns=$(_ns_now)
 
     # 模拟模式：每条命令随机延迟 0.2-0.5s（计入耗时，SIM_DELAY>0 时生效）
     # 用 bash 内置 $RANDOM 生成（0.20-0.50s），零外部依赖——原 awk 方案在精简容器缺 awk 时
@@ -286,7 +315,7 @@ run_and_log() {
     bash -c "$cmd" >> "$logfile" 2>&1
     local ret=$?
     local end_ns
-    end_ns=$(date +%s%N 2>/dev/null || date +%s)
+    end_ns=$(_ns_now)
 
     # 耗时（GNU date 纳秒 → 秒保留 2 位；fallback 整数秒）
     local elapsed
@@ -299,8 +328,8 @@ run_and_log() {
     echo "# --- output end ---" >> "$logfile"
     echo "# --- exit code: $ret, [ ${elapsed}s ] ---" >> "$logfile"
 
-    # WARN 计数（exit=1 = grep 无匹配，不报警）
-    if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
+    # WARN 计数（v1.52.3 C2：exit=1 仅在该命令确实调用了 grep 时才豁免）
+    if ! _rc_is_benign "$ret" "$cmd"; then
         _MODULE_WARN_COUNT=$((_MODULE_WARN_COUNT + 1))
     fi
 
@@ -316,13 +345,13 @@ run_and_log() {
     fname=$(basename "${logfile%.*}")
     if [ "$QUIET" -eq 1 ]; then
         # 静默模式：只显示 WARN
-        if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ]; then
+        if ! _rc_is_benign "$ret" "$cmd"; then
             printf "${YELLOW}%-6s${NC} %s (exit=%s)  [ %s ]\n" "[WARN]" "$fname" "$ret" "$fmt_elapsed"
         fi
     else
         if [ "$ret" -eq 0 ]; then
             printf "${GREEN}%-6s${NC} %s  %s  [ %s ]\n" "[OK]" "$fname" "(exit=0)" "$fmt_elapsed"
-        elif [ "$ret" -eq 1 ]; then
+        elif [ "$ret" -eq 1 ] && _rc_is_benign "$ret" "$cmd"; then
             printf "%-6s %s  %s  [ %s ]\n" "[~]" "$fname" "(no match)" "$fmt_elapsed"
         elif [ "$ret" -eq 127 ]; then
             printf "${YELLOW}%-6s${NC} %s  %s  [ %s ]\n" "[N/A]" "$fname" "(cmd not found)" "$fmt_elapsed"
@@ -387,7 +416,7 @@ run_and_log_parallel() {
         while [ $# -ge 2 ]; do
             run_and_log "$1" "$2"
             local ret=$?
-            [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ] && [ "$ret" -ne 127 ] && _rlp_has_error=1
+            _rc_is_benign "$ret" "$1" || _rlp_has_error=1
             shift 2
         done
         return $_rlp_has_error
@@ -405,7 +434,12 @@ run_and_log_parallel() {
 
         (
             run_and_log "$cmd" "$logfile"
-            echo $? > "${_rlp_tmpdir}/w_${this_idx}"
+            _rlp_rc=$?
+            echo "$_rlp_rc" > "${_rlp_tmpdir}/w_${this_idx}"
+            # 子 shell 里的 WARN 计数不会回流，这里把"该退出码是否可豁免"一并落盘，
+            #   由父进程按同一判据计数（v1.52.3 C2）
+            _rc_is_benign "$_rlp_rc" "$cmd" && echo 1 > "${_rlp_tmpdir}/b_${this_idx}" \
+                                            || echo 0 > "${_rlp_tmpdir}/b_${this_idx}"
         ) &
         _rlp_pids+=($!)
         _rlp_idx=$((_rlp_idx + 1))
@@ -427,7 +461,7 @@ run_and_log_parallel() {
     while [ "$_rlp_i" -lt "$_rlp_idx" ]; do
         local _rlp_ret
         _rlp_ret=$(cat "${_rlp_tmpdir}/w_${_rlp_i}" 2>/dev/null || echo 0)
-        if [ "$_rlp_ret" -ne 0 ] && [ "$_rlp_ret" -ne 1 ] && [ "$_rlp_ret" -ne 127 ]; then
+        if [ "$(cat "${_rlp_tmpdir}/b_${_rlp_i}" 2>/dev/null || echo 0)" != "1" ]; then
             _MODULE_WARN_COUNT=$((_MODULE_WARN_COUNT + 1))
             _rlp_has_error=1
         fi
