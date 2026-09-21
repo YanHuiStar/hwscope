@@ -391,14 +391,16 @@ if [ -f "$_lsp" ]; then
         _bdf="${_ln%% *}"
         _dev=$(printf '%s' "$_ln" | cut -d' ' -f2- | sed 's/^.*: //; s/ \[[0-9a-f]\{4\}:[0-9a-f]\{4\}\].*$//; s/ (rev .*)$//')
         BOARD_IFACE="${BOARD_IFACE}显示输出|${_dev}|${_bdf}|板载显示控制器（VGA/D-sub 口，BMC 或独立显卡提供）"$'\n'
-    done < <(grep -E "^[0-9a-f]+:[0-9a-f]+\.[0-9] .*(VGA compatible controller|Display controller)" "$_lsp" | grep -v "^#")
+    done < <(grep -E "^([0-9a-f]{4}:)?[0-9a-f]+:[0-9a-f]+\.[0-9] .*(VGA compatible controller|Display controller)" "$_lsp" | grep -v "^#")
     # USB 控制器（每个控制器对应一组外置 USB 口）
     while IFS= read -r _ln; do
         [ -z "$_ln" ] && continue
         _bdf="${_ln%% *}"
         _dev=$(printf '%s' "$_ln" | cut -d' ' -f2- | sed 's/^.*: //; s/ \[[0-9a-f]\{4\}:[0-9a-f]\{4\}\].*$//; s/ (rev .*)$//')
         BOARD_IFACE="${BOARD_IFACE}USB 控制器|${_dev}|${_bdf}|外置 USB 口（具体口数见机箱面板/厂商规格）"$'\n'
-    done < <(grep -E "^[0-9a-f]+:[0-9a-f]+\.[0-9] .*USB controller" "$_lsp" | grep -v "^#")
+    # v1.52.1 修复：BDF 正则补可选 PCI 域前缀（lspci -vvv 输出可带 0000: 域，原正则整段漏匹配——
+    #   与 :49/:67 v1.51.5 修过的 pcie 块头同类问题；三处同改）
+    done < <(grep -E "^([0-9a-f]{4}:)?[0-9a-f]+:[0-9a-f]+\.[0-9] .*USB controller" "$_lsp" | grep -v "^#")
     # 板载/其他网口（非 Mellanox 的以太网控制器；Mellanox 计算网卡已入网卡明细）
     while IFS= read -r _ln; do
         [ -z "$_ln" ] && continue
@@ -406,7 +408,7 @@ if [ -f "$_lsp" ]; then
         _bdf="${_ln%% *}"
         _dev=$(printf '%s' "$_ln" | cut -d' ' -f2- | sed 's/^.*: //; s/ \[[0-9a-f]\{4\}:[0-9a-f]\{4\}\].*$//; s/ (rev .*)$//')
         BOARD_IFACE="${BOARD_IFACE}板载/其他网口|${_dev}|${_bdf}|非 GPU 直连网卡（多为管理/业务口）"$'\n'
-    done < <(grep -E "^[0-9a-f]+:[0-9a-f]+\.[0-9] .*Ethernet controller" "$_lsp" | grep -v "^#")
+    done < <(grep -E "^([0-9a-f]{4}:)?[0-9a-f]+:[0-9a-f]+\.[0-9] .*Ethernet controller" "$_lsp" | grep -v "^#")
 fi
 # USB 已接设备（lsusb；排除命令头行）
 _lsub="${OUT}/os/lsusb.log"
