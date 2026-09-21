@@ -236,7 +236,15 @@ if [ -d "$OUTPUT_BASE" ]; then
         fi
         # 覆盖前归档校验（v1.45.10）：默认覆盖的安全性依赖"上次归档成功"，但归档可能因磁盘满/中断失败——
         # 校验 logs/ 该机器最新归档 ≥ 目录内容最新 mtime；无归档或有过期内容 → 先补归档，补档失败拒绝覆盖
-        _sn_id=$(basename "$OUTPUT_BASE" | sed 's/-[0-9]\{14\}$//')   # 去 --stamp 时间戳后缀还原机器标识
+        # v1.52.2（E9）：只在后缀确实是 --stamp 的时间戳时剥离——裸 sed 's/-[0-9]\{14\}$//' 会把机器标识
+        #   本身以 14 位纯数字结尾的情形一并吃掉，导致归档路径错位（找不到历史归档 → 误判需补归档）。
+        #   判据收紧为：尾部 14 位数字 且 首位为 2（20xx 年代的时间戳）。
+        _sn_base=$(basename "$OUTPUT_BASE")
+        _sn_ts=$(printf '%s' "$_sn_base" | grep -oE -- '-[0-9]{14}$' | tr -d '-' || true)
+        case "${_sn_ts:0:1}" in
+            2) _sn_id="${_sn_base%-"$_sn_ts"}" ;;
+            *) _sn_id="$_sn_base" ;;
+        esac
         mkdir -p "${SCRIPT_DIR}/logs"
         _latest_arch=$(ls -t "${SCRIPT_DIR}/logs/"${_sn_id}-*.tar.gz 2>/dev/null | head -1)
         if [ -z "$_latest_arch" ] || [ -n "$(find "$OUTPUT_BASE" -type f -newer "$_latest_arch" -print -quit 2>/dev/null)" ]; then
