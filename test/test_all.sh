@@ -43,7 +43,7 @@ esac
 #            文件名带时间戳区分，避免 17 个测试产生 17 个碎片目录；结束后可用 test/report.sh <目录> 出报告） ───
 if [ "${1:-}" = "--all" ]; then
     source "${SCRIPT_DIR}/lib/test_common.sh" 2>/dev/null || true
-    SESSION_DIR="$(test_new_dir)"
+    SESSION_DIR="${HW_TEST_SESSION_DIR:-$(test_new_dir)}"   # v1.52.2（E5）：已有会话目录则复用，避免菜单"全部"先建一次、--all 再建一次（两次 detect_machine_id 结果不同时目录会分叉）
     export HW_TEST_SESSION_DIR="$SESSION_DIR"
     echo "测试目录: ${SESSION_DIR}（本机全部测试日志累积于此，文件名带时间戳区分）"
     echo ""
@@ -86,7 +86,7 @@ read -rp "> 输入编号（多个逗号: 0,1），Enter 取消: " -r choices
 IFS=',' read -ra sels <<< "$choices"
 # v1.45.4：菜单选中多个测试 → 同一 logs/test/<SN>/ 目录（会话共享防碎片；单选同语义）
 source "${SCRIPT_DIR}/lib/test_common.sh" 2>/dev/null || true
-SESSION_DIR="$(test_new_dir)"
+SESSION_DIR="${HW_TEST_SESSION_DIR:-$(test_new_dir)}"   # v1.52.2（E5）：已有会话目录则复用，避免菜单"全部"先建一次、--all 再建一次（两次 detect_machine_id 结果不同时目录会分叉）
 export HW_TEST_SESSION_DIR="$SESSION_DIR"
 echo "测试目录: ${SESSION_DIR}（本次所选测试日志累积于此）"
 echo ""
