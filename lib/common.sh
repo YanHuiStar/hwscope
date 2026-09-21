@@ -27,6 +27,7 @@ NC='\033[0m' # No Color
 #   在 30s 全部超时（exit 124、0 行）→ 风扇、电压、SDR 类数据整批丢失；
 #   ipmi_sensors_power 刚好 17.61s 赶上才保住。30s 对这类平台不够。
 #   代价：极慢平台单命令最坏等待翻倍；可用环境变量按需调回。
+# v1.49.9：分级超时落地，本档（中档）默认 60 → 90 秒，FAST=30 / SLOW=240 两档见下。
 IPMI_TIMEOUT="${HWSCOPE_IPMI_TIMEOUT:-90}"
 export IPMI_TIMEOUT
 

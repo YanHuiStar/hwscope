@@ -36,7 +36,7 @@ hwscope/
 │   ├── platform.sh     # 平台检测：detect_machine_id / detect_platform / ipmi_preheat
 │   └── nvlink.sh       # NVLink 拓扑解析库（纯解析）
 ├── modules/            # 17 个采集模块（01_motherboard … 16_power，99_os），每模块一物理组件
-│   └── gpu/            # GPU 多厂商适配器层（v1.47.0）：lib.sh + adapter_nvidia/amd/ascend/intel/国产×5/generic
+│   └── gpu/            # GPU 多厂商适配器层（v1.47.0）：lib.sh + adapter_nvidia/amd/ascend/intel/国产×5（识别待接入）/generic
 ├── report/             # 报告模块（交付物本体）：report.sh 入口 + lib(解析辅助/显存规格库/md2html)
 │                       #   + sections(数据解析×9) + gen(生成器×7) + tools(多机对比/在线预览)
 ├── conf/
@@ -78,8 +78,23 @@ hwscope/
 
 ## 模块架构
 
+### 关键模块职责
+
+| 组件 | 职责 | 关键函数/入口 |
+|------|------|--------------|
+| `hwscope.sh` | 主入口：CLI 参数解析与模块名校验、MODULES 注册表（17 项）、构建输出目录（覆盖前补归档护栏）、并行/串行调度、summary.txt 汇总与归档 | `MODULES` 数组 · 并行/串行双分支 |
+| `lib/common.sh` | 公共执行层：`run_and_log(_parallel)` 命令执行+日志落盘、WARN 计数（`.warn_count` 跨进程传递）、`check_cmd` 工具探测、IPMI 共享快照（mkdir 锁 + `.tmp` 原子发布）、manifest 写入 | `run_and_log` · `ipmi_snapshot` · `module_start/end` |
+| `lib/platform.sh` | 平台检测：`detect_machine_id`（SN→baseboard SN→UUID→时间戳四层兜底）、`detect_platform`（SXM/PCIe/OAM/head/none）、`detect_gpu_vendors`（lspci 厂商识别，设 `GPU_PLATFORM`）、`ipmi_preheat` 预热；采集端执行命令，报告端可传日志只读复用 | `detect_gpu_vendors` · `classify_machine` |
+| `lib/nvlink.sh` | NVLink 拓扑**纯解析**库（不执行命令）：解析 topo 矩阵与 nvlink status 文本，输出降级链路/CRC 非零/down 链路，设 `NVLINK_*` 全局变量；仅被 nvlink_verify.sh 与 report.sh 调用 | `nvlink_parse_crc` 等 |
+| `modules/*.sh` | 17 个采集模块，每模块一物理组件、每命令一日志；`module_start/end` 成对调用，工具缺失 `check_cmd` 后 `[SKIP]`；单模块可独立执行调试 | `bash modules/<NN>_<id>.sh <out_dir>` |
+| `modules/gpu/` | GPU 适配器框架：`lib.sh` 统一接口（CSV 列定义/合并/manifest）+ 10 个 `adapter_<vendor>.sh`；由 04_gpu.sh 按 `GPU_PLATFORM` source 分发，非独立模块 | `run_gpu_<vendor>` · `gpu_merge_inventory` |
+| `report/` | 报告交付层：`sections/`（10→90 序号 source 的解析段，填全局变量，**顺序勿乱**）→ `gen/`（json/md/txt/html 生成器，md 经 `md2html.awk` 转 HTML）→ 验收清单（--acceptance）；只读日志不重新采集 | `report.sh` → sections → gen |
+
+### 设计约定
+
 - **采集/报告分离**：`modules/*.sh` 只生成数据；`report/report.sh` 只读生成报告（不重新采集）；采集与报告分属 `modules/`（数据）与 `report/`（交付物）两个平级模块
-- **GPU 多厂商适配器层（v1.47.0）**：`modules/gpu/adapter_*.sh` 按 `GPU_PLATFORM` 分发（NVIDIA/AMD 已真机验证；**昇腾/Intel/国产待真机验证**；通用兜底），统一输出 `gpu_inventory.csv`（列与 nvidia-smi 18 列一致）→ 报告/魔改检测/验收跨厂商零改动消费；识别类目：独立卡=lspci "3D controller"，昇腾等加速卡="Processing accelerators"
+- **GPU 多厂商适配器层（v1.47.0）**：`modules/gpu/adapter_*.sh` 按 `GPU_PLATFORM` 分发（NVIDIA/AMD 已真机验证；**昇腾/Intel 待真机验证**；通用兜底），统一输出 `gpu_inventory.csv`（列与 nvidia-smi 18 列一致）→ 报告/魔改检测/验收跨厂商零改动消费；识别类目：独立卡=lspci "3D controller"，昇腾等加速卡="Processing accelerators"
+  - ⚠️ **国产五家（寒武纪/壁仞/摩尔线程/沐曦/天数智芯）适配器已实现但当前不可达**：`detect_gpu_vendors`（lib/platform.sh）的厂商串 case 未包含这五家 → `GPU_PLATFORM` 不会取到 cambricon/biren/moorethreads/metax/iluvatar 值，装有对应 SMI 工具的机器实际走 generic lspci 兜底（显存/温度 N/A）。mixed 模式下 `gpu_vendor_to_platform`（modules/gpu/lib.sh）同样只映射四厂商。接入需补两处厂商串映射（见 USAGE §GPU 适配器）
 - **持久化内核日志（v1.48.90）**：99_os 采 `journalctl -k --since "7 days ago"`（限内核消息+时间窗+tail），落 `journal_kernel_hw.log` / `journal_xid.log` / `journal_mce.log`——dmesg 重启即丢，GPU XID / CPU MCE 这类历史故障证据只能靠 journal 回溯
 - **IB 链路性能计数器（v1.48.90）**：07_network 采 `perfquery -x`，ibstat 看不见误码，只有计数器能反映链路真实质量（SymbolError/LinkDowned/RcvErrors 等）
 - **NVMe 错误日志（v1.48.90）**：08_storage 逐盘 `nvme error-log`，SMART 只给健康度，错误日志才有每次错误的类型/时间戳/LBA

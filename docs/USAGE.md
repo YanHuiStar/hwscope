@@ -12,7 +12,7 @@ sudo bash hwscope.sh --stamp          # 输出目录加时间戳后缀（保留�
 sudo bash hwscope.sh --force          # （兼容保留：v1.45.6 起默认即覆盖）
 sudo bash hwscope.sh --quiet                  # 静默模式（不打印模块明细）
 sudo bash hwscope.sh --no-parallel            # 禁模块内并行（低负载）
-sudo bash hwscope.sh --module-timeout 120     # 模块超时秒数（默认 300）
+sudo bash hwscope.sh --module-timeout 120     # 模块超时秒数（默认 600）
 sudo bash hwscope.sh --modules gpu,cpu        # 只采部分模块
 sudo bash hwscope.sh --skip gpu,fan           # 跳过指定模块
 sudo bash hwscope.sh --output /data/collect   # 指定输出目录
@@ -225,4 +225,10 @@ bash tools/agent/agent_sync.sh --clear      # 推送成功后：清空未推送�
 
 ## 环境变量
 
-- `HWSCOPE_IPMI_TIMEOUT`（默认 `30`，单位秒）：IPMI/BMC 命令超时。现场 BMC 响应慢（如技嘉 B200 实测 ipmi_sensors/sdr/fan_*/psu_* 在 10s 内全线超时）时可调大，例如 `HWSCOPE_IPMI_TIMEOUT=60 sudo -E bash hwscope.sh`。注意 `sudo` 需用 `-E` 保留环境变量，或改为 `sudo HWSCOPE_IPMI_TIMEOUT=60 bash hwscope.sh`。
+- `HWSCOPE_IPMI_TIMEOUT`（默认 `90`，单位秒）：IPMI/BMC 命令超时**中档**（sel list / sel elist / fru print）。超时分三级（v1.49.9），按命令实际代价给余量：
+  - `HWSCOPE_IPMI_TIMEOUT_FAST`（默认 `30`）：chassis status / chassis power / lan print / bmc guid / user list / mc info 等快命令
+  - `HWSCOPE_IPMI_TIMEOUT`（默认 `90`）：sel / fru 类中档命令
+  - `HWSCOPE_IPMI_TIMEOUT_SLOW`（默认 `240`）：sdr list / sensor list（逐条读 SDR 仓库，慢机实测可达 230s+）
+
+  现场 BMC 响应慢（如技嘉 B200 实测 ipmi_sensors/sdr/fan_*/psu_* 全线超时）时可调大，例如 `HWSCOPE_IPMI_TIMEOUT=180 sudo -E bash hwscope.sh`。注意 `sudo` 需用 `-E` 保留环境变量，或改为 `sudo HWSCOPE_IPMI_TIMEOUT=180 bash hwscope.sh`。
+- `MODULE_TIMEOUT`：单模块整体超时（秒），也可用命令行参数 `--module-timeout`（默认 `600`，hwscope.sh `MODULE_TIMEOUT_DEFAULT`）。
