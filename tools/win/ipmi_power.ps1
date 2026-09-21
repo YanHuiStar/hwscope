@@ -34,6 +34,17 @@ if (-not (Get-Command ipmitool -ErrorAction SilentlyContinue)) {
 # ── 密码获取（环境变量优先，其次交互输入，绝不内嵌 -P） ──
 $pass = $env:IPMI_PASSWORD
 if (-not $pass) {
+    # 断电/重启属破坏性操作：先二次确认（status/on 无害，不需确认）
+    if ($Action -eq 'off' -or $Action -eq 'cycle') {
+        Write-Host ""
+        Write-Host "⚠️  即将对 $BmcIP 执行 $Action —— 服务器会立即断电/重启，业务会中断。" -ForegroundColor Yellow
+        $confirm = Read-Host "确认请输入 yes（直接回车或其它输入 = 取消）"
+        if ($confirm -notmatch '^(y|yes)$') {
+            Write-Host "已取消，未执行任何操作。"
+            exit 0
+        }
+    }
+
     $sec = Read-Host "BMC 密码 (${User}@${BmcIP})" -AsSecureString
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
     $pass = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
