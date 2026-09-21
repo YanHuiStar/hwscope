@@ -236,6 +236,9 @@ BMC_DIR="${OUT}/bmc"
 load_manifest "${BMC_DIR}" ipmi_fru_summary "ipmi_fru_summary.log"
 load_manifest "${BMC_DIR}" ipmi_mc "ipmi_mc.log"
 load_manifest "${BMC_DIR}" ipmi_lan1 "ipmi_lan1.log"
+# v1.52.1 修复：ipmi_lan2 此前从未 load_manifest（:266 使用处 [ -f "" ] 恒假）——
+#   采集端确实产出该文件（12_bmc.sh lan print 2），BMC 管理口识别少一路数据源
+load_manifest "${BMC_DIR}" ipmi_lan2 "ipmi_lan2.log"
 load_manifest "${BMC_DIR}" ipmi_lan_all "ipmi_lan_all.log"
 load_manifest "${BMC_DIR}" ipmi_sel_elist "ipmi_sel_elist.log"
 load_manifest "${BMC_DIR}" redfish_system "redfish_system.log"
