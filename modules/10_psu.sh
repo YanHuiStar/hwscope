@@ -53,7 +53,7 @@ run_psu() {
     # 典型域名：package-0（整 CPU）、core、uncore、dram。平台无 /sys/class/powercap → 跳过，
     #   报告端按「平台固有 N/A」处理（虚拟机/部分 AMD 平台确实没有）。
     if [ -d /sys/class/powercap ]; then
-        _rapl_cmd='D=$(ls -d /sys/class/powercap/*/ 2>/dev/null); [ -n "$D" ] || exit 0; for d in $D; do [ -f "${d}name" ] || continue; echo "$(cat ${d}name 2>/dev/null)|$(cat ${d}energy_uj 2>/dev/null)"; done > /tmp/.hw_rapl1; t1=$(date +%s%N); sleep 3; for d in $D; do [ -f "${d}name" ] || continue; echo "$(cat ${d}name 2>/dev/null)|$(cat ${d}energy_uj 2>/dev/null)"; done > /tmp/.hw_rapl2; t2=$(date +%s%N); dt_ns=$((t2-t1)); paste -d"|" /tmp/.hw_rapl1 /tmp/.hw_rapl2 | awk -F"|" -v dt="$dt_ns" "{ if (\$2!=\"\" && \$4!=\"\" && \$4>=\$2 && dt>0) printf \"%s: %.1f W  (E1=%s uJ, E2=%s uJ, 间隔 %.1f s)\\n\", \$1, (\$4-\$2)*1000/dt, \$2, \$4, dt/1000000000 }"; rm -f /tmp/.hw_rapl1 /tmp/.hw_rapl2'
+        _rapl_cmd='D=$(ls -d /sys/class/powercap/*/ 2>/dev/null); [ -n "$D" ] || exit 0; for d in $D; do [ -f "${d}name" ] || continue; echo "$(cat ${d}name 2>/dev/null)|$(cat ${d}energy_uj 2>/dev/null)"; done > /tmp/.hw_rapl1.$$; t1=$(date +%s%N); sleep 3; for d in $D; do [ -f "${d}name" ] || continue; echo "$(cat ${d}name 2>/dev/null)|$(cat ${d}energy_uj 2>/dev/null)"; done > /tmp/.hw_rapl2.$$; t2=$(date +%s%N); dt_ns=$((t2-t1)); paste -d"|" /tmp/.hw_rapl1.$$ /tmp/.hw_rapl2.$$ | awk -F"|" -v dt="$dt_ns" "{ if (\$2!=\"\" && \$4!=\"\" && \$4>=\$2 && dt>0) printf \"%s: %.1f W  (E1=%s uJ, E2=%s uJ, 间隔 %.1f s)\\n\", \$1, (\$4-\$2)*1000/dt, \$2, \$4, dt/1000000000 }"; rm -f /tmp/.hw_rapl1.$$ /tmp/.hw_rapl2.$$'
         run_and_log "$_rapl_cmd" "${dir}/rapl_power.log"
     fi
 
