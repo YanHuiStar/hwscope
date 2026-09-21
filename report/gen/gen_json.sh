@@ -324,7 +324,8 @@ fi)
     ]
   },
   "psu": {
-    "list": "$(printf '%s' "${PSU_DETAILS:-N/A}" | tr '\n' '; ' | sed 's/; $//')",
+    # v1.52.1 修复：psu.list 为 FRU 自由文本拼接（含 " / \ 会产出非法 JSON），补 jesc
+    "list": "$(jesc "$(printf '%s' "${PSU_DETAILS:-N/A}" | tr '\n' '; ' | sed 's/; $//')")",
     "details": [
 $(if [ -n "$PSU_DETAILS" ]; then
     pseq=0
@@ -360,7 +361,8 @@ fi)
   "nvswitch": [
 $(printf '%s' "$nvs_json")
   ],
-  "nvswitch_fabric": "${NVSWITCH_FABRIC:-}",
+  # v1.52.1 修复：nvswitch_fabric 为日志派生文本，补 jesc（原裸插值遇 " 产出非法 JSON）
+  "nvswitch_fabric": "$(jesc "${NVSWITCH_FABRIC:-}")",
   "health": {
     "gpu_pcie_degraded": "${GPU_DEGRADED:-OK}",
     "nvlink_status": "${NVLINK_HEALTH:-N/A}",
