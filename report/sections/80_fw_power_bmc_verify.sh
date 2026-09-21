@@ -45,7 +45,11 @@ PWR_NOTE=""
 
 # ─── BMC 存在性检测（无 BMC 平台处理：IPMI 日志全为错误输出 = 机器无 BMC，
 #      交叉校验与验收按"平台固有形态"判 N/A 不计入数据不足，避免误判 WARN） ───
-BMC_PRESENT=0
+# v1.52.1 修复：原 `BMC_PRESENT=0` 无条件重置 40 段（40_network_bmc.sh :312-317）基于
+#   ipmi_*.log 的判定——40 判 1（ipmi 日志有有效数据）而本段三条判据（fru_summary/mc/redfish）
+#   恰好都不命中时会被覆盖回 0，验收项误判"无 BMC"。改为**只升不降**：
+#   保留 40 的判定结果，本段三条判据作为补充证据源（redfish/mc 更丰富）仅做 0→1 升级。
+BMC_PRESENT="${BMC_PRESENT:-0}"
 if [ -f "${ipmi_fru_summary}" ] \
     && grep -qiE "Product (Name|Manufacturer|Serial)|Board Mfg|Chassis Serial" "${ipmi_fru_summary}" 2>/dev/null \
     && ! grep -qiE "Could not open|Unable to establish|No such (file|device)|Get Device ID command failed|command failed" "${ipmi_fru_summary}" 2>/dev/null; then
