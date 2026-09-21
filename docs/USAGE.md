@@ -70,6 +70,8 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 
 **GPU 多厂商适配器（v1.47.0）**：04 模块按 `GPU_PLATFORM` 分发到 `modules/gpu/adapter_<vendor>.sh`——NVIDIA（nvidia-smi，已真机验证；**昇腾/Intel/国产待真机验证**，金标准）/ AMD（amd-smi·rocm-smi）/ 昇腾（npu-smi）/ Intel（xpu-smi）/ 寒武纪·壁仞·摩尔线程·沐曦·天数智芯（cnmon·bmt-smi·mthreads-gmi·mx-smi·ix-smi）。每个适配器输出**统一 `gpu_inventory.csv`**（列与 nvidia-smi 18 列一致），报告/显存魔改检测/验收 GPU PCIe 项跨厂商零改动生效。厂商工具未装时自动降级 **lspci 层兜底**（PCIe 链路可判，卡不丢失），工具依赖见 `docs/DEPENDENCIES.md` §3.6。
 
+> ✅ **国产五家适配器已接入（v1.52.0）**：`detect_gpu_vendors`（lib/platform.sh）已补寒武纪/壁仞/摩尔线程/沐曦/天数智芯的 lspci 厂商串映射，单厂商与 mixed 混插均分发到厂商适配器（04_gpu.sh）。**厂商串【待真机核对】**——各厂 lspci vendor name 以真机输出为准校准；未匹配时回落 generic lspci 兜底，行为不劣于改前。
+
 ## 报告生成
 
 > 报告体系为独立 `report/` 模块（v1.35.0）：主入口 `report/report.sh`（v1.35.3 起移除 tools/ 兼容 wrapper，统一新路径）。

@@ -144,6 +144,12 @@ gpu_vendor_to_platform() {
         AMD|ATI|"Advanced Micro Devices") echo "amd" ;;
         Ascend|Huawei|HiSilicon) echo "ascend" ;;
         Intel) echo "intel" ;;
+        # 国产五家（v1.52.0，与 lib/platform.sh detect_gpu_vendors 的厂商名一致）
+        Cambricon)    echo "cambricon" ;;
+        Biren)        echo "biren" ;;
+        MooreThreads) echo "moorethreads" ;;
+        MetaX)        echo "metax" ;;
+        Iluvatar)     echo "iluvatar" ;;
         *) echo "other" ;;
     esac
 }

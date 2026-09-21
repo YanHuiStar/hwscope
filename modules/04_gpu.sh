@@ -68,11 +68,17 @@ run_gpu() {
                 [ -z "$_mk" ] && continue
                 _mv=$(gpu_vendor_to_platform "$_mk")
                 case "$_mv" in
-                    nvidia) run_gpu_nvidia "$dir" nvidia ;;
-                    amd)    run_gpu_amd "$dir" amd ;;
-                    ascend) run_gpu_ascend "$dir" ascend ;;
-                    intel)  run_gpu_intel "$dir" intel ;;
-                    *)      run_gpu_generic "$dir" "$(echo "$_mk" | tr 'A-Z' 'a-z')" ;;
+                    nvidia)       run_gpu_nvidia "$dir" nvidia ;;
+                    amd)          run_gpu_amd "$dir" amd ;;
+                    ascend)       run_gpu_ascend "$dir" ascend ;;
+                    intel)        run_gpu_intel "$dir" intel ;;
+                    # 国产五家（v1.52.0）：mixed 混插时同样走厂商适配器
+                    cambricon)    run_gpu_cambricon "$dir" cambricon ;;
+                    biren)        run_gpu_biren "$dir" biren ;;
+                    moorethreads) run_gpu_moorethreads "$dir" moorethreads ;;
+                    metax)        run_gpu_metax "$dir" metax ;;
+                    iluvatar)     run_gpu_iluvatar "$dir" iluvatar ;;
+                    *)            run_gpu_generic "$dir" "$(echo "$_mk" | tr 'A-Z' 'a-z')" ;;
                 esac
             done
             # 合并各厂商统一 CSV → gpu_inventory.csv（manifest tail -1 生效）

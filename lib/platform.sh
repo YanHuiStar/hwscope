@@ -102,7 +102,7 @@ ipmi_preheat() {
 
 # ─── GPU 厂商检测（v1.46.2，单一实现——采集端 04_gpu / 报告端 20_gpu 共用）───
 # 设置全局变量：GPU_PCI_PRESENT（3D controller/Processing accelerators 加速卡数）、GPU_PCI_VENDORS（厂商分组 "AMD:8 NVIDIA:2"）、
-#   GPU_PCI_VENDOR（首个厂商，单厂商场景直接可用）、GPU_PLATFORM（nvidia/amd/ascend/intel/mixed/other/none）、
+#   GPU_PCI_VENDOR（首个厂商，单厂商场景直接可用）、GPU_PLATFORM（nvidia/amd/ascend/intel/cambricon/biren/moorethreads/metax/iluvatar/mixed/other/none）、
 #   GPU_OAM（AMD Instinct OAM 模组标记，v1.48.0：device ID 属 OAM 型号 → 1）
 # 参数 $1（可选）：lspci 日志文件路径——报告端只读日志传此参；采集端实时检测不传（内部调 lspci）
 # 厂商判定：昇腾（Huawei/HiSilicon）→ NVIDIA → AMD → Intel → 其他；VGA compatible 集显不算独立 GPU
@@ -147,6 +147,13 @@ detect_gpu_vendors() {
                 *"Advanced Micro Devices"*|*AMD*|*ATI*) echo "AMD" ;;
                 *Huawei*|*HiSilicon*) echo "Ascend" ;;
                 *Intel*) echo "Intel" ;;
+                # ─── 国产五家（v1.52.0 接入；厂商串【待真机核对】——lspci vendor name
+                #     以真机输出为准校准，未匹配时回落 Other→generic lspci 兜底，行为不劣于改前）───
+                *Cambricon*)  echo "Cambricon" ;;                 # 寒武纪（Cambricon Technology）
+                *Biren*)      echo "Biren" ;;                     # 壁仞（Biren Technology）
+                *Moore\ Threads*|*Mthreads*|*MTT*) echo "MooreThreads" ;;  # 摩尔线程
+                *MetaX*)      echo "MetaX" ;;                     # 沐曦（MetaX / 曦云）
+                *Iluvatar*)   echo "Iluvatar" ;;                  # 天数智芯（Iluvatar CoreX）
                 *) echo "Other" ;;
             esac
         done | sort | uniq -c | awk '{printf "%s:%s ", $2, $1}' | sed 's/ $//')
@@ -160,6 +167,12 @@ detect_gpu_vendors() {
                 AMD) GPU_PLATFORM="amd" ;;
                 Ascend) GPU_PLATFORM="ascend" ;;
                 Intel) GPU_PLATFORM="intel" ;;
+                # 国产五家（v1.52.0）：值与 04_gpu.sh case 分发标签一致
+                Cambricon)    GPU_PLATFORM="cambricon" ;;
+                Biren)        GPU_PLATFORM="biren" ;;
+                MooreThreads) GPU_PLATFORM="moorethreads" ;;
+                MetaX)        GPU_PLATFORM="metax" ;;
+                Iluvatar)     GPU_PLATFORM="iluvatar" ;;
                 *) GPU_PLATFORM="other" ;;
             esac
         fi

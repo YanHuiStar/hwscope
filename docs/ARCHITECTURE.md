@@ -36,7 +36,7 @@ hwscope/
 │   ├── platform.sh     # 平台检测：detect_machine_id / detect_platform / ipmi_preheat
 │   └── nvlink.sh       # NVLink 拓扑解析库（纯解析）
 ├── modules/            # 17 个采集模块（01_motherboard … 16_power，99_os），每模块一物理组件
-│   └── gpu/            # GPU 多厂商适配器层（v1.47.0）：lib.sh + adapter_nvidia/amd/ascend/intel/国产×5（识别待接入）/generic
+│   └── gpu/            # GPU 多厂商适配器层（v1.47.0）：lib.sh + adapter_nvidia/amd/ascend/intel/国产×5（识别 v1.52.0 接入，厂商串待真机核对）/generic
 ├── report/             # 报告模块（交付物本体）：report.sh 入口 + lib(解析辅助/显存规格库/md2html)
 │                       #   + sections(数据解析×9) + gen(生成器×7) + tools(多机对比/在线预览)
 ├── conf/
@@ -93,8 +93,8 @@ hwscope/
 ### 设计约定
 
 - **采集/报告分离**：`modules/*.sh` 只生成数据；`report/report.sh` 只读生成报告（不重新采集）；采集与报告分属 `modules/`（数据）与 `report/`（交付物）两个平级模块
-- **GPU 多厂商适配器层（v1.47.0）**：`modules/gpu/adapter_*.sh` 按 `GPU_PLATFORM` 分发（NVIDIA/AMD 已真机验证；**昇腾/Intel 待真机验证**；通用兜底），统一输出 `gpu_inventory.csv`（列与 nvidia-smi 18 列一致）→ 报告/魔改检测/验收跨厂商零改动消费；识别类目：独立卡=lspci "3D controller"，昇腾等加速卡="Processing accelerators"
-  - ⚠️ **国产五家（寒武纪/壁仞/摩尔线程/沐曦/天数智芯）适配器已实现但当前不可达**：`detect_gpu_vendors`（lib/platform.sh）的厂商串 case 未包含这五家 → `GPU_PLATFORM` 不会取到 cambricon/biren/moorethreads/metax/iluvatar 值，装有对应 SMI 工具的机器实际走 generic lspci 兜底（显存/温度 N/A）。mixed 模式下 `gpu_vendor_to_platform`（modules/gpu/lib.sh）同样只映射四厂商。接入需补两处厂商串映射（见 USAGE §GPU 适配器）
+- **GPU 多厂商适配器层（v1.47.0）**：`modules/gpu/adapter_*.sh` 按 `GPU_PLATFORM` 分发（NVIDIA/AMD 已真机验证；**昇腾/Intel/国产待真机验证**；通用兜底），统一输出 `gpu_inventory.csv`（列与 nvidia-smi 18 列一致）→ 报告/魔改检测/验收跨厂商零改动消费；识别类目：独立卡=lspci "3D controller"，昇腾等加速卡="Processing accelerators"
+  - ✅ **国产五家（寒武纪/壁仞/摩尔线程/沐曦/天数智芯）已接入（v1.52.0）**：`detect_gpu_vendors`（lib/platform.sh）厂商串 case + `gpu_vendor_to_platform`（modules/gpu/lib.sh）+ 04_gpu.sh mixed 分发三处映射补齐，单厂商与混插均走厂商适配器。**厂商串【待真机核对】**——lspci vendor name 以真机输出为准校准；未匹配时回落 generic lspci 兜底，行为不劣于改前
 - **持久化内核日志（v1.48.90）**：99_os 采 `journalctl -k --since "7 days ago"`（限内核消息+时间窗+tail），落 `journal_kernel_hw.log` / `journal_xid.log` / `journal_mce.log`——dmesg 重启即丢，GPU XID / CPU MCE 这类历史故障证据只能靠 journal 回溯
 - **IB 链路性能计数器（v1.48.90）**：07_network 采 `perfquery -x`，ibstat 看不见误码，只有计数器能反映链路真实质量（SymbolError/LinkDowned/RcvErrors 等）
 - **NVMe 错误日志（v1.48.90）**：08_storage 逐盘 `nvme error-log`，SMART 只给健康度，错误日志才有每次错误的类型/时间戳/LBA
