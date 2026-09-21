@@ -191,7 +191,7 @@ HwScope 硬件巡检报告
 -- PCIe 拓扑与链路 --$(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
     if [ -n "$PCIE_PEX_DETAILS" ]; then printf '\n  Fabric Switch : %s' "$PCIE_PEX_DETAILS"; fi
     if [ "$PCIE_LINKS_TOTAL" -gt 0 ] && [ -n "$PCIE_LINK_TABLE" ]; then
-        printf '\n  链路统计     : %s 条 · 满速 %s · 降速/降宽 %s · 管理芯片 %s' "$PCIE_LINKS_TOTAL" "$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT))" "$PCIE_SLOW_COUNT" "$PCIE_MGMT_COUNT"
+        printf '\n  链路统计     : %s 条 · 满速 %s · 降速/降宽 %s · bridge 协商 %s · 管理芯片 %s' "$PCIE_LINKS_TOTAL" "$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT - ${PCIE_BRIDGE_NEG_COUNT:-0}))" "$PCIE_SLOW_COUNT" "${PCIE_BRIDGE_NEG_COUNT:-0}" "$PCIE_MGMT_COUNT"
         if [ "$PCIE_SLOW_COUNT" -gt 0 ] 2>/dev/null; then
             printf '\n  ⚠️ 降速/降宽链路:'
             printf '%s\n' "$PCIE_LINK_TABLE" | while IFS='|' read -r lbdf ldesc lcap lsta lverdict; do
