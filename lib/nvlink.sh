@@ -42,7 +42,9 @@ nvlink_parse_topo() {
 
 # 解析 nvlink --status：输出 CRC 错误非零的链路行
 nvlink_parse_crc() {
-    echo "$1" | grep -iE "CRC errors" | grep -vE "CRC errors *: *0$"
+    # v1.52.1 修复：第二个 grep 补 -i——两个 grep 大小写策略不一致时
+    #   "CRC Errors: 0"（大写 E）的 0 值行不被过滤 → 误报 CRC 异常
+    echo "$1" | grep -iE "CRC errors" | grep -viE "CRC errors *: *0$"
 }
 
 # 解析 nvlink --status：输出 down/degraded 的链路行（全量不截断，展示截取交报告端）
