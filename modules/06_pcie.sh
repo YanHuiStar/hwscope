@@ -38,7 +38,7 @@ run_pcie() {
 
     # 6. 按 GPU 提取 PCIe 速率（需先获取 GPU 总线列表，串行执行）
     local gpu_buses
-    # v1.52.3（E2）：改为按 PCI class 过滤，不再只按厂商名。
+    # v1.52.2（E2）：改为按 PCI class 过滤，不再只按厂商名。
     #   现网 8 台样本上两种写法结果一致（ConnectX 在 lspci 里的厂商串是 "Mellanox Technologies"，
     #   不匹配 NVIDIA），但按厂商名过滤本身不牢靠：厂商串随型号/驱动变化，且它靠 `grep -v NVSwitch`
     #   挡 NVSwitch——那只对名字里带 NVSwitch 的型号有效（A100 是 "GA100 [A100 NVSwitch]"，

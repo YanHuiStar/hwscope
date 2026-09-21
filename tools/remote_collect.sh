@@ -42,7 +42,7 @@ usage() {
 HOST=""; SUDO="sudo"; LOCAL_OUT=""; INSTALL_ITEMS=""; SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ControlMaster=auto -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h -o ControlPersist=300"
 # 清理残留 ControlMaster socket：上次运行 ssh -O exit 后 socket 文件可能残留，
 # 新 ssh 尝试复用已死 master → "Shared connection closed" / 回拉非 gzip（v1.43.4 实测）
-# v1.52.3（E6）：只删本目标的 socket。原 `rm -f /tmp/ssh_hwscope_mux_*` 会把**其它实例**
+# v1.52.2（E6）：只删本目标的 socket。原 `rm -f /tmp/ssh_hwscope_mux_*` 会把**其它实例**
 #   正在使用的 master socket 一并删掉，两个并发实例目标主机不同也会互拆连接。
 #   注：%r@%h 与 "$HOST" 在常规 user@ip 形态下一致；若 %h 被解析成 FQDN 则不匹配，
 #   此时只是残留一个 socket 未清，不影响本次采集（ssh 用 -O exit 之后本就不复用）。
@@ -83,7 +83,7 @@ cleanup() {
     ssh $SSH_OPTS "$HOST" "rm -rf ${REMOTE_DIR}" >/dev/null 2>&1
     # 关闭 ControlMaster 复用连接（避免残留）并删除 socket 文件（防下次复用已死 master）
     ssh -O exit -o ControlPath=/tmp/ssh_hwscope_mux_%r@%h "$HOST" >/dev/null 2>&1
-    # v1.52.3（E6）：只删本目标的 socket。原 `rm -f /tmp/ssh_hwscope_mux_*` 会把**其它实例**
+    # v1.52.2（E6）：只删本目标的 socket。原 `rm -f /tmp/ssh_hwscope_mux_*` 会把**其它实例**
 #   正在使用的 master socket 一并删掉，两个并发实例目标主机不同也会互拆连接。
 #   注：%r@%h 与 "$HOST" 在常规 user@ip 形态下一致；若 %h 被解析成 FQDN 则不匹配，
 #   此时只是残留一个 socket 未清，不影响本次采集（ssh 用 -O exit 之后本就不复用）。
