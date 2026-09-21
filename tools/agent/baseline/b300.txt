@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=302
+  table_rows=312
 [gpu]
   gpu_detail_rows=8
   model:  NVIDIA B300 SXM6 AC
@@ -9,39 +9,38 @@
   dimm_rows=32
   header: | # | 插槽 | 容量 | 厂商 | SN | 部件号 | 额定速率 | 当前速率 | Rank |
 [psu]
-  psu_rows=12
+  psu_rows=8
 [values]
-  psu_power_values=0
-  nic_psid_values=1
-  nic_sn_values=14
-  dimm_sn_values=32
-  nic_link_state_values=14
+  psu_power_values=2
+  nic_psid_values=9
+  nic_sn_values=12
+  dimm_sn_values=24
+  nic_link_state_values=12
 [pcie]
-  | 链路统计 | 80 条 · 满速 75 · 降速/降宽 0 · bridge 协商 4 · 管理芯片 1 |
-  pcie_appendix_rows=80
+  | 链路统计 | 83 条 · 满速 78 · 降速/降宽 0 · bridge 协商 4 · 管理芯片 1 |
+  pcie_appendix_rows=83
 [disk]
   disk_rows=0
 [nic]
-  nic_rows=24
+  nic_rows=21
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=36748
+  json_bytes=35791
         1 "disk_count"
         1 "platform"
 [html]
-  html_table_open=27
-  html_table_close=27
-  html_bytes=44870
+  html_table_open=28
+  html_table_close=28
+  html_bytes=44645
 [acceptance]
         3 N/A
        12 PASS
 [acceptance_hw]
   准系统 | 台 | 1
   CPU | 颗 | 2
-  内存 | 条 | 32
+  内存 | 条 | 24
   GPU模组 | 张 | 8
   计算网卡 | 张 | 9（单口×8 + 四口×1，共 12 口）
-  网卡&端口 | 张 | 1（双口×1，共 2 口）
   存储 | 块 | 0
-  电源模块 | 个 | 12
+  电源模块 | 个 | 8
   系统管理 | 套 | 1
