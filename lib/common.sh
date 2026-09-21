@@ -143,7 +143,9 @@ ipmi_snapshot() {   # $1=sensors|sdr —— 回显该快照的文件路径
         rm -rf "$lock" 2>/dev/null; printf '%s' "$cache"; return 0
     fi
     if ! check_cmd ipmitool; then rm -rf "$lock" 2>/dev/null; return 1; fi
-    local to=""; check_cmd timeout && to="timeout ${IPMI_TIMEOUT_SLOW:-240}"
+    # v1.52.2（E8）：-k 5 让 timeout 在 SIGTERM 后再补一刀 SIGKILL（慢 BMC 上 ipmitool
+    #   有时不响应 TERM，卡住的进程会一直占着连接）。
+    local to=""; check_cmd timeout && to="timeout -k 5 ${IPMI_TIMEOUT_SLOW:-240}"
     local cmd="ipmitool sensor list 2>&1"
     [ "$kind" = "sdr" ] && cmd="ipmitool sdr list 2>&1"
     local tmp="${cache}.tmp.$$"
@@ -160,7 +162,19 @@ ipmi_snapshot() {   # $1=sensors|sdr —— 回显该快照的文件路径
         printf '# ============================================================\n'
         printf '# --- shared snapshot (ipmi_snapshot, v1.49.9) ---\n'
         printf '# --- output start ---\n'
-        if [ -n "$to" ]; then $to bash -c "$cmd" 2>&1; else bash -c "$cmd" 2>&1; fi
+        # v1.52.2（E8）：timeout 只对直接子进程发信号，而这里要再套一层 bash 才能做 2>&1
+        #   重定向——超时后 timeout 杀掉的是 bash，ipmitool 变成孤儿继续占着 BMC 会话，
+        #   多模块并发采集时会累积僵死连接。setsid 让 bash 与 ipmitool 同属一个新会话，
+        #   超时后可整组回收（setsid 缺失时退回原行为，功能不受影响）。
+        if [ -n "$to" ]; then
+            if command -v setsid >/dev/null 2>&1; then
+                setsid $to bash -c "$cmd" 2>&1
+            else
+                $to bash -c "$cmd" 2>&1
+            fi
+        else
+            bash -c "$cmd" 2>&1
+        fi
         printf '# --- output end ---\n'
     } > "$tmp" 2>/dev/null
     # 只有写完整（含结束标记）才发布；半成品直接丢弃
