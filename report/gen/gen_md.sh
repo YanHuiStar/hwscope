@@ -1007,9 +1007,9 @@ $(if [ -n "$NIC_MLX" ]; then
     echo "| MT4123 | ConnectX-6 Dx |"
     echo "| MT4121 / MT4122 | ConnectX-6 |"
     echo "| MT2892 / MT2893 | ConnectX-5 |"
-    echo "| MT2884 / MT2883 | ConnectX-4 |
-
-> ConnectX-9 / BlueField-4（NVIDIA Rubin 平台配套，SuperNIC 达 1.6 Tb/s RoCE）已发布，其 MT 编号待厂商资料确认后补入——未确认前不猜编号，避免误标"
+    echo "| MT2884 / MT2883 | ConnectX-4 |"
+    echo ""
+    echo "> ConnectX-9 / BlueField-4（NVIDIA Rubin 平台配套，SuperNIC 达 1.6 Tb/s RoCE）已发布，其 MT 编号待厂商资料确认后补入——未确认前不猜编号，避免误标"
 fi)
 ---
 *由 HwScope ${REPORT_VERSION:-unknown} 报告生成器生成（数据采集版本: ${VERSION:-unknown}）*
