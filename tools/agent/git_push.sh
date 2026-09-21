@@ -313,13 +313,19 @@ push_main() {
     #   + README 徽章）应由 tools/sync_version.sh 同步。其他 agent 会话常只改变量、忘记跑 sync
     #   → GitHub 页面徽章与文件注释停在旧版（实测 v1.51.3/.4 连漏两次，用户发现后才补）。
     #   推送是进公开仓库的唯一必经关口，放这里不依赖任何人记得跑 sync。
-    _v_var=$(grep '^HWSCOPE_VERSION=' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | head -1 | sed 's/.*"v\?\([0-9.]*\).*/\1/')
+    # v1.51.12 修复：原 sed 's/.*"v\?\([0-9.]*\).*/\1/' 贪婪匹配吞掉版本号 → _v_var 恒为空
+    #   → [ -n "$_v_var" ] 恒假 → 整个三处一致性检查自 v1.51.5 引入起从未生效（静默跳过）。
+    #   改用与徽章提取相同的 grep -oE 方式（与 :303 单调性检查的 sed 亦可，但统一风格更稳）。
+    _v_var=$(grep '^HWSCOPE_VERSION=' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     _v_cmt=$(grep '^# Version : ' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
     _v_bdg=$(grep -oE 'Version-[0-9]+\.[0-9]+\.[0-9]+' "${PROJECT_DIR}/README.md" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
     if [ -n "${_v_var}" ] && { [ "${_v_var}" != "${_v_cmt}" ] || [ "${_v_var}" != "${_v_bdg}" ]; }; then
         warn "版本三处不一致: 变量 ${_v_var} / hwscope.sh 注释 ${_v_cmt:-缺} / README 徽章 ${_v_bdg:-缺}"
         ai "跑 bash tools/sync_version.sh 对齐（它把注释与徽章同步到变量的值），再重推"
         fail "版本三处不一致，拒绝推送（避免 GitHub 徽章/文件注释与代码版本脱节）"
+        # v1.51.12 修复：fail() 只 echo 不退出——此处原缺 return 1，宣称"拒绝推送"后
+        #   实际继续落入 SN 检查与推送流程，关口形同虚设（与上方 :309 版本回退检查对齐）
+        return 1
     else
         [ -n "${_v_var}" ] && info "版本三处一致: ${_v_var}"
     fi
