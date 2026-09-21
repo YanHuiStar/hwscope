@@ -46,13 +46,14 @@ load_manifest() {
 
 # ─── CSV 列名动态匹配 ───
 # 用法: get_csv_col_index <csv_file> <column_name>
-# 返回: 列索引（从 1 开始），未找到返回 0
+# 返回: 列索引（从 1 开始）；未找到返回**空**（v1.52.1 修复：原返回 "0"，
+#   非空 → 调用方 `${col:-6}` 默认列兜底永不生效，且 col=0 时 awk 取 $0 整行输出 N/A）
 get_csv_col_index() {
     local csv_file="$1" col_name="$2"
-    [ ! -f "$csv_file" ] && echo 0 && return
+    [ ! -f "$csv_file" ] && return
     local header
     header=$(filter_log "$csv_file" | head -1)
-    [ -z "$header" ] && echo 0 && return
+    [ -z "$header" ] && return
     echo "$header" | awk -F',' -v target="$col_name" '{
         for(i=1; i<=NF; i++) {
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i)
@@ -61,7 +62,7 @@ get_csv_col_index() {
                 exit
             }
         }
-        print 0
+        # 未命中：不输出（空返回，让调用方 ${col:-N} 兜底生效）
     }'
 }
 
