@@ -85,13 +85,23 @@ run_gpu_amd() {
         _amd_csv_from_json "$dir" "$prefix"
     fi
 
+    # v1.52.4（D8）：manifest 与实际产出对齐。原来注册的 gpu_amd_pci_only.log 只在
+    #   「检测到 AMD 卡但 rocm-smi/amd-smi 都没有」的 fallback 分支生成，而那条分支在
+    #   写 manifest 之前就 return 了——所以这个 key 在任何路径下都指不到真实文件
+    #   （有 ROCm 的机器上文件不存在，无 ROCm 的机器上 manifest 压根没写）。
+    #   同时补齐常态落盘的 6 个全量日志（此前落盘了却没进 manifest）。
     gpu_adapter_manifest "$dir" \
         "gpu_amd_full" "gpu_amd_full.log" \
         "gpu_amd_inventory" "gpu_amd_inventory.json" \
         "gpu_amd_rocminfo" "gpu_amd_rocminfo.log" \
         "gpu_amd_ras" "gpu_amd_ras.log" \
         "gpu_amd_topo" "gpu_amd_topo.log" \
-        "gpu_amd_pci_only" "gpu_amd_pci_only.log"
+        "gpu_amd_meminfo" "gpu_amd_meminfo.log" \
+        "gpu_amd_temp" "gpu_amd_temp.log" \
+        "gpu_amd_power" "gpu_amd_power.log" \
+        "gpu_amd_use" "gpu_amd_use.log" \
+        "gpu_amd_clocks" "gpu_amd_clocks.log" \
+        "gpu_amd_fw" "gpu_amd_fw.log"
 }
 
 # ─── AMD JSON → 统一 CSV（mixed 模式；解析逻辑与报告 20_gpu.sh AMD 分支一致）───
