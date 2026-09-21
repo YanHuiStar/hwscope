@@ -342,9 +342,19 @@ if [ "$PARALLEL" -eq 1 ]; then
             echo -e "${RED}[ERROR] 模块脚本不存在: ${MODULE_SCRIPT}${NC}" >&2
             continue
         fi
-        source "$MODULE_SCRIPT"
+        # v1.52.3（C6）：不再 source 模块。模块顶层会做 MODULE_DIR 计算并 source
+        #   lib/common.sh + lib/platform.sh，在 hwscope.sh 上下文里重复加载一遍；
+        #   这里改为按"函数定义行"判定模块是否可用。定义形式非常规时退回 source 方式
+        #   （保持兼容），两种情况模块本体都由独立 bash 子进程执行。
+        _mod_fn_ok=0
+        if grep -qE "^[[:space:]]*${fn}[[:space:]]*\\(\\)" "$MODULE_SCRIPT" 2>/dev/null; then
+            _mod_fn_ok=1
+        else
+            source "$MODULE_SCRIPT"
+            declare -F "$fn" >/dev/null 2>&1 && _mod_fn_ok=1
+        fi
 
-        if declare -F "$fn" >/dev/null 2>&1; then
+        if [ "$_mod_fn_ok" -eq 1 ]; then
             mkdir -p "${OUTPUT_BASE}/${id}"
             # 导出 OUTPUT_DIR 供 module_end 落盘 WARN 计数（跨进程读取）
             export OUTPUT_DIR="${OUTPUT_BASE}/${id}"
@@ -451,6 +461,9 @@ if [ "$PARALLEL" -eq 1 ]; then
     fi
 else
     # ═══════════════ 串行模式 ═══════════════
+    # v1.52.3（C1）：串行分支此前从未初始化、也从不打印 SUMMARY_TABLE（并行分支才有），
+    #   set -u 下读它会直接 unbound variable；这里初始化，循环结束后统一打印。
+    SUMMARY_TABLE=""
     for mod_info in "${MODULES[@]}"; do
         IFS=':' read -r num id fn desc <<< "$mod_info"
         [ -n "$SELECTED_MODULES" ] && ! echo ",${SELECTED_MODULES}," | grep -qi ",${id}," && { [ "$QUIET" -eq 1 ] || echo -e "${YELLOW}[SKIP] ${id} - 未在 --modules 列表中${NC}"; continue; }
@@ -459,9 +472,19 @@ else
 
         MODULE_SCRIPT="${SCRIPT_DIR}/modules/${num}_${id}.sh"
         [ ! -f "$MODULE_SCRIPT" ] && { echo -e "${RED}[ERROR] 模块脚本不存在: ${MODULE_SCRIPT}${NC}"; continue; }
-        source "$MODULE_SCRIPT"
+        # v1.52.3（C6）：不再 source 模块。模块顶层会做 MODULE_DIR 计算并 source
+        #   lib/common.sh + lib/platform.sh，在 hwscope.sh 上下文里重复加载一遍；
+        #   这里改为按"函数定义行"判定模块是否可用。定义形式非常规时退回 source 方式
+        #   （保持兼容），两种情况模块本体都由独立 bash 子进程执行。
+        _mod_fn_ok=0
+        if grep -qE "^[[:space:]]*${fn}[[:space:]]*\\(\\)" "$MODULE_SCRIPT" 2>/dev/null; then
+            _mod_fn_ok=1
+        else
+            source "$MODULE_SCRIPT"
+            declare -F "$fn" >/dev/null 2>&1 && _mod_fn_ok=1
+        fi
 
-        if declare -F "$fn" >/dev/null 2>&1; then
+        if [ "$_mod_fn_ok" -eq 1 ]; then
             start_ts=$(date +%s); mkdir -p "${OUTPUT_BASE}/${id}"
             reset_warn_count
             export OUTPUT_DIR="${OUTPUT_BASE}/${id}"
@@ -486,7 +509,20 @@ else
         else
             echo -e "${RED}[ERROR] 函数 ${fn} 未在 ${MODULE_SCRIPT} 中定义${NC}"
         fi
+
     done
+
+    # v1.52.3（C1）：串行分支此前只收集不打印——--serial 下完全看不到「按模块序号」的
+    #   汇总表（并行分支一直都有）。这里补上与并行分支一致的打印块
+    #   （表头列宽的换算说明见并行分支的注释）。
+    if [ -n "$SUMMARY_TABLE" ]; then
+        echo ""
+        echo -e "${CYAN}════════════ 采集汇总（按模块序号）════════════${NC}"
+        printf '  %-16s %-7s %11s %-10s\n' "模块" "状态" "耗时" "文件数"
+        printf '%s' "$SUMMARY_TABLE" | sed 's/^/  /'
+        echo -e "${CYAN}════════════════════════════════════════════════${NC}"
+        echo ""
+    fi
 fi
 
 # ─── 最终汇总 ───
