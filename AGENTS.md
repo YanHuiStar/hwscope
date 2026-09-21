@@ -248,7 +248,7 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 ## 常见陷阱
 
 - **CRLF**: 从 Windows 拷贝后所有 .sh 会带 \r，bash 报 $'\r' 错误 → 先跑 fixcrlf.sh
-- **grep exit=1** = 无匹配，不是错误（终端显示 [~]，不记 WARN）
+- **grep exit=1** = 无匹配，不是错误（终端显示 [~]，不记 WARN）——**但仅当该命令里真的调用了 grep**；命令自身以 exit=1 失败时算 WARN（v1.52.3 收紧，见下方条目）
 - **locale**: 非 UTF-8 环境脚本自动尝试切换，日志头记录实际编码
 - 并行模式模块输出走临时文件，完成后按注册表顺序拼接，勿直接写共享日志
 - **模块头部注释编号必须与文件名一致**（07/08 曾漏修导致注释错位）
@@ -262,3 +262,11 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **Mellanox 网卡勿用 ethtool -m 读光模块（v1.48.84 立规）**：mlx5_core 驱动的网卡执行 `ethtool -m` 会在部分固件/驱动组合下触发**内核报错刷屏**（`mlx5_cmd_out_err` / `QUERY_MCIA_REG status 0x3` / `mlx5_query_module_eeprom_by_page failed:0xffffffff`），后果不只是屏幕刷屏——这些是 **printk（内核日志）**，`2>/dev/null` **挡不住**，会一并污染 `dmesg_full.log`（实测 47 行噪音）与报告 dmesg 段落。**规则**：`07_network.sh` 对 `/sys/class/net/<dev>/device/driver` 为 `mlx5_core` 的口**跳过 `ethtool -m`**——光模块信息已由 `mlxlink -d <dev> -m` 采集，不丢数据；非 mlx5 网卡（ixgbe/rndis 等，只有 ethtool 能读光模块）照旧保留。**判断驱动必须读 sysfs 而非 `ethtool -i` 的输出格式**（后者各驱动不一致）。
 - **smartctl Transport protocol 值判断**：SATA 盘输出也有 `Transport protocol: SATA` 行，判 SAS 必须匹配值（`Transport protocol:.*SAS`）而非仅匹配行名（v1.33.4 修正）
 - **ps1/bat 编辑陷阱（v1.43.1 教训，真机测试暴露）**：write/edit 工具重写会**剥掉 .ps1 的 UTF-8 BOM**（PowerShell 5.1 按 ANSI 读中文乱码致语法解析崩）且把 .bat 写成 **LF 行尾**（cmd 解析含中文的 LF 批处理崩溃）；改完必须：① ps1 补 BOM（`[System.Text.UTF8Encoding]::new($true)` 重写）② 用 **`powershell`（5.1）** 而非 pwsh7 做 ParseFile 校验（pwsh7 默认 UTF-8 查不出 BOM 问题）③ bat 转 CRLF（`-replace "`n","`r`n"`）；仓库侧 git autocrlf 提交时 .bat 归一为 LF、.ps1 保留 BOM 字节
+
+- **GPU 枚举按 PCI class，不按厂商名（v1.52.3 立规）**：`lspci -D | grep 'NVIDIA'` 把「厂商串」当判据，而厂商串随型号/驱动变化（ConnectX 在 lspci 里写作 `Mellanox Technologies`，但收购后的新型号可能改成 NVIDIA），且它靠 `grep -v NVSwitch` 挡交换芯片——那只对名字里**真含 NVSwitch** 的型号有效。判据改为 **class**：GPU 是 `0302`（3D controller，HGX 模组与多数 AI 卡）或 `0300`（VGA，桌面卡）；**`0300` 必须排除 BMC 显卡**（`ASPEED|Matrox|Graphics Family`）——服务器主板标配的 BMC 显卡也是 0300，不排除就会多算一块 GPU。现网样本上两种写法结果一致（验证时别被「没差异」骗到，要构造厂商串为 NVIDIA 的网卡才能暴露）。
+- **`exit=1` 只在命令里真调了 grep 时才算「无匹配」（v1.52.3 立规）**：`run_and_log` 原先把 exit=1 一律豁免，于是**命令自身失败**（smartctl/ipmitool 等返回 1）被渲染成 `[~]`（no match），既不计 WARN 也不进 summary.txt——故障被静默。判据改为看命令文本是否含 grep 调用；并行路径把「该退出码是否豁免」一并落盘，保证父子进程口径一致。
+- **BusyBox 的 `date +%s%N` 不报错，直接输出带字面 N 的串（v1.52.3 立规）**：`date +%s%N 2>/dev/null || date +%s` 这种兜底**不会触发**（命令是成功返回的），拿到的是 `1695432000N`；后续按长度判「纳秒」分支 → awk 拿到带字母的值 → 耗时变成与真实值无关的数字。**规则**：取值后必须校验纯数字（`case "$v" in ''|*[!0-9]*) 退回整秒 ;; esac`）。
+- **`timeout` 只对直接子进程发信号，杀不到孙进程（v1.52.3 立规）**：`timeout N bash -c "$cmd"` 里被杀的只是 bash，`$cmd` 派生的进程（如 ipmitool）会变成孤儿继续占着设备/连接，多模块并发时累积。**做法**：① 加 `-k` 让卡住的子进程再吃一刀 SIGKILL；② 用 `setsid` 让 bash 与其派生进程同属新会话，便于整组回收（`setsid` 缺失时退回原行为，功能不受影响）。
+- **串行与并行两条执行分支的输出必须同步（v1.52.3 立规）**：`hwscope.sh` 的两个分支各写一遍汇总逻辑——并行分支有「按模块序号」汇总表，串行分支**只收集不打印**，`--serial` 下永远看不到汇总；且 `SUMMARY_TABLE` 在串行侧从未初始化，`set -u` 下直接 unbound 崩溃。**改任一分支的输出/统计逻辑时，必须同时检查另一分支**（改完用 `bash hwscope.sh --serial --modules os` 在隔离副本上实跑验证最省事）。
+- **manifest 必须与实际产出对齐（v1.52.4 立规）**：`write_manifest` 只写 `key=path`、**不校验文件是否存在**，注册一个常态不产出的文件不会有任何报错；报告端 `load_manifest` 有默认名兜底，问题会被长期掩盖。**实例**：AMD 适配器注册的 `gpu_amd_pci_only.log` 只在「有卡但无 ROCm 工具」分支生成，而那条分支在写 manifest **之前**就 `return` 了，任何路径下都指不到真实文件；同时 6 个常态落盘的全量日志却漏注册。**规矩**：新增/改动采集命令时同步核对 manifest 两侧（声明→产出、产出→声明）。
+- **sas3ircu/sas2ircu 的控制器计数别用行首锚定（v1.52.3 立规）**：`sas3ircu list` 的表头是「   Index  Adapter Type ...」、数据行是「   0   SAS3008 ...」——**都带前导空格**，`^Index` / `^[0-9]+\.` 一个都匹配不上，计数恒为 0、per-HBA 明细静默全丢。判据用「行首（可带空白）+ 索引数字 + 空白 + 型号字母」。
