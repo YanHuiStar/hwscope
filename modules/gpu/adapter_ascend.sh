@@ -29,7 +29,12 @@ run_gpu_ascend() {
     run_and_log_parallel 4 "${asc_jobs[@]}"
 
     # 每卡明细（按 lspci 加速卡数；npu-smi 卡 id 与 BDF 顺序一致时一一对应）
-    local _cnt=${GPU_PCI_PRESENT:-0}
+    # v1.52.3（C4）：GPU_PCI_PRESENT 是**全体**加速卡数，混插平台（如 NVIDIA + 本厂商）
+    #   上用它当循环上限会对本厂商卡越界，产出多余的空明细日志。改为按厂商名过滤后计数；
+    #   若本厂商卡不经 lspci 呈现为加速卡（板载等），退回全体数。
+    local _cnt
+    _cnt=$(gpu_lspci_accel_rows_filter 'Huawei|HiSilicon' 2>/dev/null | grep -c . || true)
+    [ "${_cnt:-0}" -lt 1 ] 2>/dev/null && _cnt=${GPU_PCI_PRESENT:-0}
     local _ai=0
     while [ "$_ai" -lt "$_cnt" ]; do
         run_and_log "npu-smi info -t common -i $_ai"     "${dir}/gpu_ascend_${_ai}_detail.log"

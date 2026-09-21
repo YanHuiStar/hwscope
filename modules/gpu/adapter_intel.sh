@@ -24,7 +24,12 @@ run_gpu_intel() {
     run_and_log_parallel 3 "${int_jobs[@]}"
 
     # 每卡明细（按 lspci 加速卡数；待真机校准按 discovery 的 device id 细分）
-    local _cnt=${GPU_PCI_PRESENT:-0}
+    # v1.52.3（C4）：GPU_PCI_PRESENT 是**全体**加速卡数，混插平台（如 NVIDIA + 本厂商）
+    #   上用它当循环上限会对本厂商卡越界，产出多余的空明细日志。改为按厂商名过滤后计数；
+    #   若本厂商卡不经 lspci 呈现为加速卡（板载等），退回全体数。
+    local _cnt
+    _cnt=$(gpu_lspci_accel_rows_filter 'Intel' 2>/dev/null | grep -c . || true)
+    [ "${_cnt:-0}" -lt 1 ] 2>/dev/null && _cnt=${GPU_PCI_PRESENT:-0}
     local _ii=0
     while [ "$_ii" -lt "$_cnt" ]; do
         run_and_log "xpu-smi stats -d $_ii" "${dir}/gpu_intel_${_ii}_detail.log"
