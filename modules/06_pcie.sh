@@ -30,6 +30,7 @@ run_pcie() {
         "lspci -nn" "${dir}/lspci_all.log" \
         "lspci -t -vv" "${dir}/lspci_tree.log" \
         "lspci -v | grep -A 30 'NVIDIA'" "${dir}/lspci_nvidia.log" \
+        "lspci -v -d ::0302" "${dir}/lspci_gpu_class.log" \
         "lspci | grep --line-buffered -E 'PCI bridge|Host Bridge|PCIe'" "${dir}/pcie_bridge.log" \
         "lspci -vvv 2>/dev/null | grep --line-buffered -E 'LnkSta:|LnkCap:'" \
             "${dir}/pcie_speed_width.log" \
@@ -37,7 +38,19 @@ run_pcie() {
 
     # 6. 按 GPU 提取 PCIe 速率（需先获取 GPU 总线列表，串行执行）
     local gpu_buses
-    gpu_buses=$(lspci -D 2>/dev/null | grep 'NVIDIA' | grep -v 'NVSwitch' | awk '{print $1}')
+    # v1.52.3（E2）：改为按 PCI class 过滤，不再只按厂商名。
+    #   现网 8 台样本上两种写法结果一致（ConnectX 在 lspci 里的厂商串是 "Mellanox Technologies"，
+    #   不匹配 NVIDIA），但按厂商名过滤本身不牢靠：厂商串随型号/驱动变化，且它靠 `grep -v NVSwitch`
+    #   挡 NVSwitch——那只对名字里带 NVSwitch 的型号有效（A100 是 "GA100 [A100 NVSwitch]"，
+    #   其余平台的 NVSwitch 若换了名字就会被当成 GPU）。
+    #   class 过滤与名字无关：GPU 是 0302（3D controller，HGX 模组与多数 AI 卡）或 0300（VGA，桌面卡）；
+    #   0300 必须排除 BMC 显卡（ASPEED/Matrox，服务器主板标配），否则 BMC 会被算成一块 GPU。
+    gpu_buses=$(
+        {
+            lspci -D -d ::0302 2>/dev/null
+            lspci -D -d ::0300 2>/dev/null | grep -viE 'ASPEED|Matrox|Graphics Family'
+        } | awk '{print $1}' | sort -u
+    )
     if [ -n "$gpu_buses" ]; then
         local count=0
         while IFS= read -r bus; do
@@ -46,7 +59,7 @@ run_pcie() {
             ((count++))
         done < <(printf '%s\n' "$gpu_buses")
         # 汇总 GPU PCIe 位置（用 cat -n 避免 awk $0 逃脱引号的问题）
-        run_and_log "lspci -D 2>/dev/null | grep NVIDIA | grep -v NVSwitch | cat -n" \
+        run_and_log "{ lspci -D -d ::0302 2>/dev/null; lspci -D -d ::0300 2>/dev/null | grep -viE 'ASPEED|Matrox|Graphics Family'; } | cat -n" \
             "${dir}/gpu_pcie_bus_map.log"
     fi
 
