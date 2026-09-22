@@ -49,6 +49,17 @@ if [ -f "${disk_inventory}" ]; then
         # 额定容量：优先从型号字符串自动提取（如 "PM1733a RI 3.84TB"、"MTFDKBA480TFR"→480GB），
         # Samsung 硬编码表兜底（型号无容量字样时）
         dspec=""
+        # 权威来源优先：盘自报的容量（SMART 的十进制括号值 [3.84 TB]），胜过按型号字符串推测——
+        # 型号编码规则各厂不一且不断出新，实测两块三星盘均被型号提取读错（见下方 N-T-N 注释）。
+        # nvme0n1 → smart_nvme0.log（控制器级）；SATA 盘用 User Capacity 行。
+        for _dcap_log in "${STO_DIR}/smart_$(printf '%s' "$dname" | sed 's/n[0-9]*$//').log" "${STO_DIR}/smart_${dname}.log"; do
+            [ -f "$_dcap_log" ] || continue
+            _dcap_line=$(grep -m1 -iE 'Total NVM Capacity|User Capacity|Namespace 1 Size/Capacity' "$_dcap_log" 2>/dev/null)
+            [ -n "$_dcap_line" ] || continue
+            _dcap_dec=$(printf '%s' "$_dcap_line" | grep -oE '\[[0-9]+(\.[0-9]+)? ?[TGM]B\]' | head -1 | tr -d '[] ')
+            [ -n "$_dcap_dec" ] && dspec="额定${_dcap_dec}"
+            [ -n "$dspec" ] && break
+        done
         case "$dmodel" in
             *MZWL61T9HFLT*|*MZWL61T9HBLN*) dspec="额定1.92TB" ;;
             *MZWL63T8HFLT*|*MZWL63T8HBLN*) dspec="额定3.84TB" ;;
@@ -63,6 +74,26 @@ if [ -f "${disk_inventory}" ]; then
             *MZIL23T8*) dspec="额定3.2TB" ;;
             *MZIL27T6*) dspec="额定6.4TB" ;;
             *)
+                # 三星 N-T-N 容量码：型号 = MZ + 3 位系列码 + 容量码，容量码按「整数位 + 一位小数位」编码
+                #   （MZ1L21T9HCLS → 1T9 → 1.92TB、MZWLJ3T8HBLS → 3T8 → 3.84TB）。
+                # 上面硬编码表未覆盖的三星系列会落到这里；若直接走下方的通用字面提取，
+                # 型号里的 "3T8" 会被读成 3TB、"…L2 1T9" 会被读成 21TB（实测 DGX A100 两块盘均误标）。
+                if [ -z "$dspec" ]; then
+                    # 注意型号常带厂商前缀（disk_inventory 里是 "SAMSUNG MZWLJ3T8HBLS-00007"），
+                    # 故不可锚定行首；grep 取最左匹配后再按偏移(5)切出容量码——不可二次 grep 取码，
+                    # 那会在整串上重新找最左匹配，把 "MZ1L2 1T9" 中 L2 后的 "2" 一并吞掉得到 21T9。
+                    _stn=$(printf '%s' "$dmodel" | grep -oE 'MZ[A-Z0-9]{3}[0-9]{1,2}T[0-9]' | head -1)
+                    _stn="${_stn:5}"
+                    case "$_stn" in
+                        1T9)  dspec="额定1.92TB" ;;
+                        3T8)  dspec="额定3.84TB" ;;
+                        7T6)  dspec="额定7.68TB" ;;
+                        15T3) dspec="额定15.36TB" ;;
+                        1T6)  dspec="额定1.6TB" ;;
+                        3T2)  dspec="额定3.2TB" ;;
+                        6T4)  dspec="额定6.4TB" ;;
+                    esac
+                fi
                 # Micron 型号规则: MTFDKBA480TFR / MTFDHBE960TFR / MTFDKCC960TGP → 数字=容量GB（T 是家族代号非 TB）
                 # v1.48.34：TFR 后缀扩展为 T+家族字母（TGP 等系列——960TGP 曾落通用提取被当 960TB）
                 if echo "$dmodel" | grep -qE 'MTFD[KHC][A-Z]{2}[0-9]{3,4}T[A-Z]{1,2}'; then
