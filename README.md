@@ -1,6 +1,6 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.52.5-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
+![Version](https://img.shields.io/badge/Version-1.52.6-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（H200/B200/B300）、PCIe GPU 服务器、AMD Instinct（ROCm）、华为昇腾（Atlas）及无 GPU 机头，以组件级粒度采集硬件信息，自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
@@ -12,7 +12,7 @@
 - **GPU 魔改识别**：内置 60+ NVIDIA + AMD Instinct + 昇腾/Intel/国产型号额定显存规格库（昇腾/Intel/国产待真机验证；国产五家识别 v1.52.0 接入、厂商串待真机核对），检测值交叉验证，魔改/伪装卡自动 `⚠️` 提示
 - **远程采集**：tar 推送执行回拉，Linux/WSL + **Windows 原生**均支持（交互式密码，不落盘）
 - **只读无害**：采集不写硬件、报告不重新采集；GPU 健康诊断 NVIDIA=DCGM Level 1、AMD=ROCm、昇腾=npu-smi（v1.47.0 适配器框架，多厂商统一 CSV）
-- **多机对比 / 配套运维**：批次一致性抽检、时序基线对比、能耗采样、固件基线、DHCP、批量运维、硬件压测
+- **多机对比 / 配套运维**：批次一致性抽检、时序基线对比、能耗采样、固件基线、DHCP、批量运维、硬件压测（⚠️ 占位，未完成）
 
 ## 快速开始
 

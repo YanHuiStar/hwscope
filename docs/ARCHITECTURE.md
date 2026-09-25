@@ -42,7 +42,7 @@ hwscope/
 ├── conf/
 │   ├── hwscope.conf    # 模块开关、BMC 凭据、输出目录配置
 │   └── fw_required.txt # 固件推荐版本基线（15_firmware 判定用）
-├── test/               # 硬件压测脚本（只测不改）
+├── test/               # ⚠️ 硬件压测脚本（占位：未完成/未验证；只测不改）
 │   ├── test_all.sh     # 聚合入口（菜单 / --all）
 │   ├── report.sh       # 压测报告生成器（test_report.md/html）
 │   ├── test_server_info.sh  # 测试前服务器信息（各单脚本 test_init 后自动调用）

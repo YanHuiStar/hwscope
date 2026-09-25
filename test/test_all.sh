@@ -4,6 +4,7 @@
 # test/test_all.sh
 # 用法: bash test/test_all.sh           # 分类菜单选择
 #       bash test/test_all.sh --all     # 全部单脚本顺序执行
+# 状态: ⚠️ 占位（未完成、未经检验）——测试项目尚未定稿、未在真实硬件验证，请勿据此下验收结论
 # 说明: 纯聚合编排——测试实现全在 test/<组件>/ 单脚本中，本文件不含任何测试逻辑；
 #       单脚本可独立执行（如 bash test/cpu/cpu_stress_ng.sh 60）
 # 日志: 各单脚本落盘 logs/test/<SN>/（稳定按机器累积，文件名带时间戳）
@@ -47,6 +48,8 @@ if [ "${1:-}" = "--all" ]; then
     export HW_TEST_SESSION_DIR="$SESSION_DIR"
     echo "测试目录: ${SESSION_DIR}（本机全部测试日志累积于此，文件名带时间戳区分）"
     echo ""
+    echo "⚠️  占位模块（未完成、未经检验）——结果仅供参考，请勿据此下验收结论"
+    echo ""
     echo "全部测试顺序执行..."
     for entry in "${TOOLS[@]}"; do
         IFS=':' read -r cat name path <<< "$entry"
@@ -64,6 +67,8 @@ fi
 echo "========================================"
 echo "  HwScope 硬件测试（test_all 聚合入口）"
 echo "========================================"
+echo "⚠️  本模块为占位（未完成、未经检验）：测试项目尚未定稿、未在真机验证"
+echo "    请勿据此下硬件验收结论；正式交付以厂商工具（DCGM/NCCL/FLD）为准。"
 echo ""
 prev_cat=""
 idx=0

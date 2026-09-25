@@ -44,7 +44,7 @@
 | **99 OS** | `dmesg`/`systemctl` | `systemd`（系统自带）| 必需 |
 | | `lsusb` | `usbutils` | 可选 |
 | | `numactl` | `numactl` | 可选 |
-| **压测 test/** | `stress-ng` `sysbench` `fio` `iperf3` `mtr` | 对应包名 | 压测场景 |
+| **压测 test/**（⚠️ 占位，未完成/未验证） | `stress-ng` `sysbench` `fio` `iperf3` `mtr` | 对应包名 | 压测场景 |
 | | `ib_write_bw`/`ib_read_bw` | `perftest` | IB 压测 |
 | | `all_reduce_perf` 等 | nccl-tests 编译产物（见 test/README.md）| NCCL 压测 |
 
