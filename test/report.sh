@@ -229,6 +229,8 @@ REPORT_MD="${TEST_DIR}/hwscope_test_report.md"
 {
     echo "# 硬件性能测试报告"
     echo ""
+    echo "> ⚠️ **本报告由未完成（占位）的压测模块生成，不构成硬件验收依据** —— 测试项目尚未最终确定，脚本亦未在真实硬件上完成验证（参数取值、输出正确性、判定口径均未经检验）。正式硬件验收请以厂商工具（DCGM / NCCL / FLD 等）结果为准。"
+    echo ""
     echo "测试日期: $(stat -c %y "$TEST_DIR" 2>/dev/null | cut -d. -f1 || date '+%Y-%m-%d %H:%M:%S')"
     echo ""
     echo "## 一、测试环境"
