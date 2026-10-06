@@ -80,6 +80,19 @@ if [ -z "$REPORT_VERSION" ]; then
     echo -e "${YELLOW}[WARN] 报告生成器版本读取失败（${SCRIPT_DIR}/hwscope.sh 缺失或 HWSCOPE_VERSION 格式异常），报告版本将显示 unknown${NC}" >&2
 fi
 PLATFORM=$(grep -m1 "^Platform" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | awk '{print $1}')
+# v1.52.9 报告端兜底：采集端旧版 SXM 判定三路都要求 NVLink/NVSwitch 可用，NVLink 故障机
+#   （FM 起不来、链路全 inactive）会被写成 x86_64_PCIe，报告链路列随之显示「PCIe(协商)」，
+#   把 SXM 模组故障伪装成「本来就是 PCIe 形态」，恰好掩盖故障。已归档数据无法重判采集，
+#   此处按「dmesg 出现过 nvlink core 初始化」兜底改判 SXM —— 该行只有带 NVSwitch 的模组才有，
+#   实测真 PCIe 机器无此行（不误伤），NVLink 故障的 SXM 机有此行（正是要修正的情况）。
+case "$PLATFORM" in
+    *_PCIe)
+        if [ -f "${OUT}/os/dmesg_full.log" ] && \
+           grep -qiE "nvidia-nvlink:[[:space:]]+Nvlink Core is being initialized" "${OUT}/os/dmesg_full.log" 2>/dev/null; then
+            PLATFORM="${PLATFORM%_PCIe}_SXM"
+        fi
+        ;;
+esac
 # HGX 机头标记（x86_64_head 等：PCIe Fabric 接模组，无本地 GPU；报告与验收清单使用专门文案）
 HEAD_NODE=0
 PLATFORM_LABEL="$PLATFORM"
