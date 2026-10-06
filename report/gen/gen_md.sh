@@ -31,7 +31,7 @@ gen_md() {
         # 每卡显存显示 默认(额定)/可用（如 288GB/268.6 GiB 可用），防止客户误读检测值为卡容量
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
+        while IFS='|' read -r gidx gname gsn gbdf gmem gdraw gtemp gutil gpcie gmax gused glimit gvb gifo gdev; do
             [ -z "$gidx" ] && continue
             # PCIe 合并：满速只显当前值，降速才标注能力（如 "5x8 (能力 5x16)"）
             gpcie_disp="$gpcie"
@@ -49,7 +49,7 @@ gen_md() {
                 _gl=$(echo "$glimit" | grep -oE "[0-9.]+" | head -1 | awk '{printf "%g", $1}')
                 gdraw_disp="${gdraw}/${_gl}W"
             fi
-            gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gmem_disp} | ${gdraw_disp} | ${gtemp} | ${gpcie_disp} | ${gvb:-N/A} |"$'\n'
+            gpu_details_md="${gpu_details_md}| ${gidx} | ${gname} | ${gsn} | ${gbdf:-N/A} | ${gdev:-N/A} | ${gmem_disp} | ${gdraw_disp} | ${gtemp} | ${gpcie_disp} | ${gvb:-N/A} | ${gifo:-N/A} |"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
     fi
     # 盘明细 Markdown 表
@@ -452,8 +452,8 @@ $(if [ -n "$gpu_details_md" ]; then
     # v1.44.0 SXM 适配：SXM 平台模组无 CPU 直连 PCIe 链路，nvidia-smi 链路协商值实为 NVLink 通道
     _gpu_link_col="PCIe(协商)"
     case "${PLATFORM_LABEL:-}" in *SXM*) _gpu_link_col="NVLink(协商)" ;; esac
-    echo "| 卡 | 型号 | SN | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS |"
-    echo "|----|------|----|----|------|------|----------|-------|"
+    echo "| 卡 | 型号 | SN | PCIe 地址(BDF) | 设备 ID | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS | Inforom |"
+    echo "|----|------|----|---------------|--------|----|------|------|----------|-------|---------|"
     printf '%s' "$gpu_details_md"
 fi)
 $(if [ -n "${GPU_XID:-}" ]; then

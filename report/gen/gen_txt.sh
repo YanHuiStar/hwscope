@@ -24,7 +24,7 @@ gen_txt() {
         # 每卡显存 可用/总 + 功耗 当前/上限（双值让客户看到余量）
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
+        while IFS='|' read -r gidx gname gsn gbdf gmem gdraw gtemp gutil gpcie gmax gused glimit gvb gifo gdev; do
             [ -z "$gidx" ] && continue
             # PCIe 合并：满速只显当前值，降速才标注能力（如 "5x8 (能力 5x16)"）
             gpcie_disp="$gpcie"
@@ -45,7 +45,7 @@ gen_txt() {
             # v1.44.0 SXM 适配：SXM 平台该值实为 NVLink 通道协商（模组无 CPU 直连 PCIe 链路）
             _gpu_link_lbl="PCIe(协商)"
             case "${PLATFORM_LABEL:-}" in *SXM*) _gpu_link_lbl="NVLink(协商)" ;; esac
-            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  ${_gpu_link_lbl}:${gpcie_disp}  VBIOS:${gvb:-N/A}"$'\n'
+            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  BDF:${gbdf:-N/A}  ID:${gdev:-N/A}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  ${_gpu_link_lbl}:${gpcie_disp}  VBIOS:${gvb:-N/A}  Inforom:${gifo:-N/A}"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
     fi
     # 盘明细纯文本

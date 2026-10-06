@@ -16,7 +16,7 @@
 
 ### 明细表
 
-- 内存每槽（含 Rank 与位宽）/ GPU 每卡（含 VBIOS）/ CPU 每颗 / 存储每盘 / 网络每端口 / PSU / SEL 事件 / 风扇 / RAID（虚拟盘级）/ HBA
+- 内存每槽（含 Rank 与位宽）/ GPU 每卡（含 VBIOS/BDF）/ CPU 每颗 / 存储每盘 / 网络每端口 / PSU / SEL 事件 / 风扇 / RAID（虚拟盘级）/ HBA
 - GPU 显存/功耗按"检测/额定"双值（如 `140.4 GiB/141GB`）
 - **动态列隐藏**：整列全为占位符时隐藏并附注说明；JSON 始终保留全字段
 - **PCIe 链路明细（v1.44.0+）**：正文 = 统计摘要（满速/降速降宽/bridge 协商/管理芯片）+ ⚠️ 异常链路表；报告末尾附录 = 全量链路表（BDF/设备/LnkCap/LnkSta/判定）。判定三态：endpoint（网卡/GPU/RAID 卡）降速降宽=⚠️ 异常；bridge 端口降速=协商（下游能力，不计异常——x16 口接 x8 卡属正常协商，真问题体现在端点自身判定）；ASPEED/Matrox 管理芯片固有低速=标注不计
@@ -29,6 +29,11 @@
 - **多厂商 GPU（v1.46.0–v1.48.0）**：统一 `gpu_inventory.csv`（18 列对齐 nvidia-smi schema）驱动——NVIDIA/AMD/昇腾/Intel/国产卡明细同表渲染（型号/SN/BDF/显存/功耗/温度/利用率/PCIe 链路），显存魔改检测与验收 GPU PCIe 项跨厂商生效；AMD OAM 模组平台标记 `x86_64_OAM` + xGMI 拓扑章节（对标 NVLink 拓扑）；昇腾 Atlas 附 HCCS 拓扑日志（解析待真机校准）
 - **设备形态行（v1.46.2+）**：报告头部按 chassis/ECC/BMC/GPU 信号自动分类（笔记本/一体机/台式机/工作站（消费版·服务器版）/传统服务器/NVIDIA·AMD·其他 GPU 服务器/GB300 机架），JSON 同步输出 `machine_class` 字段
 - **Compute Mode / ECC Mode 行（v1.49.3+）**：环境表展示 DCGM 配置的 GPU 计算模式与 ECC 开关，取自 `dcgm/dcgmi_config.log`（`dcgmi config -g 0 --get`，v1.48.59 起语法才正确）。该数据此前一直在采集但报告端从未读取。取值取表格行 `| Compute Mode | Not Specified | <Current> |` 的 Current 列（注意行尾有 `|`，末列为 `$(NF-1)`）；带 `Non-homogenous settings across group` 时追加说明「-g 0 为整个 GPU 组汇总，组内不一致时显示共识值」（`-g 0` 是整组查询，非逐卡）。**旧采集（< v1.48.59）**的该文件内容是不存在的 `--list` 参数报出的 `PARSE ERROR` 用法帮助——此类机器两行均显示「未取到（该机采集版本早于 v1.48.59，dcgmi config --list 语法错）」，**不显示为 N/A**；无 DCGM 数据（如 AMD 平台、未装 DCGM）则两行都不输出
+- **GPU 明细 BDF / 设备 ID / Inforom 列（v1.52.9+）**：显卡明细新增三列 ——「PCIe 地址(BDF)」（如 `0000:18:00.0`，让 GPU 与 dmesg/XID 的 `PCI:0000:xx:00` 直接对号）、「设备 ID」（Vendor:Device，如 `10de:2901`，对应 BMC GPU 清单的 Vendor/Device ID 字段）、「Inforom」（`Image Version`，如 `G525.0220.00.03`，与 VBIOS 并列供交付核对固件一致性）。三者在 md 表格列 / txt 标签（`BDF:`/`ID:`/`Inforom:`）/ JSON 字段（`bdf`/`pci_id`/`inforom`）同步输出。**数据来源均零新采集**：BDF 与 Inforom 取自 `gpu_inventory.csv` 与 `gpu_N_detail.log`，设备 ID 取自 `lspci_all.log`。
+  - **BDF 规范化**：采集端 `gpu_inventory.csv` 是 8 位域写法（NVIDIA `nvidia-smi --query-gpu=pci.bus_id` 输出 `00000000:18:00.0`），报告端统一为 4 位域（`0000:18:00.0`）与 lspci/dmesg 一致；规范化在 `20_gpu.sh` 用**纯参数扩展**实现 —— **该循环 stdin 是 here-string，禁用子进程管道**（会抢 fd 导致 `read` 错位）。
+  - **字段顺序纪律**：三列一律**追加在 `GPU_DETAILS` 行尾**，绝不在中间插入。中间插入会让按字段位置取值的 awk（温度 `$7` / 功耗 `$6`）整体错位（v1.52.9 修 BDF 列时踩过：AMD 分支的温度/功耗会互相串值）。显示顺序由各生成器自行摆放。
+  - **设备 ID 大小写**：`lspci` 输出小写 BDF，而 `nvidia-smi` 可能给大写（`3E:00.0`）—— 查表键统一小写（`${bdf,,}`），否则命中率会腰斩。
+- **SXM 平台判定不再依赖 NVLink 健康（v1.52.9+）**：`lib/platform.sh` 原三路 SXM 检测（`nvswitch` CLI / `lspci` 见 NVSwitch / `nv-fabricmanager` 进程 + `nvlink --status`）**都要求 NVLink/NVSwitch 可用**——而 NVLink 域建不起来的机器（FM 启动失败、链路全 inactive）三路全不中，会被误判为 `x86_64_PCIe`，报告里链路列随之显示「PCIe(协商)」，**把 SXM 模组故障伪装成「本来就是 PCIe 形态」，恰好掩盖故障**（实测同一批 HGX B200：12 台判 SXM，唯独 NVLink 故障那台被判 PCIe）。现已补第四路：`/dev/nvidia-nvswitchctl` 存在（驱动识别到 NVSwitch 能力时创建，与链路是否 up 无关）或 `dmesg` 出现 `nvidia-nvlink: Nvlink Core is being initialized`。**注意**：该修复在**采集端**，只对新采集生效；已有归档数据仍沿用采集时写入的 `Platform` 值。
 
 ### GPU 额定显存规格库
 

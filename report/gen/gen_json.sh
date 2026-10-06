@@ -26,12 +26,14 @@ gen_json() {
         # 每卡显存标注额定（如 B300: 268.6 GiB (额定288GB)）
         local gmem_spec=""
         [ -n "$GPU_MEM_SPEC" ] && gmem_spec=$(echo "$GPU_MEM_SPEC" | grep -oE "[0-9]+GB" | head -1)
-        while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit gvb; do
+        while IFS='|' read -r gidx gname gsn gbdf gmem gdraw gtemp gutil gpcie gmax gused glimit gvb gifo gdev; do
             [ -z "$gidx" ] && continue
             gidx=$(jesc "$gidx"); gname=$(jesc "$gname"); gsn=$(jesc "$gsn"); gmem=$(jesc "$gmem")
+            gbdf=$(jesc "${gbdf:-N/A}")
+            gifo=$(jesc "${gifo:-N/A}"); gdev=$(jesc "${gdev:-N/A}")
             gdraw=$(jesc "$gdraw"); gtemp=$(jesc "$gtemp"); gutil=$(jesc "$gutil"); gpcie=$(jesc "$gpcie")
             gmax=$(jesc "$gmax"); gused=$(jesc "${gused:-N/A}"); glimit=$(jesc "${glimit:-N/A}"); gvb=$(jesc "${gvb:-N/A}")
-            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"memory\": \"${gmem}\", \"memory_used\": \"${gused:-N/A}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"power_limit\": \"${glimit:-N/A}\", \"temp\": \"${gtemp}\", \"utilization\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\", \"vbios\": \"${gvb:-N/A}\"},"$'\n'
+            gpu_details_json="${gpu_details_json}      {\"index\": \"${gidx}\", \"name\": \"${gname}\", \"serial\": \"${gsn}\", \"bdf\": \"${gbdf:-N/A}\", \"memory\": \"${gmem}\", \"memory_used\": \"${gused:-N/A}\", \"memory_spec\": \"${gmem_spec}\", \"power\": \"${gdraw}\", \"power_limit\": \"${glimit:-N/A}\", \"temp\": \"${gtemp}\", \"utilization\": \"${gutil}\", \"pcie\": \"${gpcie}\", \"pcie_max\": \"${gmax}\", \"vbios\": \"${gvb:-N/A}\", \"inforom\": \"${gifo:-N/A}\", \"pci_id\": \"${gdev:-N/A}\"},"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
         gpu_details_json=$(printf '%s' "$gpu_details_json" | sed '$ s/,$//')
     fi
@@ -324,7 +326,6 @@ fi)
     ]
   },
   "psu": {
-    # v1.52.1 修复：psu.list 为 FRU 自由文本拼接（含 " / \ 会产出非法 JSON），补 jesc
     "list": "$(jesc "$(printf '%s' "${PSU_DETAILS:-N/A}" | tr '\n' '; ' | sed 's/; $//')")",
     "details": [
 $(if [ -n "$PSU_DETAILS" ]; then
@@ -361,7 +362,6 @@ fi)
   "nvswitch": [
 $(printf '%s' "$nvs_json")
   ],
-  # v1.52.1 修复：nvswitch_fabric 为日志派生文本，补 jesc（原裸插值遇 " 产出非法 JSON）
   "nvswitch_fabric": "$(jesc "${NVSWITCH_FABRIC:-}")",
   "health": {
     "gpu_pcie_degraded": "${GPU_DEGRADED:-OK}",

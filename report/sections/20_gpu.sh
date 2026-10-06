@@ -123,6 +123,14 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         gname_short=$(gpu_model_short "$gname")
         [ -n "$gname_short" ] && gname="$gname_short"
         gsn=${gsn##*( )}; gsn=${gsn%%*( )}
+        # v1.52.9：BDF 规范化 —— 去空格 + 域截为 4 位
+        #   NVIDIA CSV 写 00000000:xx:00.0，lspci/dmesg 写 0000:xx:00.0，统一后者便于与报错对号
+        #   纯参数扩展实现（见上条约束：此处禁止子进程管道，否则 read 错位）
+        gbdf=${gbdf// /}
+        _gdom=${gbdf%%:*}
+        if [ "${#_gdom}" -gt 4 ]; then
+            gbdf="${gbdf:$(( ${#_gdom} - 4 ))}"
+        fi
         gmem_f=${gmem// /}
         # 显存单位统一：MiB → GiB（275040MiB → 268.6 GiB）；纯参数运算无子进程
         if [[ "$gmem_f" == *MiB ]] && [[ "${gmem_f%MiB}" =~ ^[0-9]+$ ]]; then
@@ -159,7 +167,8 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         [ "$ggen" != "N/A" ] && [ -n "$ggen" ] && gpcie_cur="${ggen}x${gwidth}"
         [ "$ggenmax" != "N/A" ] && [ -n "$ggenmax" ] && gpcie_max="${ggenmax}x${gwidthmax}"
         [ "$gpcie_cur" = "N/A" ] && [ "$gpcie_max" != "N/A" ] && gpcie_cur="?"
-        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}|${gused_f}|${glimit_f}"$'\n'
+        # v1.52.9：明细行加入 PCI 总线地址（BDF），使 GPU 明细与 XID/dmesg 的 PCI:xxxx:xx:xx 报错可直接对上号
+        GPU_DETAILS="${GPU_DETAILS}${gidx}|${gname}|${gsn}|${gbdf:-N/A}|${gmem_f}|${gdraw_f}|${gtemp_f}|${gutil_f}|${gpcie_cur}|${gpcie_max}|${gused_f}|${glimit_f}"$'\n'
         # 魔改/伪装逐卡检测（混插识别：每卡用自身型号匹配规格库，检测显存与额定交叉验证 >3% 即标记）
         _gdet=${gmem// /}; _gdet=${_gdet%MiB}
         if [[ "$_gdet" =~ ^[0-9]+$ ]]; then
@@ -188,19 +197,44 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     fi
     GPU_DETAILS=$(printf '%b' "$GPU_DETAILS")
 fi
+# v1.52.9：每卡 PCI ID（Vendor:Device，如 10de:2901）—— 对应 BMC GPU 清单的 Vendor/Device ID 字段。
+#   带内来源 lspci_all.log（lspci -nn 风格，含 [10de:2901]）；键同时收录 "18:00.0"（lspci 写法）
+#   与 "0000:18:00.0"（报表统一写法）两种形式，便于按明细行 BDF 直接查表。
+#   实现注意：用**单次 awk 全文件扫描**，不可逐行 fork grep（大 lspci_all.log 会拖到分钟级）。
+declare -A GPU_DEVID_MAP
+if [ -n "${PCIE_DIR:-}" ] && [ -f "${PCIE_DIR}/lspci_all.log" ]; then
+    while IFS=$'\t' read -r _lb _lid; do
+        [ -n "$_lb" ] && [ -n "$_lid" ] || continue
+        _lb="${_lb,,}"   # 统一小写：lspci 输出小写、nvidia-smi 的 BDF 可能是大写（3E:00.0）
+        GPU_DEVID_MAP["$_lb"]="$_lid"
+        GPU_DEVID_MAP["0000:$_lb"]="$_lid"
+    done < <(awk 'match($0, /^[0-9a-fA-F]+:[0-9a-fA-F]+\.[0-9]/) {
+                      b = substr($0, 1, RLENGTH)
+                      if (match($0, /\[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\]/)) {
+                          id = substr($0, RSTART+1, RLENGTH-2)
+                          print b "\t" id
+                      }
+                  }' "${PCIE_DIR}/lspci_all.log" 2>/dev/null)
+fi
 # 每卡 VBIOS 固件版本（gpu_N_detail.log 的 VBIOS Version；交付核对固件用，明细表展示）
 declare -A GPU_VBIOS_MAP
+# v1.52.9：同一来源取 Inforom Image Version（GPU 固件核对用，与 VBIOS 并列展示；缺则 N/A）
+declare -A GPU_INFOROM_MAP
 if [ -n "$GPU_DETAILS" ]; then
     for gf in "${GPU_DIR}"/gpu_*_detail.log; do
         [ -f "$gf" ] || continue
         gvb_idx=$(basename "$gf" | sed 's/^gpu_//; s/_detail\.log$//')
         gvb_ver=$(grep -m1 -E "VBIOS Version|Firmware Version" "$gf" 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
         [ -n "$gvb_ver" ] && GPU_VBIOS_MAP["$gvb_idx"]="$gvb_ver"
+        _ifo_ver=$(awk '/Inforom Version/{f=1} f && /Image Version/{sub(/.*:[[:space:]]*/, ""); gsub(/[[:space:]]/, ""); print; exit}' "$gf" 2>/dev/null)
+        [ -n "$_ifo_ver" ] && GPU_INFOROM_MAP["$gvb_idx"]="$_ifo_ver"
     done
-    # 明细行追加第 11 列 VBIOS（映射不到置 N/A）
-    GPU_DETAILS=$(while IFS='|' read -r gidx gname gsn gmem gdraw gtemp gutil gpcie gmax gused glimit; do
+    # 明细行追加 VBIOS / Inforom / PCI ID 列（映射不到置 N/A）。
+    # v1.52.9：新增列一律追加在**行尾**，不在中间插入——中间插入会让下方按字段位置取值的
+    #   awk（温度 $7 / 功耗 $6）整体错位；行尾追加零位移。显示顺序由各生成器自行摆放。
+    GPU_DETAILS=$(while IFS='|' read -r gidx gname gsn gbdf gmem gdraw gtemp gutil gpcie gmax gused glimit; do
         [ -z "$gidx" ] && continue
-        echo "${gidx}|${gname}|${gsn}|${gmem}|${gdraw}|${gtemp}|${gutil}|${gpcie}|${gmax}|${gused}|${glimit}|${GPU_VBIOS_MAP[$gidx]:-N/A}"
+        echo "${gidx}|${gname}|${gsn}|${gbdf}|${gmem}|${gdraw}|${gtemp}|${gutil}|${gpcie}|${gmax}|${gused}|${glimit}|${GPU_VBIOS_MAP[$gidx]:-N/A}|${GPU_INFOROM_MAP[$gidx]:-N/A}|${GPU_DEVID_MAP[${gbdf,,}]:-N/A}"
     done < <(printf '%s\n' "$GPU_DETAILS"))
 fi
 # ECC 模式与累计错误（列: 3=mode, 4-7=错误计数）
@@ -309,15 +343,15 @@ if [ -z "$GPU_DETAILS" ] && [ -f "${gpu_amd_inventory}" ] 2>/dev/null; then
                     GPU_DEGRADED="${GPU_DEGRADED}GPU${_ai}: PCIe ${_gpcie} (期望 ${_gpciemax}),"
                 fi
             fi
-            GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_gsn:-N/A}|${_amem_gb}GB|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|${_gpcie}|${_gpciemax}|N/A|N/A|${_gvb:-N/A}"$'\n'
+            GPU_DETAILS="${GPU_DETAILS}${_ai}|${_an:-N/A}|${_gsn:-N/A}|${_gbdf:-N/A}|${_amem_gb}GB|${_apwr:-N/A} W|${_atmp:-N/A}|${_autl:-N/A}|${_gpcie}|${_gpciemax}|N/A|N/A|${_gvb:-N/A}|N/A|${GPU_DEVID_MAP[${_gbdf,,}]:-N/A}"$'\n'
             _ai=$((_ai + 1))
         done < <(printf '%s\n' "$_amd_rows")
         GPU_DETAILS=$(printf '%s' "$GPU_DETAILS" | sed '/^$/d')
-        # 汇总：温度/功耗从明细聚合（字段 5=功耗 6=温度）
+        # 汇总：温度/功耗从明细聚合（v1.52.9 起 BDF 占第 4 列 → 字段 6=功耗 7=温度）
         GPU_TEMP=$(printf '%s
-' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$6); if($6+0>mx)mx=$6+0} END{if(mx>0) printf "%d°C", mx; else print "N/A"}')
+' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$7); if($7+0>mx)mx=$7+0} END{if(mx>0) printf "%d°C", mx; else print "N/A"}')
         GPU_POWER=$(printf '%s
-' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$5); s+=$5} END{if(s>0) printf "%d W", s; else print "N/A"}')
+' "$GPU_DETAILS" | awk -F'|' '{gsub(/[^0-9.]/,"",$6); s+=$6} END{if(s>0) printf "%d W", s; else print "N/A"}')
         # v1.48.24：额定功耗改 Max Graphics Package Power（750W/卡取最大）——原实现把当前功耗求和当"额定"（误导）
         if [ -f "${gpu_amd_full}" ] 2>/dev/null; then
             _pmax=$(grep -oE '"Max Graphics Package Power \(W\)": "[0-9.]+"' "${gpu_amd_full}" | grep -oE '[0-9.]+' | awk 'BEGIN{m=0}{if($1+0>m+0)m=$1}END{if(m>0)printf "%.0f W", m}')
