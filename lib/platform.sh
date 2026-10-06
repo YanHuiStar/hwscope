@@ -50,6 +50,20 @@ detect_platform() {
                 _sxm=1
             fi
         fi
+        # v1.52.9：SXM 补一路「不依赖 NVLink 健康状态」的判据。
+        # 问题：上面三路都要求 NVLink/NVSwitch 处于可用状态 —— 而 NVLink 域建不起来（FM 启动失败、
+        #   链路全 inactive）的机器三路全不中，会被误判为 x86_64_PCIe；报告里链路列随之显示
+        #   「PCIe(协商)」，把 SXM 模组故障伪装成「本来就是 PCIe 形态」，恰好掩盖故障。
+        #   （实测：同一批 HGX B200，12 台判 SXM，唯独 NVLink 故障那台被判 PCIe。）
+        # 依据：/dev/nvidia-nvswitchctl 由 NVIDIA 驱动在识别到 NVSwitch 能力时创建，与链路是否 up 无关；
+        #   dmesg 的 nvlink core 初始化同属驱动侧事实。两者任一为真即判 SXM。
+        if [ "$_sxm" -eq 0 ]; then
+            if [ -e /dev/nvidia-nvswitchctl ]; then
+                _sxm=1
+            elif check_cmd dmesg && dmesg 2>/dev/null | grep -qiE "nvidia-nvlink:[[:space:]]+Nvlink Core is being initialized"; then
+                _sxm=1
+            fi
+        fi
         # HGX 机头检测：PCIe Gen5 Fabric Switch（Broadcom PEX89xxx / PLX PEX97xxx / Microchip Switchtec）+ 无 GPU
         # 注意必须叠加"无 GPU"条件：SXM 一体化主机（如华硕 HGX B300）主板也带 PEX89xxx Switch，
         # 若 SXM 检测失效且有 GPU，仍按 PCIe 事实判定，避免整机漂移为 head
