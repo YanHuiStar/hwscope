@@ -109,7 +109,19 @@ if [ "$ACTION" != "show" ]; then
 fi
 
 info "fetch ${REMOTE}（以远程为真相）..."
-git fetch "$REMOTE" "$BRANCH" 2>&1 | tail -1
+# 必须自己捕获退出码：`git fetch … | tail -1` 之后 $? 是 tail 的，fetch 失败会被完全吞掉。
+# 实测踩坑：fetch 失败时原实现照常读本地缓存的 origin/main，报出 “ahead 0 · behind 0”，
+# 看着像已同步，实际远程已推进 2 个提交 —— 与“以远程为真相、杜绝凭记忆”的立规直接冲突。
+FETCH_OUT=$(git fetch "$REMOTE" "$BRANCH" 2>&1); FETCH_RC=$?
+STALE=0
+if [ "$FETCH_RC" -ne 0 ]; then
+    STALE=1
+    warn "fetch 失败（exit=${FETCH_RC}）：以下远程状态取自【本地缓存】，不代表远程真实状态"
+    printf '%s\n' "$FETCH_OUT" | tail -3 | sed 's/^/    /'
+    warn "  ↳ 先确认网络/代理，再重跑本脚本；此结果不可用于判断“已同步”"
+else
+    printf '%s\n' "$FETCH_OUT" | tail -1
+fi
 
 # 远程状态
 R_HASH=$(git rev-parse --short "${REMOTE}/${BRANCH}" 2>/dev/null || echo "?")
@@ -122,9 +134,14 @@ BEHIND=$(git rev-list --count HEAD.."${REMOTE}/${BRANCH}" 2>/dev/null || echo 0)
 DIRTY=$(git status --short 2>/dev/null | wc -l)
 
 echo ""
-info "远程 ${REMOTE}/${BRANCH} : ${R_HASH}${R_VER:+ v${R_VER}}"
+if [ "$STALE" -eq 1 ]; then
+    warn "远程 ${REMOTE}/${BRANCH} : ${R_HASH}${R_VER:+ v${R_VER}}   ← 缓存值（fetch 失败，非真实状态）"
+else
+    info "远程 ${REMOTE}/${BRANCH} : ${R_HASH}${R_VER:+ v${R_VER}}"
+fi
 info "本地 HEAD           : ${L_HASH}${L_VER:+ v${L_VER}}"
 info "未推送/落后          : ahead ${AHEAD} · behind ${BEHIND} · 工作区改动 ${DIRTY} 个文件"
+[ "$STALE" -eq 1 ] && warn "  ↳ 上列 ahead/behind 基于缓存值，可能失真——必须先让 fetch 成功再据此判断" || true
 if [ "${AHEAD:-0}" -gt 0 ] || [ "${DIRTY:-0}" -gt 0 ]; then
     echo -e "${C_YELLOW}  ↳ 有未推送/未提交内容：提交后运行 'bash tools/agent/agent_sync.sh --mark'；推送用 'bash tools/agent/git_push.sh -y'${C_NC}"
 fi

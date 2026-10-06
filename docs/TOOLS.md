@@ -58,7 +58,7 @@
 
 | 脚本 | 说明 |
 |------|------|
-| `tools/agent/agent_sync.sh` | 多机器/多 Agent 状态同步（v1.37.2）：开工第一步，fetch + 远程/本地 HEAD/版本对比 + 未推送状态，防凭记忆乱改版本；`--mark`/`--clear` 维护本地状态文件 AGENT_STATE.md（gitignore） |
+| `tools/agent/agent_sync.sh` | 多机器/多 Agent 状态同步（v1.37.2）：开工第一步，fetch + 远程/本地 HEAD/版本对比 + 未推送状态，防凭记忆乱改版本；`--mark`/`--clear` 维护本地状态文件 AGENT_STATE.md（gitignore）。**v1.52.8：fetch 失败时显式报警**——打印退出码、把远程值标注为「本地缓存，不代表真实状态」、并提示 ahead/behind 可能失真；不再用缓存值冒充「已同步」（实测曾因此漏掉远程 2 个新提交） |
 | `tools/agent/git_push.sh` | 一键推送（v1.36.1+）：默认 fetch + 逐提交摘要 + **版本单调检查**（本地 < 远程拒绝）+ 直连重试 + 代理探测 + `[AI-ACTION]` 指引；**WSL 支持**（v1.39.1：WSL 下自动用 Windows git.exe + interop 探测 Windows 侧代理端口，绕过 WSL NAT 的 127.0.0.1 不可达问题） | **推送前三条检查（v1.51.5）**：版本单调性 + **版本三处一致**（hwscope.sh 变量/注释/README 徽章，不一致提示跑 `sync_version.sh`）+ SN 兜底。
 
 ### 远程 / 批量
