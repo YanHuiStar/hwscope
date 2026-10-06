@@ -294,9 +294,19 @@ fi
 # 无 nvswitch 子命令），解析分支长期空转，且会误读历史残留文件（22.84 目录里还留着 v1.48.58 的残留）。
 # 改用实测有效的四份数据合成一句判定（22.84 真机格式实证）：
 #   nvswitch_fabric_q.log      nvidia-smi -q → Fabric 段（State=In Progress/Completed、ClusterUUID）
-#   nvlink_remote_info.log     nvidia-smi nvlink -R → 各链路对端（FFFFFFFF = NVSwitch 未枚举）
+#   nvlink_remote_info.log     nvidia-smi nvlink -R → 各链路对端（FFFFFFFF 的含义见下）
 #   fabricmanager_service.log  systemctl status nvidia-fabricmanager（Active: active/inactive/failed）
 #   nvlink_error_count.log     nvidia-smi nvlink -e → 逐链路错误计数
+#
+# v1.52.11 关键修正：**FFFFFFFF 不是故障信号**。原实现在 FM active 时若检出
+#   「NVLink 对端不可见（FFFFFFFF）」即告警，隐含假设是「FFFFFFFF = NVSwitch 未枚举」。
+#   实测该假设只对 Hopper（独立 NVSwitch 芯片）成立：Blackwell（B200/B300）的 NVSwitch
+#   集成在 GPU 内，NVLink 对端本身就是交换机而非 GPU，`nvidia-smi nvlink -R` 一律返回
+#   FFFFFFFF —— **所有正常 B200/B300 都被误报**为「核查 NVSwitch 供电/复位」。
+#   更糟的是**真故障机反而漏报**：NVLink 域完全没建立时（链路全 inactive）该文件里
+#   一行 Remote Device 都没有，条件 `_pg > 0` 不成立，压根进不了那个分支。
+#   即「好机器被点名、坏机器被放过」，与判定目的正好相反。故删除该分支：
+#   FM active 本身已说明域已建立；链路健康由下一条（_nerr 错误计数）与 nvlink --status 兜住。
 # 判定的价值：FM 未运行时 NVLink 对端不可见/ClusterUUID 未注册/DCGM 全 Fail 是同一根因的五种表现，
 # 报告里合成一句即可指向"FM 没起来"而非"硬件坏了"。
 NVSWITCH_FABRIC=""
@@ -325,8 +335,6 @@ if [ -f "$_fq" ] || [ -f "$_nr" ]; then
         [ -n "$_uuid" ] && _seg="${_seg}；ClusterUUID=${_uuid}"
         [ "${_pt:-0}" -gt 0 ] && _seg="${_seg}；NVLink 对端不可见 ${_pg}/${_pt} 条"
         NVSWITCH_FABRIC="${_seg}。FM 未拉起会使 DCGM 对 NVSwitch 域的诊断整体失败，非 GPU/NVSwitch 硬件故障——拉起 nvidia-fabricmanager 后重测（FM 版本须与驱动一致）"
-    elif [ "$_fmst" = "active" ] && [ "${_pg:-0}" -gt 0 ]; then
-        NVSWITCH_FABRIC="⚠️ Fabric Manager 运行中，但 ${_pg}/${_pt} 条 NVLink 对端不可见（FFFFFFFF）——核查 NVSwitch 供电/复位状态与 FM 版本匹配"
     elif [ "$_fmst" = "active" ] && [ "${_nerr:-0}" -gt 0 ]; then
         NVSWITCH_FABRIC="⚠️ NVLink 链路错误计数非零（${_nerr} 项，详见 nvlink_error_count.log）"
     else
