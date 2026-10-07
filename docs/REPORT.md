@@ -33,6 +33,11 @@
   - **BDF 规范化**：采集端 `gpu_inventory.csv` 是 8 位域写法（NVIDIA `nvidia-smi --query-gpu=pci.bus_id` 输出 `00000000:18:00.0`），报告端统一为 4 位域（`0000:18:00.0`）与 lspci/dmesg 一致；规范化在 `20_gpu.sh` 用**纯参数扩展**实现 —— **该循环 stdin 是 here-string，禁用子进程管道**（会抢 fd 导致 `read` 错位）。
   - **字段顺序纪律**：三列一律**追加在 `GPU_DETAILS` 行尾**，绝不在中间插入。中间插入会让按字段位置取值的 awk（温度 `$7` / 功耗 `$6`）整体错位（v1.52.9 修 BDF 列时踩过：AMD 分支的温度/功耗会互相串值）。显示顺序由各生成器自行摆放。
   - **设备 ID 大小写**：`lspci` 输出小写 BDF，而 `nvidia-smi` 可能给大写（`3E:00.0`）—— 查表键统一小写（`${bdf,,}`），否则命中率会腰斩。
+- **软 RAID 明细表（v1.52.12+）**：`/proc/mdstat`（mdadm 体系）原只提取设备名（`awk '{print $1}'` → `md126,md127`），级别 / 成员盘 / 阵列健康 `[UU]` / 容量 / 条带全丢，交付时看不出「几块盘、降级没有、丢一块会怎样」。现解析为明细表：**设备 / 级别 / 状态 / 成员盘 / 阵列健康 / 容量 / 条带**，数据全部来自同一份 `raid/mdstat.log`（零新采集）。要点：
+  - **阵列健康列是最该看的**：`[UU]` = 成员盘全部在线；出现 `_`（如 `[U_]`）即该位成员掉线、**阵列已降级**。
+  - **`auto-read-only` 不是故障**：软 RAID 在发生首次写入前会保持只读，dmesg 同时会报 `md/raid1:mdN: active with N out of N mirrors`（阵列健康）。报告**照实显示该状态，但不标警告**——避免把正常态报成异常。
+  - **RAID0 无冗余**：mdstat 不给它 `[N/N]` 与 `[UU]`，两个字段皆空时健康列显示单个 `—`（勿输出 `— —`）。
+  - 与硬件 RAID（`storcli64` 的虚拟盘明细）、HBA 直通卡（`sas3ircu`）并列，三者互斥展示（有硬件 RAID 卡时不显示软 RAID 段）。
 - **SXM 平台判定不再依赖 NVLink 健康（v1.52.9+）**：`lib/platform.sh` 原三路 SXM 检测（`nvswitch` CLI / `lspci` 见 NVSwitch / `nv-fabricmanager` 进程 + `nvlink --status`）**都要求 NVLink/NVSwitch 可用**——而 NVLink 域建不起来的机器（FM 启动失败、链路全 inactive）三路全不中，会被误判为 `x86_64_PCIe`，报告里链路列随之显示「PCIe(协商)」，**把 SXM 模组故障伪装成「本来就是 PCIe 形态」，恰好掩盖故障**（实测同一批 HGX B200：12 台判 SXM，唯独 NVLink 故障那台被判 PCIe）。现已补第四路：`/dev/nvidia-nvswitchctl` 存在（驱动识别到 NVSwitch 能力时创建，与链路是否 up 无关）或 `dmesg` 出现 `nvidia-nvlink: Nvlink Core is being initialized`。**注意**：该修复在**采集端**，只对新采集生效；已有归档数据仍沿用采集时写入的 `Platform` 值。
 
 ### GPU 额定显存规格库

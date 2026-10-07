@@ -556,6 +556,31 @@ else
     elif [ -n "$MD_RAID_LIST" ]; then
         echo "## RAID 控制器"
         echo "> ℹ️ Linux 软件 RAID（mdadm）: ${MD_RAID_LIST}（系统级软 RAID，非硬件 RAID 卡）"
+        # v1.52.12：软 RAID 明细表 —— 原实现只写设备名一行，级别/成员盘/阵列健康/容量全丢，
+        #   交付时看不出「几块盘、降级没有、丢一块会怎样」。数据取自 /proc/mdstat（零新采集）。
+        if [ -n "${MD_RAID_DETAILS:-}" ]; then
+            echo ""
+            echo "### 软 RAID 明细（mdadm）"
+            echo "| 设备 | 级别 | 状态 | 成员盘 | 阵列健康 | 容量 | 条带 |"
+            echo "|------|------|------|--------|----------|------|------|"
+            echo "$MD_RAID_DETAILS" | while IFS='|' read -r mdev mlvl mst mmem mratio mhealth mcap mchunk; do
+                [ -z "$mdev" ] && continue
+                # 容量：mdstat 给的是 1K blocks，折算 TiB 便于读（保留原值可追溯）
+                _mcap_disp="${mcap:-—}"
+                if [ -n "$mcap" ] && [ "$mcap" -gt 0 ] 2>/dev/null; then
+                    _tib=$(awk "BEGIN{printf \"%.2f\", $mcap/1024/1024/1024}" < /dev/null)
+                    _mcap_disp="${mcap} blocks (≈${_tib} TiB)"
+                fi
+                # 健康：[UU] 全在线；含 _ 表示该成员掉线（降级）—— 这才是要一眼看到的
+                #   RAID0 无冗余，mdstat 不给 [U/U] 与 [UU]，两者皆空时显示单个 —（勿输出 "— —"）
+                _mh_disp=$(printf '%s %s' "$mratio" "$mhealth" | sed 's/  */ /g; s/^ //; s/ $//')
+                [ -z "$_mh_disp" ] && _mh_disp="—"
+                echo "| ${mdev} | ${mlvl:-—} | ${mst:-—} | ${mmem:-—} | ${_mh_disp} | ${_mcap_disp} | ${mchunk:-—} |"
+            done
+            echo ""
+            echo "> 阵列健康列：\`[UU]\` = 成员盘全部在线；出现 \`_\`（如 \`[U_]\`）表示该位成员掉线、阵列降级。"
+            echo "> 状态列出现 \`auto-read-only\` 属正常（软 RAID 未发生首次写入前保持只读），非故障。"
+        fi
     elif [ "${RAID_VMD_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
         echo "## RAID 控制器"
         echo "> ℹ️ 检测到 Intel VMD NVMe RAID（虚拟 RAID，非独立卡，由系统管理）"

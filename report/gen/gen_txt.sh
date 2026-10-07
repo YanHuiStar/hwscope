@@ -312,6 +312,18 @@ fi)$(if [ -z "$RAID_DETAILS" ] && [ -n "$RAID_PCI_PRESENT" ]; then
 elif [ -z "$RAID_DETAILS" ] && [ -n "$MD_RAID_LIST" ]; then
     printf '\n[RAID控制器]\n'
     printf '  ℹ️ Linux 软件 RAID（mdadm）: %s（系统级软 RAID，非硬件 RAID 卡）\n' "$MD_RAID_LIST"
+    if [ -n "${MD_RAID_DETAILS:-}" ]; then
+        printf '\n  [软 RAID 明细]\n'
+        echo "$MD_RAID_DETAILS" | while IFS='|' read -r mdev mlvl mst mmem mratio mhealth mcap mchunk; do
+            [ -z "$mdev" ] && continue
+            _tib=$(awk "BEGIN{printf \"%.2f\", ${mcap:-0}/1024/1024/1024}" < /dev/null)
+            _mh_txt=$(printf '%s %s' "$mratio" "$mhealth" | sed 's/  */ /g; s/^ //; s/ $//')
+            [ -z "$_mh_txt" ] && _mh_txt="—"
+            printf '    %-8s %-7s %-22s 成员:%-46s 健康:%s  容量:%s blocks (≈%s TiB)  条带:%s\n' \
+                "$mdev" "${mlvl:-—}" "${mst:-—}" "${mmem:-—}" "$_mh_txt" "${mcap:-0}" "$_tib" "${mchunk:-—}"
+        done
+        printf '    （健康 [UU]=成员全在线；含 _ 表示成员掉线、阵列降级；auto-read-only 属正常状态）\n'
+    fi
 elif [ -z "$RAID_DETAILS" ] && [ "${RAID_VMD_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
     printf '\n[RAID控制器]\n'
     printf '  ℹ️ 检测到 Intel VMD NVMe RAID（虚拟 RAID，非独立卡，由系统管理）\n'

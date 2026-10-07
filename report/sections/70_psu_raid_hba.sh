@@ -657,8 +657,45 @@ RAID_PCI_PRESENT=$(grep -iE "RAID bus controller" "${lspci_all}" 2>/dev/null | g
 RAID_VMD_PRESENT=$(grep -icE "RAID bus controller.*Intel.*VMD|Volume Management Device NVMe RAID" "${lspci_all}" 2>/dev/null)
 # Linux 软件 RAID（mdadm /proc/mdstat：md 设备列表，如 "md0 : active raid1 sda1 sdb1"）
 MD_RAID_LIST=""
+# v1.52.12：软 RAID 明细 —— 原实现只 awk '{print $1}' 取设备名，把级别/成员盘/阵列健康
+#   （[UU]/[U_]）/容量/条带全丢了，交付时看不出「几块盘、降级没有、丢一块会怎样」。
+#   这些字段全在 mdstat.log 里，零新采集。格式（/proc/mdstat 内核接口，稳定）：
+#     md126 : active (auto-read-only) raid1 nvme2n1p2[1] nvme1n1p2[0]
+#           <N> blocks super 1.2 [2/2] [UU]
+#           bitmap: 0/14 pages [0KB], <chunk> chunk
+#   注：`auto-read-only` 是软 RAID 未发生首次写入前的正常状态，不是故障（实测 dmesg
+#   同时报 "md/raid1:md126: active with 2 out of 2 mirrors"），故照实显示但不标警告。
+MD_RAID_DETAILS=""
 if [ -f "${RAID_DIR}/mdstat.log" ]; then
     MD_RAID_LIST=$(grep -E "^md[0-9]+ : active" "${RAID_DIR}/mdstat.log" 2>/dev/null | awk '{print $1}' | tr '\n' ',' | sed 's/,$//')
+    # 单次 awk 全文件扫描（勿逐行 fork，mdstat 虽小但保持一致纪律）
+    # 输出: 设备|级别|状态|成员盘（逗号分隔）|成员比|健康|容量(bytes)|条带
+    MD_RAID_DETAILS=$(awk '
+        /^md[0-9]+[[:space:]]*:/ {
+            # 上一组收尾
+            if (dev != "") printf "%s|%s|%s|%s|%s|%s|%s|%s\n", dev, lvl, st, mem, mratio, health, cap, chunk
+            dev=$1; lvl=""; st=""; mem=""; mratio=""; health=""; cap=""; chunk=""
+            line=$0
+            st=$3                                  # active / inactive
+            sub(/^[[:space:]]*/,"",line)
+            if (line ~ /\(auto-read-only\)/ || line ~ /auto-read-only/) st=st" (auto-read-only)"
+            if (match(line, /raid[0-9]+/)) lvl=substr(line, RSTART, RLENGTH)
+            n=split(line, a, /[[:space:]]+/)
+            for (i=1;i<=n;i++) if (a[i] ~ /\[[0-9]+\]$/ && a[i] !~ /^\[/) mem=(mem=="" ? a[i] : mem", "a[i])
+            next
+        }
+        /blocks/ && dev != "" {
+            if (cap=="") { cap=$1 }
+            if (match($0, /\[[0-9]+\/[0-9]+\]/)) mratio=substr($0, RSTART, RLENGTH)
+            if (match($0, /\[[U_]+\]/))         health=substr($0, RSTART, RLENGTH)
+            next
+        }
+        /chunk/ && dev != "" {
+            if (match($0, /[0-9]+K[B]?[[:space:]]*chunk/)) { chunk=substr($0, RSTART, RLENGTH); sub(/[[:space:]]*chunk/,"",chunk) }
+            next
+        }
+        END { if (dev != "") printf "%s|%s|%s|%s|%s|%s|%s|%s\n", dev, lvl, st, mem, mratio, health, cap, chunk }
+    ' "${RAID_DIR}/mdstat.log" 2>/dev/null)
 fi
 
 # ─── HBA 直通卡（sas3_hba*.log / sas2_hba*.log：有卡才显示，无卡段隐藏） ───
