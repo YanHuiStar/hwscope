@@ -33,7 +33,7 @@
   html_table_close=29
   html_bytes=52481
 [acceptance]
-        3 N/A
+        4 N/A
        12 PASS
 [acceptance_hw]
   准系统 | 台 | 1
