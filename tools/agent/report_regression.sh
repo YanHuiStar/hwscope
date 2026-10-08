@@ -163,6 +163,12 @@ extract_metrics() {
                 printf "  %s | %s | %s\n", p, u, c
               }'
     fi
+
+    # 12. 来源样本指纹（v1.52.14）——**只记哈希、不记 SN**（隐私红线：真实 SN 禁进 git）。
+    #     目的：将来能回答"这份基线是哪台机器刷的"，多台同名机器轮流刷时便于定位数值漂移。
+    #     比对时**必须排除该行**（否则换一台机器必然报差异，反而制造噪音）。
+    echo "[source]"
+    echo "  source_fp_hash=$(printf '%s' "$(basename "${dir%/}")" | sha256sum 2>/dev/null | cut -c1-12)"
 }
 
 # ─── v1.48.74：机器指纹（同源判定）───
@@ -228,10 +234,43 @@ run_one() {
         elif diff -q "$base" "$cur" >/dev/null 2>&1; then
             echo "  [OK] 与基线一致（无解析回归）"
         else
-            LAST_RESULT="diff"
-            echo "  [DIFF] 与基线存在差异（解析回归候选）:"
-            diff "$base" "$cur" 2>/dev/null | head -30 | sed 's/^/    /'
-            rc=1
+            # v1.52.14：把「结构差异」与「字节数差异」分开判——
+            #   json_bytes / html_bytes 是**长度指标**：同一语义下换一台机器或换一次采集，
+            #   内容长度本就会浮动（实测同型号机器差 0.2%~0.3%：149/54228、162/63792 这类）。
+            #   拿它当回归判据长期只产出无害噪音，反而稀释真信号。
+            #   真回归信号是那 32 项**结构指标**（行数/列数/字段名/值格式/硬件概览；实测计数）。
+            #   规则：结构不一致 → DIFF；仅字节数差异且 <5% → 提示（不计差异）；
+            #        ≥5% → 仍报 DIFF（防「整段内容丢失」这种真问题被放过）。
+            # 过滤项含 [source] 段标记本身——基线（旧版脚本所写）没有这一段，
+            # 若只滤掉 source_fp_hash= 行，段标记仍会被当成结构差异（实测踩到）
+            _struct_filter='^(\[source\]$|  (json_bytes|html_bytes|source_fp_hash)=)'
+            if diff -q <(grep -vE "$_struct_filter" "$base") \
+                       <(grep -vE "$_struct_filter" "$cur") >/dev/null 2>&1; then
+                _jb_b=$(grep -m1 '^  json_bytes=' "$base" | grep -oE '[0-9]+')
+                _jb_c=$(grep -m1 '^  json_bytes=' "$cur" | grep -oE '[0-9]+')
+                _hb_b=$(grep -m1 '^  html_bytes=' "$base" | grep -oE '[0-9]+')
+                _hb_c=$(grep -m1 '^  html_bytes=' "$cur" | grep -oE '[0-9]+')
+                _pct=$(awk -v a="${_jb_b:-0}" -v b="${_jb_c:-0}" -v x="${_hb_b:-0}" -v y="${_hb_c:-0}" 'BEGIN{
+                    p1=(a>0)?((b-a)/a*100):0; if(p1<0)p1=-p1
+                    p2=(x>0)?((y-x)/x*100):0; if(p2<0)p2=-p2
+                    printf "%.2f", (p1>p2?p1:p2)}')
+                if awk -v p="$_pct" 'BEGIN{exit !(p >= 5)}'; then
+                    LAST_RESULT="diff"
+                    echo "  [DIFF] 结构一致，但字节数变化 ${_pct}%（≥5%，疑似整段内容增删）:"
+                    diff "$base" "$cur" 2>/dev/null | grep -E '^[<>]' | grep -E 'bytes=' | head -8 | sed 's/^/    /'
+                    rc=1
+                else
+                    LAST_RESULT="note"
+                    echo "  [OK] 结构一致（结构指标全同，无解析回归）"
+                    echo "  [NOTE] 仅字节数差异 ${_pct}%（<5%）——采集数据细节浮动，不判为回归:"
+                    diff "$base" "$cur" 2>/dev/null | grep -E '^[<>]' | grep -E 'bytes=' | head -8 | sed 's/^/    /'
+                fi
+            else
+                LAST_RESULT="diff"
+                echo "  [DIFF] 与基线存在差异（解析回归候选）:"
+                diff "$base" "$cur" 2>/dev/null | head -30 | sed 's/^/    /'
+                rc=1
+            fi
         fi
     else
         LAST_RESULT="nobase"
@@ -247,7 +286,7 @@ run_one() {
 # ─── 主流程 ───
 if [ "$ALL" -eq 1 ]; then
     root="${HWSCOPE_SAMPLE_ROOT:-${PROJECT_DIR}/output}"
-    found=0; fail=0; skipn=0
+    found=0; fail=0; skipn=0; noten=0
     # v1.48.50：同语义名去重——多台同机型机器（如桌面两台 MI300X）经 sn_to_semantic 映射到同一
     # 基线文件，逐台比对会把机器间固有差异（网卡/盘数不同）当成解析回归误报；本次只比对首台，
     # 后续同名样本跳过并提示（要单独验证某台用 --samples <SN> 显式指定）
@@ -278,6 +317,7 @@ if [ "$ALL" -eq 1 ]; then
         found=$((found+1))
         run_one "${d%/}" || fail=$((fail+1))
         [ "$LAST_RESULT" = "skip" ] && skipn=$((skipn+1))
+        [ "$LAST_RESULT" = "note" ] && noten=$((noten+1))
         echo ""
     done
     [ -n "$_skipped_dir" ] && echo "[SKIP] 已跳过非样本目录: ${_skipped_dir}（默认根下的临时/测试目录；确需比对请用 HWSCOPE_SAMPLE_ROOT 显式指定）"
@@ -289,7 +329,7 @@ if [ "$ALL" -eq 1 ]; then
     if [ "$found" -eq 1 ]; then
         echo "[WARN] 仅发现 1 个样本（root=${root}）——若预期为多机样本，请用 HWSCOPE_SAMPLE_ROOT=<目录> 指定；单样本结果不具横向覆盖力"
     fi
-    echo "汇总: ${found} 个样本，${fail} 个差异，${skipn} 个不同源跳过（同型号其他机器，机器固有差异非回归）"
+    echo "汇总: ${found} 个样本，${fail} 个差异，${skipn} 个不同源跳过${noten:+，${noten} 个仅字节数浮动（已降级为提示）}（同型号其他机器，机器固有差异非回归）"
     [ "$fail" -eq 0 ] || exit 1
     exit 0
 fi
@@ -297,17 +337,18 @@ fi
 # v1.48.14：--samples 选跑（只跑指定样本——GPU 改动跑 GPU 样本等，不跑全量省时间）
 if [ -n "$SAMPLES" ]; then
     root="${HWSCOPE_SAMPLE_ROOT:-${PROJECT_DIR}/output}"
-    found=0; fail=0; skipn=0
+    found=0; fail=0; skipn=0; noten=0
     for sn in ${SAMPLES//,/ }; do
         d="${root}/${sn}"
         [ -d "$d" ] || { echo "[WARN] 样本不存在: $sn（root=$root）"; continue; }
         found=$((found+1))
         run_one "$d" || fail=$((fail+1))
         [ "$LAST_RESULT" = "skip" ] && skipn=$((skipn+1))
+        [ "$LAST_RESULT" = "note" ] && noten=$((noten+1))
         echo ""
     done
     [ "$found" -gt 0 ] || exit 2
-    echo "汇总: ${found} 个样本，${fail} 个差异，${skipn} 个不同源跳过"
+    echo "汇总: ${found} 个样本，${fail} 个差异，${skipn} 个不同源跳过${noten:+，${noten} 个仅字节数浮动（已降级为提示）}"
     [ "$fail" -eq 0 ] || exit 1
     exit 0
 fi
