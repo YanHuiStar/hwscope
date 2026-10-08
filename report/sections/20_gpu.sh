@@ -10,7 +10,7 @@ load_manifest "${GPU_DIR}" gpu_ecc_inventory "gpu_ecc_inventory.csv"
 load_manifest "${GPU_DIR}" gpu_amd_ras "gpu_amd_ras.log"
 GPU_CSV="${gpu_inventory}"
 GPU_ECC_CSV="${gpu_ecc_inventory}"
-GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""; GPU_AMD_SUSPECT=""; GPU_RAS=""
+GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""; GPU_AMD_SUSPECT=""; GPU_RAS=""; GPU_ECC_AMD_RAS=0
 # v1.48.36/37: AMD RAS 解析（ECC 对应物——NVIDIA 的 ECC/退役行语义在 AMD 由 amd-smi ras/metric 承载；
 # v1.48.37 适配多格式：amd-smi metric 表格（SINGLE_ECC/DOUBLE_ECC/PCIE_REPLAY）、rocm-smi --query-ecc、
 # 老式 --showrasinfo JSON——有实际错误计数则摘要，空/无接口如实标注）
@@ -23,6 +23,22 @@ if [ -n "${gpu_amd_ras:-}" ] && [ -f "$gpu_amd_ras" ]; then
         _ras_replay=$(grep -oE "PCIE_REPLAY[[:space:]]+[0-9]+|PCIE.*[Rr]eplay[^0-9]*[=: ]+[0-9]+" "$gpu_amd_ras" 2>/dev/null | grep -oE "[0-9]+$" | awk '{s+=$1} END{print s+0}')
         if [ -n "${_ras_single:-}" ] || [ -n "${_ras_double:-}" ] || [ -n "${_ras_replay:-}" ]; then
             GPU_RAS="单比特(CE): ${_ras_single:-0} · 双比特(UE): ${_ras_double:-0} · PCIe 重放: ${_ras_replay:-0}"
+            # v1.52.15：AMD 的 RAS 数据**接入验收侧 ECC 判定**。
+            #   此前只写 GPU_RAS（展示用），而验收读的 GPU_ECC_* 仅由 gpu_ecc_inventory.csv 驱动，
+            #   该文件只有 adapter_nvidia.sh 生成 → AMD 无论有无 ECC 数据都判 N/A，还被计入
+            #   「数据不足」，把 MI300X 的验收结论无端降级（实测由「合格」掉成「基本通过」）。
+            #   AMD 无 volatile/aggregate 之分（RAS 计数为本次驱动加载以来），统一映射到 volatile 位。
+            GPU_ECC_MODE="Enabled(AMD RAS)"
+            GPU_ECC_CORR_VOL="${_ras_single:-0}"
+            GPU_ECC_UNCORR_VOL="${_ras_double:-0}"
+            GPU_ECC_CORR_AGG=0
+            GPU_ECC_UNCORR_AGG=0
+            GPU_ECC_BADCARDS=""
+            GPU_ECC_AMD_RAS=1
+            if   [ "${_ras_double:-0}" -gt 0 ] 2>/dev/null; then GPU_ECC_VERDICT="FAIL"
+            elif [ "${_ras_single:-0}" -gt 0 ] 2>/dev/null; then GPU_ECC_VERDICT="WARN"
+            else GPU_ECC_VERDICT="PASS"; fi
+            GPU_ECC="${GPU_ECC_MODE} · 单比特(CE) ${GPU_ECC_CORR_VOL} / 双比特(UE) ${GPU_ECC_UNCORR_VOL} · PCIe 重放 ${_ras_replay:-0}"
         else
             GPU_RAS="已采集（$(grep -vcE '^#|^$' "$gpu_amd_ras" 2>/dev/null) 行内容，详见 gpu_amd_ras.log）"
         fi

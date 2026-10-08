@@ -33,7 +33,7 @@
   html_table_close=29
   html_bytes=52481
 [acceptance]
-        4 N/A
+        3 N/A
        12 PASS
 [acceptance_hw]
   准系统 | 台 | 1
@@ -45,3 +45,5 @@
   存储 | 块 | 4
   电源模块 | 个 | 8
   系统管理 | 套 | 1
+[source]
+  source_fp_hash=98fcc640e965

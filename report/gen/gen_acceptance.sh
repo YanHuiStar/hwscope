@@ -412,7 +412,11 @@ gen_acceptance() {
     #   背景：旧口径显示 "Enabled, errors: 48/0/849"，849 那台按旧读法像要坏了，
     #   实际 volatile 全为 0、真实情况是不可纠正累计 696 —— 混加会同时造成误读与误判。
     if [ -n "${GPU_ECC_MODE:-}" ]; then
+        if [ "${GPU_ECC_AMD_RAS:-0}" = "1" ]; then
+            _ecc_desc="AMD RAS 单比特(CE) ${GPU_ECC_CORR_VOL:-?} / 双比特(UE) ${GPU_ECC_UNCORR_VOL:-?}（ROCm 口径，本次驱动加载以来）"
+        else
         _ecc_desc="本次(volatile) 可纠正 ${GPU_ECC_CORR_VOL:-?} / 不可纠正 ${GPU_ECC_UNCORR_VOL:-?}；累计(aggregate) 可纠正 ${GPU_ECC_CORR_AGG:-?} / 不可纠正 ${GPU_ECC_UNCORR_AGG:-?}"
+        fi
         [ -n "${GPU_ECC_BADCARDS:-}" ] && _ecc_desc="${_ecc_desc}；不可纠正记录集中在 GPU${GPU_ECC_BADCARDS//,/,GPU}"
         case "${GPU_ECC_VERDICT:-PASS}" in
             FAIL) add_item "GPU ECC" "FAIL" "${_ecc_desc} —— ⚠️ 本次运行检出不可纠正错误（volatile>0），数据完整性受影响，需报修" ;;
@@ -420,7 +424,16 @@ gen_acceptance() {
             *)    add_item "GPU ECC" "PASS" "${_ecc_desc}（全部为 0）" ;;
         esac
     elif [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "GPU ECC" "N/A" "无 ECC 数据（该采集版本未生成 gpu_ecc_inventory.csv）"
+        # v1.52.15：区分「采集缺失」与「平台工具链限制」——
+        #   NVIDIA 无 gpu_ecc_inventory.csv = 采集缺失（该文件必生成）→ N/A 计入数据不足；
+        #   AMD 的 ECC 由 ROCm 工具暴露（rocm-smi --showrasinfo / amd-smi metric -e / rocm-smi --query-ecc），
+        #     驱动或工具版本不暴露时取不到，属平台工具链限制 → 平台固有 N/A，不计数。
+        #   实测 MI300X 正因此项被计入「数据不足」，判定由「合格」掉成「基本通过」。
+        if [ "${GPU_PLATFORM:-}" = "amd" ]; then
+            add_item "GPU ECC" "N/A" "AMD ECC 依赖 ROCm 工具（rocm-smi / amd-smi），本次未取到（详见 gpu_amd_ras.log）——平台工具链限制，非采集缺失" 1
+        else
+            add_item "GPU ECC" "N/A" "无 ECC 数据（该采集版本未生成 gpu_ecc_inventory.csv）"
+        fi
     fi
 
     # ── 硬件故障历史项（v1.48.90：GPU XID / CPU MCE / RAID 缓存电池）──
