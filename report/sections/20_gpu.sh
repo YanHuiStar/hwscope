@@ -237,9 +237,40 @@ if [ -n "$GPU_DETAILS" ]; then
         echo "${gidx}|${gname}|${gsn}|${gbdf}|${gmem}|${gdraw}|${gtemp}|${gutil}|${gpcie}|${gmax}|${gused}|${glimit}|${GPU_VBIOS_MAP[$gidx]:-N/A}|${GPU_INFOROM_MAP[$gidx]:-N/A}|${GPU_DEVID_MAP[${gbdf,,}]:-N/A}"
     done < <(printf '%s\n' "$GPU_DETAILS"))
 fi
-# ECC 模式与累计错误（列: 3=mode, 4-7=错误计数）
+# ECC 分类统计（列: 3=mode, 4=corrected.volatile, 5=uncorrected.volatile, 6=corrected.aggregate, 7=uncorrected.aggregate）
+# v1.52.13：原实现把四类直接相加（$4+$5+$6+$7 → "errors: 48"），后果是**分不清性质与时机**：
+#   可纠正(HBM 常态自愈，不卡交付) vs 不可纠正(数据损坏，必须卡)；
+#   volatile(本次驱动加载以来，真问题) vs aggregate(终身累计，保修/RMA 依据，含出厂测试)。
+#   实测三台 B200 汇总数分别为 48 / 0 / 849，而真实情况是「volatile 全为 0，不可纠正分别 46/0/696」——
+#   849 那台按旧口径像要坏了，实际当前无任何正在发生的错误。分类后按下列口径判定：
+#     volatile uncorrected > 0        → FAIL（当前存在不可纠正错误）
+#     volatile corrected   > 0        → WARN（本次有可纠正错误，需观察是否持续增长）
+#     aggregate uncorrected > 0 (vol=0) → WARN（历史记录，建议压测复测确认 volatile 不增长）
+#     全 0                             → PASS
 if [ -f "$GPU_ECC_CSV" ]; then
-    GPU_ECC=$(grep -v "^#" "$GPU_ECC_CSV" | tail -n +2 | awk -F',' '{e+=$4+$5+$6+$7; mode=$3; gsub(/^ /,"",mode)} END{printf "%s, errors: %d", mode, e}')
+    _ecc_stat=$(grep -v "^#" "$GPU_ECC_CSV" 2>/dev/null | tail -n +2 | awk -F',' '
+        { for(i=1;i<=NF;i++){v=$i; gsub(/^ +| +$/,"",v); $i=v}
+          mode=$3
+          cv+=$4+0; uv+=$5+0; ca+=$6+0; ua+=$7+0
+          if (($7+0)>0 || ($5+0)>0) bad[++nb]=$1
+        }
+        END{ printf "%s|%d|%d|%d|%d|%d|%s", (mode==""?"N/A":mode), cv, uv, ca, ua, nb, ""; 
+             for(i=1;i<=nb;i++) printf "%s%s", bad[i], (i<nb?",":""); }')
+    GPU_ECC_MODE="${_ecc_stat%%|*}";      _r="${_ecc_stat#*|}"
+    GPU_ECC_CORR_VOL="${_r%%|*}";         _r="${_r#*|}"
+    GPU_ECC_UNCORR_VOL="${_r%%|*}";       _r="${_r#*|}"
+    GPU_ECC_CORR_AGG="${_r%%|*}";         _r="${_r#*|}"
+    GPU_ECC_UNCORR_AGG="${_r%%|*}";       _r="${_r#*|}"
+    _ecc_nbad="${_r%%|*}";                GPU_ECC_BADCARDS="${_r#*|}"
+    GPU_ECC_BADCARDS=${GPU_ECC_BADCARDS%|}
+    # 汇总串（兼容旧字段 GPU_ECC，供 JSON/其他消费点使用；语义已变为分类口径）
+    GPU_ECC="${GPU_ECC_MODE} · 本次 volatile 可纠正 ${GPU_ECC_CORR_VOL} / 不可纠正 ${GPU_ECC_UNCORR_VOL} · 累计 aggregate 可纠正 ${GPU_ECC_CORR_AGG} / 不可纠正 ${GPU_ECC_UNCORR_AGG}"
+    [ "${_ecc_nbad:-0}" -gt 0 ] 2>/dev/null && GPU_ECC="${GPU_ECC} · ⚠️ 不可纠正记录集中在 GPU${GPU_ECC_BADCARDS//,/,GPU}"
+    # 判定（供验收清单消费）
+    if   [ "${GPU_ECC_UNCORR_VOL:-0}" -gt 0 ] 2>/dev/null; then GPU_ECC_VERDICT="FAIL"
+    elif [ "${GPU_ECC_CORR_VOL:-0}" -gt 0 ] 2>/dev/null; then GPU_ECC_VERDICT="WARN"
+    elif [ "${GPU_ECC_UNCORR_AGG:-0}" -gt 0 ] 2>/dev/null; then GPU_ECC_VERDICT="WARN"
+    else GPU_ECC_VERDICT="PASS"; fi
 fi
 # GPU 序列号列表（资产追踪；消费卡 serial=0 时忽略）
 GPU_SERIALS=$(grep -v "^#" "$GPU_CSV" 2>/dev/null | tail -n +2 | awk -F',' '{gsub(/^ +/,"",$3); gsub(/ +$/,"",$3); if($3!="" && $3!="0" && $3!="[N/A]") print $3}' | tr '\n' ',' | sed 's/,$//')

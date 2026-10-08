@@ -403,6 +403,26 @@ gen_acceptance() {
                 fi ;;
     esac
 
+    # 19. GPU ECC（v1.52.13：分性质与时机判定，不再把四类混加成一个数）
+    #   口径依据 NVIDIA nvidia-smi：volatile = 本次驱动加载以来；aggregate = 终身计数（含出厂测试，RMA 依据）。
+    #     volatile 不可纠正 > 0          → FAIL（当前存在不可纠正错误，数据完整性受影响）
+    #     volatile 可纠正   > 0          → WARN（本次有可纠正错误，需观察是否持续增长）
+    #     aggregate 不可纠正 > 0（vol=0）→ WARN（历史记录；建议压测复测确认 volatile 不增长）
+    #     全 0                           → PASS
+    #   背景：旧口径显示 "Enabled, errors: 48/0/849"，849 那台按旧读法像要坏了，
+    #   实际 volatile 全为 0、真实情况是不可纠正累计 696 —— 混加会同时造成误读与误判。
+    if [ -n "${GPU_ECC_MODE:-}" ]; then
+        _ecc_desc="本次(volatile) 可纠正 ${GPU_ECC_CORR_VOL:-?} / 不可纠正 ${GPU_ECC_UNCORR_VOL:-?}；累计(aggregate) 可纠正 ${GPU_ECC_CORR_AGG:-?} / 不可纠正 ${GPU_ECC_UNCORR_AGG:-?}"
+        [ -n "${GPU_ECC_BADCARDS:-}" ] && _ecc_desc="${_ecc_desc}；不可纠正记录集中在 GPU${GPU_ECC_BADCARDS//,/,GPU}"
+        case "${GPU_ECC_VERDICT:-PASS}" in
+            FAIL) add_item "GPU ECC" "FAIL" "${_ecc_desc} —— ⚠️ 本次运行检出不可纠正错误（volatile>0），数据完整性受影响，需报修" ;;
+            WARN) add_item "GPU ECC" "WARN" "${_ecc_desc} —— 当前无正在发生的错误（volatile 全 0），但存在历史记录；建议跑一轮显存压力后复测 volatile 是否增长" ;;
+            *)    add_item "GPU ECC" "PASS" "${_ecc_desc}（全部为 0）" ;;
+        esac
+    elif [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "GPU ECC" "N/A" "无 ECC 数据（该采集版本未生成 gpu_ecc_inventory.csv）"
+    fi
+
     # ── 硬件故障历史项（v1.48.90：GPU XID / CPU MCE / RAID 缓存电池）──
     # 判据取向：这些都是「已经出过事」的历史记录，**判 WARN 而非 FAIL**——
     #   ① 历史事件可能已通过换卡/复位解决，据此否决交付不合理；
