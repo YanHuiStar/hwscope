@@ -291,7 +291,19 @@ gen_acceptance() {
     if [ "${SEL_DATA_VALID:-0}" -ne 1 ] 2>/dev/null; then
         add_item "SEL 事件" "N/A" "SEL 数据不可用（ipmitool 采集失败或无权限）"
     elif [ "${SEL_CRIT_UNRESOLVED:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT_UNRESOLVED} 条 Critical 告警**尚未解除**（需处理后再交付）"
+        # v1.52.20：细分「未解除」的成因。未解除事件若**与断电事件同时间戳**，是掉电瞬间
+        #   传感器读数触发的记录（风扇转速 0、温度骤降），BMC 恢复后不一定补 Deassert——
+        #   实测一台 B300 机 8 条未解除的风扇 Lower Critical 全部落在同一秒，同秒有
+        #   Power Supply AC lost，而当前风扇转速全部 ok。这类判 WARN（告知但不卡交付）；
+        #   只有**存在与断电无关的未解除告警**时才判 FAIL。
+        _sel_pwr="${SEL_CRIT_POWER_CAUSED:-0}"
+        if [ "${_sel_pwr}" -gt 0 ] 2>/dev/null && [ "${_sel_pwr}" -ge "${SEL_CRIT_UNRESOLVED}" ] 2>/dev/null; then
+            add_item "SEL 事件" "WARN" "共 ${SEL_TOTAL:-0} 条 SEL，${SEL_CRIT_UNRESOLVED} 条未收到解除事件，**全部落在断电时刻**（同秒伴随 Power Supply AC lost / Power off-down）——属掉电瞬间的传感器记录，非硬件故障；建议对照当前传感器读数确认"
+        elif [ "${_sel_pwr}" -gt 0 ] 2>/dev/null; then
+            add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，${SEL_CRIT_UNRESOLVED} 条 Critical 告警尚未解除（其中 ${_sel_pwr} 条落在断电时刻）；**其余需处理后再交付**"
+        else
+            add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT_UNRESOLVED} 条 Critical 告警**尚未解除**（需处理后再交付）"
+        fi
     elif [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 事件" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
     elif [ "${SEL_CRIT_RECOVERED:-0}" -gt 0 ] 2>/dev/null; then

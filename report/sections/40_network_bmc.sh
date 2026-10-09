@@ -342,22 +342,35 @@ if [ -f "${ipmi_sel_elist}" ]; then
             #   当成「已自愈」，末次仍为 Asserted 的被漏判。实测一台 B300 机报告 2 条未解除，
             #   按时序口径实为 8 条（风扇 Lower Critical 反复触发、末次未恢复）。
             #   前提：ipmitool sel elist 输出按时间升序（SEL 即按时间追加），后行覆盖前行。
+            # v1.52.20：同时收集「断电类事件」的时间戳，供下方判定未解除告警是否由掉电导致。
             NF>=6 {
-                s=$4; e=$5; st=$6
+                d=$2; t=$3; s=$4; e=$5; st=$6
+                gsub(/^ +| +$/,"",d); gsub(/^ +| +$/,"",t)
                 gsub(/^ +| +$/,"",s); gsub(/^ +| +$/,"",e); gsub(/^ +| +$/,"",st)
+                ts = d " " t
+                # 断电特征：Power Supply/Power Unit 的 AC lost / Power off/down。
+                #   这些时刻的传感器告警（风扇转速 0、温度骤降）是掉电导致，不是硬件故障——
+                #   实测一台 B300 机 8 条未解除的风扇 Lower Critical 全部落在同一秒，
+                #   且该秒同时有 Power Supply AC lost（`Reading 0 < Threshold 609 RPM` 印证）。
+                if (tolower(s) ~ /power supply|power unit/ && tolower(e) ~ /ac lost|power off|power down/) pwr[ts]=1
                 if (tolower(e) !~ /critical|fatal|non-recoverable|nonrecoverable/) next
                 k=s"|"e
                 if (!(k in seen)) { seen[k]=1; order[++n]=k }
-                last[k]=st
+                last[k]=st; lastts[k]=ts
             }
             END {
-                u=0; r=0
-                for (i=1;i<=n;i++) { if (last[order[i]]=="Asserted") u++; else r++ }
-                printf "%d %d", u, r
+                u=0; r=0; p=0
+                for (i=1;i<=n;i++) {
+                    k=order[i]
+                    if (last[k]=="Asserted") { u++; if (lastts[k] in pwr) p++ } else r++
+                }
+                printf "%d %d %d", u, r, p
             }')
     SEL_CRIT_UNRESOLVED="${_sel_stat%% *}"
-    SEL_CRIT_RECOVERED="${_sel_stat##* }"
-    : "${SEL_CRIT_UNRESOLVED:=0}"; : "${SEL_CRIT_RECOVERED:=0}"
+    _sel_rest="${_sel_stat#* }"
+    SEL_CRIT_RECOVERED="${_sel_rest%% *}"
+    SEL_CRIT_POWER_CAUSED="${_sel_rest##* }"
+    : "${SEL_CRIT_UNRESOLVED:=0}"; : "${SEL_CRIT_RECOVERED:=0}"; : "${SEL_CRIT_POWER_CAUSED:=0}"
 fi
 # 已解除事件的日期（供报告文案标注"何时自愈"）
 SEL_RECOVERED_WHEN=""
