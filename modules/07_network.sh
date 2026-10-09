@@ -192,7 +192,18 @@ run_network() {
                     mst start >/dev/null 2>&1 || true
                     sleep 1
                 fi
-                mstdev=$(mst status 2>/dev/null | grep --line-buffered -i "$nbdf" | awk '{print $1}' | head -1)
+                # v1.52.18：修 `mst status` 解析。原实现
+                #   `grep -i "$nbdf" | awk '{print $1}' | head -1` 命中的是**紧跟设备路径的
+                #   描述行**（`domain:bus:dev.fn=0000:70:00.0  addr.reg=88 ...`），取到的
+                #   "设备名"是这串描述而非 `/dev/mst/mtXXXX_pciconf0` → `mstflint -d` 报
+                #   `Unable to parse device name domain:bus:dev.fn=...`。实测一台 8×B300 机
+                #   **8 张卡 mstflint 全部失败**，SN/PSID 退化为 GUID 兜底（mstflint_failed.log 留有证据）。
+                #   改为：先记住 `/dev/mst/` 开头的行，遇到含该 BDF 的行时输出**上一个**设备路径。
+                mstdev=$(mst status 2>/dev/null | awk -v b="$nbdf" '
+                    /^\/dev\/mst\// { dev=$1; next }
+                    dev != "" && index(tolower($0), tolower(b)) > 0 { print dev; exit }
+                ')
+                # 兜底：`/dev/mst/` 目录里按 BDF（去冒号）匹配
                 [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep --line-buffered -i "${nbdf//:}" | head -1)
                 if [ -n "$mstdev" ]; then
                     # 声明与赋值分离：local mq_out=$(...) 会吞掉命令退出码（local 本身恒返回 0）
