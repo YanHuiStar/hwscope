@@ -327,16 +327,13 @@ if [ -f "$_fru_src" ]; then
                 *)     _dnum="${_didx:-1}" ;;
             esac
             # v1.48.94：与 Handle 分支同一判据（见上）——最后一条记录若也是空字段，同样友好渲染
+            # v1.52.17：占位词集合必须与 Handle 分支**保持同步**（含 ASUS `To Be Filled By O.E.M.`、
+            #   AMI `Default string` 等）。两处不同步会出现割裂：实测同一台机上 PSU1 已友好渲染、
+            #   PSU2 仍在堆叠占位词——只改一处的典型症状。此处重复定义 `_dph` 是刻意的：
+            #   若上游循环未执行（无 Handle 行）则函数未定义，此处必需自足。
+            _dph() { case "$1" in ""|"Not Specified"|"To Be Filled By O.E.M."|"To be filled by O.E.M."|"To Be Filled by O.E.M."|"Default string"|"System Product Name"|"UNKNOWN"|"Unknown"|"N/A") return 0 ;; *) return 1 ;; esac; }
             _dempty=0
-            case "$_dname" in
-                "Not Specified"|"")
-                    case "$_dmfr" in
-                        "Not Specified"|"")
-                            case "$_dsn" in
-                                "Not Specified"|"") _dempty=1 ;;
-                            esac ;;
-                    esac ;;
-            esac
+            if _dph "$_dname" && _dph "$_dmfr" && _dph "$_dsn"; then _dempty=1; fi
             if [ "$_dempty" -eq 1 ]; then
                 _dfull="（FRU 未读到——BIOS 未填充该条记录，供电状态见下方 IPMI 传感器）"
                 _dpn="—"; _dsn="—"
