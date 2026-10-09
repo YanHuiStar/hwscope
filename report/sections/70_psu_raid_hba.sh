@@ -735,12 +735,32 @@ done
 if [ -n "${PSU_DETAILS:-}" ]; then
     _psu_cap_why=""
     if [ ! -f "${dmidecode_psu}" ]; then
-        _psu_cap_why="N/A（该采集版本早于 v1.26.52，未采 SMBIOS Type 39）"
+        # v1.52.25：文件不存在**不等于**「版本早于 v1.26.52」—— 还可能是 psu 模块被
+        #   `--modules` 跳过、dmidecode 未装/非 root 失败、单模块运行等。结合采集目录里
+        #   记录的 HWSCOPE_VERSION 判断（summary.txt）：版本 ≥ v1.26.52 却无此文件 →
+        #   属「未采集到」（模块跳过/命令失败），不能给出错误的版本归因。
+        _cap_ver=$(grep -m1 '^Version' "${OUT}/summary.txt" 2>/dev/null | awk '{print $3}')
+        if [ -n "$_cap_ver" ] && [ "$(printf '%s\n%s\n' "v1.26.52" "$_cap_ver" | sort -V | head -1)" = "v1.26.52" ]; then
+            # sort -V 升序取最小：若最小者是 v1.26.52，说明 _cap_ver ≥ v1.26.52
+            _psu_cap_why="N/A（未采集到 SMBIOS Type 39 日志——psu 模块被跳过或 dmidecode 未就绪）"
+        else
+            _psu_cap_why="N/A（该采集版本早于 v1.26.52，未采 SMBIOS Type 39）"
+        fi
     elif ! grep -qi "Max Power Capacity" "${dmidecode_psu}" 2>/dev/null; then
         _psu_cap_why="N/A（该机 SMBIOS 无 Type 39 记录，FRU 不含容量）"
     fi
     if [ -n "$_psu_cap_why" ]; then
         PSU_DETAILS=$(printf '%s\n' "$PSU_DETAILS" | awk -F'|' -v why="$_psu_cap_why" 'BEGIN{OFS="|"} {
-            if (NF>=5 && ($5=="N/A" || $5=="" || $5=="—")) $5=why; print }')
+            # v1.52.25：守卫放宽到 **NF>=4** —— FRU 路径产出的行只有 **4 列**
+            #   （`PSU#|型号|PN|SN`，见 140/160 行：`$pending` 2 段 + `PN|SN` 2 段），
+            #   只有后续 Pin 功耗传感器（189 行）或 Type 39 匹配（316/343 行）才把它 pad 到 5/6 列。
+            #   而「无 Pin 传感器 + SMBIOS 无 Type 39」**恰是场景②最纯的形态**（ACBEL 类电源机），
+            #   原 `NF>=5` 会让这批目标行**整批逃逸**（首版正是这么错的 —— 验证样本恰好带 Pin
+            #   传感器、行被 pad 到 6 列，避开了该形态）。
+            #   4 列行的 $5 恒为空 → 赋值即安全扩展成 5 列；报告端按竖线分隔读取，兼容。
+            #   ⚠️ 本 awk 程序由单引号包裹 —— 注释里**不得出现单引号**（如 IFS 的引号写法），
+            #      否则会提前闭合引号、后续文本被当 shell 代码执行（v1.52.25 首版即因此
+            #      报 `line 769: read` 兼容。` 并把整个 PSU_DETAILS 赋成空 —— bash -n 查不出）。
+            if (NF>=4 && ($5=="N/A" || $5=="" || $5=="—")) $5=why; print }')
     fi
 fi

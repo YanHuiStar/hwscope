@@ -310,7 +310,12 @@ _rc_is_benign() {
 _rc_content_known_benign() {
     local _lf="${1:-}"
     [ -n "$_lf" ] && [ -s "$_lf" ] || return 1
-    grep -qF 'Error when trying to check if NV access registers are supported' "$_lf" 2>/dev/null
+    # v1.52.25：收紧判定。原实现只要日志**包含**该句就整条豁免 —— 若同一次失败同时输出
+    #   多条 `-E-`（MST 争用误报 **+ 真故障并存**），真故障会被一并静默。这正是项目铁律
+    #   「分类过头即漏报，是更严重的错」要防的情形（v1.52.21 引用了该铁律，实现却没落地）。
+    #   现要求：该句存在 **且** `-E-` 错误行**只有这一条**才豁免。
+    grep -qF 'Error when trying to check if NV access registers are supported' "$_lf" 2>/dev/null || return 1
+    [ "$(grep -c '^-E-' "$_lf" 2>/dev/null)" -eq 1 ]
 }
 
 run_and_log() {

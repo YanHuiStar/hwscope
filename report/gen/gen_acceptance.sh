@@ -604,7 +604,11 @@ gen_acceptance() {
             [ -z "$pdesc" ] && continue
             ACC_PSU_COUNT=$((ACC_PSU_COUNT+1))
             [ "$ACC_PSU_MODEL" = "N/A" ] && [ "$pmodel" != "N/A" ] && [ -n "$pmodel" ] && ACC_PSU_MODEL="$pmodel"
-            [ "$ACC_PSU_CAP" = "N/A" ] && [ "$pcap" != "N/A" ] && [ -n "$pcap" ] && ACC_PSU_CAP="$pcap"
+            # v1.52.25：规格行要干净 —— 剥离「N/A（成因说明）」中的说明部分
+            #   （成因说明只服务人工可读的明细表；JSON 同样剥离）。原判据 `$pcap != "N/A"`
+            #   会让「N/A（该机 SMBIOS 无 Type 39 记录…）」被当作有效容量取走。
+            _pcap_clean=$(printf '%s' "$pcap" | sed 's/^N\/A（.*）$/N\/A/')
+            [ "$ACC_PSU_CAP" = "N/A" ] && [ "$_pcap_clean" != "N/A" ] && [ -n "$_pcap_clean" ] && ACC_PSU_CAP="$_pcap_clean"
         done < <(printf '%s\n' "$PSU_DETAILS")
     fi
     ACC_DISK_MODEL="N/A"

@@ -333,7 +333,10 @@ $(if [ -n "$PSU_DETAILS" ]; then
     while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
-        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s", "capacity": "%s", "power_in": "%s"},' "$pseq" "$(jesc "$pdesc")" "$(jesc "$pmodel")" "$(jesc "$ppn")" "$(jesc "$psn")" "$(jesc "${pcap:-N/A}")" "$(jesc "${ppower:-N/A}")"
+        # v1.52.25：capacity 是**机器消费**字段 —— 剥离「N/A（成因说明）」中的说明部分，
+        #   保持 JSON 值干净（成因说明只服务人工可读的明细表；验收清单同样剥离）。
+        pcap_json=$(printf '%s' "${pcap:-N/A}" | sed 's/^N\/A（.*）$/N\/A/')
+        printf '      {"index": "%s", "description": "%s", "model": "%s", "part_number": "%s", "serial": "%s", "capacity": "%s", "power_in": "%s"},' "$pseq" "$(jesc "$pdesc")" "$(jesc "$pmodel")" "$(jesc "$ppn")" "$(jesc "$psn")" "$(jesc "$pcap_json")" "$(jesc "${ppower:-N/A}")"
         echo ""
     done < <(printf '%s\n' "$PSU_DETAILS") | sed '$ s/,$//'
 fi)
