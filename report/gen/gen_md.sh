@@ -450,8 +450,13 @@ $(if [ -n "$gpu_details_md" ]; then
     echo ""
     echo "### 图形处理器明细（GPU）"
     # v1.44.0 SXM 适配：SXM 平台模组无 CPU 直连 PCIe 链路，nvidia-smi 链路协商值实为 NVLink 通道
+    # v1.52.16：取消 SXM 平台把该列改名为 `NVLink(协商)` 的特殊处理。
+    #   该列取的是 nvidia-smi `GPU Link Info` 的 `PCIe Generation` / `Link Width`——
+    #   即便在 SXM 模组上也是**货真价实的 PCIe 链路**（模组到 host/NVSwitch 的 PCIe 通路，
+    #   输出里 `Host Max : 5` / `Device Max : 6` 即是 PCIe 代数），与 NVLink 无关
+    #   （NVLink 带宽在 NVLink 章节与 `nvlink -s` 里）。原改名会误导：实测一台 B300 的
+    #   GPU5 PCIe 降宽（x16→x8）被渲染成 `NVLink(协商) 6x8 (能力 6x16)`，读者会误判成 NVLink 降级。
     _gpu_link_col="PCIe(协商)"
-    case "${PLATFORM_LABEL:-}" in *SXM*) _gpu_link_col="NVLink(协商)" ;; esac
     echo "| 卡 | 型号 | SN | PCIe 地址(BDF) | 设备 ID | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS | Inforom |"
     echo "|----|------|----|---------------|--------|----|------|------|----------|-------|---------|"
     printf '%s' "$gpu_details_md"

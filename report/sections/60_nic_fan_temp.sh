@@ -664,7 +664,15 @@ if [ -f "${ipmi_sensors_temp}" ]; then
     #   TEMP_CPU0 46C / TEMP_GB_GPU0~7 27~35C）。原模式 `^cpu[0-9]+[ _]temp` 要求
     #   "cpu 开头"，而 DGX 是 "temp_cpu0"，故整机温度被判「无温度传感器数据」——
     #   实际有数据（错的是解析，不是硬件）。注意 _temp_agg 已 tolower。
-    TEMP_SUMMARY="$( _temp_agg 'inlet.*temp|tr[0-9]+.*temp' '进风'; _temp_agg 'outlet.*temp' '出风'; _temp_agg '^cpu[0-9]+[ _]temp|^temp_cpu[0-9]+$' 'CPU'; _temp_agg 'dimm.*temp' '内存'; _temp_agg 'psu[0-9]+[ _]temp' '电源'; _temp_agg 'pch.*temp' 'PCH'; _temp_agg '^temp_gb_gpu[0-9]+$' 'GPU' )"
+    # v1.52.16：再补 ASUS 服务器（XA NB3I-E12 等）的 `Temp_` 前缀命名。该平台传感器是
+    #   **前缀 `Temp_` + 类型词在后**：`Temp_P1`(CPU) / `Temp_P1_DIMMGRP1`(内存) /
+    #   `Temp_PSU1_Inlet`(电源) / `Temp_GPU1_Core|HBM`(GPU) / `Temp_GPU_Inlet|Outlet`(进/出风) /
+    #   `Temp_MB_Inlet`·`Temp_SYS_Inlet`·`Temp_FCB1_Amb1`(进风) / `Temp_NVSwitch1`(GPU 域)。
+    #   既有 7 个模式全部要求「类型词在前」，与该命名零交集 —— 实测一台 8×B300 机 104 个
+    #   温度传感器被整批漏掉，验收误判「无温度传感器数据」（实际数据齐全）。
+    #   注意：`Temp_Bay<N>`(硬盘位) / `Temp_Slot<N>_*` / `Temp_Retimer<N>` / `Temp_PCIeSW<N>` /
+    #   `Temp_GB_*` / `Temp_DC_CONV<N>` 等板卡级传感器**不映射**（现有标签无对应类别，硬塞会误导）。
+    TEMP_SUMMARY="$( _temp_agg 'inlet.*temp|tr[0-9]+.*temp|temp_(mb|sys|gpu|fcb[0-9]+)_inlet|temp_fcb[0-9]+_amb[0-9]+|temp_iob[a-z0-9_]*_amb' '进风'; _temp_agg 'outlet.*temp|temp_(mb|sys|gpu)_outlet' '出风'; _temp_agg '^cpu[0-9]+[ _]temp|^temp_cpu[0-9]+$|^temp_p[0-9]+$|temp_p[0-9]+vr_' 'CPU'; _temp_agg 'dimm.*temp|temp_p[0-9]+_dimm' '内存'; _temp_agg 'psu[0-9]+[ _]temp|temp_psu[0-9]+_' '电源'; _temp_agg 'pch.*temp' 'PCH'; _temp_agg '^temp_gb_gpu[0-9]+$|temp_gpu[0-9]+_(core|hbm)|temp_nvswitch[0-9]+' 'GPU' )"
     TEMP_SUMMARY=$(echo "$TEMP_SUMMARY" | sed 's/  *$//')
 fi
 # OS 侧温度兜底（v1.45.16）：无 BMC 温度（ipmi_sensors_temp 无/失败/平台无 BMC）时，

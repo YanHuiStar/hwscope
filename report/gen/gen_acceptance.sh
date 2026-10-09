@@ -270,14 +270,18 @@ gen_acceptance() {
     fi
 
     # 10. 整机温度正常范围（进风/出风/CPU/内存/电源/PCH 传感器均 ok）
-    if [ -z "$TEMP_SUMMARY" ]; then
-        if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
-            add_item "整机温度正常" "N/A" "平台无 BMC（无 IPMI 温度传感器，温度判定不适用）" 1
-        else
-            add_item "整机温度正常" "N/A" "无温度传感器数据"
-        fi
-    else
+    #     v1.52.16：补 OS 侧兜底。此前只读 BMC 侧 `TEMP_SUMMARY`，而 OS 侧聚合结果
+    #     `TEMP_SUMMARY_OS`（lm-sensors，v1.45.16 引入）**只用于报告正文**、从未进入判定 ——
+    #     表现是报告正文写着 `温度 CPU 38-106°C（OS 侧 lm-sensors）`，验收项却判
+    #     「N/A 无温度传感器数据」，同一份报告自相矛盾（实测一台 B300 机即如此）。
+    if [ -n "${TEMP_SUMMARY:-}" ]; then
         add_item "整机温度正常" "PASS" "${TEMP_SUMMARY}"
+    elif [ -n "${TEMP_SUMMARY_OS:-}" ]; then
+        add_item "整机温度正常" "PASS" "${TEMP_SUMMARY_OS}（BMC 温度传感器未暴露，取 OS 侧读数）"
+    elif [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
+        add_item "整机温度正常" "N/A" "平台无 BMC（无 IPMI 温度传感器，温度判定不适用）" 1
+    else
+        add_item "整机温度正常" "N/A" "无温度传感器数据"
     fi
 
     # 11. SEL 事件（v1.48.86：按「告警是否已解除」判，而非「是否出现过 Critical 字样」）

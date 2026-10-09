@@ -43,8 +43,7 @@ gen_txt() {
                 gdraw_disp="${gdraw}/${_gl}W"
             fi
             # v1.44.0 SXM 适配：SXM 平台该值实为 NVLink 通道协商（模组无 CPU 直连 PCIe 链路）
-            _gpu_link_lbl="PCIe(协商)"
-            case "${PLATFORM_LABEL:-}" in *SXM*) _gpu_link_lbl="NVLink(协商)" ;; esac
+            _gpu_link_lbl="PCIe(协商)"   # v1.52.16：取消 SXM 改名 NVLink(协商)——该值本就是 PCIe 链路（见 gen_md.sh 同处说明）
             gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  BDF:${gbdf:-N/A}  ID:${gdev:-N/A}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  ${_gpu_link_lbl}:${gpcie_disp}  VBIOS:${gvb:-N/A}  Inforom:${gifo:-N/A}"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
     fi

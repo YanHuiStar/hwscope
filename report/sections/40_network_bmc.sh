@@ -337,18 +337,22 @@ if [ -f "${ipmi_sel_elist}" ]; then
     _sel_stat=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
         | grep -vE "Could not open|Unable|No such file|command failed|device at /dev|^$" \
         | awk -F'|' '
+            # v1.52.16：改为**按时序记录每个键的最后状态**。旧实现只看「该键是否出现过
+            #   Deasserted」（rel[k]=1），A→D→A→D→A 这类反复告警只要曾经解除过一次就被
+            #   当成「已自愈」，末次仍为 Asserted 的被漏判。实测一台 B300 机报告 2 条未解除，
+            #   按时序口径实为 8 条（风扇 Lower Critical 反复触发、末次未恢复）。
+            #   前提：ipmitool sel elist 输出按时间升序（SEL 即按时间追加），后行覆盖前行。
             NF>=6 {
                 s=$4; e=$5; st=$6
                 gsub(/^ +| +$/,"",s); gsub(/^ +| +$/,"",e); gsub(/^ +| +$/,"",st)
+                if (tolower(e) !~ /critical|fatal|non-recoverable|nonrecoverable/) next
                 k=s"|"e
-                if (st=="Deasserted") { rel[k]=1; store[++m]=k; next }
-                if (st=="Asserted" && tolower(e) ~ /critical|fatal|non-recoverable|nonrecoverable/) {
-                    crit[k]=1; order[++n]=k
-                }
+                if (!(k in seen)) { seen[k]=1; order[++n]=k }
+                last[k]=st
             }
             END {
                 u=0; r=0
-                for (i=1;i<=n;i++) { if (order[i] in rel) r++; else u++ }
+                for (i=1;i<=n;i++) { if (last[order[i]]=="Asserted") u++; else r++ }
                 printf "%d %d", u, r
             }')
     SEL_CRIT_UNRESOLVED="${_sel_stat%% *}"
