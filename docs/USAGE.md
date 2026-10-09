@@ -168,6 +168,27 @@ bash tools/cable_map.sh              # IB 线缆拓扑（自动发现物理连�
 bash tools/bmc_tool.sh               # BMC 凭据/密码管理
 ```
 
+### 时间同步（运维机 → 目标机，SSH）
+
+目标机时钟偏差会让采集报告的时间戳失去可信度（内网常无 NTP 可达）。以**运维机时间为基准**对时：
+
+```bash
+bash tools/sync_time.sh root@10.0.0.1                        # 单台
+bash tools/sync_time.sh root@10.0.0.1 root@10.0.0.2          # 多台
+bash tools/sync_time.sh root@10.0.0.1 --dry-run              # 只显示偏差，不做修改
+```
+
+Windows 运维机（等价）：
+
+```
+tools\win\sync_time.bat root@10.0.0.1[,root@10.0.0.2,...] [-DryRun]
+```
+
+- **同步范围**：**系统时钟 + 硬件时钟（RTC）都写**（重启不丢）；传递 **epoch 秒** —— 一个**绝对时刻**，日期与时间一起对
+- **不动时区**：目标机按自身时区显示，时刻与运维机一致（例：运维机 CST 10:00 → 目标机 UTC 显示 02:00，同一时刻）
+- **会先停 NTP**（`timedatectl set-ntp false`）防冲突 —— 目标机本就有可用 NTP 时不需要本工具
+- **不追溯**：已采集的数据时间戳不会因此变正确；流程是「**先对时 → 再采集**」
+
 ### DHCP（新上架服务器批量发 IP）
 
 ```bash
