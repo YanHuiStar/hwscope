@@ -66,6 +66,15 @@ sn_filter() {   # stdin=带行号文本，输出=含高置信 SN 的行
             #    曾因只改 PATTERN 未改此处，导致新增的 IP 检测完全不生效）
             while (match(line, /\<[A-Z]{1,4}[0-9]{3,}[A-Z0-9]{0,8}\>|\<[0-9]{9,13}\>|\<([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}\>|\<[0-9a-fA-F]{12}\>|\<([0-9]{1,3}\.){3}[0-9]{1,3}\>/)) {
                 tok = substr(line, RSTART, RLENGTH)
+                rest = substr(line, RSTART + RLENGTH)
+                # v1.52.19：容量/字节数上下文豁免 —— 纯数字 token **后紧跟容量单位**时视为读数而非 SN。
+                #   实证：注释里写「容量 1874715648 bytes」被 9-13 位纯数字规则判成疑似 SN 拦提交
+                #   （v1.52.12 只能靠改写成 `<N>` 占位绕过）。
+                #   ⚠️ 只在**紧跟单位**时豁免，裸长数字仍按原规则判 —— 避免放过真 SN
+                #   （真实 SN 有 13 位纯数字形态，不能按长度收窄）。
+                if (tok ~ /^[0-9]+$/ && rest ~ /^[ \t]*(bytes|Bytes|BYTES|B|KiB|MiB|GiB|TiB|PiB|KiB|kB|KB|MB|GB|TB|PB)\>/ ) {
+                    line = rest; continue
+                }
                 # 内网 IP（v1.49.12）——测试机地址同样属敏感信息，直接算高置信
                 if (tok ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}$/) { keep="yes"; break }
                 # MAC 形态直接算高置信（带分隔符或 12 位 hex）
