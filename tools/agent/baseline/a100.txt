@@ -31,7 +31,7 @@
 [html]
   html_table_open=29
   html_table_close=29
-  html_bytes=65413
+  html_bytes=65445
 [acceptance]
         3 N/A
        15 PASS
@@ -45,3 +45,5 @@
   存储 | 块 | 6
   电源模块 | 个 | 6
   系统管理 | 套 | 1
+[source]
+  source_fp_hash=3a8878b45380

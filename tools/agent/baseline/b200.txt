@@ -31,10 +31,10 @@
 [html]
   html_table_open=29
   html_table_close=29
-  html_bytes=47473
+  html_bytes=47471
 [acceptance]
-        3 N/A
-       14 PASS
+        2 N/A
+       15 PASS
 [acceptance_hw]
   准系统 | 台 | 1
   CPU | 颗 | 2
@@ -45,3 +45,5 @@
   存储 | 块 | 2
   电源模块 | 个 | 6
   系统管理 | 套 | 1
+[source]
+  source_fp_hash=f2974395c2bb
