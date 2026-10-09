@@ -294,6 +294,25 @@ _rc_is_benign() {
     esac
 }
 
+# ─── 内容级豁免（v1.52.21）───────────────────────────────────────────────
+# `_rc_is_benign` 只看「退出码 + 命令文本」，无法识别「命令确实失败、但失败原因是已定性的
+# 已知误报」这类情况。本函数按**日志内容精确匹配**补这一档。
+#
+# 首个用例：`mlxconfig` 在 MST 设备争用时报
+#   `-E- Error when trying to check if NV access registers are supported`（exit=3）。
+#   v1.48.69 的注释已把它定性为「争用误报」——当时措施是把每设备工具调用从 8 路并行降到
+#   2 路（降低争用），但**没有落地豁免**，于是仍然报 WARN（实测一台 8×B300 机的
+#   mlx5_10/11 两个口触发）。
+#
+# ⚠️ 铁律：**必须按文案精确匹配**，禁止退化成「cmd 含 mlxconfig && ret==3」这类笼统豁免 ——
+#   那会把「真不支持 NV access 的设备」与「真故障」一起放过。
+#   AGENTS 有明确教训：分类过头即漏报，是更严重的错。
+_rc_content_known_benign() {
+    local _lf="${1:-}"
+    [ -n "$_lf" ] && [ -s "$_lf" ] || return 1
+    grep -qF 'Error when trying to check if NV access registers are supported' "$_lf" 2>/dev/null
+}
+
 run_and_log() {
     local cmd="$1"
     local logfile="$2"
@@ -329,7 +348,9 @@ run_and_log() {
     echo "# --- exit code: $ret, [ ${elapsed}s ] ---" >> "$logfile"
 
     # WARN 计数（v1.52.3 C2：exit=1 仅在该命令确实调用了 grep 时才豁免）
-    if ! _rc_is_benign "$ret" "$cmd"; then
+    #   v1.52.21 再加一层内容级豁免（_rc_content_known_benign）：命令确实失败、但失败原因是
+    #   已定性的已知误报（如 mlxconfig 的 MST 争用）时不计 WARN。
+    if ! _rc_is_benign "$ret" "$cmd" && ! _rc_content_known_benign "$logfile"; then
         _MODULE_WARN_COUNT=$((_MODULE_WARN_COUNT + 1))
     fi
 
@@ -345,7 +366,7 @@ run_and_log() {
     fname=$(basename "${logfile%.*}")
     if [ "$QUIET" -eq 1 ]; then
         # 静默模式：只显示 WARN
-        if ! _rc_is_benign "$ret" "$cmd"; then
+        if ! _rc_is_benign "$ret" "$cmd" && ! _rc_content_known_benign "$logfile"; then
             printf "${YELLOW}%-6s${NC} %s (exit=%s)  [ %s ]\n" "[WARN]" "$fname" "$ret" "$fmt_elapsed"
         fi
     else
@@ -353,6 +374,9 @@ run_and_log() {
             printf "${GREEN}%-6s${NC} %s  %s  [ %s ]\n" "[OK]" "$fname" "(exit=0)" "$fmt_elapsed"
         elif [ "$ret" -eq 1 ] && _rc_is_benign "$ret" "$cmd"; then
             printf "%-6s %s  %s  [ %s ]\n" "[~]" "$fname" "(no match)" "$fmt_elapsed"
+        elif _rc_content_known_benign "$logfile"; then
+            # v1.52.21：命令确实非零退出，但日志内容命中已定性的误报文案（如 mlxconfig 的 MST 争用）
+            printf "%-6s %s  %s  [ %s ]\n" "[~]" "$fname" "(known benign)" "$fmt_elapsed"
         elif [ "$ret" -eq 127 ]; then
             printf "${YELLOW}%-6s${NC} %s  %s  [ %s ]\n" "[N/A]" "$fname" "(cmd not found)" "$fmt_elapsed"
         else

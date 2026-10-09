@@ -199,10 +199,19 @@ run_network() {
                 #   `Unable to parse device name domain:bus:dev.fn=...`。实测一台 8×B300 机
                 #   **8 张卡 mstflint 全部失败**，SN/PSID 退化为 GUID 兜底（mstflint_failed.log 留有证据）。
                 #   改为：先记住 `/dev/mst/` 开头的行，遇到含该 BDF 的行时输出**上一个**设备路径。
-                mstdev=$(mst status 2>/dev/null | awk -v b="$nbdf" '
+                # v1.52.21：把 `mst status` 输出**落盘一次**并复用。原实现每设备都跑一次
+                #   （8 卡机白跑 8 次同一条命令），且原始输出从未落盘 —— 本次 `mst status`
+                #   解析 bug 之所以只能从 `mstflint_failed.log` 的描述串反推，就是因为它
+                #   没留痕。落盘后可直接复核「设备路径 <-> BDF」对照。
+                if [ "${_MST_STATUS_DUMPED:-0}" -eq 0 ]; then
+                    mst status > "${dir}/mst_status.log" 2>&1 || true
+                    write_manifest --append "${dir}/manifest.txt" "mst_status" "mst_status.log"
+                    _MST_STATUS_DUMPED=1
+                fi
+                mstdev=$(awk -v b="$nbdf" '
                     /^\/dev\/mst\// { dev=$1; next }
                     dev != "" && index(tolower($0), tolower(b)) > 0 { print dev; exit }
-                ')
+                ' "${dir}/mst_status.log" 2>/dev/null)
                 # 兜底：`/dev/mst/` 目录里按 BDF（去冒号）匹配
                 [ -z "$mstdev" ] && mstdev=$(ls /dev/mst/* 2>/dev/null | grep --line-buffered -i "${nbdf//:}" | head -1)
                 if [ -n "$mstdev" ]; then
