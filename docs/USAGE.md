@@ -236,3 +236,10 @@ bash tools/agent/agent_sync.sh --clear      # 推送成功后：清空未推送�
 
   现场 BMC 响应慢（如技嘉 B200 实测 ipmi_sensors/sdr/fan_*/psu_* 全线超时）时可调大，例如 `HWSCOPE_IPMI_TIMEOUT=180 sudo -E bash hwscope.sh`。注意 `sudo` 需用 `-E` 保留环境变量，或改为 `sudo HWSCOPE_IPMI_TIMEOUT=180 bash hwscope.sh`。
 - `MODULE_TIMEOUT`：单模块整体超时（秒），也可用命令行参数 `--module-timeout`（默认 `600`，hwscope.sh `MODULE_TIMEOUT_DEFAULT`）。
+- `MLXLINK_EXTRA`（默认 `0`，v1.52.23）：设为 `1` 时每个 mlx5 口**额外采集眼图与 FEC 能力** ——
+  `mlxlink -e`（Show Eye Opening Info）与 `mlxlink --show_fec`（Show FEC Capabilities），
+  落盘 `mlxlink_<dev>_eye.log` / `mlxlink_<dev>_fec.log`。两者都属 mlxlink 的「Queries」
+  **只读查询组**（NVIDIA MFT 官方文档确认，不影响硬件）。
+  **默认关**：16 口机上每口多 2 次调用（净增约 32 次），而眼图/FEC 只在链路质量需要深挖时用
+  （IB 误码排查、FEC 模式与规格核对）。用法：`MLXLINK_EXTRA=1 sudo -E bash hwscope.sh --modules network`。
+  另：`mlxlink --show_ber_monitor` 官方标注**不支持 HCA（网卡）**，故未采集。

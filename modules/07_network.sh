@@ -92,6 +92,16 @@ run_network() {
                     # v1.48.58：物理计数器 + BER（Symbol/Raw Physical BER、Link Down Counter）——链路质量第一手数据，
                     # 不依赖模块读取（不用 -m），避免与 NO_MODULE 开关冲突
                     mlx_jobs+=("mlxlink -d mlx5_${dev_num} -c" "${dir}/mlxlink_${dev_num}_counters.log")
+                    # v1.52.23：眼图 + FEC 能力（MLXLINK_EXTRA=1 开启，默认关）。
+                    #   两者都属 mlxlink 的「Queries」组（**只读查询**，NVIDIA MFT 官方文档确认：
+                    #   `-e`,--show_eye = Show Eye Opening Info；`--show_fec` = Show FEC Capabilities），
+                    #   符合「只读无害」原则。默认关的理由：16 口机上每口多 2 次调用（+32 次），
+                    #   而眼图/FEC 只在链路质量需要深挖（IB 误码排查、FEC 模式核对）时才用。
+                    #   注意：--show_ber_monitor 官方标注**不支持 HCA（网卡）**，故不采集。
+                    if [ "${MLXLINK_EXTRA:-0}" -eq 1 ]; then
+                        mlx_jobs+=("mlxlink -d mlx5_${dev_num} -e" "${dir}/mlxlink_${dev_num}_eye.log")
+                        mlx_jobs+=("mlxlink -d mlx5_${dev_num} --show_fec" "${dir}/mlxlink_${dev_num}_fec.log")
+                    fi
                 fi
                 ((dev_num++))
             done
@@ -101,6 +111,12 @@ run_network() {
                 [ "${NO_MODULE:-0}" -eq 0 ] && mlx_jobs+=("mlxlink -d $dev -m" "${dir}/mlxlink_${dev}_module.log")
                 # v1.48.58：物理计数器 + BER（见上）
                 mlx_jobs+=("mlxlink -d $dev -c" "${dir}/mlxlink_${dev}_counters.log")
+                # v1.52.23：眼图 + FEC 能力（默认关，见上方 dev_num 分支的同一处说明 ——
+                #   **两条路径必须同步**，这正是 AGENTS「改判据先 grep 全部调用点」的用例）
+                if [ "${MLXLINK_EXTRA:-0}" -eq 1 ]; then
+                    mlx_jobs+=("mlxlink -d $dev -e" "${dir}/mlxlink_${dev}_eye.log")
+                    mlx_jobs+=("mlxlink -d $dev --show_fec" "${dir}/mlxlink_${dev}_fec.log")
+                fi
             done < <(printf '%s\n' "$mlx_devs")
         fi
         [ "${#mlx_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${mlx_jobs[@]}"
@@ -350,6 +366,7 @@ run_network() {
     fi
 
 # NOTE: mlxconfig_N.log, mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log, mlxlink_N_counters.log,
+    #       mlxlink_N_eye.log / mlxlink_N_fec.log（v1.52.23 起，仅 MLXLINK_EXTRA=1 时产出）,
     #       ethtool_*.log, ethtool_*_driver.log, ethtool_*_module.log, nic_*_pcie.log
     #       are generated per device
     write_manifest "${dir}/manifest.txt" \
