@@ -29,9 +29,26 @@ run_nvswitch() {
     #     -c        CSV，报告端按字段解析
     #     -v        带 `Switch Arch = N` 与 devId/phyid/switchId 表（NVSwitch 颗数一目了然）
     if check_cmd nvswitch-audit; then
-        run_and_log "nvswitch-audit" "${dir}/nvswitch_audit.log"
-        run_and_log "nvswitch-audit -c" "${dir}/nvswitch_audit_csv.log"
-        run_and_log "nvswitch-audit -v" "${dir}/nvswitch_audit_verbose.log"
+        # v1.52.17：平台探测 —— Blackwell（B200/B300）的 NVSwitch **集成在 GPU 内**，无独立交换芯片，
+        #   于是 nvswitch-audit 以 exit=255 报
+        #   "nvswitch-audit is not supported on this system, because no supported NVSwitch is found."
+        #   这是平台固有形态（NVLink 走 nvidia-smi / nv-fabricmanager 判定），**不是采集失败**——
+        #   实测一台 8×B300 机因此白记 3 个 WARN（三条命令各一），既污染 summary 又让报告看着像有问题。
+        #   探测命中 → 三条都不跑；但**仍产出同名日志**（写说明）以保证 manifest 声明与产出一致（v1.52.4 教训）。
+        _nvsa_probe=$(nvswitch-audit 2>&1 | head -3)
+        if printf '%s' "$_nvsa_probe" | grep -qi "no supported NVSwitch is found"; then
+            echo -e "${YELLOW}[SKIP] nvswitch-audit：平台无独立 NVSwitch（集成于 GPU 内，属固有形态）${NC}"
+            for _f in nvswitch_audit.log nvswitch_audit_csv.log nvswitch_audit_verbose.log; do
+                { echo "# Command : nvswitch-audit（平台探测：无独立 NVSwitch）"
+                  echo "# 说明    : 该平台 NVSwitch 集成于 GPU 内，nvswitch-audit 不适用（固有形态，非采集失败）"
+                  echo "# 以下为探测原始输出："
+                  printf '%s\n' "$_nvsa_probe"; } > "${dir}/${_f}"
+            done
+        else
+            run_and_log "nvswitch-audit" "${dir}/nvswitch_audit.log"
+            run_and_log "nvswitch-audit -c" "${dir}/nvswitch_audit_csv.log"
+            run_and_log "nvswitch-audit -v" "${dir}/nvswitch_audit_verbose.log"
+        fi
     else
         echo -e "${YELLOW}[SKIP] nvswitch-audit not found（属 nvidia-fabricmanager 包）${NC}"
     fi

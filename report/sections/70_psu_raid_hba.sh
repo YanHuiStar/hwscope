@@ -297,16 +297,15 @@ if [ -f "$_fru_src" ]; then
                         #   原实现直接按「厂商+Name+Rev+Revision」拼接，会渲染成
                         #   "Not Specified Not Specified Rev Not Specified"，看着像采集坏了。
                         #   注意容量不改：Max Power Capacity 是真实字段（该空记录也带 3000 W），不能丢。
+                        # v1.52.17：占位词扩展 —— 除 "Not Specified" 外，BIOS 未填 FRU 时各厂还有别的写法：
+                        #   ASUS `To Be Filled By O.E.M.`、AMI `Default string`、`System Product Name`、
+                        #   `UNKNOWN`。实测一台 ASUS B300 整机 10 颗 PSU 全部渲染成
+                        #   「To Be Filled By O.E.M. To Be Filled By O.E.M. Rev To Be Filled By O.E.M.」，
+                        #   看着像采集坏了（而同机 IPMI 侧电源状态正常、容量 368W 是真实数据，故容量保留）。
+                        #   判据不变：**三关键字段（Name/厂商/SN）全为占位或空** 才判「FRU 未读到」。
+                        _dph() { case "$1" in ""|"Not Specified"|"To Be Filled By O.E.M."|"To be filled by O.E.M."|"To Be Filled by O.E.M."|"Default string"|"System Product Name"|"UNKNOWN"|"Unknown"|"N/A") return 0 ;; *) return 1 ;; esac; }
                         _dempty=0
-                        case "$_dname" in
-                            "Not Specified"|"")
-                                case "$_dmfr" in
-                                    "Not Specified"|"")
-                                        case "$_dsn" in
-                                            "Not Specified"|"") _dempty=1 ;;
-                                        esac ;;
-                                esac ;;
-                        esac
+                        if _dph "$_dname" && _dph "$_dmfr" && _dph "$_dsn"; then _dempty=1; fi
                         if [ "$_dempty" -eq 1 ]; then
                             _dfull="（FRU 未读到——BIOS 未填充该条记录，供电状态见下方 IPMI 传感器）"
                             _dpn="—"; _dsn="—"

@@ -641,7 +641,16 @@ gen_acceptance() {
             _ethd=$(_dist_str eth)
             echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 张 | ${ACC_NIC_ETH_COUNT}（${_ethd:-${ACC_NIC_ETH_PORT} 口}，共 ${ACC_NIC_ETH_PORT} 口） |"
         fi
-        echo "| 存储 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
+        # v1.52.17：区分「平台无本地数据盘」与「采集失败」。实测一台 ASUS B300 本机只有
+        #   USB 安装盘（sda 476.9G）+ 4 个 0B 虚拟盘 → STORAGE_COUNT=0，原渲染 `N/A（0 GiB）`
+        #   让读者以为「没采到数据」；实际是「该机未配本地数据盘」（GPU 服务器常走网络存储）。
+        #   判据：block_devices_all 有非注释数据行 → 采集本身成功。
+        _stor_rows=$([ -f "${block_devices_all:-}" ] && grep -vcE '^#|^$' "${block_devices_all}" 2>/dev/null || echo 0)
+        if [ "${STORAGE_COUNT:-0}" -eq 0 ] 2>/dev/null && [ "${_stor_rows:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| 存储 | 无本地数据盘（本机仅 USB/虚拟盘，块设备记录 ${_stor_rows} 条） | 块 | 0 |"
+        else
+            echo "| 存储 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
+        fi
         echo "| 电源模块 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
         echo "| 系统管理 | BMC（固件 ${BMC_FW:-N/A}） | 套 | 1 |"
         echo ""
