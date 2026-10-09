@@ -440,7 +440,9 @@ run_and_log_parallel() {
         while [ $# -ge 2 ]; do
             run_and_log "$1" "$2"
             local ret=$?
-            _rc_is_benign "$ret" "$1" || _rlp_has_error=1
+            # v1.52.22：内容级豁免必须同样作用于「串行降级」这条路径，否则
+            #   已定性的已知误报仍会被计入 WARN（与下方并行分支同理）。
+            _rc_is_benign "$ret" "$1" || _rc_content_known_benign "$2" || _rlp_has_error=1
             shift 2
         done
         return $_rlp_has_error
@@ -462,8 +464,13 @@ run_and_log_parallel() {
             echo "$_rlp_rc" > "${_rlp_tmpdir}/w_${this_idx}"
             # 子 shell 里的 WARN 计数不会回流，这里把"该退出码是否可豁免"一并落盘，
             #   由父进程按同一判据计数（v1.52.3 C2）
-            _rc_is_benign "$_rlp_rc" "$cmd" && echo 1 > "${_rlp_tmpdir}/b_${this_idx}" \
-                                            || echo 0 > "${_rlp_tmpdir}/b_${this_idx}"
+            # v1.52.22：补内容级豁免。原判定只看 _rc_is_benign，而 run_and_log 内部的计数
+            #   在子 shell 中不回流，父进程在此重算 —— 两处判据必须一致，否则
+            #   「已定性的已知误报」仍被计入 WARN（豁免形同虚设；实测 mlxconfig 的 MST
+            #   争用误报正是走 run_and_log_parallel 这条路）。
+            { _rc_is_benign "$_rlp_rc" "$cmd" || _rc_content_known_benign "$logfile"; } \
+                && echo 1 > "${_rlp_tmpdir}/b_${this_idx}" \
+                || echo 0 > "${_rlp_tmpdir}/b_${this_idx}"
         ) &
         _rlp_pids+=($!)
         _rlp_idx=$((_rlp_idx + 1))
