@@ -722,3 +722,25 @@ for _psf in "${BMC_DIR}/ipmi_sensors.log" "${BMC_DIR}/ipmi_sensors_power.log" "$
     _slot=$(grep -oE "PS[0-9]+_Status" "$_psf" 2>/dev/null | grep -oE "[0-9]+" | sort -n | tail -1)
     [ -n "$_slot" ] && { PSU_SLOT_TOTAL="$_slot"; break; }
 done
+
+# ─── v1.52.24：PSU 容量缺失的成因注明 ───
+# 报告里容量列此前原样渲染裸 `N/A`，读者无法判断是「没采到 / 该机没有 / 解析丢了」。
+# 两种成因可精确区分（AGENTS v1.48.88 立规：「0 条」不等于「没有」——采集失败必须与
+# 平台固有形态区分）：
+#   ① `psu/dmidecode_psu.log` **文件不存在** → 该采集版本早于 v1.26.52（当时未采 SMBIOS Type 39）
+#   ② 文件存在但全文无 `Max Power Capacity` → 该机 SMBIOS **没有** Type 39 记录，IPMI FRU 亦不含容量
+# 统一在此处后处理，而非改 316/343 两条写入路径（容量是 PSU_DETAILS 的第 5 列）。
+# **注意**：若主机有 Type 39 数据、仅个别电源缺容量，则保持 `N/A` 不臆断
+#   （可能只是该颗 PSU 的 FRU 读取问题，与机级成因不同）。
+if [ -n "${PSU_DETAILS:-}" ]; then
+    _psu_cap_why=""
+    if [ ! -f "${dmidecode_psu}" ]; then
+        _psu_cap_why="N/A（该采集版本早于 v1.26.52，未采 SMBIOS Type 39）"
+    elif ! grep -qi "Max Power Capacity" "${dmidecode_psu}" 2>/dev/null; then
+        _psu_cap_why="N/A（该机 SMBIOS 无 Type 39 记录，FRU 不含容量）"
+    fi
+    if [ -n "$_psu_cap_why" ]; then
+        PSU_DETAILS=$(printf '%s\n' "$PSU_DETAILS" | awk -F'|' -v why="$_psu_cap_why" 'BEGIN{OFS="|"} {
+            if (NF>=5 && ($5=="N/A" || $5=="" || $5=="—")) $5=why; print }')
+    fi
+fi
