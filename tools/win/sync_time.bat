@@ -19,6 +19,13 @@ rem ============================================
 title SSH Time Sync
 cd /d "%~dp0"
 if "%~1"=="" goto usage
+rem v1.53.4: add -h/--help (align with Linux sync_time.sh).
+rem   Old code only tested whether %~1 was empty, so "--help" was non-empty ->
+rem   passed to ssh as a hostname -> ssh printed its own usage and reported failure.
+rem   NOTE: keep this file pure ASCII (see skill windows-powershell-pitfalls 4b).
+if /i "%~1"=="--help" goto usage
+if /i "%~1"=="-h"     goto usage
+if /i "%~1"=="/?"     goto usage
 
 set "PS1=%~dp0sync_time.ps1"
 set "HOSTS=%~1"
@@ -53,5 +60,6 @@ echo.
 echo Options:
 echo   -DryRun            only probe and show offsets, change nothing
 echo   -Bmc:auto/yes/no   BMC time sync mode, default auto
+echo   -h, --help         show this help
 pause
 exit /b 1

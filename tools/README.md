@@ -77,6 +77,7 @@
 - **实现要点**：epoch 秒传递（无时区歧义）；**远程脚本经 base64 传参**（`echo <b64> | base64 -d | bash`）——参数里只有 base64 字符，无从被引号/括号破坏；交互式密码 + ControlMaster 复用
 - **依赖**：运维机 `ssh`/`date`/`base64`；目标机 `date`/`base64` +（可选）`timedatectl`/`hwclock`/`python3`/`ipmitool`
 - **参数校验（v1.50.5）**：`-h/--help` 先于 HOST 解析（此前 `-h` 会被当成目标机去 `ssh -h`）；其余 `-` 开头未知参数明确报错退出
+- **Windows 对应**：`tools/win/sync_time.ps1` / `.bat`（**v1.53.4 起同样支持 `-h` / `--help` / 不带参数显示用法**；此前 `--help` 会被当主机名交给 ssh）
 
 ## 🟡 远程采集
 

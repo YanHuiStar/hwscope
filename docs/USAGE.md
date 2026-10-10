@@ -183,6 +183,7 @@ Windows 运维机（等价）：
 
 ```
 tools\win\sync_time.bat root@10.0.0.1[,root@10.0.0.2,...] [-DryRun] [-Bmc:auto|yes|no]
+tools\win\sync_time.bat -h          # 或 --help / 不带参数 → 显示用法（v1.53.4）
 ```
 
 - **同步三处**：① **OS 系统时间** ② **RTC 硬件时钟** ③ **BMC 时间**（`--bmc` 强制 / `--no-bmc` 跳过 / 默认 `auto`）

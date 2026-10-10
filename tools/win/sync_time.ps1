@@ -39,13 +39,31 @@
     .\sync_time.ps1 -Hosts root@192.168.1.100 -Bmc no
 #>
 param(
-    [Parameter(Mandatory)][string]$Hosts,
+    [string]$Hosts,
     [switch]$DryRun,
     [ValidateSet('auto','yes','no')][string]$Bmc = 'auto',
-    [int]$Timeout = 10
+    [int]$Timeout = 10,
+    [switch]$Help
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# v1.53.4: -Help / --help / -h, and no-argument, all print usage
+#   (align with Linux tools/sync_time.sh which has -h|--help).
+#   Old behaviour: $Hosts was Mandatory and there was no Help switch, so
+#   `.\sync_time.ps1 --help` errored on the unknown parameter; and when reached
+#   through .bat, "--help" was passed to ssh as a hostname (ssh printed its own usage).
+if ($Help -or [string]::IsNullOrWhiteSpace($Hosts)) {
+    Write-Host "Usage: sync_time.ps1 -Hosts user@ip1[,user@ip2,...] [-DryRun] [-Bmc auto|yes|no] [-Timeout N]"
+    Write-Host "       sync_time.ps1 -Help"
+    Write-Host ""
+    Write-Host "  -Hosts    targets, comma separated (user@ip), e.g. root@192.168.1.100"
+    Write-Host "  -DryRun   only probe and show offsets, change nothing"
+    Write-Host "  -Bmc      BMC time sync mode: auto (default) / yes / no"
+    Write-Host "  -Timeout  SSH connect timeout in seconds (default 10)"
+    Write-Host "  -Help     show this help"
+    if ($Help) { exit 0 } else { exit 1 }
+}
 
 if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
     Write-Host "未找到 ssh。Windows 安装 OpenSSH 客户端：" -ForegroundColor Yellow
