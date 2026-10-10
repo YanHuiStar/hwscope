@@ -185,6 +185,12 @@ foreach ($hostStr in $targets) {
 
     # 替换三个占位符（PS 的 .Replace 是字面替换，不涉及正则）
     $script = $remoteTpl.Replace('__EPOCH__', "$Epoch").Replace('__BMC__', $bmcMode).Replace('__SUDO__', $pre)
+    # ⚠️ 必须剔除 CRLF：本 .ps1 在 Windows 上是 CRLF 行尾，here-string(@'...'@) 会把行尾 \r
+    #    原样带进模板，base64 编码后远程 bash 每行末尾都多一个 \r —— 后果实测为
+    #    `bash: line N: $'\r': command not found`、`set -u\r` 报 usage、`$((a-b\r))` 报
+    #    invalid arithmetic operator、续行 `\` 被 \r 破坏后 `syntax error near unexpected token &&`。
+    #    （Linux 侧 tools/sync_time.sh 是 LF，故无此问题。）
+    $script = $script.Replace("`r`n", "`n").Replace("`r", "")
 
     # base64 传参：远程只收到 [A-Za-z0-9+/=]，彻底绕开 PowerShell → ssh.exe 的引号处理
     $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script))
