@@ -306,6 +306,14 @@ try {
     Write-Host "  采集目录: $($pulled.FullName)"
     $reports = Get-ChildItem $pulled.FullName -Filter "hwscope_report.*" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
     if ($reports) { Write-Host "  报告: $($reports -join ' ')" }
+    # v1.53.6: also report the archive path -- pull also archives remote logs/ into
+    #   logs/remote_logs\<SN>-<timestamp>.tar.gz, which the completion banner never mentioned.
+    #   Match by this machine's folder name (SN) prefix + newest, so other machines' archives are not picked.
+    $remoteLogsDir = Join-Path $ProjectDir "logs/remote_logs"
+    $arc = Get-ChildItem $remoteLogsDir -Filter "$($pulled.Name)-*.tar.gz" -ErrorAction SilentlyContinue |
+           Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($arc) { Write-Host "  归档包: $($arc.FullName)" }
+    else      { Write-Host "  归档包: (not found: $($pulled.Name)-*.tar.gz)" }
     Write-Host "========================================" -ForegroundColor Green
 }
 finally {

@@ -217,4 +217,11 @@ echo -e "\033[0;32m========================================\033[0m"
 echo -e "\033[0;32m  远程采集完成\033[0m"
 echo "  采集目录: ${PULLED_DIR}"
 echo "  报告: $(ls "${PULLED_DIR}"/hwscope_report.* 2>/dev/null | xargs -r -n1 basename | tr '\n' ' ')"
+# v1.53.6：补归档包路径 —— 回拉时同时把远端 logs/ 归档到 logs/remote_logs/<SN>-<时间戳>.tar.gz，
+#   但完成信息此前只报"采集目录 + 报告"，用户拿不到归档包位置（历史留存/复算报告要用它）。
+#   用本次机器目录名（SN）前缀匹配 + 取最新，避免多台机器历史归档混选。
+_sn=$(basename "${PULLED_DIR}")
+_arc=$(ls -t "${SCRIPT_DIR}/logs/remote_logs/${_sn}"-*.tar.gz 2>/dev/null | head -1)
+[ -n "$_arc" ] && echo "  归档包: ${_arc}"
+[ -z "$_arc" ] && echo "  归档包: (未找到 ${_sn}-*.tar.gz，可能归档被人工移走)"
 echo -e "\033[0;32m========================================\033[0m"
