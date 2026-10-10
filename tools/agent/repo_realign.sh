@@ -43,17 +43,12 @@ ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*"; }
 
-# ─── 环境检测 / 空设备（与 git_push.sh 同源）───
+# ─── 环境检测 / 空设备 ───
 # MSYS(git-bash) 下把 /dev/null 传给 native curl 时路径被转换 → curl 退出码 23
 # （CURLE_WRITE_ERROR）→ 叠加 pipefail 后 curl|grep 整条判定失败：症状是 HTTP 200 却"预检失败"
-detect_env() {
-    case "$(uname -s 2>/dev/null)" in
-        MINGW*|MSYS*|CYGWIN*) echo "git-bash" ;;
-        Linux) grep -qi "microsoft" /proc/version 2>/dev/null && echo "wsl" || echo "linux" ;;
-        *) echo "unknown" ;;
-    esac
-}
-ENV_NAME="$(detect_env)"
+# v1.53.9：detect_env 改由公共库 tools/agent/lib_proxy.sh 提供（本脚本原自带一份，
+#   与 git_push.sh 的那份重复 —— 同一判据两条路径正是 AGENTS 第 8 条要避免的）。
+. "${SCRIPT_DIR}/lib_proxy.sh"
 NULL_DEV="/dev/null"
 [ "$ENV_NAME" = "git-bash" ] && NULL_DEV="NUL"
 
@@ -63,15 +58,15 @@ NULL_DEV="/dev/null"
 net_precheck() {
     command -v curl >/dev/null 2>&1 || return 0   # 无 curl 则跳过预检（交给 git 自己失败）
     curl -s --max-time 5 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]' && return 0
-    local pid port
-    pid=$(tasklist 2>/dev/null | grep -iE "v2ray|xray|clash" | awk '{print $2}' | head -1)
-    if [ -n "$pid" ]; then
-        port=$(netstat -ano 2>/dev/null | grep "$pid" | grep LISTENING | awk '{print $2}' | head -1 | sed 's/.*://')
-        if [ -n "$port" ] && curl -s -x "http://127.0.0.1:${port}" --max-time 8 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]'; then
-            export HTTPS_PROXY="http://127.0.0.1:${port}" HTTP_PROXY="http://127.0.0.1:${port}"
-            info "直连不可达，改用代理 127.0.0.1:${port}"
-            return 0
-        fi
+    # v1.53.9：改走公共库的 detect_proxy —— 原实现是自写的一套（只处理 git-bash，
+    #   且 `grep -iE "v2ray|xray|clash"` 会命中探测命令自身，即 v1.37.3 记过的
+    #   自匹配同类隐患）。库版 = 双环境 + 三工具 + 防自匹配。
+    local proxy
+    proxy="$(detect_proxy)"
+    if [ -n "$proxy" ] && curl -s -x "$proxy" --max-time 8 https://github.com -o "$NULL_DEV" -w '%{http_code}' 2>/dev/null | grep -qE '^[23]'; then
+        export HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy"
+        info "直连不可达，改用代理 ${proxy}"
+        return 0
     fi
     return 2
 }

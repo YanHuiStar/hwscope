@@ -28,7 +28,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"          # tools/agent/
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"       # 项目根（tools/agent/ 上溯两级）
 BRANCH="main"
 REMOTE="origin"
-PROXY_PROC_NAMES=("v2ray" "xray" "clash")
 FETCH_FIRST=1          # 默认推送前 fetch（防推旧：其他 agent 可能已推送）
 SKIP_CONFIRM=0
 DRY_RUN=0
@@ -55,20 +54,11 @@ fail()  { echo -e "${C_RED}[FAIL]${C_NC} $*"; }
 ai()    { [ "$QUIET" -eq 1 ] || echo -e "${C_YELLOW}[AI-ACTION]${C_NC} $*"; }   # 给 AI agent 的明确指令
 status() { echo "PUSH_STATUS=$1"; }   # 机器可读状态行（--quiet 也输出）
 
-# ─── 1. 环境检测 ───
-detect_env() {
-    local os uname_out
-    uname_out="$(uname -s 2>/dev/null)"
-    case "$uname_out" in
-        MINGW*|MSYS*|CYGWIN*) os="git-bash" ;;
-        Linux)
-            if grep -qi "microsoft" /proc/version 2>/dev/null; then os="wsl"
-            else os="linux"; fi ;;
-        *) os="unknown" ;;
-    esac
-    echo "$os"
-}
-ENV_NAME="$(detect_env)"
+# ─── 1. 环境检测 / 代理探测（公共库）───
+# v1.53.9：detect_env / PROXY_PROC_NAMES / detect_proxy 改由 tools/agent/lib_proxy.sh 提供
+#   （本脚本原先内联这三者，agent_sync 与 repo_realign 又各写一份 —— 三处判据分叉，
+#   正是 AGENTS 第 8 条要避免的）。库同样被那两支复用；ENV_NAME 由库设置。
+. "${SCRIPT_DIR}/lib_proxy.sh"
 # v1.48.66：空设备必须按环境选。MSYS(git-bash) 下把 /dev/null 传给 native curl 时路径会被转换，
 # 写入失败 → curl 退出码 23（CURLE_WRITE_ERROR）；叠加脚本的 `set -o pipefail`，`curl | grep`
 # 整条判定为失败——症状是 HTTP 明明 200 却永远"预检失败"（真机实测：同命令手工跑退出码 23 被忽略）
@@ -100,39 +90,6 @@ if [ "$ENV_NAME" = "wsl" ] && [ "${PROJECT_DIR#/mnt/}" != "$PROJECT_DIR" ] && [ 
     fi
 fi
 
-# 代理探测（v2ray/xray/clash 进程 → 监听端口）——须在 fetch 前定义（bash 函数先定义后调用）
-detect_proxy() {
-    local pid="" port=""
-    # Windows（tasklist CSV + grep 过滤；MSYS 下 //FI 转义不生效——v1.36.3 教训）
-    if [ "$ENV_NAME" = "git-bash" ]; then
-        for p in "${PROXY_PROC_NAMES[@]}"; do
-            pid="$(tasklist /FO CSV 2>/dev/null | grep -iE "\"${p}\.exe\"" | head -1 | cut -d'"' -f4)"
-            [ -n "$pid" ] && [ "$pid" != "0" ] && break
-        done
-        if [ -n "$pid" ] && [ "$pid" != "0" ]; then
-            port="$(netstat -ano 2>/dev/null | grep "LISTENING" | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $2}' | cut -d: -f2)"
-        fi
-    else
-        # Linux/WSL
-        # pgrep -f 自匹配陷阱：探测命令自身命令行含 "v2ray" 字符串会被匹配（v1.37.3 实测）
-        # 用 [v]2ray 正则字符类技巧排除自身；WSL 内再尝试 Windows 侧 tasklist（interop）
-        pid="$(pgrep -f "[v]2ray|[x]ray|[c]lash" 2>/dev/null | head -1)"
-        if [ -z "$pid" ] && [ -x /mnt/c/Windows/System32/tasklist.exe ] 2>/dev/null; then
-            # WSL interop：Windows 侧 v2ray.exe 进程 + 端口（用 Windows netstat.exe 取监听端口）
-            pid="$(/mnt/c/Windows/System32/tasklist.exe /FO CSV 2>/dev/null | grep -iE '"v2ray.exe"' | head -1 | cut -d'"' -f4)"
-            if [ -n "$pid" ]; then
-                port="$(/mnt/c/Windows/System32/netstat.exe -ano 2>/dev/null | grep "LISTENING" | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $2}' | cut -d: -f2)"
-            fi
-        fi
-        if [ -n "$pid" ] && [ -z "$port" ]; then
-            port="$(ss -tlnp 2>/dev/null | grep "127.0.0.1:" | grep "pid=$pid" | head -1 | awk '{print $4}' | cut -d: -f2)"
-            [ -z "$port" ] && port="$(netstat -tlnp 2>/dev/null | grep "127.0.0.1:" | grep "$pid" | head -1 | awk '{print $4}' | cut -d: -f2)"
-        fi
-    fi
-    if [ -n "$port" ] && [ "$port" != "0" ]; then
-        echo "http://127.0.0.1:${port}"
-    fi
-}
 
 # 选择 git 命令：WSL 环境用 Windows 的 git.exe（走 Windows 网络栈——127.0.0.1 指向 Windows 自身，
 # 可访问 Windows 侧 v2ray 代理；直连也走 Windows 网络栈，成功率高）（v1.38.5 实测）

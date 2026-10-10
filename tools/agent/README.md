@@ -10,13 +10,13 @@
 |------|------|---------|
 | `agent_sync.sh` | 开工同步：fetch + 显示远程/本地 HEAD、版本、ahead/behind、版本回退警告；**并检测 SN/MAC 自检钩子是否安装（未装即提醒）**；**fetch 失败时显式警告（exit 码 + 远程值标注"本地缓存，不代表真实状态"），不再拿缓存冒充"已同步"**；**v1.53.8 起 fetch 走 `lib_proxy.sh` 的 `git_net_run`——直连失败自动探测代理并重试（端口动态获取），经代理成功时明确提示** | `bash tools/agent/agent_sync.sh`；`--mark` 提交后标记；`--clear` 推送后清状态 |
 | `lib_proxy.sh` | **代理探测公共库**（被 agent_sync / repo_realign / git_push 复用）：`detect_env` / `detect_proxy`（git-bash + WSL 双环境，`tasklist`/`netstat`/`ss` 三工具，**防 `pgrep -f` 自匹配**）/ `git_net_run`（直连→代理兜底，`GIT_NET_USED_PROXY` 回报）。**代理端口每次启动会变，故一律动态取，不写死** | `source` 后调用；`GIT_PROXY_URL` 可显式指定 |
-| `git_push.sh` | 推送（内置防死循环：网络预检 + 3 败熔断 + `[PAUSE]` 纪律；**v1.49.5 起推送前自动跑 `sn_check` 兜底**） | `bash tools/agent/git_push.sh -y`；`GIT_PUSH_BYPASS_COOLDOWN=1` 绕熔断；`SKIP_SN_CHECK=1` 绕 SN 检查 |
+| `git_push.sh` | 推送（内置防死循环：网络预检 + 3 败熔断 + `[PAUSE]` 纪律；**v1.49.5 起推送前自动跑 `sn_check` 兜底**；**v1.53.9 起代理探测改走 `lib_proxy.sh`**，内联副本已删） | `bash tools/agent/git_push.sh -y`；`GIT_PUSH_BYPASS_COOLDOWN=1` 绕熔断；`SKIP_SN_CHECK=1` 绕 SN 检查 |
 | `report_regression.sh` | **报告解析回归测试**（改解析/渲染后必跑） | `bash tools/agent/report_regression.sh <采集目录>`；`--all` / `--samples SN1,SN2` / `--update` |
 
 > **v1.52.14 判据**：`json_bytes`/`html_bytes` 属**长度指标**（同语义换机器浮动 0.2%~0.3%），**差异 <5% 输出 `[NOTE]` 不判回归**；其余 **32 项结构指标**（行数/列数/字段名/值格式/硬件概览）不一致才报 `[DIFF]`。基线含 `source_fp_hash`（来源样本哈希，非 SN）便于核对基线来自哪台机器。
 | `regen_reports.sh` | 批量重生成报告（agent 调用，样本自动发现） | `bash tools/agent/regen_reports.sh`；`--samples SN1,SN2`；`--regression`；桌面路径三级探测（`DESKTOP_OVERRIDE` 环境变量 > `USERPROFILE` 推导 > 扫 `/mnt/c/Users/*/Desktop`）|
 | `sn_check.sh` | **提交前 SN/MAC 自检**（隐私红线兜底——把检查做成可执行钩子） | `bash tools/agent/sn_check.sh`；`--install-hook` 装 git hooks；`--all-history` 全历史体检 |
-| `repo_realign.sh` | **仓库对齐**（历史被重写后其他机器分叉的恢复） | 体检 `bash tools/agent/repo_realign.sh`；对齐见下节 |
+| `repo_realign.sh` | **仓库对齐**（历史被重写后其他机器分叉的恢复）；**v1.53.9 起代理探测改走 `lib_proxy.sh`**（原为自写一套，只处理 git-bash 且不防 `pgrep` 自匹配） | 体检 `bash tools/agent/repo_realign.sh`；对齐见下节 |
 
 推送失败时按 AGENTS「推送失败处理纪律」：**停止自动重试 → 上报用户 → 等指令**（网络不通是用户侧问题，重试空转烧 token）。
 
