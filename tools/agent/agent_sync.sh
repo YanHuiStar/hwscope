@@ -32,6 +32,13 @@ ok()   { echo -e "${C_GREEN}[SYNC]${C_NC} $*"; }
 warn() { echo -e "${C_YELLOW}[SYNC]${C_NC} $*"; }
 fail() { echo -e "${C_RED}[SYNC]${C_NC} $*"; }
 
+# v1.53.8：引入代理动态探测（直连失败自动走代理）—— 见 tools/agent/lib_proxy.sh
+#   此前 agent_sync 完全没有代理处理：直连抖一下就只能拿本地缓存、报出假的
+#   "ahead 0 · behind 0"（与「以远程为真相」的立规直接冲突）。
+#   库与 git_push.sh 同源；代理端口每次启动会变，靠本库动态取，无需人工填。
+# shellcheck source=lib_proxy.sh
+. "${SCRIPT_DIR}/lib_proxy.sh"
+
 ACTION="${1:-show}"
 
 # ─── 版本比较（分段数值比较，支持 vX.Y.Z） ───
@@ -112,14 +119,17 @@ info "fetch ${REMOTE}（以远程为真相）..."
 # 必须自己捕获退出码：`git fetch … | tail -1` 之后 $? 是 tail 的，fetch 失败会被完全吞掉。
 # 实测踩坑：fetch 失败时原实现照常读本地缓存的 origin/main，报出 “ahead 0 · behind 0”，
 # 看着像已同步，实际远程已推进 2 个提交 —— 与“以远程为真相、杜绝凭记忆”的立规直接冲突。
-FETCH_OUT=$(git fetch "$REMOTE" "$BRANCH" 2>&1); FETCH_RC=$?
+# v1.53.8：改用 git_net_run —— 直连失败时自动探测代理并重试（端口动态获取，
+#   无需人工填；代理端口每次启动会变）。GIT_NET_USED_PROXY 非空表示本次走了代理。
+FETCH_OUT="$(git_net_run fetch "$REMOTE" "$BRANCH")"; FETCH_RC=$?
 STALE=0
 if [ "$FETCH_RC" -ne 0 ]; then
     STALE=1
-    warn "fetch 失败（exit=${FETCH_RC}）：以下远程状态取自【本地缓存】，不代表远程真实状态"
+    warn "fetch 失败（exit=${FETCH_RC}，直连与代理均不通）：以下远程状态取自【本地缓存】，不代表远程真实状态"
     printf '%s\n' "$FETCH_OUT" | tail -3 | sed 's/^/    /'
     warn "  ↳ 先确认网络/代理，再重跑本脚本；此结果不可用于判断“已同步”"
 else
+    [ -n "${GIT_NET_USED_PROXY:-}" ] && ok "fetch 成功（经代理 ${GIT_NET_USED_PROXY} 兜底）"
     printf '%s\n' "$FETCH_OUT" | tail -1
 fi
 
