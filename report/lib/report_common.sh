@@ -95,11 +95,24 @@ case "$PLATFORM" in
 esac
 # HGX 机头标记（x86_64_head 等：PCIe Fabric 接模组，无本地 GPU；报告与验收清单使用专门文案）
 HEAD_NODE=0
-# v1.53.6：展示层首字母大写（用户反馈 x86_64_head 全小写不好看）。
-#   **只改展示**——PLATFORM 原值保持小写不变（机器学习/程序判定的稳定标识），
-#   报告头/环境段/JSON 的 platform_label 走 PLATFORM_DISPLAY。
-#   纯 bash + tr 实现，不依赖 GNU sed 的 \U 扩展。
-PLATFORM_DISPLAY="$(printf '%s' "${PLATFORM:0:1}" | tr '[:lower:]' '[:upper:]')${PLATFORM:1}"
+# v1.53.7：展示层「后缀段首字母大写」——x86_64_head → x86_64_Head。
+#   **用户口径：只改后面部分**（架构前缀 x86_64 / aarch64 保持原样，不动）。
+#   **只改展示**，PLATFORM 原值保持小写不变（机器可读的稳定标识；
+#   JSON 的 "platform" 字段仍为原值，只有 platform_label 走 DISPLAY）。
+#   注意：架构名本身含下划线（x86_64 / aarch64），所以先剥前缀再处理后缀；
+#   且 SXM/OAM/PCIe 是缩写/含大写，必须原样保留，不能套「首字母大写」。
+case "$PLATFORM" in
+    x86_64_*)  _pfx="x86_64_";  _sfx="${PLATFORM#x86_64_}" ;;
+    aarch64_*) _pfx="aarch64_"; _sfx="${PLATFORM#aarch64_}" ;;
+    *)         _pfx="";         _sfx="$PLATFORM" ;;
+esac
+case "$_sfx" in
+    head) _sfx="Head" ;;
+    none) _sfx="None" ;;
+    SXM|OAM|PCIe) : ;;   # 缩写/专有大小写，保持原样
+    *) _sfx="$(printf '%s' "${_sfx:0:1}" | tr '[:lower:]' '[:upper:]')${_sfx:1}" ;;
+esac
+PLATFORM_DISPLAY="${_pfx}${_sfx}"
 PLATFORM_LABEL="$PLATFORM_DISPLAY"
 case "$PLATFORM" in
     *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM_DISPLAY}（HGX 机头：PCIe Fabric 接模组，模组单独采集）" ;;
