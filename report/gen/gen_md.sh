@@ -284,7 +284,7 @@ gen_md() {
 |----|----|
 | OS | ${OS_NAME:-N/A} |
 | 内核 | ${KERNEL:-N/A} |
-| 驱动 | ${GPU_DRIVER:-N/A} |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
+| 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（HGX 机头无 GPU 模组，驱动信息不适用）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
 | CUDA | ${GPU_CUDA:-N/A} |"; fi)
 | 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then echo "
 | Compute Mode | ${DCGM_COMPUTE_MODE} |"; fi)$(if [ -n "${DCGM_ECC_MODE:-}" ]; then echo "
@@ -624,7 +624,15 @@ $(if [ -n "$NIC_CARD_MD" ]; then
     echo "|---|------|------|-----|------|------|------|-----------|"
     printf '%s' "$NIC_CARD_MD"
     echo ""
-    echo "> 口数 = 该卡在系统中实际呈现的物理端口数（按同 BDF 前缀的端口行统计）；逐口链路状态见下表。GPU 直连标记在端口级表中"
+    # v1.53.3：仅当端口级表**真的带 GPU直连 列**时（TOPO 可用 且 存在 GPU 直连网卡）才提它。
+    #   三种形态对照（见下方 NIC 段）：TOPO=1&COUNT=0 → 列被隐藏且已单独说明；
+    #   TOPO=0（无 GPU 拓扑信息，如 AMD 平台 / HGX 机头）→ 表头本就无此列。
+    #   旧实现无条件声称"标记在端口级表中"，在上述两种形态下指向不存在的列。
+    if [ "${GPU_TOPO_AVAIL:-0}" -eq 1 ] && [ "${GPU_DIRECT_COUNT:-0}" -gt 0 ]; then
+        echo "> 口数 = 该卡在系统中实际呈现的物理端口数（按同 BDF 前缀的端口行统计）；逐口链路状态见下表。GPU 直连标记在端口级表中"
+    else
+        echo "> 口数 = 该卡在系统中实际呈现的物理端口数（按同 BDF 前缀的端口行统计）；逐口链路状态见下表"
+    fi
     echo ""
 fi)
 ### 网络适配器明细（NIC）

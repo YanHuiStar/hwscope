@@ -330,11 +330,18 @@ if [ -f "$_fq" ] || [ -f "$_nr" ]; then
     [ -f "$_ne" ] && _nerr=$(grep -v "^#" "$_ne" 2>/dev/null | grep -cE "Errors: [1-9]" || true)
 
     if [ "$_fmst" = "failed" ] || [ "$_fmst" = "inactive" ]; then
-        _seg="⚠️ NVSwitch 域未建立：Fabric Manager 未运行（Active: ${_fmst}）"
-        [ -n "$_fstate" ] && _seg="${_seg}；Fabric State=${_fstate}"
-        [ -n "$_uuid" ] && _seg="${_seg}；ClusterUUID=${_uuid}"
-        [ "${_pt:-0}" -gt 0 ] && _seg="${_seg}；NVLink 对端不可见 ${_pg}/${_pt} 条"
-        NVSWITCH_FABRIC="${_seg}。FM 未拉起会使 DCGM 对 NVSwitch 域的诊断整体失败，非 GPU/NVSwitch 硬件故障——拉起 nvidia-fabricmanager 后重测（FM 版本须与驱动一致）"
+        if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+            # v1.53.3：机头形态（无本地 GPU）——无 GPU 模组就没有 NVSwitch 硬件，
+            #   FM 起不来是**必然**，不是故障；旧实现报 ⚠️ 并建议「拉起 FM 后重测」，
+            #   而机头拉起 FM 也没用（无硬件可管），属误导。改判平台固有，不给重测建议。
+            NVSWITCH_FABRIC="平台固有：HGX 机头无 GPU 模组（Fabric Manager 状态 Active: ${_fmst}）——NVSwitch 域不适用于本形态，模组接入后另行采集验收"
+        else
+            _seg="⚠️ NVSwitch 域未建立：Fabric Manager 未运行（Active: ${_fmst}）"
+            [ -n "$_fstate" ] && _seg="${_seg}；Fabric State=${_fstate}"
+            [ -n "$_uuid" ] && _seg="${_seg}；ClusterUUID=${_uuid}"
+            [ "${_pt:-0}" -gt 0 ] && _seg="${_seg}；NVLink 对端不可见 ${_pg}/${_pt} 条"
+            NVSWITCH_FABRIC="${_seg}。FM 未拉起会使 DCGM 对 NVSwitch 域的诊断整体失败，非 GPU/NVSwitch 硬件故障——拉起 nvidia-fabricmanager 后重测（FM 版本须与驱动一致）"
+        fi
     elif [ "$_fmst" = "active" ] && [ "${_nerr:-0}" -gt 0 ]; then
         NVSWITCH_FABRIC="⚠️ NVLink 链路错误计数非零（${_nerr} 项，详见 nvlink_error_count.log）"
     else

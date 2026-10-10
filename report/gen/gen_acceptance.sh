@@ -12,6 +12,11 @@ gen_acceptance() {
     local rows="" st=""
     local verdict="合格"
     NA_INHERENT=""   # v1.48.41：平台固有 N/A 项名收集（表尾汇总；不渲染行避免满表 N/A）
+    NA_PENDING=""    # v1.53.3：**未启用/未配置**类 N/A 项名收集——与「平台固有」严格分开。
+    #   区分依据：平台固有 = 这台机物理上就没有（机头无模组→无 GPU/NVLink/DCGM/VBIOS）；
+    #   未启用/未配置 = 机器**有**这个东西，只是没开开关（--bmc-verify）或没录基线
+    #   （conf/fw_required.txt）。旧实现把两者一并归入固有并豁免，等于把"没做"说成"不适用"
+    #   ——与项目「『0 条』不等于『没有』」(v1.48.88) 的口径冲突。
 
     # 逐项评估函数：add_item "名称" "状态" "说明" [不计入N/A=1]
     # 第4参数=1 时 N/A 为平台固有（不计数、不渲染行——折叠到表尾汇总，避免消费台式等平台满表 N/A 噪音）
@@ -25,6 +30,12 @@ gen_acceptance() {
                 if [ "${4:-0}" = "1" ]; then
                     # v1.48.41：平台固有 N/A——不计入 na、不渲染行（表尾汇总），序号不占位
                     NA_INHERENT="${NA_INHERENT}${1}|"
+                    return 0
+                fi
+                if [ "${4:-0}" = "2" ]; then
+                    # v1.53.3：未启用/未配置——同样不渲染行（避免噪音），但**单独汇总**，
+                    #   不与平台固有混列。读者据此能看出"这台机本来能判、只是没开开关/没录基线"。
+                    NA_PENDING="${NA_PENDING}${1}|"
                     return 0
                 fi
                 na=$((na + 1))
@@ -324,7 +335,7 @@ gen_acceptance() {
     elif printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -q "|无法比较|"; then
         add_item "固件版本合规" "WARN" "部分固件版本格式非标准，需人工核对"
     elif printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -q "|未知|"; then
-        add_item "固件版本合规" "N/A" "无基线配置（conf/fw_required.txt 未录入推荐版本，默认不对比；录入后自动启用）" 1
+        add_item "固件版本合规" "N/A" "无基线配置（conf/fw_required.txt 未录入推荐版本，默认不对比；录入后自动启用）" 2
     else
         add_item "固件版本合规" "PASS" "全部固件版本满足推荐基线（较新不判落后）"
     fi
@@ -332,7 +343,7 @@ gen_acceptance() {
     # 13. OS vs BMC 口径一致（零新采集交叉校验；不一致=FAIL，仅单侧数据=WARN，无数据=N/A）
     # 默认关闭（--bmc-verify 开启）：未启用时 N/A 且不计入"数据不足"（该校验为可选深度核验，非交付必检项）
     if [ "$BMC_VERIFY" -eq 0 ]; then
-        add_item "OS-BMC 口径一致" "N/A" "校验未启用（--bmc-verify 开启后执行，独立核验报告）" 1
+        add_item "OS-BMC 口径一致" "N/A" "校验未启用（--bmc-verify 开启后执行，独立核验报告）" 2
     elif [ "${BMC_PRESENT:-0}" -eq 0 ] 2>/dev/null; then
         if ls "${BMC_DIR}"/ipmi_*.log >/dev/null 2>&1; then
             add_item "OS-BMC 口径一致" "N/A" "机器无 BMC（IPMI 日志为错误输出，平台固有形态，交叉校验不适用）" 1
@@ -674,6 +685,7 @@ gen_acceptance() {
         echo ""
         # v1.48.41：验收口径声明——平台形态 + 适用项计数（固有 N/A 折叠后客户一眼看懂按什么口径验收）
         _na_n=$(printf '%s' "$NA_INHERENT" | tr -cd '|' | wc -c)
+        _na_p=$(printf '%s' "$NA_PENDING" | tr -cd '|' | wc -c)
         echo "- 验收口径: ${MACHINE_CLASS_LABEL:-N/A}（GPU 平台: ${GPU_PLATFORM:-none}；${_na_n:-0} 项平台固有 N/A 不适用，下表 ${n} 项为实际判定项）"
         echo "- 生成时间: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "- 采集版本: ${VERSION:-unknown} / 报告版本: ${REPORT_VERSION:-unknown}"
@@ -686,6 +698,10 @@ gen_acceptance() {
         if [ -n "$NA_INHERENT" ]; then
             echo ""
             echo "> 本平台固有/宽容 N/A（不计入数据不足，共 ${_na_n:-0} 项）：$(printf '%s' "$NA_INHERENT" | sed 's/|$//; s/|/、/g')"
+        fi
+        if [ "${_na_p:-0}" -gt 0 ] 2>/dev/null; then
+            echo ""
+            echo "> 本机待启用/待配置 N/A（**不计入平台固有**——这些项本机具备条件，只是开关未开或基线未录，共 ${_na_p} 项）：$(printf '%s' "$NA_PENDING" | sed 's/|$//; s/|/、/g')"
         fi
         echo ""
         echo "## 结论"

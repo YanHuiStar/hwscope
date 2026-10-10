@@ -35,7 +35,14 @@ detect_platform() {
         # 注意：pipefail 下 nvidia-smi 非零退出时 `| wc -l || echo 0` 会双输出（wc 的计数 + echo 的 0），
         # 产生 "2\n0" 多行值 → 后续 -gt 比较报 integer expression expected、PLATFORM 误判 none（v1.26.53 真机踩坑）
         # wc 空输入必输出 0（exit 0），无需 || 兜底；再清洗为纯数字防御多行
-        GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+        # v1.53.3：只数「纯数字索引行」，不再用 `wc -l` 数行数。
+        #   根因（HGX 机头实测）：机头无 GPU 模组时 nvidia-smi 会输出非索引文本（错误/提示），
+        #   旧实现把那些行也数进去 → GPU_COUNT=2 → 平台从 x86_64_head 误判为 x86_64_PCIe。
+        #   连锁后果：① 平台标识错、head 文案不生效 ② 更危险——假 GPU>0 同时挡住 head 判据、
+        #   又帮 PCIe 分支成立，与 v1.52.9 注释担心的「SXM 故障被伪装成本来就是 PCIe 形态」
+        #   是同一后果，只是触发条件不同。项目铁律「取值后必须校验纯数字」在此补上。
+        #   证据：同一台机 DCGM 报 `0 GPUs found.`、gpu/ 目录 0 文件，而 summary 写 GPU: 2。
+        GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | grep -cE '^[[:space:]]*[0-9]+[[:space:]]*$')
         GPU_COUNT=$(echo "$GPU_COUNT" | head -1 | tr -dc '0-9')
         [ -z "$GPU_COUNT" ] && GPU_COUNT=0
         # SXM 四重检测：nvswitch CLI → lspci NVSwitch → nv-fabricmanager 进程(需 NVLink 交叉验证) → nvidia-smi topo
