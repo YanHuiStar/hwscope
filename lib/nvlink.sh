@@ -66,7 +66,7 @@ nvlink_load_from_logs() {
     local status_file="${gpu_dir}/gpu_nvlink_status.log"
 
     # NVLINK_DATA 判定需内容有效：文件存在但内容为采集报错（如 "-n" 语法错）时不算有数据
-    if [ -f "$topo_file" ] && grep -v "^#" "$topo_file" 2>/dev/null | grep -qE "^GPU[0-9]+"; then
+    if [ -f "$topo_file" ] && [ "$(grep -v '^#' "$topo_file" 2>/dev/null | grep -cE '^GPU[0-9]+')" -gt 0 ]; then
         NVLINK_DEGRADED=$(nvlink_parse_topo "$(cat "$topo_file")")
         NVLINK_DATA=1
     fi

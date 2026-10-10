@@ -49,7 +49,7 @@ detect_platform() {
         local _sxm=0
         if check_cmd nvswitch && nvswitch -q 2>/dev/null | grep -qi "Switch Name"; then
             _sxm=1
-        elif check_cmd lspci && lspci 2>/dev/null | grep -qi "NVSwitch\|SXM.*Bridge"; then
+        elif check_cmd lspci && [ "$(lspci 2>/dev/null | grep -ci 'NVSwitch\|SXM.*Bridge')" -gt 0 ]; then
             _sxm=1
         elif pgrep -f nv-fabricmanager >/dev/null 2>&1; then
             # 进程检测有误判风险：交叉验证 NVLink 是否存在（SXM 机器必有 NVLink）
@@ -67,15 +67,22 @@ detect_platform() {
         if [ "$_sxm" -eq 0 ]; then
             if [ -e /dev/nvidia-nvswitchctl ]; then
                 _sxm=1
-            elif check_cmd dmesg && dmesg 2>/dev/null | grep -qiE "nvidia-nvlink:[[:space:]]+Nvlink Core is being initialized"; then
+            elif check_cmd dmesg && [ "$(dmesg 2>/dev/null | grep -ciE 'nvidia-nvlink:[[:space:]]+Nvlink Core is being initialized')" -gt 0 ]; then
                 _sxm=1
             fi
         fi
         # HGX 机头检测：PCIe Gen5 Fabric Switch（Broadcom PEX89xxx / PLX PEX97xxx / Microchip Switchtec）+ 无 GPU
         # 注意必须叠加"无 GPU"条件：SXM 一体化主机（如华硕 HGX B300）主板也带 PEX89xxx Switch，
         # 若 SXM 检测失效且有 GPU，仍按 PCIe 事实判定，避免整机漂移为 head
+        # v1.53.5：判据从 `lspci | grep -qiE`（匹配即退）改为 `grep -ciE` 比数值。
+        #   根因（机头 22.162 重采实测）：hwscope.sh 有 `set -uo pipefail`，而 `producer | grep -q`
+        #   在 grep 匹配到首行后立即退出 → producer 收 SIGPIPE（exit 141）→ pipefail 令整条管道判失败
+        #   → `if` 恒为假。**该 head 判据因此从未生效过**（复现：`grep -v f | grep -q` 得 141，
+        #   改 `grep -c` 得 54 命中，关 pipefail 得 0）。症状：机头 platform 落到 x86_64_none。
+        #   `grep -c` 读完整输入、不提前退出，故无 SIGPIPE。
         local _head=0
-        if [ "$GPU_COUNT" -eq 0 ] && check_cmd lspci && lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec"; then
+        if [ "$GPU_COUNT" -eq 0 ] && check_cmd lspci \
+           && [ "$(lspci 2>/dev/null | grep -ciE 'PEX89|PEX97|Switchtec')" -gt 0 ]; then
             _head=1
         fi
         if [ "$_sxm" -eq 1 ]; then
@@ -99,7 +106,7 @@ detect_platform() {
             else
                 PLATFORM="${hw_arch}_PCIe"
             fi
-        elif check_cmd lspci && lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec"; then
+        elif check_cmd lspci && [ "$(lspci 2>/dev/null | grep -ciE 'PEX89|PEX97|Switchtec')" -gt 0 ]; then
             PLATFORM="${hw_arch}_head"
         else
             PLATFORM="${hw_arch}_none"
@@ -250,7 +257,7 @@ classify_machine() {
         if check_cmd dmidecode; then
             _chassis=$(dmidecode -t chassis 2>/dev/null | grep -i "Type:" | head -1 | sed 's/.*Type: *//I')
         fi
-        if check_cmd dmidecode && dmidecode -t memory 2>/dev/null | grep -qiE "Error Correction.*(Multi-bit|Single-bit|Parity)"; then
+        if check_cmd dmidecode && [ "$(dmidecode -t memory 2>/dev/null | grep -ciE 'Error Correction.*(Multi-bit|Single-bit|Parity)')" -gt 0 ]; then
             _ecc=1
         fi
         if check_cmd ipmitool && ipmitool mc info 2>/dev/null | grep -qi "Manufacturer"; then
@@ -267,7 +274,7 @@ classify_machine() {
     if [ -n "$_dir" ]; then
         [ -f "$_dir/pcie/lspci_all.log" ] && grep -qiE "PEX89|PEX97|Switchtec" "$_dir/pcie/lspci_all.log" && _fabric=1
     elif check_cmd lspci; then
-        lspci 2>/dev/null | grep -qiE "PEX89|PEX97|Switchtec" && _fabric=1
+        [ "$(lspci 2>/dev/null | grep -ciE 'PEX89|PEX97|Switchtec')" -gt 0 ] && _fabric=1
     fi
 
     case "$_chassis" in
