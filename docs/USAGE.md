@@ -173,20 +173,25 @@ bash tools/bmc_tool.sh               # BMC 凭据/密码管理
 目标机时钟偏差会让采集报告的时间戳失去可信度（内网常无 NTP 可达）。以**运维机时间为基准**对时：
 
 ```bash
-bash tools/sync_time.sh root@10.0.0.1                        # 单台
+bash tools/sync_time.sh root@10.0.0.1                        # 单台（默认 auto：有带内 IPMI 就一并校 BMC）
 bash tools/sync_time.sh root@10.0.0.1 root@10.0.0.2          # 多台
-bash tools/sync_time.sh root@10.0.0.1 --dry-run              # 只显示偏差，不做修改
+bash tools/sync_time.sh --dry-run root@10.0.0.1              # 只探测偏差与目标机工具，不做修改
+bash tools/sync_time.sh --no-bmc root@10.0.0.1               # 明确跳过 BMC
 ```
 
 Windows 运维机（等价）：
 
 ```
-tools\win\sync_time.bat root@10.0.0.1[,root@10.0.0.2,...] [-DryRun]
+tools\win\sync_time.bat root@10.0.0.1[,root@10.0.0.2,...] [-DryRun] [-Bmc:auto|yes|no]
 ```
 
-- **同步范围**：**系统时钟 + 硬件时钟（RTC）都写**（重启不丢）；传递 **epoch 秒** —— 一个**绝对时刻**，日期与时间一起对
+- **同步三处**：① **OS 系统时间** ② **RTC 硬件时钟** ③ **BMC 时间**（`--bmc` 强制 / `--no-bmc` 跳过 / 默认 `auto`）
+- **成败判据（v1.53.0 修正）**：**只有 OS 系统时间决定成败**；RTC/BMC 失败各自输出 `[WARN]`，不影响整体判定 —— 此前目标机缺 `hwclock` 时会把「OS 已设成功」误报成 `[ERROR]`，运维据此反复重试、每次都白改
+- **RTC 三级兜底**：`hwclock -w` → `python3` 直写 `/dev/rtc0`（**写 UTC**）→ 都无则 WARN「重启后会丢」。**注意 Ubuntu 24.04 不预装 `hwclock`**（在 `util-linux-extra` 里），所以第二级是常用路径
+- **BMC 时间**：用**目标机本地** `ipmitool`（带内 `/dev/ipmi0`，**无需 BMC 凭据/网络**）—— BMC 时间是 **SEL 时间轴**的依据（XID / ECC / PCIe / 电源事件都按它对齐），不校则 SEL 时间不可信；无带内 IPMI 的平台按固有形态 `[SKIP]`，不计 WARN
+- **传递 epoch 秒** —— 一个**绝对时刻**，日期与时间一起对
 - **不动时区**：目标机按自身时区显示，时刻与运维机一致（例：运维机 CST 10:00 → 目标机 UTC 显示 02:00，同一时刻）
-- **会先停 NTP**（`timedatectl set-ntp false`）防冲突 —— 目标机本就有可用 NTP 时不需要本工具
+- **NTP 会临时停用、完成后还原原值**（v1.53.0 —— 旧实现只停不还原，把机器留在 NTP off）
 - **不追溯**：已采集的数据时间戳不会因此变正确；流程是「**先对时 → 再采集**」
 
 ### DHCP（新上架服务器批量发 IP）

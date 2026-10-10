@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.52.29 (2026-09)
+# Version : 1.53.0 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.52.29"
+HWSCOPE_VERSION="v1.53.0"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -94,7 +94,7 @@ TEST_DIR=""
 
 usage() {
     echo "用法: $0 [OPTIONS]"
-    echo "版本: ${HWSCOPE_VERSION} (2026-08)"
+    echo "版本: ${HWSCOPE_VERSION} (2026-10)"
     echo ""
     echo "选项:"
     echo "  --modules gpu,storage           只采指定模块（逗号分隔）"
@@ -149,7 +149,7 @@ while [[ $# -gt 0 ]]; do
             TEST_DIR="$2"; shift 2 ;;
         -q|--quiet) QUIET=1; shift ;;
         -h|--help)  usage; exit 0 ;;
-        -v|--version) echo "HwScope ${HWSCOPE_VERSION} (2026-08) — Hardware Scope"
+        -v|--version) echo "HwScope ${HWSCOPE_VERSION} (2026-10) — Hardware Scope"
                       echo "Author: YanHui / Hermes Agent · License: Apache 2.0"
                       echo "https://github.com/YanHuiStar/hwscope"
                       exit 0 ;;

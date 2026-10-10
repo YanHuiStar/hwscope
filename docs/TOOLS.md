@@ -51,7 +51,7 @@
 |------|------|
 | `nvlink_verify.sh` | NVLink 完整性校验（拓扑比对） |
 | `sel_monitor.sh` | SEL 事件对比巡检（历史 vs 当前）；v1.49.21 起严重事件计数排除 `Deasserted` 自愈行 |
-| `sync_time.sh` | SSH 时间同步：本机时间基准 → 目标机（epoch 秒无时区歧义；停 NTP + date -s + hwclock -w）；**--dry-run** 只显示偏差不改（v1.52.28，与 Windows 版 -DryRun 一致）；v1.50.5 起支持 `-h` |
+| `sync_time.sh` | SSH 时间同步（OS/RTC/BMC 三处）：本机时间基准 → 目标机；**只有 OS 时间判成败**，RTC/BMC 失败只 WARN（v1.53.0，此前缺 hwclock 时把成功误报为失败）；RTC 三级兜底（hwclock → python3 ioctl `/dev/rtc0` → WARN）；NTP 设完**还原**；`--bmc`/`--no-bmc` 校 BMC（目标机本地 ipmitool，12h AM/PM + raw 回退）；**远程脚本 base64 传参**（免引号地狱）；`--dry-run` 只探测不改（v1.52.28）；v1.50.5 起支持 `-h` |
 | `sync_version.sh` | 版本号三处同步（hwscope.sh 注释/变量 + README 徽章） |
 
 ### 开发 / Agent 协作（v1.36.1+）

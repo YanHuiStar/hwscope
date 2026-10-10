@@ -67,10 +67,15 @@
 
 ---
 
-### `sync_time.sh` — SSH 时间同步
-- **用法**：`bash tools/sync_time.sh root@10.0.0.1 [root@10.0.0.2 ...]`；`-h` / `--help` 显示帮助
-- **功能**：以运维机时间为基准，SSH 同步目标机系统时间 + 硬件时钟（RTC）——解决内网无 NTP 时的目标机时钟偏差（采集时间戳可信度）
-- **实现**：epoch 秒传递（无时区歧义）；先停 NTP 防冲突，`date -s @epoch` + `hwclock -w`（重启不丢）；交互式密码 + ControlMaster 复用
+### `sync_time.sh` — SSH 时间同步（OS / RTC / BMC 三处）
+- **用法**：`bash tools/sync_time.sh [--dry-run] [--bmc|--no-bmc] root@10.0.0.1 [root@10.0.0.2 ...]`；`-h` / `--help` 显示帮助
+- **功能**：以运维机时间为基准，SSH 同步目标机 **① OS 系统时间 ② RTC 硬件时钟 ③ BMC 时间（可选）** —— 解决内网无 NTP 时的目标机时钟偏差（采集时间戳可信度）；BMC 时间是 **SEL 时间轴**的依据（XID / ECC / PCIe / 电源事件都按它对齐）
+- **成败判据（v1.53.0 修正）**：**只有 OS 系统时间决定成败** —— RTC/BMC 失败各自输出 `[WARN]`，不再拖垮整体。旧实现在 `date -s && hwclock -w` 上取合并退出码，而 **Ubuntu 24.04 基础包不含 `hwclock`**（在 `util-linux-extra` 里）→ 退出码 127 → 把「OS 已设成功」渲染成 `[ERROR] 同步失败`，运维据此反复重试、每次都白改
+- **RTC 三级兜底**：`hwclock -w` → **`python3` 直写 `/dev/rtc0`**（`RTC_SET_TIME = 0x4024700a`，**必须写 UTC**——目标机通常 `RTC in local TZ: no`）→ 都无则 WARN「重启后会丢」
+- **NTP 还原**：先记原值（`timedatectl show -p NTP --value`），设完**无条件还原**；旧实现只停不还原，把机器留在 NTP off
+- **BMC**：`--bmc` 强制 / `--no-bmc` 跳过 / 默认 `auto`（有 `ipmitool` + `/dev/ipmi0` 才做）；用**目标机本地** ipmitool（带内，无需 BMC 凭据/网络）；`sel time set` 必须 12h AM/PM（ipmitool 1.8.19 不认 24 小时制），失败回退 `raw 0x0a 0x49`（4 字节小端 epoch）
+- **实现要点**：epoch 秒传递（无时区歧义）；**远程脚本经 base64 传参**（`echo <b64> | base64 -d | bash`）——参数里只有 base64 字符，无从被引号/括号破坏；交互式密码 + ControlMaster 复用
+- **依赖**：运维机 `ssh`/`date`/`base64`；目标机 `date`/`base64` +（可选）`timedatectl`/`hwclock`/`python3`/`ipmitool`
 - **参数校验（v1.50.5）**：`-h/--help` 先于 HOST 解析（此前 `-h` 会被当成目标机去 `ssh -h`）；其余 `-` 开头未知参数明确报错退出
 
 ## 🟡 远程采集
