@@ -320,7 +320,8 @@ if ls "${BMC_DIR}"/ipmi_*.log >/dev/null 2>&1; then
     fi
 fi
 SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
-SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -icE "pcie|aer|uncorrectable")
+SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -viE "Version Change|Hardware change detected" \
+        | grep -icE "pcie|aer|uncorrectable")
 
 # ─── v1.48.86：SEL 告警终态（未解除 / 已自愈）───
 # SEL 的 Asserted/Deasserted 是**同一事件的进入/解除两态**：同「传感器 + 事件类型」出现
