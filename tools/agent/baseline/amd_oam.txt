@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=372
+  table_rows=373
 [gpu]
   gpu_detail_rows=8
   model: AMD Instinct MI300X
@@ -25,13 +25,13 @@
   nic_rows=19
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=43149
+  json_bytes=43150
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=29
   html_table_close=29
-  html_bytes=52661
+  html_bytes=54995
 [acceptance]
         4 N/A
        12 PASS

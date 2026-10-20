@@ -13,6 +13,17 @@ BEGIN {
     print "<style>"
     print "body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC',sans-serif;background:#eef1f6;color:#2d3748;margin:0;padding:24px 16px;}"
     print ".container{max-width:1150px;margin:0 auto;}"
+    print ".layout{max-width:1400px;margin:0 auto;display:flex;align-items:flex-start;gap:16px;}"
+    print ".toc{position:sticky;top:16px;flex:0 0 210px;max-height:calc(100vh - 40px);overflow-y:auto;background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(30,58,95,.08);padding:12px 10px;font-size:12.5px;}"
+    print ".toc-title{font-weight:600;color:#1e3a5f;margin:0 0 8px;padding-left:6px;border-left:3px solid #1e3a5f;}"
+    print ".toc ul{list-style:none;margin:0;padding:0;}"
+    print ".toc li{margin:1px 0;}"
+    print ".toc a{display:block;padding:3px 8px;color:#4a5568;text-decoration:none;border-radius:5px;line-height:1.5;}"
+    print ".toc a:hover{background:#eef3fa;color:#1e3a5f;}"
+    print ".main{flex:1 1 auto;min-width:0;}"
+    print "html{scroll-behavior:smooth;}"
+    print ".top{position:fixed;right:18px;bottom:18px;background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:20px;font-size:12px;text-decoration:none;opacity:.85;}"
+    print ".top:hover{opacity:1;}"
     print "h1{text-align:center;color:#1e3a5f;font-size:24px;margin:0 0 6px;letter-spacing:2px;}"
     print ".subtitle{text-align:center;color:#718096;font-size:12px;margin:0 0 24px;}"
     print ".card{background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(30,58,95,.08);padding:14px 22px;margin:14px 0;}"
@@ -30,11 +41,34 @@ BEGIN {
     print "blockquote{background:#fffaf0;border-left:4px solid #ed8936;padding:8px 14px;margin:8px 0;color:#7c5314;font-size:12.5px;border-radius:0 6px 6px 0;}"
     print "li{margin:3px 0;font-size:13px;}"
     print "hr{border:none;border-top:1px solid #e2e8f0;margin:14px 0;}"
-    print "@media print{body{background:#fff;padding:0;} .card{box-shadow:none;border:1px solid #dde3ea;break-inside:avoid;} th{background:#333;}}"
+    print "@media print{body{background:#fff;padding:0;} .card{box-shadow:none;border:1px solid #dde3ea;break-inside:avoid;} th{background:#333;} .toc,.top{display:none;} .layout{display:block;max-width:none;} .main{width:100%;}}"
     print "</style>"
     print "</head>"
-    print "<body><div class='container'>"
+    # 两遍扫描：先收集 ## 段标题生成侧边目录，再输出正文（纯 awk，无外部依赖）
+    ARGV[ARGC++] = ARGV[1]
+    pass = 0; ntoc = 0; nsec = 0; toc_done = 0
+    print "<body><div class='layout'><nav class='toc'><div class='toc-title'>目录</div><ul class='toc-list'>"
     in_table = 0
+}
+
+# 第二遍开头：输出目录项并打开正文容器
+FNR == 1 {
+    pass++
+    if (pass == 2 && !toc_done) {
+        for (i = 1; i <= ntoc; i++) print "<li><a href='#sec-" i "'>" toc[i] "</a></li>"
+        print "</ul></nav><main class='main'><div class='container'>"
+        toc_done = 1
+    }
+}
+
+# 第一遍：只收集 ## 标题，其余一律不输出
+pass == 1 {
+    if (/^## /) {
+        t = substr($0, 4)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
+        toc[++ntoc] = esc_html(t)
+    }
+    next
 }
 
 # 空行：关闭表格
@@ -53,14 +87,15 @@ BEGIN {
     next
 }
 
-# H2 段标题 → 卡片
+# H2 段标题 → 卡片（带 id 供侧边目录跳转）
 /^## / {
     close_table()
     if (in_section) print "</section>"
     in_section = 1
+    nsec++
     sec = substr($0, 4)
     gsub(/^[[:space:]]+|[[:space:]]+$/, "", sec)
-    print "<section class='card'><h2>" sec "</h2>"
+    print "<section class='card'><h2 id='sec-" nsec "'>" sec "</h2>"
     next
 }
 
@@ -175,5 +210,6 @@ function cell_class(s) {
 END {
     close_table()
     if (in_section) print "</section>"
-    print "</div></body></html>"
+    if (!toc_done) print "</ul></nav><main class='main'><div class='container'>"
+    print "</div></main><a class='top' href='#'>↑ 顶部</a></div></body></html>"
 }
