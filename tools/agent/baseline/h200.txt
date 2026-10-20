@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=201
+  table_rows=202
 [gpu]
   gpu_detail_rows=8
   model:  NVIDIA H200
@@ -24,13 +24,13 @@
   nic_rows=16
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | 物理位置 |
 [json]
-  json_bytes=20023
+  json_bytes=20024
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=26
   html_table_close=26
-  html_bytes=27936
+  html_bytes=28639
 [acceptance]
         8 N/A
        12 PASS
