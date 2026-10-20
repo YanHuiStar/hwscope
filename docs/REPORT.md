@@ -17,6 +17,7 @@
 ### 明细表
 
 - 内存每槽（含 Rank 与位宽）/ GPU 每卡（含 VBIOS/BDF）/ CPU 每颗 / 存储每盘 / 网络每端口 / PSU / SEL 事件 / 风扇 / RAID（虚拟盘级）/ HBA
+- **CPU「标识（DMI）」列（v1.53.11）**：CPU 明细最后一列名为 **`标识（DMI）`**（旧版叫 `SN`），值取自 SMBIOS Type 4 的 `Serial Number`（`dmidecode -t processor`，**由 BIOS 提供**）。命名口径有三层意思：① **该值跟随物理 CPU 本身** —— 同一颗 CPU 换到别的机器后读数不变，可用于配件流转/换件核对（实测同一对 CPU 在三台机器间平移，三份采集读数逐字节相同）；② 它**不是厂商印在 CPU 上的序列号**（Intel 服务器 CPU 不印 SN，唯一硬件号是 PPIN，且 PPIN 需 BIOS 开启），**不要拿它跟原厂 SN 或跨品牌机器对账**（实测 Dell/部分 BIOS 直接填 `Not Specified`、AMD 平台填 `Unknown`）；③ 因此它只作**资产标识**，机器身份仍以 `系统 SN` / `主板 SN` / `系统 UUID` 为准。`Not Specified`/`UNKNOWN` 的机器整列隐藏；JSON 字段名保持 `serial` 不变
 - GPU 显存/功耗按"检测/额定"双值（如 `140.4 GiB/141GB`）
 - **动态列隐藏**：整列全为占位符时隐藏并附注说明；JSON 始终保留全字段
 - **PCIe 链路明细（v1.44.0+）**：正文 = 统计摘要（满速/降速降宽/bridge 协商/管理芯片）+ ⚠️ 异常链路表；报告末尾附录 = 全量链路表（BDF/设备/LnkCap/LnkSta/判定）。判定三态：endpoint（网卡/GPU/RAID 卡）降速降宽=⚠️ 异常；bridge 端口降速=协商（下游能力，不计异常——x16 口接 x8 卡属正常协商，真问题体现在端点自身判定）；ASPEED/Matrox 管理芯片固有低速=标注不计
