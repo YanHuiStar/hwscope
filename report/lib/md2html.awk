@@ -20,6 +20,7 @@ BEGIN {
     print ".toc li{margin:1px 0;}"
     print ".toc a{display:block;padding:3px 8px;color:#4a5568;text-decoration:none;border-radius:5px;line-height:1.5;}"
     print ".toc a:hover{background:#eef3fa;color:#1e3a5f;}"
+    print ".toc li.sep{margin:8px 0 2px;padding:8px 8px 0;border-top:1px solid #e2e8f0;font-size:11px;color:#a0aec0;letter-spacing:2px;}"
     print ".main{flex:1 1 auto;min-width:0;}"
     print "html{scroll-behavior:smooth;}"
     print ".top{position:fixed;right:18px;bottom:18px;background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:20px;font-size:12px;text-decoration:none;opacity:.85;}"
@@ -55,7 +56,11 @@ BEGIN {
 FNR == 1 {
     pass++
     if (pass == 2 && !toc_done) {
-        for (i = 1; i <= ntoc; i++) print "<li><a href='#sec-" i "'>" toc[i] "</a></li>"
+        sep_done = 0
+        for (i = 1; i <= ntoc; i++) {
+            if (isapp[i] && !sep_done) { print "<li class='sep'>附录</li>"; sep_done = 1 }
+            print "<li><a href='#sec-" i "' title='" attr_esc(toc[i]) "'>" esc_html(toc_short(toc[i])) "</a></li>"
+        }
         print "</ul></nav><main class='main'><div class='container'>"
         toc_done = 1
     }
@@ -66,7 +71,8 @@ pass == 1 {
     if (/^## /) {
         t = substr($0, 4)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
-        toc[++ntoc] = esc_html(t)
+        toc[++ntoc] = t                     # 存原始标题，输出目录时再转义/取短名
+        isapp[ntoc] = (t == "PCIe 链路明细（附录）" || t == "术语说明") ? 1 : 0
     }
     next
 }
@@ -196,6 +202,26 @@ function inline_md(s) {
         u = link; sub(/^[^]]*\]\(/, "", u); sub(/\)$/, "", u)
         s = substr(s, 1, RSTART-1) "<a href='" u "'>" t "</a>" substr(s, RSTART+RLENGTH)
     }
+    return s
+}
+
+# 侧栏短标签：已知章节用统一短名（正文标题完全不受影响，完整标题见悬停 title）
+#   新增章节若要短名，在此加一行；未命中的按原样显示
+function toc_short(s) {
+    if (s == "硬件概览（配置单，自动生成自检测数据）") return "硬件概览"
+    if (s == "PCIe 链路明细（附录）") return "PCIe 链路明细"
+    if (s == "PCIe 拓扑与链路")      return "PCIe 拓扑"
+    if (s == "NVSwitch 域（Fabric）") return "NVSwitch 域"
+    if (s == "板载与外部接口")        return "板载接口"
+    if (s == "电源 PSU")             return "电源"
+    if (s == "RAID 控制器")           return "RAID"
+    return s
+}
+
+# 属性值转义（单引号属性里不能出现 '）
+function attr_esc(s) {
+    s = esc_html(s)
+    gsub(/'/, "&#39;", s)
     return s
 }
 
