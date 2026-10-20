@@ -13,8 +13,9 @@ BEGIN {
     print "<style>"
     print "body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC',sans-serif;background:#eef1f6;color:#2d3748;margin:0;padding:24px 16px;}"
     print ".container{max-width:1150px;margin:0 auto;}"
-    print ".layout{max-width:1400px;margin:0 auto;display:flex;align-items:flex-start;gap:16px;}"
-    print ".toc{position:sticky;top:16px;flex:0 0 140px;height:calc(100vh - 40px);box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(30,58,95,.08);padding:10px 6px;font-size:12.5px;}"
+    print ".layout{max-width:1400px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px;}"
+    print ".pagehead{flex:1 1 100%;}"
+    print ".toc{position:sticky;top:16px;flex:0 0 140px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 32px);background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(30,58,95,.08);padding:10px 6px;font-size:12.5px;}"
     print ".toc-title{font-weight:600;color:#1e3a5f;margin:0 0 8px;padding-left:4px;border-left:3px solid #1e3a5f;}"
     print ".toc ul{list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto;min-height:0;}"
     print ".toc li{margin:1px 0;}"
@@ -48,22 +49,16 @@ BEGIN {
     # 两遍扫描：先收集 ## 段标题生成侧边目录，再输出正文（纯 awk，无外部依赖）
     ARGV[ARGC++] = ARGV[1]
     pass = 0; ntoc = 0; nsec = 0; toc_done = 0
-    print "<body><div class='layout'><nav class='toc'><div class='toc-title'>目录</div><ul class='toc-list'>"
+    # v1.53.21：标题区（h1/副标题/采集信息行）先放进通栏 header，等第一个 ## 出现时再开 nav+main，
+    #   这样侧边栏与右侧第一张卡片从同一行开始（原来侧边栏贴在页面最上方，与卡片错开一个标题区的高度）
+    print "<body><div class='layout'><header class='pagehead'>"
     in_table = 0
 }
 
 # 第二遍开头：输出目录项并打开正文容器
 FNR == 1 {
     pass++
-    if (pass == 2 && !toc_done) {
-        sep_done = 0
-        for (i = 1; i <= ntoc; i++) {
-            if (isapp[i] && !sep_done) { print "<li class='sep'>附录</li>"; sep_done = 1 }
-            print "<li><a href='#sec-" i "' title='" attr_esc(toc[i]) "'>" esc_html(toc_short(toc[i])) "</a></li>"
-        }
-        print "</ul></nav><main class='main'><div class='container'>"
-        toc_done = 1
-    }
+    # v1.53.21：侧边栏/正文容器的开启点移到第一个 ## 处（见下），此处只切换 pass
 }
 
 # 第一遍：只收集 ## 标题，其余一律不输出
@@ -96,6 +91,17 @@ pass == 1 {
 # H2 段标题 → 卡片（带 id 供侧边目录跳转）
 /^## / {
     close_table()
+    # v1.53.21：第一个章节标题处收口标题区，并开启侧边栏 + 正文容器
+    if (!toc_done) {
+        print "</header><nav class='toc'><div class='toc-title'>目录</div><ul class='toc-list'>"
+        sep_done = 0
+        for (i = 1; i <= ntoc; i++) {
+            if (isapp[i] && !sep_done) { print "<li class='sep'>附录</li>"; sep_done = 1 }
+            print "<li><a href='#sec-" i "' title='" attr_esc(toc[i]) "'>" esc_html(toc_short(toc[i])) "</a></li>"
+        }
+        print "</ul></nav><main class='main'><div class='container'>"
+        toc_done = 1
+    }
     if (in_section) print "</section>"
     in_section = 1
     nsec++
@@ -238,6 +244,6 @@ function cell_class(s) {
 END {
     close_table()
     if (in_section) print "</section>"
-    if (!toc_done) print "</ul></nav><main class='main'><div class='container'>"
-    print "</div></main><a class='top' href='#'>↑ 顶部</a></div></body></html>"
+    if (!toc_done) print "</header><main class='main'><div class='container'>"
+    print "</div></main><a class='top' href='#'>↑ 顶部</a></div><script>(function(){function f(){var t=document.querySelector('.toc');if(!t)return;var c=document.querySelector('section.card');if(c){var g=c.getBoundingClientRect().top-t.getBoundingClientRect().top;if(Math.abs(g)>0.5){t.style.marginTop=((parseFloat(getComputedStyle(t).marginTop)||0)+g)+'px';}}var r=t.getBoundingClientRect();var h=r.top<=17?(innerHeight-32):(innerHeight-r.top-16);t.style.height=Math.max(200,Math.round(h))+'px';}window.addEventListener('scroll',f,{passive:true});window.addEventListener('resize',f);if(document.readyState!=='loading'){f();}else{document.addEventListener('DOMContentLoaded',f);}})()</script></body></html>"
 }
