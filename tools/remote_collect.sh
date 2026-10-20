@@ -209,19 +209,34 @@ if [ -d "${LOCAL_OUT}/remote_output/logs" ] && [ -n "$(ls -A "${LOCAL_OUT}/remot
     rmdir "${LOCAL_OUT}/remote_output/logs" 2>/dev/null
 fi
 
-# ─── 5. 完成信息（find 报告文件定位——不依赖时间排序，logs 残留不会误选；远端已在回拉命令内清理，此处主动提示——与 Windows 版排版一致：清理信息在横幅前） ───
-PULLED_DIR=$(find "${LOCAL_OUT}/remote_output" -maxdepth 2 -name hwscope_report.json 2>/dev/null | head -1 | xargs -r dirname)
+# ─── 5. 完成信息（用**本轮实际写入的机器目录** _REPLACED 定位；find/时间排序在他机历史或并发采集时都会串）
+#   v1.53.19 修复：原实现 `find … -name hwscope_report.json | head -1` 取的是 find 顺序的第一个目录——
+#   多台机器**并发**远程采集（或 remote_output 下已有多台历史）时，某台的完成信息会印成**另一台**的
+#   采集目录与归档包（实测多台同采：B 机横幅印成 A 机的目录与归档包，而中间 [ARCHIVE] 行是对的）。
+PULLED_DIR=""
+for _r in ${_REPLACED:-}; do
+    _cand="${LOCAL_OUT}/remote_output/${_r}"
+    [ -d "$_cand" ] || continue
+    if [ -f "${_cand}/hwscope_report.json" ]; then PULLED_DIR="$_cand"; break; fi
+    [ -z "$PULLED_DIR" ] && PULLED_DIR="$_cand"      # 报告生成失败时也先记住本轮的目录
+done
+# 兜底①：本轮没记到（如远端无机器目录）→ 取最近修改的那个含报告的目录
+if [ -z "$PULLED_DIR" ]; then
+    PULLED_DIR=$(find "${LOCAL_OUT}/remote_output" -maxdepth 2 -name hwscope_report.json 2>/dev/null \
+                 | xargs -r ls -t 2>/dev/null | head -1 | xargs -r dirname)
+fi
 echo -e "\033[0;33m[INFO] 已清理远端临时目录: ${REMOTE_DIR}\033[0m"
 echo ""
 echo -e "\033[0;32m========================================\033[0m"
 echo -e "\033[0;32m  远程采集完成\033[0m"
-echo "  采集目录: ${PULLED_DIR}"
+[ -n "$PULLED_DIR" ] && echo "  采集目录: ${PULLED_DIR}"
+[ -z "$PULLED_DIR" ] && echo "  采集目录: (未定位到本次采集目录，请检查 ${LOCAL_OUT}/remote_output/)"
 echo "  报告: $(ls "${PULLED_DIR}"/hwscope_report.* 2>/dev/null | xargs -r -n1 basename | tr '\n' ' ')"
 # v1.53.6：补归档包路径 —— 回拉时同时把远端 logs/ 归档到 logs/remote_logs/<SN>-<时间戳>.tar.gz，
 #   但完成信息此前只报"采集目录 + 报告"，用户拿不到归档包位置（历史留存/复算报告要用它）。
 #   用本次机器目录名（SN）前缀匹配 + 取最新，避免多台机器历史归档混选。
-_sn=$(basename "${PULLED_DIR}")
+_sn=$(basename "${PULLED_DIR:-unknown}")
 _arc=$(ls -t "${SCRIPT_DIR}/logs/remote_logs/${_sn}"-*.tar.gz 2>/dev/null | head -1)
 [ -n "$_arc" ] && echo "  归档包: ${_arc}"
-[ -z "$_arc" ] && echo "  归档包: (未找到 ${_sn}-*.tar.gz，可能归档被人工移走)"
+[ -z "$_arc" ] && [ -n "$PULLED_DIR" ] && echo "  归档包: (未找到 ${_sn}-*.tar.gz，可能归档被人工移走)"
 echo -e "\033[0;32m========================================\033[0m"
