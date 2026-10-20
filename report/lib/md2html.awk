@@ -14,7 +14,13 @@ BEGIN {
     print "body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC',sans-serif;background:#eef1f6;color:#2d3748;margin:0;padding:24px 16px;}"
     print ".container{max-width:1150px;margin:0 auto;}"
     print ".layout{max-width:1400px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px;}"
+    # v1.53.24：header 必须占满整行（否则 flex-wrap 会把侧边栏挤到它右边）；
+    #   宽度与正文容器对齐交给内部子元素各自限宽居中
     print ".pagehead{flex:1 1 100%;}"
+    print ".pagehead>*{max-width:1150px;margin-left:auto;margin-right:auto;}"
+    # v1.53.25：宽屏下页头让出侧边栏占位（140 栏宽 + 16 间距），使其内部容器与正文 .container
+    #   同起点 —— 否则页头按整行居中、正文按 main 居中，两者左边界差 78px（信息行看起来「漂」到偏左）
+    print "@media (min-width:900px){.pagehead{padding-left:156px;}}"
     print ".toc{position:sticky;top:16px;flex:0 0 140px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 32px);background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(30,58,95,.08);padding:10px 6px;font-size:12.5px;}"
     print ".toc-title{font-weight:600;color:#1e3a5f;margin:0 0 8px;padding-left:4px;border-left:3px solid #1e3a5f;}"
     print ".toc ul{list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto;min-height:0;}"
@@ -23,6 +29,8 @@ BEGIN {
     print ".toc a:hover{background:#eef3fa;color:#1e3a5f;}"
     print ".toc li.sep{margin:8px 0 2px;padding:8px 0 0;border-top:1px solid #e2e8f0;font-size:11px;color:#a0aec0;letter-spacing:2px;text-align:center;}"
     print ".main{flex:1 1 auto;min-width:0;}"
+    # v1.53.23：首张卡片上边距归零 —— 侧边栏与第一张卡片从同一条顶线开始（纯 CSS，不靠 JS 挪位置）
+    print ".main .container > section.card:first-of-type{margin-top:0;}"
     print "html{scroll-behavior:smooth;}"
     print ".top{position:fixed;right:18px;bottom:18px;background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:20px;font-size:12px;text-decoration:none;opacity:.85;}"
     print ".top:hover{opacity:1;}"
@@ -245,5 +253,5 @@ END {
     close_table()
     if (in_section) print "</section>"
     if (!toc_done) print "</header><main class='main'><div class='container'>"
-    print "</div></main><a class='top' href='#'>↑ 顶部</a></div><script>(function(){function f(){var t=document.querySelector('.toc');if(!t)return;var c=document.querySelector('section.card');if(c){var g=c.getBoundingClientRect().top-t.getBoundingClientRect().top;if(Math.abs(g)>0.5){t.style.marginTop=((parseFloat(getComputedStyle(t).marginTop)||0)+g)+'px';}}var r=t.getBoundingClientRect();var h=r.top<=17?(innerHeight-32):(innerHeight-r.top-16);t.style.height=Math.max(200,Math.round(h))+'px';}window.addEventListener('scroll',f,{passive:true});window.addEventListener('resize',f);if(document.readyState!=='loading'){f();}else{document.addEventListener('DOMContentLoaded',f);}})()</script></body></html>"
+    print "</div></main><a class='top' href='#'>↑ 顶部</a></div><script>(function(){function f(){var t=document.querySelector('.toc');if(!t)return;var r=t.getBoundingClientRect();var h=r.top<=17?(innerHeight-32):(innerHeight-r.top-16);t.style.height=Math.max(200,Math.round(h))+'px';}window.addEventListener('scroll',f,{passive:true});window.addEventListener('resize',f);if(document.readyState!=='loading'){f();}else{document.addEventListener('DOMContentLoaded',f);}})()</script></body></html>"
 }
