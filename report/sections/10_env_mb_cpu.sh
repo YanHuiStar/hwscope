@@ -167,7 +167,9 @@ echo "$CPU_CUR_SPEED" | grep -qE "^[0-9]+$" || CPU_CUR_SPEED=""
 [ -z "$CPU_CUR_SPEED" ] && CPU_CUR_SPEED=$(grep -m1 "CPU MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
 
 # CPU 每颗明细（从 dmidecode_processor.log 按 Processor Information 块解析）
-# SN 列：有真实 SN 才显示（Not Specified/空 → 空标记，报告端不展示该列）
+# 标识（DMI）列：取自 SMBIOS Type 4 Serial Number（BIOS 提供）。该值跟随物理 CPU 本身——
+#   换到别的机器仍不变，可用于配件流转核对；但非厂商印字序列号，勿与原厂 SN 对账。
+#   Not Specified/UNKNOWN/空 → 置空，报告端不展示该列
 CPU_DETAILS=""
 if [ -f "${dmidecode_processor}" ]; then
     CPU_DETAILS=$(awk '/^Processor Information/{
@@ -186,7 +188,7 @@ if [ -f "${dmidecode_processor}" ]; then
             # 有的平台 Stepping 在 Signature 行内（如 "Signature: Type 0, Family 6, Model 173, Stepping 1"）
             if(line ~ /Signature:.*Stepping/) {match(line, /Stepping [0-9]+/); step=substr(line, RSTART+9, RLENGTH-9)}
         }
-        # SN 为 Not Specified/UNKNOWN/空 → 置空（报告端不显示）；仅保留真实 SN
+        # Not Specified/UNKNOWN/空 → 置空（报告端不显示该列）；仅保留实际读到的标识
         if(sn ~ /Not Specified|UNKNOWN|Unknown/) sn=""
         if(socket!="") print socket"|"model"|"cores"|"threads"|"maxspd"|"curspd"|"step"|"sn
     }' "${dmidecode_processor}" 2>/dev/null)

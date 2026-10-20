@@ -362,12 +362,14 @@ $(if [ -n "$CPU_DETAILS" ]; then
     done < <(printf '%s\n' "$CPU_DETAILS")
     echo "### 处理器明细（CPU）"
     if [ "$c_has_sn" -eq 1 ]; then
-        echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping | SN |"
-        echo "|---|--------|------|------|------|---------|---------|----------|----|"
+        echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping | 标识（DMI） |"
+        echo "|---|--------|------|------|------|---------|---------|----------|------------|"
         echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
             cseq=$((cseq + 1))
             echo "| ${cseq} | ${cs} | ${cm} | ${cc} | ${ct} | ${cmx} | ${ccur} | ${cstep} | ${csn:-} |"
         done
+        echo ""
+        echo "> **标识（DMI）**：取自 SMBIOS Type 4 Serial Number（dmidecode -t processor），由 BIOS 提供。同一颗物理 CPU 换到其他机器后该值不变，可用于配件流转核对。**非厂商印字序列号，请勿用于与原厂 SN 或跨品牌机器对账。**"
     else
         echo "| # | Socket | 型号 | 核心 | 线程 | 最大频率 | 当前频率 | Stepping |"
         echo "|---|--------|------|------|-----------|------|---------|---------|"

@@ -223,7 +223,7 @@ $(if [ -n "$CPU_DETAILS" ]; then
     echo "  CPU明细:"
     echo "$CPU_DETAILS" | while IFS='|' read -r cs cm cc ct cmx ccur cstep csn; do
         if [ -n "$csn" ]; then
-            printf "    %-6s %-30s %sC/%sT  %s/%s  %s  SN:%s\n" "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep" "$csn"
+            printf "    %-6s %-30s %sC/%sT  %s/%s  %s  标识(DMI):%s\n" "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep" "$csn"
         else
             printf "    %-6s %-30s %sC/%sT  %s/%s  %s\n" "$cs" "$cm" "$cc" "$ct" "$cmx" "$ccur" "$cstep"
         fi
