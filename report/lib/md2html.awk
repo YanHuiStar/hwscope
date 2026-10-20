@@ -68,7 +68,21 @@ BEGIN {
     print "blockquote{background:#fffaf0;border-left:4px solid #ed8936;padding:8px 14px;margin:8px 0;color:#7c5314;font-size:12.5px;border-radius:0 6px 6px 0;}"
     print "li{margin:3px 0;font-size:13px;}"
     print "hr{border:none;border-top:1px solid #e2e8f0;margin:14px 0;}"
-    print "@media print{body{background:#fff;padding:0;} .card{box-shadow:none;border:1px solid #dde3ea;break-inside:avoid;} th{background:#333;} .toc,.top{display:none;} .layout{display:block;max-width:none;} .main{width:100%;}}"
+    # v1.53.31：打印 / PDF 版式整备（此前 PDF 排版异常：页头右移、卡片无边界、纸张为默认 Letter）
+    print "@page{size:A4;margin:12mm;}"
+    print "@media print{body{background:#fff;padding:0;margin:0;}}"
+    print "@media print{.toc,.top{display:none !important;}}"
+    # 复位屏幕态的布局补偿：侧边栏让位与窄屏缩放都不该进纸面
+    print "@media print{.layout{display:block !important;max-width:none;zoom:1 !important;} .main,.container{width:auto;max-width:none;} .pagehead{padding-left:0 !important;margin-bottom:10px;}}"
+    # 卡片在白纸上要有可见边界（原来 #dde3ea 几乎看不见），且不跨页断开
+    print "@media print{.card{box-shadow:none;border:1px solid #a0aec0;border-radius:0;background:#fff;margin:10px 0;padding:10px 14px;break-inside:avoid;page-break-inside:avoid;} .card h2{border-left:4px solid #1e3a5f;}}"
+    # 表头深色底必须强制输出（否则浏览器"省墨"打成白底黑字）
+    print "@media print{th{background:#1e3a5f !important;color:#fff !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid #1e3a5f;} td{border-bottom:1px solid #cbd5e0;} table{border-collapse:collapse;width:100%;}}"
+    # 附录长表允许跨页，但每行不拆开
+    print "@media print{tr{break-inside:avoid;page-break-inside:avoid;} blockquote{border-left:3px solid #ed8936;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}"
+    # v1.53.31 补：A4 纵向纸宽 ≈794px < 900px 断点，窄屏的「表格转块级横向滚动」会漏进打印
+    #   → 表格收缩不占满、列不换行。打印里必须复位成正常 table 布局
+    print "@media print{table{display:table !important;overflow:visible !important;white-space:normal !important;width:100% !important;} thead{display:table-header-group;} tbody{display:table-row-group;}}"
     print "</style>"
     print "</head>"
     # 两遍扫描：先收集 ## 段标题生成侧边目录，再输出正文（纯 awk，无外部依赖）
