@@ -18,6 +18,9 @@ BEGIN {
     #   宽度与正文容器对齐交给内部子元素各自限宽居中
     print ".pagehead{flex:1 1 100%;}"
     print ".pagehead>*{max-width:1150px;margin-left:auto;margin-right:auto;}"
+    # v1.53.26：页头三段（标题/副标题/采集信息行）统一以卡片区中线居中 ——
+    #   此前标题居中而信息行左对齐，两条视觉轴不一致，看起来「歪」
+    print ".pagehead>p{text-align:center;}"
     # v1.53.25：宽屏下页头让出侧边栏占位（140 栏宽 + 16 间距），使其内部容器与正文 .container
     #   同起点 —— 否则页头按整行居中、正文按 main 居中，两者左边界差 78px（信息行看起来「漂」到偏左）
     print "@media (min-width:900px){.pagehead{padding-left:156px;}}"
@@ -35,7 +38,7 @@ BEGIN {
     print ".top{position:fixed;right:18px;bottom:18px;background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:20px;font-size:12px;text-decoration:none;opacity:.85;}"
     print ".top:hover{opacity:1;}"
     print "h1{text-align:center;color:#1e3a5f;font-size:24px;margin:0 0 6px;letter-spacing:2px;}"
-    print ".subtitle{text-align:center;color:#718096;font-size:12px;margin:0 0 24px;}"
+    print ".subtitle{text-align:center;color:#718096;font-size:12px;margin:0 auto 24px;}"
     print ".card{background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(30,58,95,.08);padding:14px 22px;margin:14px 0;}"
     print ".card h2{color:#1e3a5f;font-size:16px;margin:0 0 10px;border-left:4px solid #1e3a5f;padding-left:10px;}"
     print ".card h3{color:#4a5568;font-size:13px;margin:12px 0 6px;}"
