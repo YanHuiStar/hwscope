@@ -209,12 +209,14 @@ function inline_md(s) {
 #   新增章节若要短名，在此加一行；未命中的按原样显示
 function toc_short(s) {
     if (s == "硬件概览（配置单，自动生成自检测数据）") return "硬件概览"
-    if (s == "PCIe 链路明细（附录）") return "PCIe 链路明细"
-    if (s == "PCIe 拓扑与链路")      return "PCIe 拓扑"
+    if (s == "PCIe 链路明细（附录）") return "链路明细"
+    if (s == "PCIe 拓扑与链路")      return "链路"
     if (s == "NVSwitch 域（Fabric）") return "NVSwitch 域"
-    if (s == "板载与外部接口")        return "板载接口"
+    if (s == "板载与外部接口")        return "板载"
     if (s == "电源 PSU")             return "电源"
     if (s == "RAID 控制器")           return "RAID"
+    if (s == "验收项")               return "验收项目"
+    if (s == "结论")                 return "验收结论"
     return s
 }
 
