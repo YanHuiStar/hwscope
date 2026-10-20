@@ -626,6 +626,52 @@ gen_acceptance() {
     if [ -n "${STORAGE_MODELS:-}" ]; then
         ACC_DISK_MODEL=$(echo "$STORAGE_MODELS" | tr ',' '\n' | head -1)
     fi
+    # 存储规格：按「型号 + 类型 + 单盘额定容量」分组计数，渲染成
+    #   <型号>（<类型> <单盘容量>）×<n>，多组用 " + " 连接
+    # 目的：让配置单能看出「几块多大、什么接口」，而不是只有型号 + 总容量
+    # 细节：① dspec 自带「额定」前缀（30_storage_gpu_extra.sh 生成），显示前剥掉，型号含该容量时括号内不重复
+    #   ② RAID 卡伪盘（MR9xxx/PERC/MegaRAID…）与 16 进制伪"额定"不计入分组（非物理盘）
+    #   ③ 分组数与 STORAGE_COUNT（块设备数）不一致时，数量列注明「其中物理盘 N」，避免看的人误判
+    ACC_DISK_SPEC=""; ACC_DISK_GRP_N=""
+    if [ -n "${DISK_DETAILS:-}" ]; then
+        _dspec_out=$(printf '%s\n' "$DISK_DETAILS" | awk -F'|' '
+            NF >= 4 {
+                model = $4; type = $2; spec = $11; size = $3
+                gsub(/^[ \t]+|[ \t]+$/, "", model)
+                gsub(/^[ \t]+|[ \t]+$/, "", type)
+                gsub(/^[ \t]+|[ \t]+$/, "", spec)
+                gsub(/^[ \t]+|[ \t]+$/, "", size)
+                sub(/^额定/, "", spec)
+                if (model == "" || model == "N/A") model = "未知型号"
+                if (spec == "" || spec == "N/A") spec = size
+                if (type == "" || type == "N/A") type = ""
+                if (type ~ /MegaRAID|MR[0-9][0-9][0-9]|PERC|Smart Array|Adaptec|RAID/) next
+                if (spec ~ /^[0-9a-fA-F]{16,}$/) spec = ""
+                d = type
+                if (spec != "" && index(model, spec) == 0) d = (d == "" ? spec : d " " spec)
+                key = model SUBSEP d
+                if (!(key in cnt)) { order[++n] = key; mdl[key] = model; dsc[key] = d }
+                cnt[key]++; total++
+            }
+            END {
+                for (i = 1; i <= n; i++)
+                    for (j = i + 1; j <= n; j++) {
+                        a = order[i]; b = order[j]
+                        if (cnt[b] > cnt[a] || (cnt[b] == cnt[a] && mdl[b] < mdl[a])) {
+                            t = order[i]; order[i] = order[j]; order[j] = t
+                        }
+                    }
+                out = ""
+                for (i = 1; i <= n; i++) {
+                    k = order[i]
+                    s = mdl[k] (dsc[k] == "" ? "" : "（" dsc[k] "）") "×" cnt[k]
+                    out = out (out == "" ? "" : " + ") s
+                }
+                print (total + 0) "|" out
+            }')
+        ACC_DISK_GRP_N="${_dspec_out%%|*}"
+        ACC_DISK_SPEC="${_dspec_out#*|}"
+    fi
 
     {
         echo "# HwScope 验收清单（Acceptance Checklist）"
@@ -676,7 +722,15 @@ gen_acceptance() {
         if [ "${STORAGE_COUNT:-0}" -eq 0 ] 2>/dev/null && [ "${_stor_rows:-0}" -gt 0 ] 2>/dev/null; then
             echo "| 存储 | 无本地数据盘（本机仅 USB/虚拟盘，块设备记录 ${_stor_rows} 条） | 块 | 0 |"
         else
-            echo "| 存储 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
+            if [ -n "${ACC_DISK_SPEC:-}" ]; then
+                _cntcell="${STORAGE_COUNT:-0}"
+                if [ -n "${ACC_DISK_GRP_N:-}" ] && [ "${ACC_DISK_GRP_N}" != "${STORAGE_COUNT:-0}" ]; then
+                    _cntcell="${STORAGE_COUNT:-0}（其中物理盘 ${ACC_DISK_GRP_N}）"
+                fi
+                echo "| 存储 | ${ACC_DISK_SPEC}（共 ${STORAGE_TOTAL:-0}） | 块 | ${_cntcell} |"
+            else
+                echo "| 存储 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
+            fi
         fi
         echo "| 电源模块 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
         echo "| 系统管理 | BMC（固件 ${BMC_FW:-N/A}） | 套 | 1 |"
