@@ -248,6 +248,8 @@ try {
     $remoteLogsDirEarly = Join-Path $ProjectDir "logs/remote_logs"
     New-Item -ItemType Directory -Force -Path $remoteOutDir | Out-Null
     New-Item -ItemType Directory -Force -Path $remoteLogsDirEarly | Out-Null
+    # v1.53.19：记录**本轮实际写入的机器目录**（SN），完成信息据此定位，不再靠前后快照差集猜
+    $replacedSNs = @()
     foreach ($sd in Get-ChildItem $stage -Directory -Force -ErrorAction SilentlyContinue) {
         $sn = $sd.Name
         # logs/ 不是机器目录，搬到固定位置交给下方原流程
@@ -260,6 +262,7 @@ try {
         # 护栏①：机器目录名只允许 [A-Za-z0-9_-]（防路径穿越/误删）  ②：过短名跳过
         if ($sn -notmatch '^[A-Za-z0-9_-]+$') { Write-Host "[WARN] 跳过非法的机器目录名: $sn" -ForegroundColor Yellow; continue }
         if ($sn.Length -lt 4) { Write-Host "[WARN] 跳过过短的机器目录名: $sn" -ForegroundColor Yellow; continue }
+        $replacedSNs += $sn
         $dst = Join-Path $remoteOutDir $sn
         # v1.51.0：回拉一律**清空重建**（对齐 hwscope.sh 的 `rm -rf $OUTPUT_BASE` 覆盖语义）。
         #   原先「有归档才敢删、无归档就增量覆盖 + 残留检测」整体删除，原因：
@@ -295,25 +298,39 @@ try {
     }
     Write-Host "[INFO] 已清理远端临时目录: $RemoteDir" -ForegroundColor Yellow
 
-    # ─── 5. 完成信息（v1.48.57：以"回拉前后目录快照的差集"定位本次机器目录——勿全局搜 json：remote_output 下存有多台历史机器时会取到旧机器；覆盖同一台时取最新修改目录兜底） ───
+    # ─── 5. 完成信息（v1.53.19：以**本轮实际写入的机器目录** $replacedSNs 定位。原实现用"回拉前后目录差集"——
+    #   多台并发采集时，每边都会看到对方新建的目录，$newDirs[0] 取任意一个 →
+    #   实测多台同采：B 机横幅印成了 A 机的 SN 及其归档包，而中间 [ARCHIVE] 行是对的） ───
     $dirsAfter = @(Get-ChildItem $remoteOutDir -Directory -ErrorAction SilentlyContinue)
-    $newDirs = @($dirsAfter | Where-Object { $dirsBefore -notcontains $_.Name })
-    $pulled = if ($newDirs.Count -gt 0) { $newDirs[0] } else { $dirsAfter | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
+    $pulled = $null
+    foreach ($rsn in $replacedSNs) {
+        $cand = Join-Path $remoteOutDir $rsn
+        if (Test-Path (Join-Path $cand "hwscope_report.json")) { $pulled = Get-Item $cand; break }
+        if (-not $pulled -and (Test-Path $cand)) { $pulled = Get-Item $cand }   # 报告生成失败时也先记住本轮目录
+    }
+    if (-not $pulled) {
+        $newDirs = @($dirsAfter | Where-Object { $dirsBefore -notcontains $_.Name })
+        $pulled = if ($newDirs.Count -gt 0) { $newDirs[0] } else { $dirsAfter | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
+    }
     if (-not $pulled) { $pulled = Get-ChildItem $remoteOutDir -Recurse -Depth 1 -Filter "hwscope_report.json" -ErrorAction SilentlyContinue | Select-Object -First 1 | ForEach-Object { $_.Directory } }
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Green
     Write-Host "  远程采集完成" -ForegroundColor Green
-    Write-Host "  采集目录: $($pulled.FullName)"
-    $reports = Get-ChildItem $pulled.FullName -Filter "hwscope_report.*" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-    if ($reports) { Write-Host "  报告: $($reports -join ' ')" }
-    # v1.53.6: also report the archive path -- pull also archives remote logs/ into
-    #   logs/remote_logs\<SN>-<timestamp>.tar.gz, which the completion banner never mentioned.
-    #   Match by this machine's folder name (SN) prefix + newest, so other machines' archives are not picked.
-    $remoteLogsDir = Join-Path $ProjectDir "logs/remote_logs"
-    $arc = Get-ChildItem $remoteLogsDir -Filter "$($pulled.Name)-*.tar.gz" -ErrorAction SilentlyContinue |
-           Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($arc) { Write-Host "  归档包: $($arc.FullName)" }
-    else      { Write-Host "  归档包: (not found: $($pulled.Name)-*.tar.gz)" }
+    if ($pulled) {
+        Write-Host "  采集目录: $($pulled.FullName)"
+        $reports = Get-ChildItem $pulled.FullName -Filter "hwscope_report.*" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+        if ($reports) { Write-Host "  报告: $($reports -join ' ')" }
+        # v1.53.6: also report the archive path -- pull also archives remote logs/ into
+        #   logs/remote_logs\<SN>-<timestamp>.tar.gz, which the completion banner never mentioned.
+        #   Match by this machine's folder name (SN) prefix + newest, so other machines' archives are not picked.
+        $remoteLogsDir = Join-Path $ProjectDir "logs/remote_logs"
+        $arc = Get-ChildItem $remoteLogsDir -Filter "$($pulled.Name)-*.tar.gz" -ErrorAction SilentlyContinue |
+               Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($arc) { Write-Host "  归档包: $($arc.FullName)" }
+        else      { Write-Host "  归档包: (not found: $($pulled.Name)-*.tar.gz)" }
+    } else {
+        Write-Host "  采集目录: (未定位到本次采集目录，请检查 $remoteOutDir)" -ForegroundColor Yellow
+    }
     Write-Host "========================================" -ForegroundColor Green
 }
 finally {
