@@ -13,10 +13,14 @@ BEGIN {
     print "<style>"
     print "body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC',sans-serif;background:#eef1f6;color:#2d3748;margin:0;padding:24px 16px;}"
     print ".container{max-width:1150px;margin:0 auto;}"
-    print ".layout{max-width:1400px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px;}"
+    # v1.53.29：三段式改 grid —— 页头跨满两列独占一行，侧边栏与正文同处第二行，
+    #   既不换行、也不会互相覆盖（flex 的 wrap/basis 组合在窄屏会错位）
+    print ".layout{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:140px minmax(0,1fr);gap:16px;align-items:start;}"
+    print ".pagehead{grid-column:1 / -1;grid-row:1;}"
+    print ".toc{grid-column:1;grid-row:2;}"
+    print ".main{grid-column:2;grid-row:2;}"
     # v1.53.24：header 必须占满整行（否则 flex-wrap 会把侧边栏挤到它右边）；
     #   宽度与正文容器对齐交给内部子元素各自限宽居中
-    print ".pagehead{flex:1 1 100%;}"
     print ".pagehead>*{max-width:1150px;margin-left:auto;margin-right:auto;}"
     # v1.53.26：页头三段（标题/副标题/采集信息行）统一以卡片区中线居中 ——
     #   此前标题居中而信息行左对齐，两条视觉轴不一致，看起来「歪」
@@ -31,11 +35,19 @@ BEGIN {
     print ".toc a{display:block;padding:3px 8px;color:#4a5568;text-decoration:none;border-radius:5px;line-height:1.5;text-align:center;}"
     print ".toc a:hover{background:#eef3fa;color:#1e3a5f;}"
     print ".toc li.sep{margin:8px 0 2px;padding:8px 0 0;border-top:1px solid #e2e8f0;font-size:11px;color:#a0aec0;letter-spacing:2px;text-align:center;}"
-    print ".main{flex:1 1 auto;min-width:0;}"
     # v1.53.23：首张卡片上边距归零 —— 侧边栏与第一张卡片从同一条顶线开始（纯 CSS，不靠 JS 挪位置）
     print ".main .container > section.card:first-of-type{margin-top:0;}"
     # v1.53.27：目录跳转后卡片停在距视口顶 16px（与 .toc 的 sticky top 一致），不再顶到 0
     print "section.card{scroll-margin-top:16px;}"
+    # v1.53.28：窄屏 / 窗口缩放 —— 侧边栏收起、正文全宽，整体等比微缩（保持布局比例，
+    #   不把宽表格挤到变形）；宽屏（≥900）仍是目录 + 正文并排
+    print "@media (max-width:900px){.toc{display:none;}.pagehead{padding-left:0;}.layout{grid-template-columns:minmax(0,1fr);gap:0;zoom:0.92;}.main{grid-column:1;}.pagehead{grid-column:1;}}"
+    print "@media (max-width:760px){.layout{zoom:0.84;}}"
+    print "@media (max-width:620px){.layout{zoom:0.74;}}"
+    # 宽表格在窄屏允许横向滚动，避免强行压缩导致列错位
+    print "@media (max-width:900px){table{display:block;overflow-x:auto;white-space:nowrap;}}"
+    print "@media (max-width:900px){table thead,table tbody{display:table;width:100%;}}"
+    print "@media (max-width:900px){table thead{display:table-header-group;}table tbody{display:table-row-group;}}"
     print "html{scroll-behavior:smooth;}"
     print ".top{position:fixed;right:18px;bottom:18px;background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:20px;font-size:12px;text-decoration:none;opacity:.85;}"
     print ".top:hover{opacity:1;}"
