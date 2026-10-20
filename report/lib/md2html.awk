@@ -12,22 +12,22 @@ BEGIN {
     print "<title>HwScope 硬件巡检报告</title>"
     print "<style>"
     print "body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC',sans-serif;background:#eef1f6;color:#2d3748;margin:0;padding:24px 16px;}"
-    print ".container{max-width:1150px;margin:0 auto;}"
+    print ".container{max-width:1280px;margin:0 auto;}"
     # v1.53.29：三段式改 grid —— 页头跨满两列独占一行，侧边栏与正文同处第二行，
     #   既不换行、也不会互相覆盖（flex 的 wrap/basis 组合在窄屏会错位）
-    print ".layout{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:140px minmax(0,1fr);gap:16px;align-items:start;}"
+    print ".layout{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:130px minmax(0,1fr);gap:16px;align-items:start;}"
     print ".pagehead{grid-column:1 / -1;grid-row:1;}"
     print ".toc{grid-column:1;grid-row:2;}"
     print ".main{grid-column:2;grid-row:2;}"
     # v1.53.24：header 必须占满整行（否则 flex-wrap 会把侧边栏挤到它右边）；
     #   宽度与正文容器对齐交给内部子元素各自限宽居中
-    print ".pagehead>*{max-width:1150px;margin-left:auto;margin-right:auto;}"
+    print ".pagehead>*{max-width:1280px;margin-left:auto;margin-right:auto;}"
     # v1.53.26：页头三段（标题/副标题/采集信息行）统一以卡片区中线居中 ——
     #   此前标题居中而信息行左对齐，两条视觉轴不一致，看起来「歪」
     print ".pagehead>p{text-align:center;}"
     # v1.53.25：宽屏下页头让出侧边栏占位（140 栏宽 + 16 间距），使其内部容器与正文 .container
     #   同起点 —— 否则页头按整行居中、正文按 main 居中，两者左边界差 78px（信息行看起来「漂」到偏左）
-    print "@media (min-width:900px){.pagehead{padding-left:156px;}}"
+    print "@media (min-width:900px){.pagehead{padding-left:146px;}}"
     print ".toc{position:sticky;top:16px;flex:0 0 140px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;max-height:calc(100vh - 32px);background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(30,58,95,.08);padding:10px 6px;font-size:12.5px;}"
     print ".toc-title{font-weight:600;color:#1e3a5f;margin:0 0 8px;padding-left:4px;border-left:3px solid #1e3a5f;}"
     print ".toc ul{list-style:none;margin:0;padding:0;flex:1 1 auto;overflow-y:auto;min-height:0;}"
