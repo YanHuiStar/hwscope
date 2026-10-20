@@ -309,8 +309,10 @@ $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_T
     fi
     # v1.44.0 摘要 + 异常明细（v1.44.1）：满速链路不逐条列（全量明细见文末附录）
     if [ "$PCIE_LINKS_TOTAL" -gt 0 ] && [ -n "$PCIE_LINK_TABLE" ]; then
-        _full=$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT - ${PCIE_BRIDGE_NEG_COUNT:-0}))
-        echo "| 链路统计 | ${PCIE_LINKS_TOTAL} 条 · 满速 ${_full} · 降速/降宽 ${PCIE_SLOW_COUNT} · bridge 协商 ${PCIE_BRIDGE_NEG_COUNT:-0} · 管理芯片 ${PCIE_MGMT_COUNT} |"
+        _full=$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT - ${PCIE_BRIDGE_NEG_COUNT:-0} - ${PCIE_PERIPH_COUNT:-0}))
+        _peri=""
+        [ "${PCIE_PERIPH_COUNT:-0}" -gt 0 ] 2>/dev/null && _peri=" · 外设 ${PCIE_PERIPH_COUNT}"
+        echo "| 链路统计 | ${PCIE_LINKS_TOTAL} 条 · 满速 ${_full} · 降速/降宽 ${PCIE_SLOW_COUNT} · bridge 协商 ${PCIE_BRIDGE_NEG_COUNT:-0} · 管理芯片 ${PCIE_MGMT_COUNT}${_peri} |"
         echo ""
         if [ "$PCIE_SLOW_COUNT" -gt 0 ] 2>/dev/null; then
             echo "### ⚠️ 降速/降宽链路"
@@ -325,6 +327,10 @@ $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_T
         fi
         if [ "$PCIE_MGMT_COUNT" -gt 0 ] 2>/dev/null; then
             echo "> 管理芯片（BMC VGA 桥等）${PCIE_MGMT_COUNT} 条固有低速为正常现象，不计链路异常"
+            echo ""
+        fi
+        if [ "${PCIE_PERIPH_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "> 外设控制器（USB 主控等）${PCIE_PERIPH_COUNT} 条按主板设计协商带宽，不计链路异常"
             echo ""
         fi
         if [ "$PCIE_SLOW_COUNT" -eq 0 ] 2>/dev/null; then

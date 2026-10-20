@@ -12,7 +12,7 @@
 | `hwscope_report.json` | 结构化数据（程序消费，全字段稳定） |
 | `hwscope_report.md` | 详细报告（Markdown，含全部明细表） |
 | `hwscope_report.txt` | 纯文本版（终端/邮件） |
-| `hwscope_report.html` | 浏览器交付版（卡片分区/状态着色/打印友好，零依赖；**v1.53.12 起左侧带目录栏可点章节跳转**；**v1.53.13/14 起目录用统一短名（最长 4 字）+ 附录分隔**：`PCIe 拓扑与链路`→`链路`、`PCIe 链路明细（附录）`→`链路明细`、`板载与外部接口`→`板载`、`电源 PSU`→`电源`、`RAID 控制器`→`RAID`；验收清单为 `硬件概览/验收信息/验收项目/验收结论` 四个 4 字标签；完整标题见悬停 `title`） |
+| `hwscope_report.html` | 浏览器交付版（卡片分区/状态着色/打印友好，零依赖；**v1.53.12 起左侧带目录栏可点章节跳转**；**v1.53.13/14 起目录用统一短名（最长 4 字）+ 附录分隔**：`PCIe 拓扑与链路`→`链路`、`PCIe 链路明细（附录）`→`链路明细`、`板载与外部接口`→`板载`、`电源 PSU`→`电源`、`RAID 控制器`→`RAID`；验收清单为 `硬件概览/验收信息/验收项目/验收结论` 四个 4 字标签；完整标题见悬停 `title`） |；**v1.53.20 起目录栏高度随视口自适应**（`calc(100vh - 40px)` + 内部滚动），目录项不足一屏时下方空白由栏体延伸填满，目录项过多时在栏内滚动、不撑破页面
 
 ### 明细表
 
@@ -66,7 +66,7 @@
 - **验收判定项（项数随平台能力裁剪，实测 B300 为 14 项）**：GPU PCIe / NVLink（v1.48.40 能力感知：消费级无 NVLink 判 N/A）/ DCGM（消费级 N/A）/ VBIOS / 内存速率 / 磁盘寿命 / SMART / **电源状态**（v1.49.17 由「电源冗余」更名：判据改为 IPMI `PS*_Status`（0x1=正常，非 0x1=FAIL）+ SMBIOS 在位数量兜底；v1.49.18 起该判定真正生效）/ 温度 / ****风扇（v1.48.88：`FAN_DATA_OK` 区分「采集失败」与「平台无风扇」——命令超时致日志为空时显示 `N/A（未取到数据）` 并计入数据不足，不再误报「无风扇」）**；**CPU 功耗（v1.48.89：采集端读 RAPL 两次采样算 ΔE/Δt，报告端单列，可与 DCMI 交叉验证口径）**；**风扇数据来源（v1.48.89：IPMI → lm-sensors → hwmon → SMBIOS Type 27 分层兜底，报告标注来源）**；**健康检查新增项（v1.48.90：GPU XID 错误历史 / CPU MCE（**v1.49.7 收紧判定口径**：只认真 MCE 标志 `Machine Check` / `Hardware Error` / `MCA: ` / `mce: [Hardware Error]`，并排除内核启动与驱动初始化噪音 `MCE: In-kernel MCE decoding enabled` / `mce: CPU supports` / `EDAC MC: Ver` / `EDAC MC*: Giving out device`——裸 `MCE:` 前缀曾把正常启动信息报成「检出 1 条机器检查异常」，实测导致整机误判「有条件通过」） / RAID 缓存电池与写缓存策略——这**三类**是「曾出过事」的直接证据，验收中仅在检出时追加项，不改变默认项数；IB 链路误码（perfquery）与 NVMe 错误日志是**报告正文章节**，不进验收判定）**；SEL（v1.48.86 按「告警终态」判：`Asserted` 后无对应 `Deasserted` = 当前仍告警 → FAIL；成对自愈 → WARN 并标注自愈日期；旧实现把 Deasserted 行也算作 Critical）** / 固件合规 / OS-BMC 一致性 / PCIe 链路完整（v1.41.0）/ CPU 配置一致 / 内存容量一致 / 内存 ECC（v1.48.40 自洽校验）/ **GPU ECC（v1.52.13）**
 - **多厂商 GPU（v1.46.x）**：NVIDIA 平台 NVLink/DCGM/VBIOS 正常判定；**AMD 平台 NVLink/DCGM 判 N/A；GPU ECC 有 RAS 数据则真判定、无数据判固有 N/A 不计数（v1.52.15）**（无 NVLink/DCGM，xGMI 互联 + ROCm 诊断 rocminfo/amd-smi ras；**v1.48.0 起 OAM 模组识别 → x86_64_OAM 平台标记 + xGMI 拓扑采集/摘要**，链路健康判定待真机校准）；**昇腾平台 NVLink/DCGM 判 N/A**（无 NVLink/DCGM，HCCS 互联 + npu-smi 诊断；v1.46.7 起 lspci "Processing accelerators" 类目可识别）；GPU PCIe 项 AMD 按 lspci 链路判定 / PCIe 链路完整（v1.41.0）。**昇腾/Intel/国产等任意已识别加速卡**（v1.47.0 适配器框架）统一 CSV 走 lspci 层 → "GPU PCIe 链路完整"验收项按 LnkCap/LnkSta 全厂商可判（降速 FAIL / 满速 PASS）
 
-> **PCIe 链路完整判定口径（v1.44.2+）**：只判 endpoint 设备（网卡/GPU/RAID 卡）——bridge 端口（PCIe switch/根端口）的 LnkSta 反映下游设备能力，不判异常；真链路问题（线缆/接触/插槽）会体现在端点自身 LnkCap vs LnkSta 判定中。
+> **PCIe 链路完整判定口径（v1.44.2+）**：只判 endpoint 设备（网卡/GPU/RAID 卡）——bridge 端口（PCIe switch/根端口）的 LnkSta 反映下游设备能力，不判异常；真链路问题（线缆/接触/插槽）会体现在端点自身 LnkCap vs LnkSta 判定中。 **非关键通路外设另判「外设固有」（v1.53.20）**：USB 主控 / 串行总线 / 音频 / 信号处理等设备的链路宽度是主板设计取舍，不是数据通路故障（实测 ASMedia ASM3042 USB 3.2 Gen1 xHCI 为 LnkCap Gen3 x2 / LnkSta Gen3 x1——速度满、仅宽度 x1，而 USB 3.2 Gen1 5Gbps 跑 Gen3 x1 绰绰有余）。此类行计入「外设 N」单列、不计链路异常；旧实现只排除 ASPEED/Matrox/VGA，USB 控制器会被判「降宽」并拉低验收结论。
 > **IB 设备口径（v1.44.0+）**：按 ibdev2netdev 映射到 ibp*/ibs* 接口的 CA 计数——以太模式 CA（如 CX5 双口以太）不计入 IB 设备数与 IB Link Down。
 
 ### 样例（HGX B300 实际输出）

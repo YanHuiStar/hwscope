@@ -38,6 +38,7 @@ PCIE_LINKS_TOTAL=0
 PCIE_LINK_TABLE=""       # 全量链路行：BDF|设备|LnkCap|LnkSta|判定（排序 = 管理芯片排后 + BDF 升序）
 PCIE_SLOW_COUNT=0
 PCIE_MGMT_COUNT=0
+PCIE_PERIPH_COUNT=0      # v1.53.20：外设固有（USB 主控等）行数，从满速单列出来
 PCIE_BRIDGE_NEG_COUNT=0  # bridge 下游协商行数（v1.44.3：附录标注"协商（下游能力）"，从"满速"统计中分离）
 # v1.51.8：上游父桥端口能力表（child_bus → 该父桥 LnkCap 原文）
 #   判据依据：Root Port / Switch 端口的 Link Capabilities 描述「它到下游设备这条链路」的能力上限。
@@ -73,7 +74,7 @@ if [ -f "${pcie_full}" ]; then
         function gname(x) { if (x >= 31.9) return "Gen5"; if (x >= 15.9) return "Gen4"; if (x >= 7.9) return "Gen3"; if (x >= 4.9) return "Gen2"; return "Gen1" }
         function fmt(w, s) { return "x" w " " gname(s) }
         function mn(a, b) { return (a < b) ? a : b }
-        function check(   csp,cwd,ssp,swd,mgmt,verdict,isbridge,devbus,uc,bases,basew) {
+        function check(   csp,cwd,ssp,swd,mgmt,periph,verdict,isbridge,devbus,uc,bases,basew) {
             if (c == "" || s == "") return
             csp=spd(c); cwd=wdt(c); ssp=spd(s); swd=wdt(s)
             if (swd == 0) return            # x0 = 端口未连接（PEX 下行空置）
@@ -87,8 +88,17 @@ if [ -f "${pcie_full}" ]; then
             if (isbridge && ssp <= 5 && swd == 16) return  # bridge 端口空闲（Gen1/2 全宽未训练 = 下行未接）
             total++
             mgmt = (d ~ /ASPEED|AST[0-9]+|Matrox|VGA compatible|Display controller/) ? 1 : 0
+            # v1.53.20：非关键通路外设——USB 主控 / 串行总线 / 音频 / 信号处理等。
+            #   这类设备的链路宽度是**主板设计取舍**，不是数据通路故障：实测华硕 B300 上
+            #   ASMedia ASM3042 USB 3.2 Gen1 xHCI 报 LnkCap Gen3 x2 / LnkSta Gen3 x1
+            #   （速度满、仅宽度 x1），而 USB 3.2 Gen1（5Gbps）跑 Gen3 x1 绰绰有余。
+            #   旧实现只排除 ASPEED/Matrox/VGA，USB 控制器被判「降宽」并拉低验收结论
+            #   （实测该机因此由 2 项 WARN 变 3 项 WARN）。改判「外设固有」，不计异常。
+            periph = (d ~ /USB controller|USB [0-9.]+ |xHCI|Serial bus controller|SMBus|Audio device|Multimedia audio|Signal processing controller/) ? 1 : 0
             if (mgmt) {
                 verdict = "管理芯片固有"
+            } else if (periph) {
+                verdict = "外设固有"
             # bridge 端口（switch 下行/PCIe 根端口）：LnkSta 反映下游设备能力——x16 口接 x8 卡、
             # Gen4 口接 Gen3 卡均属正常协商（超微 AS-4124GO-NART 实证：PEX880xx 下行挂 Gen3 设备，
             # v1.44.2）。真问题（线缆/接触/插槽）会体现在下游端点自身 LnkCap vs LnkSta——端点判定已覆盖。
@@ -108,6 +118,7 @@ if [ -f "${pcie_full}" ]; then
         PCIE_LINKS_TOTAL=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '|')
         PCIE_SLOW_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '⚠️')
         PCIE_MGMT_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '管理芯片')
+        PCIE_PERIPH_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '外设固有')
         PCIE_BRIDGE_NEG_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '协商（下游能力）')
         PCIE_SLOW_LINKS=$(printf '%s\n' "$PCIE_LINK_TABLE" | awk -F'|' '$5 ~ /⚠️/ {print $1" "$2" | cap "$3", sta "$4}')
     fi
