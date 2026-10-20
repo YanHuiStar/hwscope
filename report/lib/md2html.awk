@@ -34,6 +34,8 @@ BEGIN {
     print ".main{flex:1 1 auto;min-width:0;}"
     # v1.53.23：首张卡片上边距归零 —— 侧边栏与第一张卡片从同一条顶线开始（纯 CSS，不靠 JS 挪位置）
     print ".main .container > section.card:first-of-type{margin-top:0;}"
+    # v1.53.27：目录跳转后卡片停在距视口顶 16px（与 .toc 的 sticky top 一致），不再顶到 0
+    print "section.card{scroll-margin-top:16px;}"
     print "html{scroll-behavior:smooth;}"
     print ".top{position:fixed;right:18px;bottom:18px;background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:20px;font-size:12px;text-decoration:none;opacity:.85;}"
     print ".top:hover{opacity:1;}"
@@ -118,7 +120,9 @@ pass == 1 {
     nsec++
     sec = substr($0, 4)
     gsub(/^[[:space:]]+|[[:space:]]+$/, "", sec)
-    print "<section class='card'><h2 id='sec-" nsec "'>" sec "</h2>"
+    # v1.53.27：锚点 id 挂在 section 上（原挂 h2），配合 scroll-margin-top 让跳转后
+    #   卡片顶部与侧边栏目录顶部同高
+    print "<section class='card' id='sec-" nsec "'><h2>" sec "</h2>"
     next
 }
 
