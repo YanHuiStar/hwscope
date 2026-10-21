@@ -39,15 +39,19 @@ BEGIN {
     print ".main .container > section.card:first-of-type{margin-top:0;}"
     # v1.53.27：目录跳转后卡片停在距视口顶 16px（与 .toc 的 sticky top 一致），不再顶到 0
     print "section.card{scroll-margin-top:16px;}"
-    # v1.53.28：窄屏 / 窗口缩放 —— 侧边栏收起、正文全宽，整体等比微缩（保持布局比例，
-    #   不把宽表格挤到变形）；宽屏（≥900）仍是目录 + 正文并排
-    print "@media (max-width:900px){.toc{display:none;}.pagehead{padding-left:0;}.layout{grid-template-columns:minmax(0,1fr);gap:0;zoom:0.92;}.main{grid-column:1;}.pagehead{grid-column:1;}}"
-    print "@media (max-width:760px){.layout{zoom:0.84;}}"
-    print "@media (max-width:620px){.layout{zoom:0.74;}}"
-    # 宽表格在窄屏允许横向滚动，避免强行压缩导致列错位
-    print "@media (max-width:900px){table{display:block;overflow-x:auto;white-space:nowrap;}}"
-    print "@media (max-width:900px){table thead,table tbody{display:table;width:100%;}}"
-    print "@media (max-width:900px){table thead{display:table-header-group;}table tbody{display:table-row-group;}}"
+    # v1.53.32：窄屏 / 笔记本半屏 —— 取消原「zoom 等比微缩」方案（Firefox 不支持 zoom，
+    #   且连字体一起缩小、半屏下字变得很小），改为常规响应式三档：
+    #   ≥1201 目录+正文并排 ｜ ≤1200 收窄目录列 ｜ ≤1024 目录变**顶部横向吸附条**（导航不再消失）
+    #   宽表格不再靠 table{display:block} 硬压，改由 .tw 容器横向滚动（列宽保持自然）
+    print "@media (max-width:1200px){.layout{grid-template-columns:120px minmax(0,1fr);}.pagehead{padding-left:136px;}}"
+    print "@media (max-width:1024px){.layout{display:block;max-width:none;}}"
+    print "@media (max-width:1024px){.pagehead{grid-column:1;grid-row:1;padding-left:0;}}"
+    print "@media (max-width:1024px){.toc{grid-column:1;grid-row:2;position:sticky;top:0;height:auto;max-height:none;margin:0 0 10px;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;z-index:5;}}"
+    print "@media (max-width:1024px){.toc-title{margin:0;padding:0 8px 0 0;border-left:none;border-right:3px solid #1e3a5f;white-space:nowrap;}}"
+    print "@media (max-width:1024px){.toc ul{display:flex;flex-wrap:wrap;gap:3px;overflow:visible;flex:1 1 100%;width:100%;min-height:0;min-width:0;}}"
+    print "@media (max-width:1024px){.toc li{margin:0;}.toc a{padding:2px 8px;border:1px solid #e3e9f2;}.toc li.sep{display:none;}}"
+    print "@media (max-width:1024px){.main{grid-column:auto;grid-row:auto;}.tw>table{min-width:max-content;}}"
+    print "@media (max-width:760px){body{padding:12px 8px;}.card{padding:12px 14px;}h1{font-size:20px;}.subtitle{margin-bottom:14px;}table{font-size:12px;}th,td{padding:5px 7px;}.top{right:10px;bottom:10px;}}"
     print "html{scroll-behavior:smooth;}"
     print ".top{position:fixed;right:18px;bottom:18px;background:#1e3a5f;color:#fff;padding:7px 12px;border-radius:20px;font-size:12px;text-decoration:none;opacity:.85;}"
     print ".top:hover{opacity:1;}"
@@ -56,9 +60,10 @@ BEGIN {
     print ".card{background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(30,58,95,.08);padding:14px 22px;margin:14px 0;}"
     print ".card h2{color:#1e3a5f;font-size:16px;margin:0 0 10px;border-left:4px solid #1e3a5f;padding-left:10px;}"
     print ".card h3{color:#4a5568;font-size:13px;margin:12px 0 6px;}"
+    print ".tw{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;}"
     print "table{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0 10px;}"
     print "th{background:#1e3a5f;color:#fff;padding:7px 10px;text-align:left;font-weight:500;white-space:nowrap;}"
-    print "td{padding:6px 10px;border-bottom:1px solid #e8ecf2;word-break:break-all;}"
+    print "td{padding:6px 10px;border-bottom:1px solid #e8ecf2;overflow-wrap:anywhere;}"
     print "tr:nth-child(even) td{background:#f7f9fc;}"
     print "tr:hover td{background:#eef3fa;}"
     print ".pass{color:#1a7f37;font-weight:600;}"
@@ -82,7 +87,10 @@ BEGIN {
     print "@media print{tr{break-inside:avoid;page-break-inside:avoid;} blockquote{border-left:3px solid #ed8936;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}"
     # v1.53.31 补：A4 纵向纸宽 ≈794px < 900px 断点，窄屏的「表格转块级横向滚动」会漏进打印
     #   → 表格收缩不占满、列不换行。打印里必须复位成正常 table 布局
-    print "@media print{table{display:table !important;overflow:visible !important;white-space:normal !important;width:100% !important;} thead{display:table-header-group;} tbody{display:table-row-group;}}"
+    print "@media print{table{display:table !important;overflow:visible !important;white-space:normal !important;width:100% !important;min-width:0 !important;} thead{display:table-header-group;} tbody{display:table-row-group;}}"
+    print "@media print{.tw{overflow:visible !important;}}"
+    print "@media print{.toc{position:static !important;}}"
+    print "@media print{.top{right:12px;bottom:12px;}}"
     print "</style>"
     print "</head>"
     # 两遍扫描：先收集 ## 段标题生成侧边目录，再输出正文（纯 awk，无外部依赖）
@@ -113,7 +121,7 @@ pass == 1 {
 
 # 空行：关闭表格
 /^[[:space:]]*$/ {
-    if (in_table) { print "</tbody></table>"; in_table = 0 }
+    if (in_table) { print "</tbody></table></div>"; in_table = 0 }
     next
 }
 
@@ -169,7 +177,7 @@ pass == 1 {
     if (line ~ /^[-:|[:space:]]+$/) next
     n = split(line, cells, "|")
     if (in_table == 0) {
-        print "<table><thead><tr>"
+        print "<div class='tw'><table><thead><tr>"
         for (i = 1; i <= n; i++) {
             c = trim_cell(cells[i])
             print "<th>" inline_md(esc_html(c)) "</th>"
@@ -217,7 +225,7 @@ pass == 1 {
 }
 
 function close_table() {
-    if (in_table) { print "</tbody></table>"; in_table = 0 }
+    if (in_table) { print "</tbody></table></div>"; in_table = 0 }
 }
 
 function trim_cell(s) {
@@ -286,5 +294,7 @@ END {
     close_table()
     if (in_section) print "</section>"
     if (!toc_done) print "</header><main class='main'><div class='container'>"
-    print "</div></main><a class='top' href='#'>↑ 顶部</a></div><script>(function(){function f(){var t=document.querySelector('.toc');if(!t)return;var r=t.getBoundingClientRect();var h=r.top<=17?(innerHeight-32):(innerHeight-r.top-16);t.style.height=Math.max(200,Math.round(h))+'px';}window.addEventListener('scroll',f,{passive:true});window.addEventListener('resize',f);if(document.readyState!=='loading'){f();}else{document.addEventListener('DOMContentLoaded',f);}})()</script></body></html>"
+    # v1.53.32：侧栏高度 JS 必须感知断点 —— 窄屏（≤1024）目录是顶部横向条，高度交给 CSS；
+    #   原实现无条件用 innerHeight 设高，笔记本半屏下会把横条撑到 ~746px，把正文整块压到屏幕外
+    print "</div></main><a class='top' href='#'>↑ 顶部</a></div><script>(function(){function f(){var t=document.querySelector('.toc');if(!t)return;if(window.matchMedia('(max-width:1024px)').matches){t.style.height='';return;}var r=t.getBoundingClientRect();var h=r.top<=17?(innerHeight-32):(innerHeight-r.top-16);t.style.height=Math.max(200,Math.round(h))+'px';}window.addEventListener('scroll',f,{passive:true});window.addEventListener('resize',f);if(document.readyState!=='loading'){f();}else{document.addEventListener('DOMContentLoaded',f);}})()</script></body></html>"
 }
