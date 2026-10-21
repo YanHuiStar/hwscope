@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.53.39 (2026-10)
+# Version : 1.53.40 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.53.39"
+HWSCOPE_VERSION="v1.53.40"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -299,6 +299,13 @@ echo ""
 echo "========================================"
 echo -e "${BLUE}HwScope - 服务器硬件巡检采集${NC}  ${HWSCOPE_VERSION}"
 echo "平台: ${PLATFORM} (GPU: ${GPU_COUNT:-0})"
+# v1.53.40：开机过短时提示（不阻止采集）——实测开机 13 秒采集会拿不到 AMD/NVIDIA GPU，
+#   平台因此判成「GPU 机头」，整套 GPU 结论失真；此处只提示，是否继续由用户决定。
+_up_sec=$(awk '{print $1}' /proc/uptime 2>/dev/null | cut -d. -f1)
+case "${_up_sec:-}" in
+    ''|*[!0-9]*) : ;;
+    *) [ "$_up_sec" -lt 120 ] && echo -e "${YELLOW}[WARN] 系统开机仅 ${_up_sec} 秒——GPU/网卡可能尚未枚举完成，建议开机 ≥2 分钟后重新采集（本次仍继续）${NC}";;
+esac
 echo "输出: ${OUTPUT_BASE}"
 echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "========================================"

@@ -55,7 +55,7 @@ gen_acceptance() {
     #    有 GPU 但驱动异常（lspci 3D controller 存在但 nvidia-smi 无数据）→ WARN，无法验收即问题）
     if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         if [ "$HEAD_NODE" -eq 1 ]; then
-            add_item "GPU PCIe 链路完整" "N/A" "HGX 机头（无本地 GPU，模组单独采集验收）" 1
+            add_item "GPU PCIe 链路完整" "N/A" "GPU 机头（无本地 GPU，模组单独采集验收）" 1
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             add_item "GPU PCIe 链路完整" "WARN" "检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU（PCI 3D controller）但对应管理工具无数据（驱动未安装或异常）"
         else
@@ -478,6 +478,13 @@ gen_acceptance() {
         else
             add_item "GPU ECC" "N/A" "无 ECC 数据（该采集版本未生成 gpu_ecc_inventory.csv）"
         fi
+    fi
+
+    # ── v1.53.40：采集时机（开机 <3 分钟且未发现 GPU）——条件项，仅检出才追加 ──
+    #   实测事故：开机 13 秒采集 → GPU 未枚举 → 平台判 GPU 机头、GPU 四类项判「平台固有 N/A」，
+    #   验收看似正常（合格/有条件通过），实则**根本没测到 GPU**。这种情况必须显式告警。
+    if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+        add_item "采集时机" "WARN" "采集时系统运行时间 ${COLLECT_UPTIME_DISP}（不足 3 分钟），未发现 GPU——GPU/网卡可能尚未枚举完成；本次 GPU 相关结论无效，请开机 ≥2 分钟后重采"
     fi
 
     # ── v1.53.37：PCIe AER 错误（仅检出才追加项，不改变默认项数）──

@@ -284,7 +284,7 @@ gen_md() {
 |----|----|
 | OS | ${OS_NAME:-N/A} |
 | 内核 | ${KERNEL:-N/A} |
-| 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（HGX 机头无 GPU 模组，驱动信息不适用）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
+| 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（GPU 机头无 GPU 模组，驱动信息不适用）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
 | CUDA | ${GPU_CUDA:-N/A} |"; fi)
 | 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then echo "
 | Compute Mode | ${DCGM_COMPUTE_MODE} |"; fi)$(if [ -n "${DCGM_ECC_MODE:-}" ]; then echo "
@@ -410,7 +410,11 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
         if [ "$HEAD_NODE" -eq 1 ]; then
         echo "| 项 | 值 |"
         echo "|----|----|"
-            echo "| 状态 | HGX 机头（无本地 GPU，HGX 模组经 PCIe Fabric 单独接入，需单独采集） |"
+            echo "| 状态 | GPU 机头（无本地 GPU，GPU 模组经 PCIe Fabric 单独接入，需单独采集） |"
+            # v1.53.40：无 GPU 且开机过短 → 明确提示「可能尚未枚举」，别让人读成平台形态
+            if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null; then
+                echo "| ⚠️ 采集时机 | 采集时系统运行时间 ${COLLECT_UPTIME_DISP}（不足 3 分钟）——GPU/网卡可能**尚未枚举完成**，本次「无 GPU」不可作为平台形态结论；建议开机 ≥2 分钟后重采 |"
+            fi
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             echo "| 项 | 值 |"
             echo "|----|----|"
@@ -885,7 +889,7 @@ fi)
 $(
     if [ "$GPU_COUNT" -eq 0 ]; then
         if [ "$HEAD_NODE" -eq 1 ]; then
-            echo "| GPU PCIe 链路 | N/A（HGX 机头无本地 GPU，模组单独采集） |"
+            echo "| GPU PCIe 链路 | N/A（GPU 机头无本地 GPU，模组单独采集） |"
         else
             echo "| GPU PCIe 链路 | N/A（无 GPU） |"
         fi
@@ -903,7 +907,7 @@ $(
     elif [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
         echo "| DCGM 诊断 | ${DCGM_SUMMARY} |"
     elif [ "$HEAD_NODE" -eq 1 ]; then
-        echo "| DCGM 诊断 | N/A（HGX 机头无 GPU，模组单独采集） |"
+        echo "| DCGM 诊断 | N/A（GPU 机头无 GPU，模组单独采集） |"
     fi
     if [ -n "$DCGM_NOTICE" ]; then
         echo "| ⚠️ DCGM | ${DCGM_NOTICE} |"
@@ -915,6 +919,10 @@ $(
     fi
     if [ -n "${MCE_HITS:-}" ]; then
         echo "| ⚠️ CPU MCE | 检出 ${MCE_COUNT} 条机器检查异常（来源: ${MCE_SRC}） |"
+    fi
+    # v1.53.40：采集时机提示（仅在「开机 <3 分钟且未发现 GPU」时出这一行，不改变无故障机行数）
+    if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+        echo "| ⚠️ 采集时机 | 采集时系统运行时间 ${COLLECT_UPTIME_DISP}——GPU 可能尚未枚举完成，「无 GPU」结论需开机 ≥2 分钟后复采确认 |"
     fi
     # v1.53.37：PCIe AER 可纠正/不可纠正错误（仅在检出时出这一行——不改变无故障机的行数）
     #   「GPU PCIe 链路」只判协商速率/宽度，看不到 AER 计数，单看那一行会漏掉持续纠错的链路。

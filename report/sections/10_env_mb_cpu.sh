@@ -389,6 +389,43 @@ for _mce_c in "${OS_DIR}/journal_mce.log" "${OS_DIR}/journal_kernel_hw.log" "${O
     fi
 done
 
+# ─── v1.53.40：采集时机（系统 uptime）───
+# 实测事故：一台 8×MI300X 底座在**开机后 13 秒**被采集（uptime.log 写 `up 0 min`），
+#   amdgpu 模块尚未加载、lspci 无加速卡 → GPU 模块 SKIP、平台落成 x86_64_head，
+#   报告与验收按「GPU 机头」出一套文案，看起来像「机器没装 GPU」。
+#   这里把 uptime 解析出来，供报告在「无 GPU + 开机过短」时明确提示复核，
+#   避免把「采集过早」误读成「平台形态」。
+COLLECT_UPTIME_SEC=""; COLLECT_EARLY=0
+if [ -f "${OS_DIR}/uptime.log" ]; then
+    _up_line=$(grep -vE "^#" "${OS_DIR}/uptime.log" 2>/dev/null | head -1)
+    _up_str=$(printf '%s' "$_up_line" | sed -n 's/.* up \(.*\)/\1/p' | cut -d, -f1 | sed 's/^ *//; s/ *$//')
+    case "$_up_str" in
+        *day*) _d=$(printf '%s' "$_up_str" | awk '{print $1}')
+               _hm=$(printf '%s' "$_up_str" | grep -oE '[0-9]+:[0-9]+' | head -1)
+               _h=${_hm%%:*}; _m=${_hm##*:}
+               COLLECT_UPTIME_SEC=$(( _d*86400 + ${_h:-0}*3600 + ${_m:-0}*60 )) ;;
+        *min*) COLLECT_UPTIME_SEC=$(( $(printf '%s' "$_up_str" | grep -oE '^[0-9]+') * 60 )) ;;
+        *sec*) COLLECT_UPTIME_SEC=$(printf '%s' "$_up_str" | grep -oE '^[0-9]+') ;;
+        [0-9]*:[0-9]*) _h=${_up_str%%:*}; _m=${_up_str##*:}
+               COLLECT_UPTIME_SEC=$(( _h*3600 + _m*60 )) ;;
+    esac
+    case "${COLLECT_UPTIME_SEC:-}" in
+        ''|*[!0-9]*) COLLECT_UPTIME_SEC="" ;;
+    esac
+    # <180 秒视为「刚开机就采」——GPU/NIC 初始化常需数十秒（MI300X 八卡实测 >30s）
+    [ -n "$COLLECT_UPTIME_SEC" ] && [ "$COLLECT_UPTIME_SEC" -lt 180 ] && COLLECT_EARLY=1
+fi
+# 友好显示（uptime 常是 `up 0 min`，直接写「0 秒」会让人以为是解析失败）
+COLLECT_UPTIME_DISP=""
+case "${COLLECT_UPTIME_SEC:-}" in
+    ''|*[!0-9]*) : ;;
+    *)
+        if [ "$COLLECT_UPTIME_SEC" -lt 60 ]; then COLLECT_UPTIME_DISP="<1 分钟"
+        elif [ "$COLLECT_UPTIME_SEC" -lt 3600 ]; then COLLECT_UPTIME_DISP="$(( COLLECT_UPTIME_SEC / 60 )) 分钟"
+        else COLLECT_UPTIME_DISP="$(( COLLECT_UPTIME_SEC / 3600 )) 小时 $(( (COLLECT_UPTIME_SEC % 3600) / 60 )) 分钟"
+        fi ;;
+esac
+
 # ─── v1.53.37：PCIe AER 可纠正错误（按 BDF 统计）───
 # 背景（实测 8×MI300X G7768 M6）：dmesg 里有 255 条
 #   `pcieport 0000:32:01.0: AER: aer_status: 0x00000001` + 下一行 `[ 0] RxErr`
