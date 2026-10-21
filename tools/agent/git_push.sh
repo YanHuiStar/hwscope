@@ -150,18 +150,24 @@ info "待推送: ${AHEAD} 个提交领先远程${BEHIND:+，${BEHIND} 个落后}
 if [ "${BEHIND:-0}" -gt 0 ]; then
     warn "本地落后远程 ${BEHIND} 个提交，直接推送会被拒"
     ai "先 git pull --rebase $REMOTE $BRANCH 合并远程改动（有冲突则解决后重跑本脚本），或 git push --force-with-lease（确认覆盖才用）"
-    if [ "$DRY_RUN" -eq 0 ]; then
-        echo -n "  自动执行 git pull --rebase ？[y/N] "
-        read -r ans
-        case "$ans" in y|Y)
-            "$(pick_git)" pull --rebase "$REMOTE" "$BRANCH" 2>&1 | tail -3 || { fail "rebase 失败（可能冲突）"; status FAIL; exit 1; }
-            ;;
-        *) echo "已取消"; status USER_ABORT; exit 2 ;;
-        esac
-    else
+    # v1.53.46：这里原来只判 DRY_RUN，漏了 SKIP_CONFIRM —— 带 -y 无人值守跑时会卡在 read
+    #   （无终端环境下报 `/dev/tty: No such device or address`，把网络失败误报成脚本问题）。
+    #   -y 语义是"全程同意"，与脚本既定的「fetch + 落后 rebase」设计一致，故直接自动 rebase。
+    if [ "$DRY_RUN" -eq 1 ]; then
         status USER_ABORT
         exit 2
+    elif [ "$SKIP_CONFIRM" -eq 1 ]; then
+        info "-y 已指定：自动执行 git pull --rebase $REMOTE $BRANCH"
+    else
+        echo -n "  自动执行 git pull --rebase ？[y/N] "
+        read -r ans
+        case "$ans" in
+            y|Y) ;;
+            *) echo "已取消"; status USER_ABORT; exit 2 ;;
+        esac
     fi
+    "$(pick_git)" pull --rebase "$REMOTE" "$BRANCH" 2>&1 | tail -3 \
+        || { fail "rebase 失败（可能冲突）"; status FAIL; exit 1; }
 fi
 
 if [ "$DRY_RUN" -eq 0 ]; then
