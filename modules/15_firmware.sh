@@ -2,8 +2,10 @@
 # =============================================================================
 # 模块: 15_firmware.sh — 固件合规模块
 # 输出目录: <OUTPUT_DIR>/firmware/
-# 功能: 采集 GPU VBIOS / BMC FW / NIC FW / NVSwitch FW 版本，
-#       对照 conf/fw_required.txt（厂商推荐基线）逐项判定 合规/落后/较新/未知。
+# 功能: 采集固件清单并判定合规——厂商无关：BIOS（SMBIOS Type 0）/ BMC / GPU VBIOS
+#       （NVIDIA nvidia-smi 或 AMD rocm-smi）/ CPU 微码 / 网卡（mlxfwmanager 或 ethtool）/
+#       存储盘 / NVSwitch（仅 NVIDIA），对照 conf/fw_required.txt 逐项判 合规/落后/较新/未知。
+#       报告端只在「已录基线」时显示该段（无基线整段隐藏，v1.53.43）。
 # 说明: 无基线条目 → 判"未知"（仅记录当前版本，不产生 WARN —— 基线未录入是配置
 #       问题而非硬件问题）；基线由人工按厂商验收手册维护（模板见 conf/fw_required.txt）。
 # =============================================================================
