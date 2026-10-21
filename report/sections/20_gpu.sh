@@ -506,3 +506,26 @@ for _cand in "${_os_dir}/journal_xid.log" "${_os_dir}/journal_kernel_hw.log" \
         break
     fi
 done
+
+# ─── v1.53.41：GPU **模组在场状态**（present / absent / unknown）───
+# 起因（实测）：一台 8×MI300X 底座在**开机 13 秒**被采集——amdgpu 未加载、lspci 无加速卡，
+#   GPU 模块 SKIP；旧逻辑直接断言「无本地 GPU（机头形态）」，验收把 4 个 GPU 项按
+#   「平台固有 N/A」折叠（不计数据不足），于是报告看起来像「这台本来就没装模组」。
+#   但 OS 侧「没读到 GPU」**不能**证明「没装模组」——可能未上电、未枚举、驱动未加载、采集过早。
+# 判据（宁可判未知，不可替客户下结论）：
+#   present : 读到 GPU
+#   unknown : ① 采集过早（uptime <3 分钟）② PCI 有加速卡但管理工具无数据（驱动异常）
+#   absent  : 其余（开机正常、PCI 无加速卡）——仍按机头形态处理
+GPU_MODULE_STATE="present"; GPU_MODULE_REASON=""
+if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+    if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null; then
+        GPU_MODULE_STATE="unknown"
+        GPU_MODULE_REASON="采集时系统运行时间 ${COLLECT_UPTIME_DISP:-不足 3 分钟}，GPU 可能尚未枚举完成"
+    elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+        GPU_MODULE_STATE="unknown"
+        GPU_MODULE_REASON="PCI 上存在 ${GPU_PCI_PRESENT} 张加速卡（${GPU_PCI_VENDOR:-未知厂商}），但管理工具无数据（驱动未安装或异常）"
+    else
+        GPU_MODULE_STATE="absent"
+        GPU_MODULE_REASON="开机正常且 PCI 未枚举到加速卡"
+    fi
+fi
