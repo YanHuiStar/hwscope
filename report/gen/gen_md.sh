@@ -505,10 +505,18 @@ fi)$(if [ -n "${NVSWITCH_FABRIC:-}" ]; then
     echo "${NVSWITCH_FABRIC}"
 fi)
 
-$(if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
+$(if [ -n "${FW_COMPLIANCE_DETAILS:-}" ]; then
+    # v1.53.38：**有清单就展示**。原实现只在「已配置基线」（FW_COMPLIANCE_ACTIVE=1）时出这一段，
+    #   于是未录基线的机器整段消失——实测 AMD 整机固件明明采到了（BIOS/GPU VBIOS/网卡/硬盘），
+    #   报告里却一个字都没有，客户以为没采。现在无基线时标题改为「固件清单」、状态列显示「未知（无基线）」。
     echo ""
-    echo "## 固件合规"
-    echo "> 对照 conf/fw_required.txt（厂商推荐版本基线）逐项判定；无基线条目判未知（仅记录）"
+    if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
+        echo "## 固件合规"
+        echo "> 对照 conf/fw_required.txt（厂商推荐版本基线）逐项判定；无基线条目判未知（仅记录）"
+    else
+        echo "## 固件清单"
+        echo "> 本机未配置推荐版本基线（conf/fw_required.txt），下表仅**记录实测固件版本**，不做合规判定；录入基线后自动转为合规表"
+    fi
     echo ""
     echo "| 组件 | 设备 | 当前版本 | 推荐版本 | 状态 | 说明 |"
     echo "|------|------|---------|---------|------|------|"
@@ -517,6 +525,8 @@ $(if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
         case "$fst" in
             合规) fst_disp="✅ 合规" ;;
             落后) fst_disp="⚠️ 落后" ;;
+            较新) fst_disp="✅ 较新" ;;
+            未知) fst_disp="— 未知（无基线）" ;;
             *)    fst_disp="$fst" ;;
         esac
         echo "| ${fc} | ${fd} | ${fcur} | ${fbase} | ${fst_disp} | ${fnote:-} |"
