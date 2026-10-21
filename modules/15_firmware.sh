@@ -97,6 +97,13 @@ run_firmware() {
     #   不用「|| echo」兜底——那会把 NVIDIA 平台上的真失败也吞掉；改为提前判能力，
     #   无 N 卡时直接用一条记录性命令（exit 0、内容写明 SKIP），nv 平台行为完全不变。
     local _vbios_cmd="nvidia-smi --query-gpu=index,name,vbios_version --format=csv,noheader 2>&1"
+    # v1.53.39：NVSwitch 同样按平台能力门禁。注意 `nvswitch-audit --help` 输出的是**工具自身版本**
+    #   （如 615.71.09，属 nvidia-fabricmanager 包），不是本机 NVSwitch 固件——实测 AMD 整机
+    #   （无 NVSwitch）也被记成「NVSwitch 615.71.09」并进固件清单/合规表，属误报。
+    local _nvsw_cmd="nvswitch-audit --help 2>&1"
+    if ! has_nvidia_gpu; then
+        _nvsw_cmd="echo '# SKIP: 本机无 NVIDIA GPU（无 NVSwitch 可读）'"
+    fi
     if ! has_nvidia_gpu; then
         _vbios_cmd="echo '# SKIP: 本机无 NVIDIA GPU（AMD/昇腾等平台无 nvidia VBIOS）'"
     fi
@@ -104,7 +111,7 @@ run_firmware() {
         "${_vbios_cmd}" "${dir}/gpu_vbios.csv" \
         "${fw_ipmi_fast} bash -c \"ipmitool mc info 2>&1\"" "${dir}/bmc_mc.log" \
         "mlxfwmanager --query 2>&1" "${dir}/nic_fwmanager.log" \
-        "nvswitch-audit --help 2>&1" "${dir}/nvswitch_version.log"
+        "${_nvsw_cmd}" "${dir}/nvswitch_version.log"
 
     # 网卡固件兜底（无 mlxfwmanager 时）：ethtool -i 逐口读 firmware-version
     if ! check_cmd mlxfwmanager; then
@@ -141,8 +148,10 @@ run_firmware() {
         grep -iE "Firmware Revision|Manufacturer Name|Product Name" "${dir}/bmc_mc.log" 2>/dev/null \
             | sed 's/^[[:space:]]*/  /'
         echo ""
-        echo "## GPU VBIOS（NVIDIA）"
-        grep -v "^#" "${dir}/gpu_vbios.csv" 2>/dev/null | grep -v "^$" | sed 's/^/  /'
+        if has_nvidia_gpu; then
+            echo "## GPU VBIOS（NVIDIA）"
+            grep -v "^#" "${dir}/gpu_vbios.csv" 2>/dev/null | grep -v "^$" | sed 's/^/  /'
+        fi
         echo ""
         echo "## GPU VBIOS（AMD / rocm-smi --showallinfo）"
         grep -oE '"VBIOS version":[[:space:]]*"[^"]*"' "${_root}/gpu/gpu_amd_full.log" 2>/dev/null \
@@ -160,7 +169,9 @@ run_firmware() {
         if [ -f "${_root}/network/nic_inventory.csv" ]; then
             # 列序: dev|bdf|mac|serial|part_number|firmware|speed|width|psid|cap_speed|cap_width
             grep -v "^#" "${_root}/network/nic_inventory.csv" 2>/dev/null | grep -v "^$" \
-                | awk -F'|' '{ m=$5; gsub(/^[ \t]+|[ \t]+$/,"",m); f=$6; gsub(/^[ \t]+|[ \t]+$/,"",f); if (f!="" && f!="N/A") print "  " (m==""||m=="N/A" ? $1 : m) " → FW " f }' \
+                | awk -F'|' '{ m=$5; gsub(/^[ \t]+|[ \t]+$/,"",m); f=$6; gsub(/^[ \t]+|[ \t]+$/,"",f); b=$2; gsub(/^[ \t]+|[ \t]+$/,"",b);
+                              if (b !~ /^([0-9a-fA-F]{4}:)?[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$/) next;   # USB 网卡不进固件表
+                              if (f!="" && f!="N/A") print "  " (m==""||m=="N/A" ? $1 : m) " → FW " f }' \
                 | sort -u | head -20
         fi
         echo ""
@@ -172,12 +183,21 @@ run_firmware() {
             echo "  $_n: $(grep -m1 'firmware-version' "$_f" 2>/dev/null | cut -d: -f2- | xargs)"
         done
         echo ""
-        echo "## 存储盘固件（smartctl / nvme）"
-        grep -rhE "^Firmware Version|^Firmware Revision" "${_root}/storage"/smart_*.log "${_root}/storage"/nvme_*_health.log 2>/dev/null \
-            | sed 's/^[[:space:]]*/  /' | sort | uniq -c | sed 's/^ *[0-9]* *//' | head -12
+        echo "## 存储盘固件（smartctl / nvme；不含 USB 盘）"
+        _usb_list=$(grep -vE "^#|^$" "${_root}/storage/block_devices_all.log" 2>/dev/null \
+            | awk '{u=0; for(i=2;i<=NF;i++) if($i=="usb") u=1; if(u) print $1}' | tr '\n' ' ')
+        for _sf in "${_root}/storage"/smart_*.log "${_root}/storage"/nvme_*_health.log; do
+            [ -f "$_sf" ] || continue
+            _sd=$(basename "$_sf" | sed 's/^smart_//; s/_health\.log$//; s/\.log$//')
+            case " ${_usb_list} " in *" ${_sd} "*) continue ;; esac
+            _sv=$(grep -m1 -E "^Firmware Version|^Firmware Revision" "$_sf" 2>/dev/null | cut -d: -f2- | xargs)
+            [ -n "$_sv" ] && echo "  ${_sd}: ${_sv}"
+        done | sort -u | head -12
         echo ""
-        echo "## NVSwitch（nvidia-fabricmanager 包）"
-        grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep --line-buffered -iE "Version|Firmware" | sed 's/^/  /'
+        if has_nvidia_gpu; then
+            echo "## NVSwitch（nvidia-fabricmanager 包；此处为工具版本，非 NVSwitch 固件）"
+            grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep --line-buffered -iE "Version|Firmware" | sed 's/^/  /'
+        fi
     } > "${dir}/fw_versions.log"
 
     # ─── 合规判定 ───
@@ -228,17 +248,38 @@ run_firmware() {
     # NIC（mlxfwmanager 块解析优先，ethtool 兜底）
     local nic_hit=0
     if [ -s "${dir}/nic_fwmanager.log" ]; then
-        local ntype="" nfwv="" nbdf="" line
+        # v1.53.39：mlxfwmanager 的真实输出是**表格式**——
+        #     Device #1: / Device Type: ConnectX7 / Part Number: ... / PCI Device Name: 0000:03:00.0
+        #     Versions:   Current   Available
+        #        FW       28.43.2566   N/A
+        #   旧解析只认 `Firmware Version:` 行，永远匹配不到（实测这台 10 张网卡一行都没进固件清单）。
+        #   现按「Device # 分块 + FW 行取值」解析；设备名优先部件号，其次 BDF。
+        local ntype="" nfwv="" nbdf="" npn2="" line
+        local _nic_seen=" "
+        _fw_nic_flush() {
+            [ -z "$nfwv" ] && return 0
+            local _lbl="${npn2:-${ntype:-NIC}}"
+            # v1.53.39：同型号同版本只记一次（这台 8 张 CX7 部件号/固件完全相同，
+            #   按卡逐行会把固件表撑成 9 行冗余）；部件号缺失时才退化为按 BDF 区分
+            if [ -n "$npn2" ]; then
+                case "$_nic_seen" in *" ${npn2}|${nfwv} "*) return 0 ;; esac
+                _nic_seen="${_nic_seen}${npn2}|${nfwv} "
+            else
+                [ -n "$nbdf" ] && _lbl="${_lbl}（${nbdf}）"
+            fi
+            fw_emit "NIC" "$_lbl" "$nfwv"
+            nic_hit=1
+        }
         while IFS= read -r line; do
             case "$line" in
-                "Device #"*) [ -n "$ntype" ] && [ -n "$nfwv" ] && { fw_emit "NIC" "${nbdf:+${nbdf} }${ntype}" "$nfwv"; nic_hit=1; }
-                             ntype=""; nfwv=""; nbdf="" ;;
-                *"Device Type:"*)      ntype=$(echo "$line" | cut -d: -f2- | xargs) ;;
-                *"Firmware Version:"*) nfwv=$(echo "$line" | cut -d: -f2- | xargs) ;;
-                *"PCI Device Name:"*)  nbdf=$(echo "$line" | cut -d: -f2- | xargs) ;;
+                "Device #"*) _fw_nic_flush; ntype=""; nfwv=""; nbdf=""; npn2="" ;;
+                *"Device Type:"*)      ntype=$(printf '%s' "${line#*Device Type:}" | xargs) ;;
+                *"Part Number:"*)      npn2=$(printf '%s' "${line#*Part Number:}" | xargs) ;;
+                *"PCI Device Name:"*)  nbdf=$(printf '%s' "${line#*PCI Device Name:}" | xargs) ;;
+                *"  FW "*)             nfwv=$(printf '%s' "$line" | awk '{for(i=1;i<=NF;i++) if($i=="FW"){print $(i+1); exit}}') ;;
             esac
         done < <(grep -v "^#" "${dir}/nic_fwmanager.log" 2>/dev/null)
-        [ -n "$ntype" ] && [ -n "$nfwv" ] && { fw_emit "NIC" "${nbdf:+${nbdf} }${ntype}" "$nfwv"; nic_hit=1; }
+        _fw_nic_flush
     fi
     if [ "$nic_hit" -eq 0 ]; then
         for _f in "${dir}"/nic_ethtool_*.log; do
@@ -255,6 +296,8 @@ run_firmware() {
             case "$_nd" in ""|"#"*) continue ;; esac
             _npn=$(printf '%s' "$_npn" | xargs); _nfw=$(printf '%s' "$_nfw" | xargs)
             [ -z "$_nfw" ] || [ "$_nfw" = "N/A" ] && continue
+            # USB 网卡（接口路径形如 4-1.4:1.0）不是 PCIe 设备，其「固件」是 USB 驱动版本，不进交付固件表
+            printf '%s' "$_nb" | grep -qE '^([0-9a-fA-F]{4}:)?[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$' || continue
             # 型号缺失（USB 网卡 part_number 为 N/A）时回退到接口名，避免出现「NIC|N/A」这种行
             _ndev_lbl="$_npn"
             case "$_ndev_lbl" in ""|"N/A") _ndev_lbl="$_nd" ;; esac
@@ -275,9 +318,13 @@ run_firmware() {
         done
     fi
 
+    # v1.53.39：排除 **USB 盘**（实测 sde 是 PHILIPS USB 闪存，属现场 U 盘，不是交付关注的数据盘）
+    _usb_disks=$(grep -vE "^#|^$" "${_root}/storage/block_devices_all.log" 2>/dev/null \
+        | awk '{u=0; for(i=2;i<=NF;i++) if($i=="usb") u=1; if(u) print $1}' | tr '\n' ' ')
     for _sf in "${_root}/storage"/smart_*.log "${_root}/storage"/nvme_*_health.log; do
         [ -f "$_sf" ] || continue
         _sdev=$(basename "$_sf" | sed 's/^smart_//; s/_health\.log$//; s/\.log$//')
+        case " ${_usb_disks} " in *" ${_sdev} "*) continue ;; esac
         cur=$(grep -m1 -E "^Firmware Version|^Firmware Revision" "$_sf" 2>/dev/null | cut -d: -f2- | xargs)
         [ -n "$cur" ] && fw_emit "STORAGE" "$_sdev" "$cur"
     done
@@ -292,7 +339,11 @@ run_firmware() {
     # 优先精确匹配 Firmware 行（防取到 "Library version" 库版本误判落后）
     cur=$(grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -m1 -iE "Firmware" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
     [ -z "$cur" ] && cur=$(grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep -m1 -iE "Version" | grep -vi "Library" | grep -oE "[0-9][0-9A-Za-z.]*" | head -1)
-    [ -n "$cur" ] && fw_emit "NVSWITCH" "NVSwitch" "$cur"
+    # v1.53.39：NVSwitch 行只在有 NVIDIA GPU 时记录；且注明该值是**工具版本**（nvswitch-audit），
+    #   不是 NVSwitch 固件——AMD 机上原本会凭空出现一行「NVSwitch 615.71.09」。
+    if has_nvidia_gpu; then
+        [ -n "$cur" ] && fw_emit "NVSWITCH" "nvswitch-audit（工具版本）" "$cur"
+    fi
 
     # ─── 判定汇总（追加到 csv 尾部；供报告段直接引用） ───
     {
