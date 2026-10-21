@@ -120,7 +120,9 @@ gpu_fallback_pci() {
         echo "# Vendor line: $(lspci 2>/dev/null | grep -m1 -E '3D controller|Processing accelerators')"
     } > "${dir}/gpu_pci_only.log"
     gpu_csv_from_lspci "$dir" "$prefix" "$pat"
-    echo -e "${YELLOW}[WARN] 检测到 ${GPU_PCI_PRESENT:-0} 个 GPU（${GPU_PCI_VENDORS:-${GPU_PCI_VENDOR:-未知}}）但 ${tool} 未安装——仅 lspci 层采集（PCIe 链路可判，显存/温度等 N/A）${NC}"
+    # v1.53.35：措辞区分「没装」与「装了但版本/结构不兼容」——后者（如新版 amd-smi 子命令式）
+    #   也是走到这条兜底，若仍写"未安装"，现场会误以为要去装工具
+    echo -e "${YELLOW}[WARN] 检测到 ${GPU_PCI_PRESENT:-0} 个 GPU（${GPU_PCI_VENDORS:-${GPU_PCI_VENDOR:-未知}}）但 ${tool} 不可用（未安装、或版本/JSON 结构与解析器不兼容）——仅 lspci 层采集（PCIe 链路可判，显存/温度等 N/A）${NC}"
     return 1
 }
 

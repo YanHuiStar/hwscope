@@ -9,42 +9,75 @@
 
 run_gpu_amd() {
     local dir="$1" prefix="${2:-}"
-    local amd_smi_cmd=""
-    # v1.48.16：统一 check_cmd_flex（PATH → /opt/rocm/bin 全路径试跑 → ~/.bashrc 环境重试）
-    # OFED 冲突场景：amd-smi/rocm-smi 装 /opt/rocm 非标准目录 + 环境变量写 ~/.bashrc（登录才生效），
-    # 脚本/非交互执行默认找不到——check_cmd_flex 三阶降级兜底（替代 v1.48.14 的裸 source 逻辑）
+    local amd_smi_cmd="" amd_tool_kind="" JOPT="--json" new_smi_bin=""
+    # ─── v1.53.35：工具探测三档 + 版本落盘（amd-smi 新旧版兼容）───
+    # 报告端解析的是 **rocm-smi 风格平铺 JSON**（{"card0":{"Device Name":…,"Unique ID":…}}）：
+    #   · amd-smi **旧版**（扁平参数时代）输出同构 JSON → 可直用；
+    #   · amd-smi **新版**（ROCm 7+ 子命令 static/metric）JSON 结构完全不同 → 现有解析器读不了，
+    #     若让它顶掉 rocm-smi，报告会凭空变空 → 故新式只**留档原始 JSON 并标注待支持**，不抢主路径；
+    #   · 旧实现只试 `--showproductname --json` 一档：早期 amd-smi/rocm-smi 只认 `-j` 短选项时会误判不可用。
+    _amd_try() {  # $1=可执行文件 $2=json 选项
+        "$1" --showproductname "$2" 2>/dev/null | grep -qiE '"card[0-9]+"'
+    }
+    local _cand=""
     if check_cmd_flex amd-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
-        amd_smi_cmd="${CMD_FLEX_PATH:-amd-smi}"
-        # v1.48.22：amd-smi 新版（ROCm 7+）改子命令格式（list/static/metric/...），老式扁平参数被拒
-        # （AmdSmiInvalidSubcommandException）→ 探测老式参数；失败降级 rocm-smi（老式参数仍兼容平铺 JSON）
-        if ! "${amd_smi_cmd}" --showproductname --json 2>/dev/null | grep -qiE '"card[0-9]+"'; then
-            amd_smi_cmd=""
-            check_cmd_flex rocm-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin && amd_smi_cmd="${CMD_FLEX_PATH:-rocm-smi}"
+        _cand="${CMD_FLEX_PATH:-amd-smi}"
+        if _amd_try "$_cand" --json; then
+            amd_smi_cmd="$_cand"; amd_tool_kind="amd-smi（扁平参数）"; JOPT="--json"
+        elif _amd_try "$_cand" -j; then
+            amd_smi_cmd="$_cand"; amd_tool_kind="amd-smi（扁平参数/短选项）"; JOPT="-j"
+        else
+            new_smi_bin="$_cand"      # 新版 amd-smi 候选（可能是 ROCm 7+，也可能参数不兼容）
         fi
-    elif check_cmd_flex rocm-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
-        amd_smi_cmd="${CMD_FLEX_PATH:-rocm-smi}"
-    else
-        echo -e "${YELLOW}[SKIP] AMD GPU 已检测但 rocm-smi/amd-smi 均未找到（无 ROCm 环境；装 /opt/rocm 或配好环境后重试）${NC}"
-        echo "# AMD GPU detected but no ROCm tool" > "${dir}/gpu_amd_pci_only.log"
+    fi
+    if [ -z "$amd_smi_cmd" ] && check_cmd_flex rocm-smi /opt/rocm/bin /usr/local/bin /opt/amdgpu/bin; then
+        _cand="${CMD_FLEX_PATH:-rocm-smi}"
+        if _amd_try "$_cand" --json; then
+            amd_smi_cmd="$_cand"; amd_tool_kind="rocm-smi"; JOPT="--json"
+        elif _amd_try "$_cand" -j; then
+            amd_smi_cmd="$_cand"; amd_tool_kind="rocm-smi（短选项）"; JOPT="-j"
+        fi
+    fi
+    if [ -z "$amd_smi_cmd" ]; then
+        # 没有「能出平铺 JSON」的工具：① 若存在新版 amd-smi，把它的原始 JSON 留档（后续做新 schema 解析）
+        #   ② 仍产基础 PCI 清单，报告至少能列出卡与 BDF
+        if [ -n "$new_smi_bin" ]; then
+            echo -e "${YELLOW}[WARN] 仅检测到新版 amd-smi（子命令式），其 JSON 结构与当前解析器不兼容；原始输出留档待支持${NC}"
+            { echo "# 新版 amd-smi 原始输出（schema 与 rocm-smi 平铺 JSON 不同，报告端暂不解析）"; \
+              echo "# --- amd-smi static ---"; "$new_smi_bin" static --json 2>&1; \
+              echo "# --- amd-smi metric ---"; "$new_smi_bin" metric --json 2>&1; } \
+                > "${dir}/gpu_amd_new_schema.log"
+            { echo "# AMD GPU 采集工具"; echo "tool: amd-smi（新版子命令，未适配解析）"; echo "path: ${new_smi_bin}"; \
+              echo "version:"; "$new_smi_bin" --version 2>&1 | head -3; } > "${dir}/gpu_amd_tool.log"
+        else
+            echo -e "${YELLOW}[SKIP] AMD GPU 已检测但 rocm-smi/amd-smi 均未找到（无 ROCm 环境；装 /opt/rocm 或配好环境后重试）${NC}"
+            echo "# AMD GPU detected but no ROCm tool" > "${dir}/gpu_amd_pci_only.log"
+            { echo "# AMD GPU 采集工具"; echo "tool: (none)"; } > "${dir}/gpu_amd_tool.log"
+        fi
         gpu_fallback_pci "$dir" "$prefix" "amd-smi/rocm-smi" "Advanced Micro Devices|AMD|ATI"
+        gpu_adapter_manifest "$dir" "gpu_amd_tool" "gpu_amd_tool.log" "gpu_amd_pci_only" "gpu_amd_pci_only.log"
         return 1
     fi
 
-    echo -e "${CYAN}[INFO] 检测到 AMD GPU（${amd_smi_cmd}），走 ROCm 采集路径${NC}"
+    # 工具与版本落盘（事后判断「旧版/新版兼容性」的唯一依据；此前只有屏幕上一行 INFO，不落盘）
+    { echo "# AMD GPU 采集工具"; echo "tool: ${amd_tool_kind}"; echo "path: ${amd_smi_cmd}"; \
+      echo "json_option: ${JOPT}"; echo "version:"; "${amd_smi_cmd}" --version 2>&1 | head -3; } \
+        > "${dir}/gpu_amd_tool.log"
+    echo -e "${CYAN}[INFO] 检测到 AMD GPU（${amd_smi_cmd} · ${amd_tool_kind} · $("${amd_smi_cmd}" --version 2>&1 | head -1)），走 ROCm 采集路径${NC}"
 
     # 全量落盘（并行）
     local amd_jobs=()
     amd_jobs+=(
-        "${amd_smi_cmd} --showallinfo --json"        "${dir}/gpu_amd_full.log"
-        "${amd_smi_cmd} --showproductname --showuniqueid --showmeminfo vram --showtemp --showpower --showuse --showclocks --showpids --json" "${dir}/gpu_amd_inventory.json"
-        "${amd_smi_cmd} --showmeminfo all --json"    "${dir}/gpu_amd_meminfo.log"
-        "${amd_smi_cmd} --showtemp --json"           "${dir}/gpu_amd_temp.log"
-        "${amd_smi_cmd} --showpower --json"          "${dir}/gpu_amd_power.log"
-        "${amd_smi_cmd} --showuse --json"            "${dir}/gpu_amd_use.log"
-        "${amd_smi_cmd} --showclocks --json"         "${dir}/gpu_amd_clocks.log"
-        "${amd_smi_cmd} --showfwinfo --json"         "${dir}/gpu_amd_fw.log"
-        "${amd_smi_cmd} --showrasinfo --json"        "${dir}/gpu_amd_ras.log"
-        "${amd_smi_cmd} --showtopo --json"           "${dir}/gpu_amd_topo.log"
+        "${amd_smi_cmd} --showallinfo ${JOPT}"        "${dir}/gpu_amd_full.log"
+        "${amd_smi_cmd} --showproductname --showuniqueid --showmeminfo vram --showtemp --showpower --showuse --showclocks --showpids ${JOPT}" "${dir}/gpu_amd_inventory.json"
+        "${amd_smi_cmd} --showmeminfo all ${JOPT}"    "${dir}/gpu_amd_meminfo.log"
+        "${amd_smi_cmd} --showtemp ${JOPT}"           "${dir}/gpu_amd_temp.log"
+        "${amd_smi_cmd} --showpower ${JOPT}"          "${dir}/gpu_amd_power.log"
+        "${amd_smi_cmd} --showuse ${JOPT}"            "${dir}/gpu_amd_use.log"
+        "${amd_smi_cmd} --showclocks ${JOPT}"         "${dir}/gpu_amd_clocks.log"
+        "${amd_smi_cmd} --showfwinfo ${JOPT}"         "${dir}/gpu_amd_fw.log"
+        "${amd_smi_cmd} --showrasinfo ${JOPT}"        "${dir}/gpu_amd_ras.log"
+        "${amd_smi_cmd} --showtopo ${JOPT}"           "${dir}/gpu_amd_topo.log"
     )
     # rocminfo 型号/架构（对标 nvidia-smi -q）
     if check_cmd rocminfo; then
@@ -72,11 +105,11 @@ run_gpu_amd() {
 
     # 每卡明细（按卡数循环）
     local amd_count
-    amd_count=$("${amd_smi_cmd}" --showuniqueid --json 2>/dev/null | grep -c "unique_id\|uniqueid" || true)
+    amd_count=$("${amd_smi_cmd}" --showuniqueid ${JOPT} 2>/dev/null | grep -c "unique_id\|uniqueid" || true)
     [ "$amd_count" -lt 1 ] 2>/dev/null && amd_count=0
     local _ai=0
     while [ "$_ai" -lt "$amd_count" ]; do
-        run_and_log "${amd_smi_cmd} -d $_ai --showallinfo --json" "${dir}/gpu_amd_${_ai}_detail.json"
+        run_and_log "${amd_smi_cmd} -d $_ai --showallinfo ${JOPT}" "${dir}/gpu_amd_${_ai}_detail.json"
         _ai=$((_ai + 1))
     done
 
@@ -91,6 +124,7 @@ run_gpu_amd() {
     #   （有 ROCm 的机器上文件不存在，无 ROCm 的机器上 manifest 压根没写）。
     #   同时补齐常态落盘的 6 个全量日志（此前落盘了却没进 manifest）。
     gpu_adapter_manifest "$dir" \
+        "gpu_amd_tool" "gpu_amd_tool.log" \
         "gpu_amd_full" "gpu_amd_full.log" \
         "gpu_amd_inventory" "gpu_amd_inventory.json" \
         "gpu_amd_rocminfo" "gpu_amd_rocminfo.log" \
