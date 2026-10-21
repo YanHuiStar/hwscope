@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=377
+  table_rows=374
 [gpu]
   gpu_detail_rows=8
   model: AMD Instinct MI300X
@@ -29,9 +29,9 @@
         1 "disk_count"
         1 "platform"
 [html]
-  html_table_open=30
-  html_table_close=30
-  html_bytes=60520
+  html_table_open=29
+  html_table_close=29
+  html_bytes=59750
 [acceptance]
         4 N/A
        12 PASS
