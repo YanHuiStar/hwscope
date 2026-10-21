@@ -465,9 +465,22 @@ $(if [ -n "$gpu_details_md" ]; then
     #   （NVLink 带宽在 NVLink 章节与 `nvlink -s` 里）。原改名会误导：实测一台 B300 的
     #   GPU5 PCIe 降宽（x16→x8）被渲染成 `NVLink(协商) 6x8 (能力 6x16)`，读者会误判成 NVLink 降级。
     _gpu_link_col="PCIe(协商)"
-    echo "| 卡 | 型号 | SN | PCIe 地址(BDF) | 设备 ID | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS | Inforom |"
-    echo "|----|------|----|---------------|--------|----|------|------|----------|-------|---------|"
-    printf '%s' "$gpu_details_md"
+    # v1.53.36：`Inforom`（inforom image version）是 **NVIDIA 概念**——非 NVIDIA 平台整列隐藏
+    #   （实测 8×MI300X 明细 8 行该列全 N/A，纯噪音；与「占位列整列隐藏」的既有口径一致）
+    _gpu_show_inforom=1
+    case "${GPU_PLATFORM:-none}" in
+        amd|ascend|intel|cambricon|biren|moorethreads|metax|iluvatar|other) _gpu_show_inforom=0 ;;
+    esac
+    if [ "$_gpu_show_inforom" -eq 1 ]; then
+        echo "| 卡 | 型号 | SN | PCIe 地址(BDF) | 设备 ID | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS | Inforom |"
+        echo "|----|------|----|---------------|--------|----|------|------|----------|-------|---------|"
+        printf '%s' "$gpu_details_md"
+    else
+        echo "| 卡 | 型号 | SN | PCIe 地址(BDF) | 设备 ID | 显存(检测/额定) | 功耗(检测/额定) | 温度 | ${_gpu_link_col} | VBIOS |"
+        echo "|----|------|----|---------------|--------|----|------|------|----------|-------|"
+        printf '%s' "$gpu_details_md" | sed 's/[[:space:]]*[^|]*|[[:space:]]*$//'
+        echo ""
+    fi
 fi)
 $(if [ -n "${GPU_XID:-}" ]; then
     echo ""
@@ -937,7 +950,7 @@ $(
         echo "| RAID 写缓存策略 | ${RAID_CACHE_POLICY} |"
     fi
 )
-| SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条 |
+| SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条${SEL_PCIE_ERR_NOTE:+，}${SEL_PCIE_ERR_NOTE:-} |
 | 线缆配对 | ${CABLE_PAIRS:-N/A（未取到模块 EEPROM 序列号——IB 链路未起，或该口未插光模块）} |
 
 $(if [ -n "$TEST_DETAILS" ]; then

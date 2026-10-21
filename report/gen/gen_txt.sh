@@ -44,7 +44,13 @@ gen_txt() {
             fi
             # v1.44.0 SXM 适配：SXM 平台该值实为 NVLink 通道协商（模组无 CPU 直连 PCIe 链路）
             _gpu_link_lbl="PCIe(协商)"   # v1.52.16：取消 SXM 改名 NVLink(协商)——该值本就是 PCIe 链路（见 gen_md.sh 同处说明）
-            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  BDF:${gbdf:-N/A}  ID:${gdev:-N/A}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  ${_gpu_link_lbl}:${gpcie_disp}  VBIOS:${gvb:-N/A}  Inforom:${gifo:-N/A}"$'\n'
+            # v1.53.36：Inforom 是 NVIDIA 概念（同 gen_md.sh），非 NVIDIA 平台不输出该字段
+            _gifo_txt=""
+            case "${GPU_PLATFORM:-none}" in
+                amd|ascend|intel|cambricon|biren|moorethreads|metax|iluvatar|other) : ;;
+                *) _gifo_txt="  Inforom:${gifo:-N/A}" ;;
+            esac
+            gpu_details_txt="${gpu_details_txt}    GPU${gidx}  ${gname}  SN:${gsn}  BDF:${gbdf:-N/A}  ID:${gdev:-N/A}  显存:${gmem_disp}  功耗:${gdraw_disp}  ${gtemp}  ${_gpu_link_lbl}:${gpcie_disp}  VBIOS:${gvb:-N/A}${_gifo_txt}"$'\n'
         done < <(printf '%s\n' "$GPU_DETAILS")
     fi
     # 盘明细纯文本
@@ -426,7 +432,7 @@ fi)
 
 [健康检查]
 $(printf '%s' "$HEALTH_TXT")
-  SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误
+  SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误${SEL_PCIE_ERR_NOTE:+, 说明: ${SEL_PCIE_ERR_NOTE}}
   线缆配对 : ${CABLE_PAIRS:-N/A（未取到模块 EEPROM 序列号——IB 链路未起，或该口未插光模块）}$(if [ -n "${GPU_XID:-}" ]; then printf '\n  GPU XID  : ⚠️ 检出 %s 类（来源: %s）' "${GPU_XID_COUNT}" "${GPU_XID_SRC}"; fi)$(if [ -n "${MCE_HITS:-}" ]; then printf '\n  CPU MCE  : ⚠️ 检出 %s 条机器检查异常（来源: %s）' "${MCE_COUNT}" "${MCE_SRC}"; fi)$(if [ -n "${IB_PERF_NONZERO:-}" ]; then printf '\n  IB 误码  : ⚠️ %s' "${IB_PERF_NONZERO}"; fi)$(if [ "${NVME_ERR_MEDIA:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 介质错误: ⚠️ %s（介质/盘自身类，建议复查）' "${NVME_ERR_MEDIA_D}"; fi)$(if [ "${NVME_ERR_SHUTDOWN:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 掉电   : ⚠️ %s（Unsafe Shutdown，建议排查供电）' "${NVME_ERR_SHUTDOWN_D}"; fi)$(if [ "${NVME_ERR_CMD:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 命令兼容: %s Invalid Field（主机侧命令不兼容，非介质故障）' "${NVME_ERR_CMD_D}"; fi)$(if [ -n "${RAID_BBU_SUMMARY:-}" ]; then printf '\n  RAID电池 : %s%s' "${RAID_BBU_SUMMARY}" "$([ "${RAID_BBU_WARN:-0}" -eq 1 ] 2>/dev/null && echo '（⚠️ 异常）')"; fi)$(if [ -n "${RAID_CACHE_POLICY:-}" ]; then printf '\n  写缓存   : %s' "${RAID_CACHE_POLICY}"; fi)$(if [ -n "$TEST_DETAILS" ]; then
     printf '\n\n[压测归档]  目录: %s\n' "$TEST_DIR_LABEL"
     echo "$TEST_DETAILS" | while IFS='|' read -r tname tstatus telapsed tfile; do
