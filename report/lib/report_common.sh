@@ -115,7 +115,10 @@ esac
 PLATFORM_DISPLAY="${_pfx}${_sfx}"
 PLATFORM_LABEL="$PLATFORM_DISPLAY"
 case "$PLATFORM" in
-    *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM_DISPLAY}（HGX 机头：PCIe Fabric 接模组，模组单独采集）" ;;
+    # v1.53.40：**厂商中立**——PEX Fabric 底座既可能接 NVIDIA HGX 模组，也可能接 AMD OAM 模组
+    #   （实测 8×MI300X 的 G7768 M6 底座：PEX890xx×40 + 无本地 GPU）。原文案硬写「HGX 机头」，
+    #   对 AMD 模组机头是错的。厂商可判定时（GPU_PLATFORM=nvidia/amd…）由报告段追加说明。
+    *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM_DISPLAY}（GPU 机头：PCIe Fabric 接模组，模组单独采集）" ;;
     *_OAM)  PLATFORM_LABEL="${PLATFORM_DISPLAY}（AMD OAM 模组：xGMI/Infinity Fabric 互联，v1.48.0）" ;;
 esac
 TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 's/^ //')

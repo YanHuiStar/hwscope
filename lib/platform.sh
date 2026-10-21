@@ -22,7 +22,7 @@ detect_machine_id() {
 
 # ─── 平台架构检测（x86_64_SXM / x86_64_PCIe / x86_64_head / x86_64_none / aarch64_SXM ...）───
 # 设置全局变量：GPU_COUNT, PLATFORM
-# head（HGX 机头）：PCIe Gen5 Fabric Switch（PEX89xxx/PEX97xxx/Switchtec）+ 非 SXM + 无 GPU。
+# head（GPU 机头，厂商中立——可接 NVIDIA HGX 模组，也可接 AMD OAM 模组）：PCIe Gen5 Fabric Switch（PEX89xxx/PEX97xxx/Switchtec）+ 非 SXM + 无 GPU。
 #   机头无本地 GPU，经 Switch 接 HGX 模组；裸机采集稳定判 head。模组接入后 GPU 透传可见 → 按事实判 PCIe
 #   （报告含模组 GPU 数据）；SXM 一体化主机（B300 等主板也带 PEX89）因有 GPU 不受 head 判定影响。
 detect_platform() {
@@ -71,7 +71,7 @@ detect_platform() {
                 _sxm=1
             fi
         fi
-        # HGX 机头检测：PCIe Gen5 Fabric Switch（Broadcom PEX89xxx / PLX PEX97xxx / Microchip Switchtec）+ 无 GPU
+        # GPU 机头检测（厂商中立）：PCIe Gen5 Fabric Switch（Broadcom PEX89xxx / PLX PEX97xxx / Microchip Switchtec）+ 无 GPU
         # 注意必须叠加"无 GPU"条件：SXM 一体化主机（如华硕 HGX B300）主板也带 PEX89xxx Switch，
         # 若 SXM 检测失效且有 GPU，仍按 PCIe 事实判定，避免整机漂移为 head
         # v1.53.5：判据从 `lspci | grep -qiE`（匹配即退）改为 `grep -ciE` 比数值。
@@ -287,7 +287,7 @@ classify_machine() {
     [ -n "${GPU_PCI_PRESENT:-}" ] && _gpu_cnt=$GPU_PCI_PRESENT
     local _gpu_plat="${GPU_PLATFORM:-none}"
     # v1.48.26：PCIe Gen5 Fabric Switch（PEX89xxx/PEX97xxx/Switchtec）——8-GPU HGX 底座的机头特征
-    # 无 GPU 但有 Fabric = HGX 机头（GPU 模组未装/待装/另采），非传统服务器（真机 AMAX ESC N8-E11V 误判教训）
+    # 无 GPU 但有 Fabric = GPU 机头（厂商中立：NVIDIA HGX 或 AMD OAM 模组未装/待装/另采），非传统服务器（真机 AMAX ESC N8-E11V 误判教训）
     local _fabric=0
     if [ -n "$_dir" ]; then
         [ -f "$_dir/pcie/lspci_all.log" ] && grep -qiE "PEX89|PEX97|Switchtec" "$_dir/pcie/lspci_all.log" && _fabric=1
@@ -364,7 +364,7 @@ classify_machine() {
         server-nvidia-gpu) MACHINE_CLASS_LABEL="NVIDIA GPU 服务器" ;;
         server-amd-gpu) MACHINE_CLASS_LABEL="AMD GPU 服务器" ;;
         server-gpu-other) MACHINE_CLASS_LABEL="其他 GPU 服务器" ;;
-        server-gpu-head) MACHINE_CLASS_LABEL="HGX 机头（PCIe Fabric 底座，GPU 模组另采）" ;;
+        server-gpu-head) MACHINE_CLASS_LABEL="GPU 机头（PCIe Fabric 底座，GPU 模组另采）" ;;
         server-gb300) MACHINE_CLASS_LABEL="GB300 机架服务器" ;;
         *) MACHINE_CLASS_LABEL="" ;;
     esac
