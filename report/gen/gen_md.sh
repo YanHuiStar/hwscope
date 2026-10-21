@@ -284,7 +284,7 @@ gen_md() {
 |----|----|
 | OS | ${OS_NAME:-N/A} |
 | 内核 | ${KERNEL:-N/A} |
-| 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不可用；${GPU_MODULE_REASON}）"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（GPU 机头无 GPU 模组，驱动信息不适用）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
+| 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；${GPU_MODULE_REASON}）"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（GPU 机头无 GPU 模组，驱动信息不适用）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
 | CUDA | ${GPU_CUDA:-N/A} |"; fi)
 | 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then echo "
 | Compute Mode | ${DCGM_COMPUTE_MODE} |"; fi)$(if [ -n "${DCGM_ECC_MODE:-}" ]; then echo "
@@ -411,7 +411,7 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
             # v1.53.41：读不到 GPU ≠ 没装模组——把「未知」如实说出来，别替客户下结论
             echo "| 项 | 值 |"
             echo "|----|----|"
-            echo "| 状态 | ⚠️ **模组状态未知**：未检测到 GPU——${GPU_MODULE_REASON}。无法据此判定机头是否装有模组（未装／未上电／未枚举／采集过早），建议开机 ≥2 分钟后复采或现场确认 |"
+            echo "| 状态 | ⚠️ **未识别到 GPU 模组**：本次采集未枚举到任何加速卡（${GPU_MODULE_REASON}）——GPU 相关项无法判定。建议开机 ≥2 分钟后复采；若现场确应装有模组，请核查模组在位/上电/PCIe 链路 |"
             if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null; then
                 echo "| ⚠️ 采集时机 | 采集时系统运行时间 ${COLLECT_UPTIME_DISP}（不足 3 分钟）——GPU/网卡可能**尚未枚举完成**，本次「无 GPU」不可作为平台形态结论；建议开机 ≥2 分钟后重采 |"
             fi
@@ -896,7 +896,7 @@ fi)
 $(
     if [ "$GPU_COUNT" -eq 0 ]; then
         if [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-            echo "| GPU PCIe 链路 | N/A（未检测到 GPU 且模组状态未知——${GPU_MODULE_REASON}） |"
+            echo "| GPU PCIe 链路 | N/A（未识别到 GPU 模组——${GPU_MODULE_REASON}；需复采确认） |"
         elif [ "$HEAD_NODE" -eq 1 ]; then
             echo "| GPU PCIe 链路 | N/A（GPU 机头无本地 GPU，模组单独采集） |"
         else
@@ -916,7 +916,7 @@ $(
     elif [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
         echo "| DCGM 诊断 | ${DCGM_SUMMARY} |"
     elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        echo "| DCGM 诊断 | N/A（未检测到 GPU 且模组状态未知） |"
+        echo "| DCGM 诊断 | N/A（未识别到 GPU 模组；需复采确认） |"
     elif [ "$HEAD_NODE" -eq 1 ]; then
         echo "| DCGM 诊断 | N/A（GPU 机头无 GPU，模组单独采集） |"
     fi

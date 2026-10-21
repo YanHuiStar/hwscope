@@ -56,7 +56,7 @@ gen_acceptance() {
     #   absent （开机正常、PCI 无加速卡）→ N/A 平台固有（原行为）
     _gpu_item_na() {   # $1=项名；其余参数忽略
         if [ "${GPU_MODULE_STATE:-present}" = "unknown" ]; then
-            add_item "$1" "N/A" "未检测到 GPU，且**无法判定机头是否装有模组**：${GPU_MODULE_REASON}——需重采或现场确认（本项计入数据不足）"
+            add_item "$1" "N/A" "未识别到 GPU 模组（本次采集未枚举到加速卡：${GPU_MODULE_REASON}）——本项无法判定，计入数据不足；建议开机 ≥2 分钟后复采"
         else
             add_item "$1" "N/A" "GPU 机头（未检测到本地 GPU，模组单独采集验收）" 1
         fi
@@ -748,8 +748,12 @@ gen_acceptance() {
             echo "| GPU模组 | ${GPU_NAMES:-N/A}（${GPU_MEM_SPEC:-N/A}${ACC_GPU_MEMTYPE:+ ${ACC_GPU_MEMTYPE}}） | 张 | ${GPU_COUNT} |"
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             echo "| GPU模组 | 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} 加速卡（无对应管理工具，仅 PCI 存在性） | 张 | ${GPU_PCI_PRESENT} |"
+        elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null; then
+            # v1.53.42：**未识别到**就写未识别到——不写「无」（会读成"确认没装"），
+            #   也不写"可能装有"（那是猜）。原因放括号里，需要的动作写清楚。
+            echo "| GPU模组 | 未识别到（本次采集未枚举到加速卡：${GPU_MODULE_REASON}） | — | — |"
         else
-            echo "| GPU模组 | 无（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
+            echo "| GPU模组 | 未识别到（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
         fi
         if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
             # v1.48.85：计算网卡改按 GPU 直连归类后，不能再标 "（IB …）"——直连与协议模式无关。
