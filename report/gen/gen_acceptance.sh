@@ -51,10 +51,23 @@ gen_acceptance() {
         rows="${rows}| ${n} | $1 | ${st} | ${_desc} |"$'\n'
     }
 
+    # v1.53.41：GPU 项在「读不到 GPU」时分两种情形——
+    #   unknown（采集过早 / PCI 有卡但工具无数据）→ N/A 且**计入数据不足**（不许当成平台形态放过）
+    #   absent （开机正常、PCI 无加速卡）→ N/A 平台固有（原行为）
+    _gpu_item_na() {   # $1=项名；其余参数忽略
+        if [ "${GPU_MODULE_STATE:-present}" = "unknown" ]; then
+            add_item "$1" "N/A" "未检测到 GPU，且**无法判定机头是否装有模组**：${GPU_MODULE_REASON}——需重采或现场确认（本项计入数据不足）"
+        else
+            add_item "$1" "N/A" "GPU 机头（未检测到本地 GPU，模组单独采集验收）" 1
+        fi
+    }
+
     # 1. GPU PCIe 链路完整（无 GPU 机器判 N/A 且不计入"数据不足"——无 GPU 是平台形态非数据缺失；
     #    有 GPU 但驱动异常（lspci 3D controller 存在但 nvidia-smi 无数据）→ WARN，无法验收即问题）
     if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        if [ "$HEAD_NODE" -eq 1 ]; then
+        if [ "${GPU_MODULE_STATE:-present}" = "unknown" ]; then
+            _gpu_item_na "GPU PCIe 链路完整"
+        elif [ "$HEAD_NODE" -eq 1 ]; then
             add_item "GPU PCIe 链路完整" "N/A" "GPU 机头（无本地 GPU，模组单独采集验收）" 1
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             add_item "GPU PCIe 链路完整" "WARN" "检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU（PCI 3D controller）但对应管理工具无数据（驱动未安装或异常）"
@@ -83,7 +96,9 @@ gen_acceptance() {
                            add_item "NVLink 互联" "N/A" "AMD 平台无 NVLink（Instinct 经 xGMI/Infinity Fabric 互联，不适用）" 1
                        fi ;;
                   ascend) add_item "NVLink 互联" "N/A" "昇腾平台无 NVLink（Atlas 模组经 HCCS 互联；HCCS 拓扑日志已采集，判定解析待真机校准）" 1 ;;
-                  *)    if [ "$HEAD_NODE" -eq 1 ]; then
+                  *)    if [ "${GPU_MODULE_STATE:-present}" = "unknown" ] && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+                            _gpu_item_na "NVLink 互联"
+                        elif [ "$HEAD_NODE" -eq 1 ]; then
                             add_item "NVLink 互联" "N/A" "机头无 NVLink（模组另采）" 1
                         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
                             # v1.48.22：文案按 lspci 层厂商区分（原写死 NVIDIA）
@@ -112,7 +127,9 @@ gen_acceptance() {
         *)    case "${GPU_PLATFORM:-}" in
                   amd) add_item "DCGM 诊断" "N/A" "AMD 平台无 DCGM（ROCm 诊断：rocminfo + amd-smi ras 见 GPU 段附录）" 1 ;;
                   ascend) add_item "DCGM 诊断" "N/A" "昇腾平台无 DCGM（Atlas 诊断：npu-smi info / npu-smi health 见 GPU 段附录）" 1 ;;
-                  *)    if [ "$HEAD_NODE" -eq 1 ]; then
+                  *)    if [ "${GPU_MODULE_STATE:-present}" = "unknown" ] && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+                            _gpu_item_na "DCGM 诊断"
+                        elif [ "$HEAD_NODE" -eq 1 ]; then
                             add_item "DCGM 诊断" "N/A" "机头无 GPU（模组另采）" 1
                         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
                             # v1.48.22：文案按 lspci 层厂商区分（原写死 NVIDIA）

@@ -251,7 +251,9 @@ $(printf '%s' "$dimms_txt")
 
 [GPU]
 $(if [ "$GPU_COUNT" -eq 0 ]; then
-    if [ "$HEAD_NODE" -eq 1 ]; then
+    if [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+        echo "  ⚠️ 模组状态未知（未检测到 GPU：${GPU_MODULE_REASON}）——建议开机 ≥2 分钟后复采"
+    elif [ "$HEAD_NODE" -eq 1 ]; then
         echo "  GPU 机头（无本地 GPU，GPU 模组经 PCIe Fabric 单独接入，需单独采集）"
     elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
         echo "  ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU（PCI 3D controller/加速卡），但管理工具无数据（驱动未安装或异常）"
