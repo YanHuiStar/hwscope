@@ -15,6 +15,18 @@ run_nvswitch() {
 
     module_start "$MODULE_NAME"
 
+    # v1.53.34：NVSwitch/NVLink 是 NVIDIA 专有能力。非 NVIDIA 平台（AMD/昇腾/国产）此模块无意义——
+    #   原实现照跑 nvswitch-audit / nvidia-smi nvlink / fabricmanager 检查，全部 exit≠0，
+    #   summary 记 9 条 WARN，报告还会渲染「NVSwitch 域未建立：Fabric Manager 未运行」误导客户
+    #   （实测 8×MI300X 整机即此情形）。按「平台无此能力」跳过，不计 WARN。
+    if ! has_nvidia_gpu; then
+        echo -e "${YELLOW}[SKIP] NVSwitch 仅 NVIDIA 平台（本机无 NVIDIA GPU）${NC}"
+        { echo "# --- SKIP: 本机无 NVIDIA GPU（AMD/昇腾等平台无 NVSwitch/NVLink），模块按平台能力跳过 ---" ; } \
+            > "${dir}/00_skip_no_nvidia_gpu.log"
+        module_end "$MODULE_NAME"
+        return 0
+    fi
+
     # 1~3. NVSwitch 视图（v1.51.3 换数据源）
     #
     # 【为什么换】原主路径是 `nvswitch`（独立 CLI）—— 但 **NVIDIA 根本没有这个名字的命令**：

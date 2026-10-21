@@ -64,7 +64,10 @@ run_os() {
 
     # 6. 服务状态（条件执行：需 systemctl；v1.41.0 全量原则：status 全量落盘不截断）
     if check_cmd systemctl; then
-        for svc in nvidia-fabricmanager nvidia-persistenced; do
+        # v1.53.34：nvidia-fabricmanager / nvidia-persistenced 属 NVIDIA 栈。无 N 卡的机器上
+        #   这两个 unit 常因装了驱动包而存在但未运行 → systemctl status 返回 3 → 记 WARN，
+        #   对 AMD 整机纯噪音（实测 8×MI300X）。按平台能力跳过检查。
+        for svc in $(if has_nvidia_gpu; then echo "nvidia-fabricmanager nvidia-persistenced"; fi); do
             # v1.48.69：systemd 中无该 unit 时 `systemctl status` 返回 4 → run_and_log 记 WARN 误报。
             # nvidia-persistenced 在部分驱动安装方式下压根没有 unit（persistence mode 由运行时
             # `nvidia-smi -pm 1` 开启），属安装/平台形态而非故障（22.84 实测 exit=4）。

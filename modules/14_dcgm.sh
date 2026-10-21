@@ -16,6 +16,17 @@ run_dcgm() {
 
     module_start "$MODULE_NAME"
 
+    # v1.53.34：DCGM 只服务 NVIDIA GPU。AMD/昇腾机上即便装了 DCGM（用于管理其他机器或历史遗留），
+    #   对本机也是无意义——实测 8×MI300X 整机 dcgmi_config/diag 全部 exit≠0 记 WARN，
+    #   报告还会出现「DCGM 诊断」行。按平台能力跳过。
+    if ! has_nvidia_gpu; then
+        echo -e "${YELLOW}[SKIP] DCGM 仅 NVIDIA 平台（本机无 NVIDIA GPU）${NC}"
+        { echo "# --- SKIP: 本机无 NVIDIA GPU（DCGM 为 NVIDIA 工具），模块按平台能力跳过 ---" ; } \
+            > "${dir}/00_skip_no_nvidia_gpu.log"
+        module_end "$MODULE_NAME"
+        return 0
+    fi
+
     if ! check_cmd dcgmi; then
         echo -e "${YELLOW}[SKIP] dcgmi not found (install datacenter-gpu-manager)${NC}"
         module_end "$MODULE_NAME"

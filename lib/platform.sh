@@ -85,8 +85,26 @@ detect_platform() {
            && [ "$(lspci 2>/dev/null | grep -ciE 'PEX89|PEX97|Switchtec')" -gt 0 ]; then
             _head=1
         fi
+        # v1.53.34：装了 NVIDIA 软件栈（nvidia-smi/DCGM/FM 都在）但 **0 张 N 卡** 的整机——
+        #   实测 8×MI300X（G7768 M6）被写成 x86_64_head：head 判据只看「nvidia 卡数=0 + 存在 PEX 交换机」，
+        #   而 PEX890xx×40 正是这台 AMD 八卡 OAM 机的互联芯片 → 整机被当成「HGX 机头」，
+        #   连锁后果：报告头渲染机头文案、DCGM 行判「机头无 GPU」、GPU 相关固有条目按机头折叠。
+        #   修法：nvidia 卡为 0 且非 SXM 时补跑 lspci 多厂商判定；有加速卡就按 GPU 形态判，**绝不判 head**。
+        if [ "$_sxm" -eq 0 ] && [ "$GPU_COUNT" -eq 0 ]; then
+            detect_gpu_vendors
+            if [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+                GPU_COUNT=$GPU_PCI_PRESENT
+            fi
+        fi
         if [ "$_sxm" -eq 1 ]; then
             PLATFORM="${hw_arch}_SXM"
+        elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+            # 非 NVIDIA 加速卡（AMD OAM / 昇腾 / 国产等）——head 是与本机无关的语义，禁止落入
+            if [ "${GPU_OAM:-0}" -eq 1 ] 2>/dev/null; then
+                PLATFORM="${hw_arch}_OAM"
+            else
+                PLATFORM="${hw_arch}_PCIe"
+            fi
         elif [ "$_head" -eq 1 ]; then
             PLATFORM="${hw_arch}_head"
         elif [ "$GPU_COUNT" -gt 0 ]; then
