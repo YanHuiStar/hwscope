@@ -872,7 +872,12 @@ $(
     if [ "${NVLINK_HEALTH:-N/A}" != "N/A" ]; then
         echo "| NVLink | ${NVLINK_HEALTH}${NVLINK_CRC:+ (存在CRC错误)} |"
     fi
-    if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
+    if [ -n "${GPU_PLATFORM:-}" ] && [ "$GPU_PLATFORM" != "nvidia" ] && [ "$GPU_PLATFORM" != "mixed" ] && [ "$GPU_PLATFORM" != "none" ]; then
+        # v1.53.34：非 NVIDIA 平台（AMD/昇腾/国产）**不输出 DCGM 行**——DCGM 是 NVIDIA 工具，
+        #   在这类机器上写 N/A 也是噪音；旧采集里 DCGM_SUMMARY 还可能写着「无 GPU/无测试实体」，
+        #   在 8×MI300X 上自相矛盾（GPU 明明 8 张），客户会当成诊断失败。
+        :
+    elif [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
         echo "| DCGM 诊断 | ${DCGM_SUMMARY} |"
     elif [ "$HEAD_NODE" -eq 1 ]; then
         echo "| DCGM 诊断 | N/A（HGX 机头无 GPU，模组单独采集） |"

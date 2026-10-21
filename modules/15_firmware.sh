@@ -93,8 +93,15 @@ run_firmware() {
     #   （"NVIDIA NVSwitch audit tool version 570.86.15"）。
     #   ⚠️ 不要加 `| head -1`：其 --help **首行是空行**，head -1 只取到空行、
     #      下方解析链（grep -v '^#' | grep -iE Version）整体落空，固件表 NVSWITCH 行消失（实测踩坑）。
-    run_and_log_parallel 4 \
-        "nvidia-smi --query-gpu=index,name,vbios_version --format=csv,noheader 2>&1" "${dir}/gpu_vbios.csv" \
+    # v1.53.34：vbios 查询走 nvidia-smi，非 NVIDIA 平台（AMD/昇腾）上必然失败。
+    #   不用「|| echo」兜底——那会把 NVIDIA 平台上的真失败也吞掉；改为提前判能力，
+    #   无 N 卡时直接用一条记录性命令（exit 0、内容写明 SKIP），nv 平台行为完全不变。
+    local _vbios_cmd="nvidia-smi --query-gpu=index,name,vbios_version --format=csv,noheader 2>&1"
+    if ! has_nvidia_gpu; then
+        _vbios_cmd="echo '# SKIP: 本机无 NVIDIA GPU（AMD/昇腾等平台无 nvidia VBIOS）'"
+    fi
+    run_and_log_parallel 4 \\
+        "${_vbios_cmd}" "${dir}/gpu_vbios.csv" \\
         "${fw_ipmi_fast} bash -c \"ipmitool mc info 2>&1\"" "${dir}/bmc_mc.log" \
         "mlxfwmanager --query 2>&1" "${dir}/nic_fwmanager.log" \
         "nvswitch-audit --help 2>&1" "${dir}/nvswitch_version.log"

@@ -68,6 +68,28 @@ else
     GPU_PCI_PRESENT=$(grep -cE "3D controller|Processing accelerators" "${lspci_all}" 2>/dev/null)
     GPU_PCI_VENDOR=""; GPU_PCI_VENDORS=""; GPU_PLATFORM="none"
 fi
+# v1.53.34 报告端一致性兜底：老采集（platform.sh 未修版）会把「装了 N 卡工具但 0 张 N 卡」的
+#   AMD/昇腾整机写成 x86_64_head；此处在 lspci 明确有加速卡时纠正回 GPU 形态，
+#   避免旧数据继续渲染「HGX 机头」文案 / DCGM「机头无 GPU」/ GPU 固有条目按机头折叠。
+if [ "${HEAD_NODE:-0}" -eq 1 ] && [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+    if [ "${GPU_OAM:-0}" -eq 1 ] 2>/dev/null; then
+        PLATFORM="${PLATFORM%_head}_OAM"
+    else
+        PLATFORM="${PLATFORM%_head}_PCIe"
+    fi
+    HEAD_NODE=0
+    case "$PLATFORM" in
+        x86_64_*)  _pfx2="x86_64_";  _sfx2="${PLATFORM#x86_64_}" ; ;;
+        aarch64_*) _pfx2="aarch64_"; _sfx2="${PLATFORM#aarch64_}" ; ;;
+        *)         _pfx2="";         _sfx2="$PLATFORM" ; ;;
+    esac
+    PLATFORM_DISPLAY="${_pfx2}${_sfx2}"
+    case "$_sfx2" in
+        OAM)  PLATFORM_LABEL="${PLATFORM_DISPLAY}（AMD OAM 模组：xGMI/Infinity Fabric 互联，v1.48.0）" ;;
+        *)    PLATFORM_LABEL="$PLATFORM_DISPLAY" ;;
+    esac
+    echo -e "${YELLOW}[WARN] 采集端平台标识为机头（_head），但 lspci 实有 ${GPU_PCI_PRESENT} 张加速卡 → 按 ${PLATFORM} 出报告（旧采集兜底，建议重采）${NC}" >&2
+fi
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
     GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{n=$2; gsub(/^ +| +$/, "", n); last=""; while (match(n, /\[[^]]*\]/)) { last=substr(n, RSTART+1, RLENGTH-2); n=substr(n, RSTART+RLENGTH) }; if (last!="") print last; else print $2}' | sort -u | tr '\n' ',' | sed 's/,$//')

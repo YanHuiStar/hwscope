@@ -362,3 +362,12 @@ if [ -f "$_fq" ] || [ -f "$_nr" ]; then
         fi
     fi
 fi
+
+# ─── v1.53.34：NVSwitch 域是 **NVIDIA 专有** 概念 ───
+# 非 NVIDIA 平台（AMD/昇腾/国产）根本没有 NVSwitch/Fabric Manager，上面那套判定会把
+# 「FM 未运行」渲染成「NVSwitch 域未建立」，客户看到会以为硬件有问题（实测 8×MI300X 整机）。
+# 判据用 GPU_PLATFORM（lspci 厂商）；none/mixed/nvidia 保持原行为。
+case "${GPU_PLATFORM:-none}" in
+    nvidia|mixed|none) : ;;
+    *) NVSWITCH_FABRIC="" ;;
+esac

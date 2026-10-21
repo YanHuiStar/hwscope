@@ -396,6 +396,21 @@ check_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# ─── 是否有 NVIDIA GPU（v1.53.34）───
+# 用途：NVSwitch / NVLink / DCGM / nvidia-fabricmanager / gpu_vbios 都是 **NVIDIA 专有能力**。
+#   只判「nvidia-smi 存在」不够——实测 AMD 整机（8×MI300X）也装了 NVIDIA 软件栈：
+#   nvidia-smi 在但 0 张卡，命令全部 exit≠0 → summary 记一堆 WARN、报告渲染
+#   「NVSwitch 域未建立：Fabric Manager 未运行」，客户误以为硬件有问题。
+#   判据用「nvidia-smi 能数出至少 1 张卡」，与平台判定（v1.53.34 platform.sh）同一口径。
+has_nvidia_gpu() {
+    check_cmd nvidia-smi || return 1
+    local _c
+    _c=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null \
+         | grep -cE '^[[:space:]]*[0-9]+[[:space:]]*$')
+    _c=$(printf '%s' "${_c:-0}" | head -1 | tr -dc '0-9')
+    [ "${_c:-0}" -gt 0 ]
+}
+
 # ─── 灵活命令检测（v1.48.16）：PATH → 候选目录全路径试跑 → ~/.bashrc 环境重试 ───
 # 背景：CUDA（/usr/local/cuda）、ROCm（/opt/rocm）等工具装非标准目录 + 环境变量写 ~/.bashrc
 # （登录 shell 才生效）——脚本/非交互执行找不到。三阶降级：
