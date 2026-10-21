@@ -17,7 +17,7 @@
   dimm_sn_values=12
   nic_link_state_values=10
 [pcie]
-  | 链路统计 | 125 条 · 满速 120 · 降速/降宽 0 · bridge 协商 4 · 管理芯片 1 |
+  | 链路统计 | 125 条 · 满速 117 · 降速/降宽 0 · bridge 协商 4 · 管理芯片 1 · 外设 3 |
   pcie_appendix_rows=125
 [disk]
   disk_rows=4
@@ -25,13 +25,13 @@
   nic_rows=19
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=43150
+  json_bytes=43156
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=29
   html_table_close=29
-  html_bytes=54995
+  html_bytes=59497
 [acceptance]
         4 N/A
        12 PASS
