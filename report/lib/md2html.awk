@@ -2,6 +2,10 @@
 # 用法: awk -f md2html.awk hwscope_report.md > hwscope_report.html
 # 特性: 卡片分区（## 段）、表格状态着色（PASS/WARN/FAIL/N/A）、斑马纹、引用块、打印友好
 # 依赖: 仅 awk（gawk/mawk 均可），无外部工具
+#
+# ⚠️ CSS 输出顺序 = 源序（BEGIN 里 print 的先后就是样式表里的先后）。
+#   同特异度的规则**后打印的覆盖先打印的** —— 媒体查询要覆盖基础规则时必须打印在
+#   基础规则**之后**，否则会被静默吃掉（v1.53.33 的 ≤1400px 断词规则就因此失效，v1.54.0 修正）。
 
 BEGIN {
     print "<!DOCTYPE html>"
@@ -52,7 +56,6 @@ BEGIN {
     print "@media (max-width:1024px){.toc li{margin:0;}.toc a{padding:2px 8px;border:1px solid #e3e9f2;}.toc li.sep{display:none;}}"
     print "@media (max-width:1400px){.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:6px 0 10px;}}"
     print "@media (max-width:1400px){.tw>table{margin:0;min-width:max-content;}}"
-    print "@media (max-width:1400px){td{word-break:normal;overflow-wrap:anywhere;}}"
     print "@media (max-width:1024px){.main{grid-column:auto;grid-row:auto;}}"
     print "@media (max-width:760px){body{padding:12px 8px;}.card{padding:12px 14px;}h1{font-size:20px;}.subtitle{margin-bottom:14px;}table{font-size:12px;}th,td{padding:5px 7px;}.top{right:10px;bottom:10px;}}"
     print "html{scroll-behavior:smooth;}"
@@ -69,6 +72,11 @@ BEGIN {
     print "table{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0 10px;}"
     print "th{background:#1e3a5f;color:#fff;padding:7px 10px;text-align:left;font-weight:500;white-space:nowrap;}"
     print "td{padding:6px 10px;border-bottom:1px solid #e8ecf2;word-break:break-all;}"
+    # P3-5：必须在上面基础 td 规则**之后**才能生效（同特异度按源序，后者胜）
+    print "@media (max-width:1400px){td{word-break:normal;overflow-wrap:anywhere;}}"
+    # P3-6：窄屏（≤1024）toc 变成顶部吸附条（高 64~121px），锚点跳转需要更大的顶部留白，
+    #   否则目标卡片标题会被吸附条盖住；宽屏沿用 16px（= 侧栏 sticky top）
+    print "@media (max-width:1024px){section.card{scroll-margin-top:130px;}}"
     print "tr:nth-child(even) td{background:#f7f9fc;}"
     print "tr:hover td{background:#eef3fa;}"
     print ".pass{color:#1a7f37;font-weight:600;}"
@@ -267,16 +275,27 @@ function inline_md(s) {
 
 # 侧栏短标签：已知章节用统一短名（正文标题完全不受影响，完整标题见悬停 title）
 #   新增章节若要短名，在此加一行；未命中的按原样显示
-function toc_short(s) {
-    if (s == "硬件概览（配置单，自动生成自检测数据）") return "硬件概览"
-    if (s == "PCIe 链路明细（附录）") return "链路明细"
-    if (s == "PCIe 拓扑与链路")      return "链路"
-    if (s == "NVSwitch 域（Fabric）") return "交换域"
-    if (s == "板载与外部接口")        return "板载"
-    if (s == "电源 PSU")             return "电源"
-    if (s == "RAID 控制器")           return "RAID"
-    if (s == "验收项")               return "验收项目"
-    if (s == "结论")                 return "验收结论"
+function toc_short(s,   r) {
+    r = ""
+    if (s == "硬件概览（配置单，自动生成自检测数据）") r = "硬件概览"
+    else if (s == "PCIe 链路明细（附录）") r = "链路明细"
+    else if (s == "PCIe 拓扑与链路")      r = "链路"
+    else if (s == "NVSwitch 域（Fabric）") r = "交换域"
+    else if (s == "板载与外部接口")        r = "板载"
+    else if (s == "电源 PSU")             r = "电源"
+    else if (s == "RAID 控制器")           r = "RAID"
+    else if (s == "主机总线适配器明细（HBA）") r = "HBA 明细"
+    else if (s == "验收项")               r = "验收项目"
+    else if (s == "结论")                 r = "验收结论"
+    if (r != "") return r
+    # 建议4：侧栏按 4 字设计，未映射的长标题会折行 —— 打一行 stderr 提示补映射。
+    #   判据用字节数 >12（中文 4 字 = 12 字节），gawk/mawk 下都成立，避开 length() 的字符/字节差异。
+    #   必须在「未命中分支」里判断：若挂在函数末尾 return 前，attr_esc() 这类对每个属性值
+    #   都调用的地方也会触发，把已映射的标题也报成"无短名映射"（实测踩过）。
+    if (length(s) > 12 && !(s in _toc_warned)) {
+        _toc_warned[s] = 1
+        printf "md2html: [WARN] 侧栏标签无短名映射（会折行）：%s —— 请在 toc_short() 补一行\n", s > "/dev/stderr"
+    }
     return s
 }
 
