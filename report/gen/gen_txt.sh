@@ -282,13 +282,9 @@ else
     if [ -n "${GPU_ASCEND_NOTE:-}" ]; then
         echo "  昇腾   : ${GPU_ASCEND_NOTE}"
     fi
-fi)$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)$(if [ -n "${GPU_XGMI_SUMMARY:-}" ]; then echo "  xGMI     : ${GPU_XGMI_SUMMARY}"; fi)$(if [ "$GPU_COUNT" -gt 0 ]; then printf '%s' "$gpu_details_txt"; fi)$(if [ -n "$nvs_txt" ]; then printf '\n[NVSwitch]\n'; printf '%s' "$nvs_txt"; fi)$(if [ -n "${NVSWITCH_FABRIC:-}" ]; then printf '\n[NVSwitch 域/Fabric]\n  %s\n' "${NVSWITCH_FABRIC}"; fi)$(if [ -n "${FW_COMPLIANCE_DETAILS:-}" ]; then
-    # v1.53.38：与 MD 同步——有清单就输出；无基线时标题为「固件清单」、状态显示未知
-    if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
-        printf '\n[固件合规]\n'
-    else
-        printf '\n[固件清单]（未配置推荐基线，仅记录实测版本）\n'
-    fi
+fi)$(if [ -n "$NV_LINK_SUMMARY" ] && [ "$NV_LINK_SUMMARY" != "N/A" ]; then echo "  NVLink   : ${NV_LINK_SUMMARY}"; fi)$(if [ -n "${GPU_XGMI_SUMMARY:-}" ]; then echo "  xGMI     : ${GPU_XGMI_SUMMARY}"; fi)$(if [ "$GPU_COUNT" -gt 0 ]; then printf '%s' "$gpu_details_txt"; fi)$(if [ -n "$nvs_txt" ]; then printf '\n[NVSwitch]\n'; printf '%s' "$nvs_txt"; fi)$(if [ -n "${NVSWITCH_FABRIC:-}" ]; then printf '\n[NVSwitch 域/Fabric]\n  %s\n' "${NVSWITCH_FABRIC}"; fi)$(if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
+    # v1.53.43：恢复「未启用不显示」——无推荐基线时整段不出（与 MD 同口径）
+    printf '\n[固件合规]\n'
     echo "$FW_COMPLIANCE_DETAILS" | while IFS='|' read -r fc fd fcur fbase fst fnote; do
         [ -z "$fc" ] && continue
         case "$fst" in
