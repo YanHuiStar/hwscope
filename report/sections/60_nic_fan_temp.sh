@@ -672,7 +672,14 @@ if [ -f "${ipmi_sensors_temp}" ]; then
     #   温度传感器被整批漏掉，验收误判「无温度传感器数据」（实际数据齐全）。
     #   注意：`Temp_Bay<N>`(硬盘位) / `Temp_Slot<N>_*` / `Temp_Retimer<N>` / `Temp_PCIeSW<N>` /
     #   `Temp_GB_*` / `Temp_DC_CONV<N>` 等板卡级传感器**不映射**（现有标签无对应类别，硬塞会误导）。
-    TEMP_SUMMARY="$( _temp_agg 'inlet.*temp|tr[0-9]+.*temp|temp_(mb|sys|gpu|fcb[0-9]+)_inlet|temp_fcb[0-9]+_amb[0-9]+|temp_iob[a-z0-9_]*_amb' '进风'; _temp_agg 'outlet.*temp|temp_(mb|sys|gpu)_outlet' '出风'; _temp_agg '^cpu[0-9]+[ _]temp|^temp_cpu[0-9]+$|^temp_p[0-9]+$|temp_p[0-9]+vr_' 'CPU'; _temp_agg 'dimm.*temp|temp_p[0-9]+_dimm' '内存'; _temp_agg 'psu[0-9]+[ _]temp|temp_psu[0-9]+_' '电源'; _temp_agg 'pch.*temp' 'PCH'; _temp_agg '^temp_gb_gpu[0-9]+$|temp_gpu[0-9]+_(core|hbm)|temp_nvswitch[0-9]+' 'GPU' )"
+    # v1.53.37：再补**后缀式**命名（G7768 M6 / AMD MI300X 整机实测）：
+    #   `CPU0_TEMP`/`CPU1_TEMP`(CPU) · `CPU0_MEM_TEMP`(内存) · `GPU_00_TEMP`(GPU) ·
+    #   `PSU_TEMP_01..08`(电源) · `CPU_AMBIENT_TEMP`/`SW_AMB_TEMP_0x`(进风/环境)。
+    #   注意保持**精确锚定**，避免误吞板卡级传感器：`HDD_xx_TEMP`(硬盘)/`HDDBP_TEMP`(硬盘背板)/
+    #   `SLOT_n_TEMP`/`OCP_ST_n_TEMP`/`M2_RAID|RISER_TEMP`/`DC_SCM_TEMP`/`UBB_TEMP_*`/`HBM*_TEMP`
+    #   一律不映射（现有 7 类无对应类别，硬塞会误导——沿用 v1.52.16 口径）。
+    #   实测该机 CPU/内存/电源/进风各有真实读数，而旧 7 个模式要求「类型词在前」→ 只匹配到 CPU。
+    TEMP_SUMMARY="$( _temp_agg 'inlet.*temp|tr[0-9]+.*temp|temp_(mb|sys|gpu|fcb[0-9]+)_inlet|temp_fcb[0-9]+_amb[0-9]+|temp_iob[a-z0-9_]*_amb|ambient|_amb_temp|^sw_amb_temp_[0-9]+' '进风'; _temp_agg 'outlet.*temp|temp_(mb|sys|gpu)_outlet' '出风'; _temp_agg '^cpu[0-9]+[ _]temp|^temp_cpu[0-9]+$|^temp_p[0-9]+$|temp_p[0-9]+vr_|^cpu[0-9]+_temp$' 'CPU'; _temp_agg 'dimm.*temp|temp_p[0-9]+_dimm|^cpu[0-9]+_mem_temp$' '内存'; _temp_agg 'psu[0-9]+[ _]temp|temp_psu[0-9]+_|^psu_temp_[0-9]+$' '电源'; _temp_agg 'pch.*temp' 'PCH'; _temp_agg '^temp_gb_gpu[0-9]+$|temp_gpu[0-9]+_(core|hbm)|temp_nvswitch[0-9]+|^gpu_[0-9]+_temp$' 'GPU' )"
     TEMP_SUMMARY=$(echo "$TEMP_SUMMARY" | sed 's/  *$//')
 fi
 # OS 侧温度兜底（v1.45.16）：无 BMC 温度（ipmi_sensors_temp 无/失败/平台无 BMC）时，

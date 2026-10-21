@@ -156,6 +156,15 @@ if [ -f "$_fru_src" ]; then
             *"Product Part Number"*)   ppn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
             *"Product Serial"*)        psn=$(echo "$pline" | cut -d: -f2- | xargs) ;;
         esac
+        # v1.53.37：ACBEL PSU 的 FRU 把**部件号重复拼进序列号**——实测
+        #   Product Serial = `<真SN>FLAGB<部件号>`（实测某颗 PSU 的 SN 尾部被拼上了 `FLAGB`+PN），
+        #   直接上报告会让客户以为 SN 不对。判据**精确匹配**：仅当 SN 以 `FLAGB<PN>` 结尾才剥离，
+        #   其余情况原样保留（不做模糊截断——错切 SN 比留脏更糟）。
+        if [ -n "${psn:-}" ] && [ -n "${ppn:-}" ]; then
+            case "$psn" in
+                *"FLAGB${ppn}") psn="${psn%FLAGB${ppn}}" ;;
+            esac
+        fi
     done < <(grep -v "^#" "$_fru_src" 2>/dev/null)
     [ -n "$pending" ] && PSU_DETAILS="${PSU_DETAILS}${pending}${ppn:-N/A}|${psn:-N/A}"$'\n'
     # 只保留 PSU 行（PSU 描述含 PSU 编号或 Power Supply）

@@ -314,6 +314,19 @@ _rc_content_known_benign() {
     #   多条 `-E-`（MST 争用误报 **+ 真故障并存**），真故障会被一并静默。这正是项目铁律
     #   「分类过头即漏报，是更严重的错」要防的情形（v1.52.21 引用了该铁律，实现却没落地）。
     #   现要求：该句存在 **且** `-E-` 错误行**只有这一条**才豁免。
+    # ── 用例②（v1.53.37）：`ipmitool fru print` 整体 exit=1，但**数据已正常取到** ──
+    #   实测 8×MI300X（G7768 M6）：13 段 FRU 全部输出，仅最后一个 `UBB_FRU (ID 13)` 读不到 → 整体退出 1。
+    #   判据收紧：日志里至少有 1 段 `FRU Device Description`（确实拿到 FRU）才豁免；
+    #   命令整体失败（BMC 不通）时输出为空 → 不豁免，仍记 WARN。
+    if grep -qF 'FRU Device Description' "$_lf" 2>/dev/null; then
+        return 0
+    fi
+    # ── 用例③（v1.53.37）：`ipmitool lan print <N>` 的通道不存在 ──
+    #   实测该平台只有 1 个 LAN 通道，`lan print 2` 报 `Get Channel Info command failed: Destination unavailable`
+    #   + `Invalid channel: 2` —— 平台形态，不是故障。
+    if grep -qE 'Invalid channel: [0-9]+|Get Channel Info command failed: Destination unavailable' "$_lf" 2>/dev/null; then
+        return 0
+    fi
     grep -qF 'Error when trying to check if NV access registers are supported' "$_lf" 2>/dev/null || return 1
     [ "$(grep -c '^-E-' "$_lf" 2>/dev/null)" -eq 1 ]
 }

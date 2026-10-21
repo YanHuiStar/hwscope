@@ -323,6 +323,16 @@ SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not op
 SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -viE "Version Change|Hardware change detected" \
         | grep -icE "pcie|aer|uncorrectable")
 
+# v1.53.37：SEL 的 PCIe 记录再分**严重级别**——`Uncorrectable/Uncorrected/Fatal` 才是真损坏，
+#   `PCI PERR`（奇偶错，链路可纠正）属「持续纠错但不破坏数据」。报告/验收据此分级：
+#   不可纠正 → FAIL；仅可纠正 → WARN（与「PCIe AER 错误」项口径一致，避免同一链路被双重判死）。
+SEL_PCIE_ERR_UNCORR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
+    | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" \
+    | grep -viE "Version Change|Hardware change detected" \
+    | grep -icE "uncorrectable|uncorrected|fatal" 2>/dev/null || true)
+SEL_PCIE_ERR_UNCORR=${SEL_PCIE_ERR_UNCORR:-0}
+SEL_PCIE_ERR_HISTORY=0
+
 # ─── v1.53.36：SEL 里的 PCIe 记录要区分「历史 / 当前」───
 # 背景（实测 8×MI300X G7768 M6）：SEL 有 251 条 `PCI PERR`，时间全在 2020-01/02，
 #   而同一份 SEL 的最新事件已是 2026-01 —— 说明记录当时 BMC 时钟未校准（出厂前/产线烧机）。
@@ -343,7 +353,8 @@ if [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
         _a_last=$(printf '%s\n' "$_all_es" | tail -1)
         SEL_PCIE_ERR_SPAN="$(LC_ALL=C date -d "@$_p_first" +%Y-%m-%d) ~ $(LC_ALL=C date -d "@$_p_last" +%Y-%m-%d)"
         if [ -n "$_a_last" ] && [ "$(( (_a_last - _p_last) / 86400 ))" -ge 90 ] 2>/dev/null; then
-            SEL_PCIE_ERR_NOTE="**全部为历史记录**（${SEL_PCIE_ERR_SPAN}，比 SEL 最新事件早 $(( (_a_last - _p_last) / 86400 )) 天，当时 BMC 时钟未校准）——非当前链路故障"
+            SEL_PCIE_ERR_HISTORY=1
+            SEL_PCIE_ERR_NOTE="，**全部为历史记录**（${SEL_PCIE_ERR_SPAN}，比 SEL 最新事件早 $(( (_a_last - _p_last) / 86400 )) 天，当时 BMC 时钟未校准）——非当前链路故障"
         else
             SEL_PCIE_ERR_NOTE="（时间跨度 ${SEL_PCIE_ERR_SPAN}）"
         fi

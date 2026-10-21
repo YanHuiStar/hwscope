@@ -389,6 +389,34 @@ for _mce_c in "${OS_DIR}/journal_mce.log" "${OS_DIR}/journal_kernel_hw.log" "${O
     fi
 done
 
+# ─── v1.53.37：PCIe AER 可纠正错误（按 BDF 统计）───
+# 背景（实测 8×MI300X G7768 M6）：dmesg 里有 255 条
+#   `pcieport 0000:32:01.0: AER: aer_status: 0x00000001` + 下一行 `[ 0] RxErr`
+#   （bit0=Receiver Error，**可纠正**），全部集中在 `32:01.0`——PEX890xx 交换机的下游端口，
+#   其下挂 `33:00.0` 的 ConnectX-7 网卡；时间从开机 14s 持续到 3437s，同期 SEL 记 6 条 `PCI PERR`。
+#   **报告此前完全没体现**：健康检查只写「GPU PCIe 链路 ✓ 全部正常」、验收「PCIe 链路完整 PASS」——
+#   那两项只看协商速率/宽度（LnkCap vs LnkSta），看不到 AER 计数，属**漏报**：
+#   客户会以为链路完好，而实际上一条链路在持续重训/纠错（典型成因：线缆/riser/连接器/retimer）。
+# 判据：`AER: aer_status:` 与 `AER: severity=Fatal|Uncorrected` 两类分别计数；
+#   排除日志头（`^#`，命令头含关键词会自匹配——v1.48.95 教训）。
+PCIE_AER_CORR=0; PCIE_AER_UNCORR=0; PCIE_AER_BDFS=""; PCIE_AER_SRC=""
+for _aer_c in "${OS_DIR}/journal_kernel_hw.log" "${OS_DIR}/dmesg_hardware.log" "${OS_DIR}/dmesg_full.log"; do
+    [ -f "$_aer_c" ] && [ -s "$_aer_c" ] || continue
+    _aer_out=$(grep -vE "^#" "$_aer_c" 2>/dev/null | grep -E "AER: aer_status:|AER: severity=|Uncorrected error|Corrected error received")
+    [ -n "$_aer_out" ] || continue
+    # v1.53.37：三个来源各算一次，**取计数最大的那份**（dmesg 是本次开机全量，journal 可能被 rate-limit
+    #   截断——实测同一台机 dmesg 85 条 / journal 84 条）。不累加，避免重复计同一事件。
+    _c=$(printf '%s\n' "$_aer_out" | grep -cE "aer_status:|Corrected error received" || true); _c=${_c:-0}
+    _u=$(printf '%s\n' "$_aer_out" | grep -cE "severity=(Fatal|Uncorrected)|Uncorrected error" || true); _u=${_u:-0}
+    if [ "$_c" -gt "${PCIE_AER_CORR:-0}" ] 2>/dev/null || { [ "$_c" -eq "${PCIE_AER_CORR:-0}" ] && [ -z "$PCIE_AER_SRC" ]; } 2>/dev/null; then
+        PCIE_AER_CORR="$_c"
+        PCIE_AER_UNCORR="$_u"
+        PCIE_AER_SRC="$(basename "$_aer_c")"
+        PCIE_AER_BDFS=$(printf '%s\n' "$_aer_out" | grep -oE "[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]" \
+            | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s（%s 次）%s", $2, $1, (NR<3?"、":"")}' | sed 's/、$//')
+    fi
+done
+
 # ─── v1.50.0：板载 / 外部物理接口（VGA、USB 控制器、板载网口）───
 #   数据源：pcie/lspci_all.log（lspci 枚举，已全量落盘）+ os/lsusb.log（USB 设备）；
 #   零新采集——旧采集目录同样生效。BMC 管理口行由报告端用 BMC_IP/BMC_MAC 补。

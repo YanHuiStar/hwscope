@@ -34,8 +34,18 @@ run_power() {
         ipmi_snapshot_derive "$_pos" "${dir}/sensors_power.log" 'power|watt|total' || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/sensors_power.log"
         _pod=$(ipmi_snapshot sdr)
         ipmi_snapshot_derive "$_pod" "${dir}/energy_sdr.log" 'energy|kwh|joule' || snapshot_na 'IPMI 快照不可用（ipmitool 缺失或 sensor/sdr 命令超时）' "${dir}/energy_sdr.log"
-        run_and_log_parallel 2 \
-            "${ipmi_fast} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log"
+        # v1.53.37：DCMI 功耗读数**复用 10_psu 已采的那份**（psu/ipmi_dcmi_power.log）——
+        #   两模块各自跑 `ipmitool dcmi power reading` 会采到**不同时刻**的瞬时值，
+        #   报告里「功耗读数 810W」与「能耗台账 825W」同标 DCMI 却对不上（实测 G7768 M6）。
+        #   10_psu 序号更小、必先执行，文件有效就直接复用，顺带省一条 IPMI 调用。
+        local _psu_dcmi="${output_dir}/psu/ipmi_dcmi_power.log"
+        if [ -f "$_psu_dcmi" ] && grep -qi "Instantaneous power reading" "$_psu_dcmi" 2>/dev/null; then
+            cp "$_psu_dcmi" "${dir}/dcmi_power.log"
+            echo -e "${CYAN}[INFO] DCMI 功耗读数复用 psu/ipmi_dcmi_power.log（避免同报告两个 DCMI 瞬时值不一致）${NC}"
+        else
+            run_and_log_parallel 2 \
+                "${ipmi_fast} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log"
+        fi
     else
         echo -e "${YELLOW}[SKIP] ipmitool not found（能耗台账依赖 BMC 传感器）${NC}"
     fi
