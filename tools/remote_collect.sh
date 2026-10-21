@@ -26,6 +26,10 @@ usage() {
     echo "选项:"
     echo "  -H user@host       目标机（SSH 用户@主机）"
     echo "  --no-sudo          目标机以当前用户直接执行（默认 sudo bash hwscope.sh）"
+    echo "  --bmc-ip <IP>      目标机 BMC 地址（透传 hwscope.sh；不给则不采带外）"
+    echo "  --bmc-user <user>  BMC 用户名（默认 admin）"
+    echo "  --hgx-bmc-ip <IP>  HGX 基板 BMC 地址"
+    echo "  --hgx-bmc-user <user>  HGX 基板 BMC 用户名"
     echo "  --install <1,2,...> 推送后先远端安装依赖（install_tool -c/-y 非交互）再采集——冷启动装基础环境"
     echo "  -o <目录>          本地回拉目录（默认 ./output）"
     echo "  --interactive      保留兼容（默认已支持交互式密码，无需该参数）"
@@ -53,6 +57,15 @@ while [ $# -gt 0 ]; do
         --no-sudo) SUDO=""; shift ;;
         -o) LOCAL_OUT="$2"; shift 2 ;;
         --install) INSTALL_ITEMS="$2"; shift 2 ;;   # 注意：必须在 *) 透传之前匹配，否则会被当 hwscope 参数
+        # v1.53.45：BMC 参数显式识别（记住值以便提示输密码，同时仍拼进 HWARGS 透传）
+        --bmc-ip)      [ -n "${2:-}" ] || { echo -e "\033[0;31m[ERROR] --bmc-ip 需要 IP\033[0m"; exit 1; }
+                       BMC_IP_ARG="$2"; HWARGS="${HWARGS:-} --bmc-ip $2"; shift 2 ;;
+        --bmc-user)    [ -n "${2:-}" ] || { echo -e "\033[0;31m[ERROR] --bmc-user 需要用户名\033[0m"; exit 1; }
+                       HWARGS="${HWARGS:-} --bmc-user $2"; shift 2 ;;
+        --hgx-bmc-ip)  [ -n "${2:-}" ] || { echo -e "\033[0;31m[ERROR] --hgx-bmc-ip 需要 IP\033[0m"; exit 1; }
+                       HGX_BMC_IP_ARG="$2"; HWARGS="${HWARGS:-} --hgx-bmc-ip $2"; shift 2 ;;
+        --hgx-bmc-user) [ -n "${2:-}" ] || { echo -e "\033[0;31m[ERROR] --hgx-bmc-user 需要用户名\033[0m"; exit 1; }
+                       HWARGS="${HWARGS:-} --hgx-bmc-user $2"; shift 2 ;;
         --interactive) : ;;   # 默认已支持交互密码（v1.31.4 起），保留参数兼容
         -h|--help) usage; exit 0 ;;
         *) HWARGS="${HWARGS:-} $1"; shift ;;
@@ -117,7 +130,31 @@ else
     echo -e "\033[0;33m[INFO] 远端执行: ${SUDO:+${SUDO} }bash hwscope.sh${HWARGS:-}（默认输出 output/<MACHINE_ID>/）\033[0m"
     REMOTE_CMD="cd ${REMOTE_DIR} && ${SUDO:+${SUDO} }bash hwscope.sh${HWARGS:-}"
 fi
-ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "$REMOTE_CMD"
+# v1.53.45：BMC 密码通道
+#   root 目标机（免 sudo，无 -t）→ 本地提示输入，经 stdin 递到远端 read；
+#   普通用户目标机（有 -t，tty 已分配）→ 不传，让远端的 hwscope.sh 自己提示
+if [ -z "$SUDO" ] && { [ -n "${BMC_IP_ARG:-}" ] || [ -n "${HGX_BMC_IP_ARG:-}" ]; }; then
+    printf 'BMC 密码: '
+    _bmc_pw=""
+    IFS= read -rs _bmc_pw || true
+    printf '\n'
+    if [ -n "$_bmc_pw" ]; then
+        # 密码只经管道进入远端进程环境，不落盘、不进 ps/日志
+        _remote_with_pw="read -r BMC_PASS; export BMC_PASS; ${REMOTE_CMD}"
+        [ -n "${HGX_BMC_IP_ARG:-}" ] && [ -n "${BMC_IP_ARG:-}" ] && \
+            _remote_with_pw="read -r BMC_PASS; read -r HGX_BMC_PASS; export BMC_PASS HGX_BMC_PASS; ${REMOTE_CMD}"
+        if [ -n "${HGX_BMC_IP_ARG:-}" ] && [ -n "${BMC_IP_ARG:-}" ]; then
+            printf '%s\n%s\n' "$_bmc_pw" "$_bmc_pw" | ssh $SSH_OPTS "$HOST" "$_remote_with_pw"
+        else
+            printf '%s\n' "$_bmc_pw" | ssh $SSH_OPTS "$HOST" "$_remote_with_pw"
+        fi
+    else
+        ssh $SSH_OPTS "$HOST" "$REMOTE_CMD"
+    fi
+    unset _bmc_pw _remote_with_pw
+else
+    ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "$REMOTE_CMD"
+fi
 RC=$?
 if [ "$RC" -ne 0 ]; then
     if [ -n "$INSTALL_ITEMS" ]; then

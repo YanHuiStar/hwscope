@@ -83,6 +83,22 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 | 假 WARN 豁免（v1.53.37） | `psu_present`（服务器 PSU 走 BMC，无 `/sys/class/power_supply`）、`ipmi_lan2`（BMC 只暴露 1 个 LAN 通道）、`ipmi_fru_all`（末段 FRU 读不到但其余 13 段全出）均按**内容级**豁免，不再计 WARN；BMC 整体不可达仍照常记 WARN |
 | 功耗读数 | `16_power` 复用 `10_psu` 已取到的 `psu/ipmi_dcmi_power.log`，避免同一报告出现两个不同的 DCMI 瞬时值；文件无效才自行查询 |
 
+### BMC 带外采集（IPMI / Redfish）
+
+BMC 提供带内拿不到的信息：PSU 实时功率与在位、风扇转速、SEL 事件、整机功耗、BMC 固件版本 —— 报告里的「电源状态」「整机温度」「能耗台账」「SEL」都依赖它。**默认不连 BMC**，给地址才启用：
+
+```bash
+sudo bash hwscope.sh --bmc-ip 10.0.0.1                        # 单 BMC（默认用户名 admin）
+sudo bash hwscope.sh --bmc-ip 10.0.0.1 --bmc-user root        # 自定义用户名
+sudo bash hwscope.sh --bmc-ip 10.0.0.1 --hgx-bmc-ip 10.0.0.2  # HGX 双 BMC（整机 + 基板）
+```
+
+- **密码**：给了 `--bmc-ip` 后**运行时提示输入**（不回显）—— 不落盘、不进 git / shell history / `ps`
+- **也可写进 `conf/hwscope.conf`（`BMC_PASS`）**：方便脚本化，但那是**明文落盘**，且远程采集会把 conf 一起推到目标机
+- **不要手工 `export BMC_PASS`** —— 会进 shell history（`remote_collect` 内部用的 stdin 传递不算手工 export）
+- 不给 `--bmc-ip` 时完全不连 BMC、也不会提示输密码（与旧行为一致）
+- 远程采集见 [docs/TOOLS.md](TOOLS.md)：`remote_collect.sh` 同样接受这四个参数
+
 ## 报告生成
 
 > 报告体系为独立 `report/` 模块（v1.35.0）：主入口 `report/report.sh`（v1.35.3 起移除 tools/ 兼容 wrapper，统一新路径）。
