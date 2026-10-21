@@ -144,7 +144,12 @@ run_network() {
             #   而 2>/dev/null 挡不住内核 printk。非 mlx5 网卡（只有 ethtool 能读光模块）照旧保留。
             local nic_drv=""
             [ -e "/sys/class/net/$dev/device/driver" ] && nic_drv=$(basename "$(readlink -f "/sys/class/net/$dev/device/driver" 2>/dev/null)" 2>/dev/null)
-            if [ "$nic_drv" != "mlx5_core" ]; then
+            # v1.53.37：**USB 网卡无光模块**——`ethtool -m` 对 rtl8153/CDC-Ethernet 这类设备必然失败
+            #   （实测 8×MI300X 机的 enx46c23cb0825e / enx00e04c3f2c70 各记 1 条 WARN）。
+            #   判据：uevent 里有 PCI_SLOT_NAME 才是 PCI/PCIe 设备；USB 网卡只有接口路径（如 4-1.4:1.0）。
+            local _nic_is_pci=0
+            grep -q "^PCI_SLOT_NAME=" "/sys/class/net/${dev}/device/uevent" 2>/dev/null && _nic_is_pci=1
+            if [ "$nic_drv" != "mlx5_core" ] && [ "$_nic_is_pci" -eq 1 ]; then
                 eth_jobs+=("ethtool -m '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_module.log")
             fi
         done < <(printf '%s\n' "$eth_devs")
@@ -178,7 +183,15 @@ run_network() {
             nbdf=$(grep "PCI_SLOT_NAME" "/sys/class/net/${ndev}/device/uevent" 2>/dev/null | cut -d'=' -f2 | sed 's/^0000://')
             [ -z "$nbdf" ] && nbdf=$(basename "$ndev_path" | sed 's/^0000://')
             # 每网卡 lspci -vv 全量（v1.41.0 全量原则，循环后统一并行落盘）
-            nic_pcie_jobs+=("lspci -vv -s ${nbdf} 2>&1" "nic_${ndev}_pcie.log")
+            # v1.53.37：USB 网卡的「BDF」是接口路径（4-1.4:1.0），`lspci -s` 必然报错并记 WARN
+            #   （实测两个 USB 网口各 1 条）。USB 设备无 PCIe 链路可查 → 改写说明性日志，保留清单元数据。
+            if printf '%s' "$nbdf" | grep -qE '^([0-9a-fA-F]{4}:)?[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$'; then
+                nic_pcie_jobs+=("lspci -vv -s ${nbdf} 2>&1" "nic_${ndev}_pcie.log")
+            else
+                { echo "# N/A: ${ndev} 为 USB 网络设备（接口路径 ${nbdf}，非 PCI 地址）——无 PCIe 链路可查"; \
+                  echo "# 该类设备的速率/驱动见 ethtool_${ndev}.log 与 ethtool_${ndev}_driver.log"; } \
+                    > "${dir}/nic_${ndev}_pcie.log"
+            fi
             local nmac
             nmac=$(cat "/sys/class/net/${ndev}/address" 2>/dev/null)
             # IB 长地址取后 6 字节

@@ -112,7 +112,10 @@ run_psu() {
     fi
 
     # ─── 5. 电源系统总览 ───
-    run_and_log "cat /sys/class/power_supply/*/present 2>/dev/null" "${dir}/psu_present.log"
+    # v1.53.37：服务器 PSU 走 BMC/PMBus，**通常没有 /sys/class/power_supply 设备**——
+    #   原命令 glob 不匹配时 cat 以 exit=1 退出 → 记 WARN（实测 8×MI300X 机）。
+    #   改为自带说明并 exit 0：有设备就照常输出，没有则写明「本机无 power_supply，PSU 状态见 BMC」。
+    run_and_log "bash -c 'if ls /sys/class/power_supply/*/present >/dev/null 2>&1; then cat /sys/class/power_supply/*/present; else echo \"# N/A: 本机无 /sys/class/power_supply 设备（服务器 PSU 由 BMC 暴露：见 psu/psu_status.log、ipmi_fru_all.log）\"; fi'" "${dir}/psu_present.log"
 
 # NOTE: sysfs_PSU_NAME/info.log, sysfs_PSU_NAME/all_fields.log per PSU
     # NOTE: i2c_busN.log per i2c bus (conditional)

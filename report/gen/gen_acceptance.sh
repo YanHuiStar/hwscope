@@ -316,7 +316,16 @@ gen_acceptance() {
             add_item "SEL 事件" "FAIL" "共 ${SEL_TOTAL:-0} 条 SEL，其中 ${SEL_CRIT_UNRESOLVED} 条 Critical 告警**尚未解除**（需处理后再交付）"
         fi
     elif [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 事件" "FAIL" "${SEL_PCIE_ERR} 条 PCIe/AER/uncorrectable 记录"
+        # v1.53.37：分级（旧实现只要 >0 就 FAIL，把「可纠正的 PCI PERR」与「不可纠正」同等对待）
+        _pcie_detail="${SEL_PCIE_ERR} 条 PCIe/AER 记录"
+        [ "${SEL_PCIE_ERR_UNCORR:-0}" -gt 0 ] 2>/dev/null && _pcie_detail="${_pcie_detail}（其中不可纠正 ${SEL_PCIE_ERR_UNCORR} 条）"
+        if [ "${SEL_PCIE_ERR_UNCORR:-0}" -gt 0 ] 2>/dev/null; then
+            add_item "SEL 事件" "FAIL" "${_pcie_detail}——含不可纠正错误，需处理后再交付"
+        elif [ "${SEL_PCIE_ERR_HISTORY:-0}" -eq 1 ] 2>/dev/null; then
+            add_item "SEL 事件" "WARN" "${_pcie_detail}，全部为历史记录${SEL_PCIE_ERR_NOTE#，}——非当前故障，建议交付前清 SEL"
+        else
+            add_item "SEL 事件" "WARN" "${_pcie_detail}（可纠正类，时间跨度 ${SEL_PCIE_ERR_SPAN:-未知}）——链路在持续纠错，建议结合「PCIe AER 错误」项一起看；如持续增长则交付前处理"
+        fi
     elif [ "${SEL_CRIT_RECOVERED:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 事件" "WARN" "共 ${SEL_TOTAL:-0} 条 SEL，无未解除告警；其中 ${SEL_CRIT_RECOVERED} 条 Critical 已于 ${SEL_RECOVERED_WHEN:-N/A} 自愈（Asserted→Deasserted 成对，建议留意）"
     elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
@@ -328,7 +337,15 @@ gen_acceptance() {
     # 12. 固件版本合规（15_firmware 输出；落后=FAIL，无基线判未知=N/A 不误报——未配置基线是
     #     验收配置缺口而非硬件问题；全部未知即整体 N/A 提示补录基线）
     if [ -z "$FW_COMPLIANCE_DETAILS" ]; then
-        add_item "固件版本合规" "N/A" "无固件数据（15_firmware 未采集或旧数据）"
+        # v1.53.37：区分「真没采」与「采了但没有可判定项」——实测 AMD 整机 15_firmware 正常执行
+        #   （fw_versions.log 为空、fw_compliance.csv 仅表头），旧文案「未采集或旧数据」与事实不符，
+        #   会让人以为模块失败而去排查采集。
+        if [ -f "${OUT}/firmware/fw_versions.log" ] || [ -f "${OUT}/firmware/fw_compliance.csv" ]; then
+            # 归类：**平台固有/宽容 N/A**（本机根本没这类固件项，不是数据缺口，不计入「数据不足」）
+            add_item "固件版本合规" "N/A" "本机无可判定固件项（15_firmware 已执行：无 nvidia VBIOS / 网卡固件未匹配基线 / BMC 固件不在对比表）" 1
+        else
+            add_item "固件版本合规" "N/A" "无固件数据（该采集未跑 15_firmware，或为旧版本采集）"
+        fi
     elif printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -q "|落后|"; then
         _fw_behind=$(printf '%s\n' "$FW_COMPLIANCE_DETAILS" | awk -F'|' '$5=="落后"{printf "%s(%s→%s), ", $2, $4, $3}')
         add_item "固件版本合规" "FAIL" "固件落后于推荐版本: ${_fw_behind%,}"
@@ -461,6 +478,17 @@ gen_acceptance() {
         else
             add_item "GPU ECC" "N/A" "无 ECC 数据（该采集版本未生成 gpu_ecc_inventory.csv）"
         fi
+    fi
+
+    # ── v1.53.37：PCIe AER 错误（仅检出才追加项，不改变默认项数）──
+    #   与「PCIe 链路完整」互补：后者只看 LnkCap vs LnkSta（速率/宽度），
+    #   看不到 AER 计数——实测一台 8×MI300X 在 32:01.0 上持续 255 处可纠正接收错误，
+    #   而「链路完整」判 PASS。可纠正 → WARN（建议重插/换槽/查线缆后再判）；
+    #   不可纠正 → FAIL（数据完整性受损，必须处理）。
+    if [ "${PCIE_AER_UNCORR:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "PCIe AER 错误" "FAIL" "不可纠正 ${PCIE_AER_UNCORR} 处 / 可纠正 ${PCIE_AER_CORR} 处（${PCIE_AER_BDFS}；来源 ${PCIE_AER_SRC}）"
+    elif [ "${PCIE_AER_CORR:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "PCIe AER 错误" "WARN" "可纠正 ${PCIE_AER_CORR} 处（${PCIE_AER_BDFS}；来源 ${PCIE_AER_SRC}）——链路持续纠错，建议重插该卡/换槽位/查线缆后复测"
     fi
 
     # ── 硬件故障历史项（v1.48.90：GPU XID / CPU MCE / RAID 缓存电池）──

@@ -906,6 +906,13 @@ $(
     if [ -n "${MCE_HITS:-}" ]; then
         echo "| ⚠️ CPU MCE | 检出 ${MCE_COUNT} 条机器检查异常（来源: ${MCE_SRC}） |"
     fi
+    # v1.53.37：PCIe AER 可纠正/不可纠正错误（仅在检出时出这一行——不改变无故障机的行数）
+    #   「GPU PCIe 链路」只判协商速率/宽度，看不到 AER 计数，单看那一行会漏掉持续纠错的链路。
+    if [ "${PCIE_AER_UNCORR:-0}" -gt 0 ] 2>/dev/null; then
+        echo "| ❌ PCIe AER | **不可纠正 ${PCIE_AER_UNCORR} 处**、可纠正 ${PCIE_AER_CORR} 处（来源: ${PCIE_AER_SRC}；主要 BDF: ${PCIE_AER_BDFS}） |"
+    elif [ "${PCIE_AER_CORR:-0}" -gt 0 ] 2>/dev/null; then
+        echo "| ⚠️ PCIe AER | 可纠正错误 ${PCIE_AER_CORR} 处（来源: ${PCIE_AER_SRC}；主要 BDF: ${PCIE_AER_BDFS}）——链路在持续纠错，见下方处置建议 |"
+    fi
     if [ -n "${IB_PERF_NONZERO:-}" ]; then
         echo "| ⚠️ IB 链路误码 | ${IB_PERF_NONZERO} |"
     else
@@ -950,7 +957,7 @@ $(
         echo "| RAID 写缓存策略 | ${RAID_CACHE_POLICY} |"
     fi
 )
-| SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条${SEL_PCIE_ERR_NOTE:+，}${SEL_PCIE_ERR_NOTE:-} |
+| SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条${SEL_PCIE_ERR_NOTE:-} |
 | 线缆配对 | ${CABLE_PAIRS:-N/A（未取到模块 EEPROM 序列号——IB 链路未起，或该口未插光模块）} |
 
 $(if [ -n "$TEST_DETAILS" ]; then
