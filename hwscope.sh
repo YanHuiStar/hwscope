@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.53.44 (2026-10)
+# Version : 1.53.45 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.53.44"
+HWSCOPE_VERSION="v1.53.45"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -109,6 +109,10 @@ usage() {
     echo "  --output /path/to/dir           指定输出目录"
     echo "  --force                         覆盖已有输出目录（v1.45.6 起默认即覆盖，此参数保留兼容）"
     echo "  --stamp                         输出目录加时间戳后缀（output/<SN>-<时间戳>/，保留多版本对比）"
+    echo "  --bmc-ip <IP>                   BMC 地址（不给则不采带外；密码运行时交互输入，不落盘）"
+    echo "  --bmc-user <user>               BMC 用户名（默认 admin）"
+    echo "  --hgx-bmc-ip <IP>               HGX 基板 BMC 地址（板载 GPU/NVSwitch 管理口）"
+    echo "  --hgx-bmc-user <user>           HGX 基板 BMC 用户名（默认 admin）"
     echo "  -q, --quiet                     静默模式（仅输出异常）"
     echo "  -h, --help                      显示此帮助"
     echo "  -v, --version                   显示版本"
@@ -124,6 +128,8 @@ usage() {
     echo "  sudo bash $0 --serial                     # 串行采集（实时输出）"
     echo "  sudo bash $0 --quiet                      # 并行静默采集"
     echo "  sudo bash $0 --modules gpu,storage        # 只采 GPU+存储"
+    echo "  sudo bash $0 --bmc-ip 10.0.0.1            # 带 BMC 带外采集（会提示输入 BMC 密码）"
+    echo "  sudo bash $0 --bmc-ip 10.0.0.1 --hgx-bmc-ip 10.0.0.2   # HGX 双 BMC"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -147,6 +153,11 @@ while [[ $# -gt 0 ]]; do
                 echo -e "${RED}错误: --test-dir 需要有效压测目录路径（如 logs/test/20260818120000）${NC}"; exit 1
             fi
             TEST_DIR="$2"; shift 2 ;;
+        # v1.53.45：BMC 直连参数（不给则沿用 conf；密码一律运行时交互输入，不接受命令行/环境变量）
+        --bmc-ip)          [ -n "${2:-}" ] || { echo -e "${RED}错误: --bmc-ip 需要 BMC 地址${NC}"; exit 1; }; BMC_IP="$2"; shift 2 ;;
+        --bmc-user)        [ -n "${2:-}" ] || { echo -e "${RED}错误: --bmc-user 需要用户名${NC}"; exit 1; }; BMC_USER="$2"; shift 2 ;;
+        --hgx-bmc-ip)      [ -n "${2:-}" ] || { echo -e "${RED}错误: --hgx-bmc-ip 需要 HGX 基板 BMC 地址${NC}"; exit 1; }; HGX_BMC_IP="$2"; shift 2 ;;
+        --hgx-bmc-user)    [ -n "${2:-}" ] || { echo -e "${RED}错误: --hgx-bmc-user 需要用户名${NC}"; exit 1; }; HGX_BMC_USER="$2"; shift 2 ;;
         -q|--quiet) QUIET=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         -v|--version) echo "HwScope ${HWSCOPE_VERSION} (2026-10) — Hardware Scope"
@@ -293,6 +304,37 @@ SUMMARY_FILE="${OUTPUT_BASE}/summary.txt"
 # 模式兼容 export 前缀/等号空格；sed 失败时写占位符而非原文（防明文凭据外泄）
 sed -E 's/^(export[[:space:]]+)?(BMC_PASS|HGX_BMC_PASS)[[:space:]]*=.*/\2="***REDACTED***"/' "$CONF_FILE" > "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null \
     || echo "# config backup (BMC password redacted)" > "${OUTPUT_BASE}/config_backup.conf" 2>/dev/null || true
+
+# ─── v1.53.45：BMC 密码获取（交互优先，不落盘、不进 ps/history）───
+#   仅当给了 BMC IP 且密码为空时触发；三种来源：
+#     ① /dev/tty 可读（本地 sudo 运行、或 ssh -t 到远端）→ 终端提示输入
+#     ② stdin 非终端（remote_collect 通过管道递过来）→ 读一行
+#     ③ 都不满足（如 cron）→ 跳过并提示
+#   已有值（远程管道 export、或 conf 里填过）直接沿用，不再提示。
+_bmc_prompt_pass() {
+    local _var="$1" _label="$2"
+    [ -n "${!_var:-}" ] && return 0
+    local _p=""
+    # 顺序很重要：**stdin 是管道时优先读 stdin**（remote_collect 通过管道递密码的场景），
+    # 再回退到 /dev/tty 交互提示。反过来会死锁 —— 无交互终端时 /dev/tty 存在且"可读"，
+    # 但 read 永远等不到输入（WSL / CI / nohup 实测：脚本挂到 timeout 124、零输出）。
+    if [ ! -t 0 ]; then
+        IFS= read -r _p || true
+    elif [ -r /dev/tty ]; then
+        printf '%s: ' "$_label" > /dev/tty
+        # 超时兜底：无人值守时最多等 BMC_PASS_TIMEOUT 秒（默认 300），超时按"未输入"继续
+        IFS= read -rs -t "${BMC_PASS_TIMEOUT:-300}" _p < /dev/tty || true
+        printf '\n' > /dev/tty
+    fi
+    if [ -n "$_p" ]; then
+        export "$_var=$_p"
+    else
+        echo -e "${YELLOW}[WARN] ${_label} 未输入，${_var%%_PASS}_BMC 带外采集可能失败${NC}" >&2
+    fi
+    unset _p
+}
+[ -n "${BMC_IP:-}" ]     && _bmc_prompt_pass BMC_PASS     "BMC 密码"
+[ -n "${HGX_BMC_IP:-}" ] && _bmc_prompt_pass HGX_BMC_PASS "HGX 基板 BMC 密码"
 
 # ─── 模块执行 ───
 echo ""
