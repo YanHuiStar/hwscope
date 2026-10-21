@@ -134,24 +134,35 @@ fi
 #   root 目标机（免 sudo，无 -t）→ 本地提示输入，经 stdin 递到远端 read；
 #   普通用户目标机（有 -t，tty 已分配）→ 不传，让远端的 hwscope.sh 自己提示
 if [ -z "$SUDO" ] && { [ -n "${BMC_IP_ARG:-}" ] || [ -n "${HGX_BMC_IP_ARG:-}" ]; }; then
-    printf 'BMC 密码: '
-    _bmc_pw=""
-    IFS= read -rs _bmc_pw || true
-    printf '\n'
-    if [ -n "$_bmc_pw" ]; then
-        # 密码只经管道进入远端进程环境，不落盘、不进 ps/日志
-        _remote_with_pw="read -r BMC_PASS; export BMC_PASS; ${REMOTE_CMD}"
-        [ -n "${HGX_BMC_IP_ARG:-}" ] && [ -n "${BMC_IP_ARG:-}" ] && \
-            _remote_with_pw="read -r BMC_PASS; read -r HGX_BMC_PASS; export BMC_PASS HGX_BMC_PASS; ${REMOTE_CMD}"
-        if [ -n "${HGX_BMC_IP_ARG:-}" ] && [ -n "${BMC_IP_ARG:-}" ]; then
-            printf '%s\n%s\n' "$_bmc_pw" "$_bmc_pw" | ssh $SSH_OPTS "$HOST" "$_remote_with_pw"
-        else
-            printf '%s\n' "$_bmc_pw" | ssh $SSH_OPTS "$HOST" "$_remote_with_pw"
-        fi
+    # v1.54.0：两个 BMC 分别提示（基板 BMC 与主机 BMC 密码可能不同，尤其改过默认密码的现场），
+    #   并按「给了哪个 IP 就 read 哪个变量」构造远端命令 —— 旧实现无条件 read BMC_PASS，
+    #   只给 --hgx-bmc-ip 时密码进了用不上的变量，HGX 带外采集静默失败。
+    _bmc_pw=""; _hgx_pw=""
+    if [ -n "${BMC_IP_ARG:-}" ]; then
+        printf '主机 BMC 密码（%s）: ' "$BMC_IP_ARG"
+        IFS= read -rs _bmc_pw || true
+        printf '\n'
+    fi
+    if [ -n "${HGX_BMC_IP_ARG:-}" ]; then
+        printf 'HGX 基板 BMC 密码（%s）: ' "$HGX_BMC_IP_ARG"
+        IFS= read -rs _hgx_pw || true
+        printf '\n'
+    fi
+    _reads=""; _vars=""
+    [ -n "${BMC_IP_ARG:-}" ]     && { _reads="${_reads}read -r BMC_PASS || true; ";         _vars="${_vars}BMC_PASS "; }
+    [ -n "${HGX_BMC_IP_ARG:-}" ] && { _reads="${_reads}read -r HGX_BMC_PASS || true; ";     _vars="${_vars}HGX_BMC_PASS "; }
+    if [ -n "$_reads" ]; then
+        # 密码只经管道进入远端进程环境，不落盘、不进 ps/日志。
+        # 用 printf '%s\n' 逐个喂（不用 printf "$var" —— 密码里的 % 与 \ 会被当格式符解析）
+        _remote_with_pw="${_reads}export ${_vars% }; ${REMOTE_CMD}"
+        {
+            [ -n "${BMC_IP_ARG:-}" ]     && printf '%s\n' "$_bmc_pw"
+            [ -n "${HGX_BMC_IP_ARG:-}" ] && printf '%s\n' "$_hgx_pw"
+        } | ssh $SSH_OPTS "$HOST" "$_remote_with_pw"
     else
         ssh $SSH_OPTS "$HOST" "$REMOTE_CMD"
     fi
-    unset _bmc_pw _remote_with_pw
+    unset _bmc_pw _hgx_pw _reads _vars _remote_with_pw
 else
     ssh $([ -n "$SUDO" ] && echo "$SSH_TTY_OPTS" || echo "$SSH_OPTS") "$HOST" "$REMOTE_CMD"
 fi

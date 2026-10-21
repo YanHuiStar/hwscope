@@ -403,16 +403,20 @@ if [ -f "${OS_DIR}/uptime.log" ]; then
         *day*) _d=$(printf '%s' "$_up_str" | awk '{print $1}')
                _hm=$(printf '%s' "$_up_str" | grep -oE '[0-9]+:[0-9]+' | head -1)
                _h=${_hm%%:*}; _m=${_hm##*:}
-               COLLECT_UPTIME_SEC=$(( _d*86400 + ${_h:-0}*3600 + ${_m:-0}*60 )) ;;
+               # P3-3：必须用 10# 强制十进制 —— uptime 的 08/09 会被 bash 当八进制解析报
+               #   "value too great for base"（01~07 碰巧对，08/09 直接失败）
+               COLLECT_UPTIME_SEC=$(( ${_d:-0}*86400 + 10#${_h:-0}*3600 + 10#${_m:-0}*60 )) ;;
         *min*) COLLECT_UPTIME_SEC=$(( $(printf '%s' "$_up_str" | grep -oE '^[0-9]+') * 60 )) ;;
         *sec*) COLLECT_UPTIME_SEC=$(printf '%s' "$_up_str" | grep -oE '^[0-9]+') ;;
         [0-9]*:[0-9]*) _h=${_up_str%%:*}; _m=${_up_str##*:}
-               COLLECT_UPTIME_SEC=$(( _h*3600 + _m*60 )) ;;
+               COLLECT_UPTIME_SEC=$(( 10#${_h:-0}*3600 + 10#${_m:-0}*60 )) ;;
     esac
     case "${COLLECT_UPTIME_SEC:-}" in
         ''|*[!0-9]*) COLLECT_UPTIME_SEC="" ;;
     esac
-    # <180 秒视为「刚开机就采」——GPU/NIC 初始化常需数十秒（MI300X 八卡实测 >30s）
+    # P3-4：<180 秒视为「刚开机就采」——GPU/NIC 初始化常需数十秒（MI300X 八卡实测 >30s）。
+    #   采集端 hwscope.sh 的启动提示用同一阈值 180s；改这里必须同步改那里，否则
+    #   会出现"报告说刚开机、采集时却没提醒"的口径不一致。
     [ -n "$COLLECT_UPTIME_SEC" ] && [ "$COLLECT_UPTIME_SEC" -lt 180 ] && COLLECT_EARLY=1
 fi
 # 友好显示（uptime 常是 `up 0 min`，直接写「0 秒」会让人以为是解析失败）
@@ -445,9 +449,15 @@ for _aer_c in "${OS_DIR}/journal_kernel_hw.log" "${OS_DIR}/dmesg_hardware.log" "
     #   截断——实测同一台机 dmesg 85 条 / journal 84 条）。不累加，避免重复计同一事件。
     _c=$(printf '%s\n' "$_aer_out" | grep -cE "aer_status:|Corrected error received" || true); _c=${_c:-0}
     _u=$(printf '%s\n' "$_aer_out" | grep -cE "severity=(Fatal|Uncorrected)|Uncorrected error" || true); _u=${_u:-0}
-    if [ "$_c" -gt "${PCIE_AER_CORR:-0}" ] 2>/dev/null || { [ "$_c" -eq "${PCIE_AER_CORR:-0}" ] && [ -z "$PCIE_AER_SRC" ]; } 2>/dev/null; then
-        PCIE_AER_CORR="$_c"
-        PCIE_AER_UNCORR="$_u"
+    # P3-2：可纠正 / 不可纠正**两个维度独立取 max**。旧实现只按可纠正数选源，若 journal 记了
+    #   不可纠正错误、而 dmesg 的可纠正更多，则不可纠正数会被那份源的 0 覆盖 —— 漏报真故障。
+    [ "$_c" -gt "$PCIE_AER_CORR" ] 2>/dev/null && PCIE_AER_CORR="$_c"
+    [ "$_u" -gt "$PCIE_AER_UNCORR" ] 2>/dev/null && PCIE_AER_UNCORR="$_u"
+    # 来源与 BDF 明细取「不可纠正优先、其次可纠正最多」的那份源（不可纠正更能定位真故障）
+    if [ "$_u" -gt "${_AER_U_MAX:-0}" ] 2>/dev/null \
+       || { [ "$_u" -eq "${_AER_U_MAX:-0}" ] && [ "$_c" -gt "${_AER_C_MAX:-0}" ]; } 2>/dev/null \
+       || { [ -z "$PCIE_AER_SRC" ] && { [ "$_c" -gt 0 ] || [ "$_u" -gt 0 ]; }; }; then
+        _AER_U_MAX="$_u"; _AER_C_MAX="$_c"
         PCIE_AER_SRC="$(basename "$_aer_c")"
         PCIE_AER_BDFS=$(printf '%s\n' "$_aer_out" | grep -oE "[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]" \
             | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s（%s 次）%s", $2, $1, (NR<3?"、":"")}' | sed 's/、$//')

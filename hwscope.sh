@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.53.46 (2026-10)
+# Version : 1.54.0 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.53.46"
+HWSCOPE_VERSION="v1.54.0"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -319,7 +319,9 @@ _bmc_prompt_pass() {
     # 再回退到 /dev/tty 交互提示。反过来会死锁 —— 无交互终端时 /dev/tty 存在且"可读"，
     # 但 read 永远等不到输入（WSL / CI / nohup 实测：脚本挂到 timeout 124、零输出）。
     if [ ! -t 0 ]; then
-        IFS= read -r _p || true
+        # P3-1：管道分支也加超时 —— 若 stdin 是一条不关闭的管道（挂着的 ssh 会话等），
+        #   无超时的 read 会无限阻塞，把采集变成"卡住"
+        IFS= read -r -t "${BMC_PASS_TIMEOUT:-300}" _p || true
     elif [ -r /dev/tty ]; then
         printf '%s: ' "$_label" > /dev/tty
         # 超时兜底：无人值守时最多等 BMC_PASS_TIMEOUT 秒（默认 300），超时按"未输入"继续
@@ -346,7 +348,9 @@ echo "平台: ${PLATFORM} (GPU: ${GPU_COUNT:-0})"
 _up_sec=$(awk '{print $1}' /proc/uptime 2>/dev/null | cut -d. -f1)
 case "${_up_sec:-}" in
     ''|*[!0-9]*) : ;;
-    *) [ "$_up_sec" -lt 120 ] && echo -e "${YELLOW}[WARN] 系统开机仅 ${_up_sec} 秒——GPU/网卡可能尚未枚举完成，建议开机 ≥2 分钟后重新采集（本次仍继续）${NC}";;
+    # P3-4：阈值 180 秒，与报告端 report/sections/10_env_mb_cpu.sh 的 COLLECT_EARLY 判据保持一致
+    #   （同一事实两处口径不同会让"报告说刚开机、采集器没提醒"对不上）
+    *) [ "$_up_sec" -lt 180 ] && echo -e "${YELLOW}[WARN] 系统开机仅 ${_up_sec} 秒（不足 3 分钟）——GPU/网卡可能尚未枚举完成，建议开机 ≥2 分钟后重新采集（本次仍继续）${NC}";;
 esac
 echo "输出: ${OUTPUT_BASE}"
 echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
