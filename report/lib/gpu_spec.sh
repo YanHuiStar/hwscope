@@ -41,7 +41,13 @@
             *GH200*)                 echo "96" ;;
             *H200*)                  echo "141" ;;
             *H20*)                   echo "96" ;;
-            *H100*|*H800*)           echo "80" ;;
+            # v1.54.1：H100 有 4 个官方容量形态，只认 80 会把 94/96 的判成"魔改"：
+            #   SXM5 80GB(HBM3 5120b) / SXM5 96GB(HBM3 5120b) / PCIe 80GB(HBM2e) /
+            #   PCIe 96GB(HBM3 6144b) / NVL 94GB(HBM3 6016b，官方 Product Brief 明载)
+            #   H800 为 80GB 单一容量。
+            *"H100 NVL"*)            echo "94" ;;          # NVL 专用 94GB，须在通配 H100 之前
+            *H100*)                  echo "80|94|96" ;;
+            *H800*)                  echo "80" ;;
             *AX800*|*A100*|*A800*)   echo "40|80" ;;
             *A30*|*A10*)             echo "24" ;;
             *A16*)                   echo "16" ;;
