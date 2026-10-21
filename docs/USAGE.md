@@ -62,7 +62,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 | 12 | bmc | BMC/IPMI 带外信息 | ipmitool + Redfish | `MODULE_BMC` |
 | 13 | nvsm | NVSM 综合(条件执行) | nvsm | `MODULE_NVSM` |
 | 14 | dcgm | DCGM 诊断(条件执行) | dcgmi | `MODULE_DCGM` |
-| 15 | firmware | 固件合规 (VBIOS/BMC/NIC/NVSwitch) | 对照 `conf/fw_required.txt` | `MODULE_FIRMWARE` |
+| 15 | firmware | 固件清单+合规 (BIOS/BMC/GPU VBIOS/微码/网卡/存储/NVSwitch，厂商无关) | 对照 `conf/fw_required.txt` | `MODULE_FIRMWARE` |
 | 16 | power | 能耗台账 (累计能耗) | BMC 累计能耗 + DCMI/Redfish 快照 | `MODULE_POWER` |
 | 99 | os | OS 基础信息 | — | `MODULE_OS` |
 
