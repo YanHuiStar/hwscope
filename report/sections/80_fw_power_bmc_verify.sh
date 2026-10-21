@@ -17,6 +17,30 @@ if [ -f "${fw_compliance}" ]; then
 fi
 # v1.48.25：固件合规"功能启用"判定——fw_required.txt 有真实基线（判定含 合规/落后/较新）才有展示意义；
 # 默认全注释基线 → 全"未知"行 → 报告固件合规段隐藏（避免每份报告带"无基线"噪音），录入基线后自动显示
+# v1.53.39：**旧采集数据**的过滤（v1.53.38 及更早产出的 fw_compliance.csv 含误报行）
+#   ① NVSWITCH 行在非 NVIDIA 平台一律丢弃——旧实现把 `nvswitch-audit --help` 的**工具版本**
+#      记成 NVSwitch 固件，AMD 整机会凭空出现「NVSwitch 615.71.09」。
+#   ② STORAGE 行若是 USB 盘（现场 U 盘，非交付数据盘）丢弃。
+#   ③ NIC 行若是 USB 网卡（BDF 为接口路径）丢弃。
+if [ -n "${FW_COMPLIANCE_DETAILS:-}" ]; then
+    _fw_usb_devs=$(grep -vE "^#|^$" "${OUT}/storage/block_devices_all.log" 2>/dev/null \
+        | awk '{u=0; for(i=2;i<=NF;i++) if($i=="usb") u=1; if(u) print $1}' | tr '\n' '|' | sed 's/|$//')
+    FW_COMPLIANCE_DETAILS=$(printf '%s\n' "$FW_COMPLIANCE_DETAILS" | while IFS='|' read -r fc fd fcur fbase fst fnote; do
+        [ -z "$fc" ] && continue
+        case "$fc" in
+            NVSWITCH)
+                case "${GPU_PLATFORM:-none}" in nvidia|mixed) : ;; *) continue ;; esac ;;
+            STORAGE)
+                case "|${_fw_usb_devs}|" in *"|${fd}|"*) continue ;; esac ;;
+            NIC)
+                # 设备名里带接口路径（4-1.4:1.0 之类）的是 USB 网卡
+                printf '%s' "$fd" | grep -qE '^[0-9]+-[0-9.]+:' && continue ;;
+        esac
+        printf '%s|%s|%s|%s|%s|%s\n' "$fc" "$fd" "$fcur" "$fbase" "$fst" "$fnote"
+    done)
+    [ -z "$FW_COMPLIANCE_DETAILS" ] && FW_COMPLIANCE_DETAILS=""
+fi
+
 FW_COMPLIANCE_ACTIVE=0
 if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
     if printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -qE "\|(合规|落后|较新)\|"; then
@@ -47,15 +71,20 @@ if [ -z "$FW_COMPLIANCE_DETAILS" ]; then
             | while IFS='|' read -r _d _b _m _s _pn _fw _r; do
                   _pn=$(printf '%s' "$_pn" | xargs); _fw=$(printf '%s' "$_fw" | xargs)
                   [ -z "$_fw" ] || [ "$_fw" = "N/A" ] && continue
+                  # USB 网卡（BDF 是接口路径）不进固件表
+                  printf '%s' "$_b" | grep -qE '^([0-9a-fA-F]{4}:)?[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$' || continue
                   case "$_pn" in ""|"N/A") _pn="$_d" ;; esac
                   printf '%s|%s|%s|—|未知|无基线（报告端兜底汇总）\n' "NIC" "$_pn" "$_fw"
               done)
         [ -n "$_fw_nic" ] && _fw_fb="${_fw_fb}${_fw_nic}"$'\n'
     fi
     # 硬盘
+    _fw_usb=$(grep -vE "^#|^$" "${OUT}/storage/block_devices_all.log" 2>/dev/null \
+        | awk '{u=0; for(i=2;i<=NF;i++) if($i=="usb") u=1; if(u) print $1}' | tr '\n' ' ')
     for _fw_sf in "${OUT}/storage"/smart_*.log "${OUT}/storage"/nvme_*_health.log; do
         [ -f "$_fw_sf" ] || continue
         _fw_dev=$(basename "$_fw_sf" | sed 's/^smart_//; s/_health\.log$//; s/\.log$//')
+        case " ${_fw_usb} " in *" ${_fw_dev} "*) continue ;; esac
         _fw_sv=$(grep -m1 -E "^Firmware Version|^Firmware Revision" "$_fw_sf" 2>/dev/null | cut -d: -f2- | xargs)
         [ -n "$_fw_sv" ] && _fw_fb="${_fw_fb}STORAGE|${_fw_dev}|${_fw_sv}|—|未知|无基线（报告端兜底汇总）"$'\n'
     done
