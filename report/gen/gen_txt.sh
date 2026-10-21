@@ -191,7 +191,7 @@ HwScope 硬件巡检报告
   SN     : ${MB_SN:-N/A}
   主板SN : ${MB_BOARD_SN:-N/A}
   BIOS   : ${BIOS_VERSION:-N/A}
-  机箱SN : ${CHASSIS_SN:-N/A}$(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then printf '\n  PCIe Fabric Switch: %s（HGX 模组互联通道）' "$FABRIC_SW"; fi)
+  机箱SN : ${CHASSIS_SN:-N/A}$(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then printf '\n  PCIe Fabric Switch: %s（模组互联通道，NVIDIA HGX 或 AMD OAM 通用）' "$FABRIC_SW"; fi)
 
 -- PCIe 拓扑与链路 --$(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
     if [ -n "$PCIE_PEX_DETAILS" ]; then printf '\n  Fabric Switch : %s' "$PCIE_PEX_DETAILS"; fi

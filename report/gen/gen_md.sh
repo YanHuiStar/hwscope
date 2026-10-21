@@ -300,7 +300,7 @@ gen_md() {
 | 主板 SN | ${MB_BOARD_SN:-N/A} |
 | BIOS | ${BIOS_VERSION:-N/A} |
 | 机箱 SN | ${CHASSIS_SN:-N/A} |
-$(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（HGX 模组互联通道） |"; fi)
+$(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（模组互联通道，NVIDIA HGX 或 AMD OAM 通用） |"; fi)
 ## PCIe 拓扑与链路
 $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_TOTAL" -gt 0 ]; then
     if [ -n "$PCIE_PEX_DETAILS" ]; then
