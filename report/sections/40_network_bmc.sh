@@ -323,6 +323,33 @@ SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not op
 SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -viE "Version Change|Hardware change detected" \
         | grep -icE "pcie|aer|uncorrectable")
 
+# ─── v1.53.36：SEL 里的 PCIe 记录要区分「历史 / 当前」───
+# 背景（实测 8×MI300X G7768 M6）：SEL 有 251 条 `PCI PERR`，时间全在 2020-01/02，
+#   而同一份 SEL 的最新事件已是 2026-01 —— 说明记录当时 BMC 时钟未校准（出厂前/产线烧机）。
+#   直接渲染「251 条 PCIe 错误」会让客户当成当前链路故障（该机 OS 侧 AER 为 0、125 条链路全满速）。
+# 判据：PCIe 记录的最新一天比 SEL 最新事件早 90 天以上 → 标「历史记录」，否则给时间跨度。
+SEL_PCIE_ERR_NOTE=""; SEL_PCIE_ERR_SPAN=""
+if [ "${SEL_PCIE_ERR:-0}" -gt 0 ] 2>/dev/null; then
+    _sel_plain=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
+        | grep -vE "Could not open|Unable|No such file|command failed|device at /dev")
+    _pcie_es=$(printf '%s\n' "$_sel_plain" | grep -viE "Version Change|Hardware change detected" \
+        | grep -iE "pcie|aer|uncorrectable" | grep -oE "[0-9]{2}/[0-9]{2}/[0-9]{4}" \
+        | while read -r _d; do LC_ALL=C date -d "$_d" +%s 2>/dev/null; done | sort -n)
+    _all_es=$(printf '%s\n' "$_sel_plain" | grep -oE "[0-9]{2}/[0-9]{2}/[0-9]{4}" \
+        | while read -r _d; do LC_ALL=C date -d "$_d" +%s 2>/dev/null; done | sort -n)
+    if [ -n "$_pcie_es" ]; then
+        _p_first=$(printf '%s\n' "$_pcie_es" | head -1)
+        _p_last=$(printf '%s\n' "$_pcie_es" | tail -1)
+        _a_last=$(printf '%s\n' "$_all_es" | tail -1)
+        SEL_PCIE_ERR_SPAN="$(LC_ALL=C date -d "@$_p_first" +%Y-%m-%d) ~ $(LC_ALL=C date -d "@$_p_last" +%Y-%m-%d)"
+        if [ -n "$_a_last" ] && [ "$(( (_a_last - _p_last) / 86400 ))" -ge 90 ] 2>/dev/null; then
+            SEL_PCIE_ERR_NOTE="**全部为历史记录**（${SEL_PCIE_ERR_SPAN}，比 SEL 最新事件早 $(( (_a_last - _p_last) / 86400 )) 天，当时 BMC 时钟未校准）——非当前链路故障"
+        else
+            SEL_PCIE_ERR_NOTE="（时间跨度 ${SEL_PCIE_ERR_SPAN}）"
+        fi
+    fi
+fi
+
 # ─── v1.48.86：SEL 告警终态（未解除 / 已自愈）───
 # SEL 的 Asserted/Deasserted 是**同一事件的进入/解除两态**：同「传感器 + 事件类型」出现
 # Deasserted 即表示该项已恢复正常。旧实现只用 `grep -ciE "critical|fatal"` 数行，
