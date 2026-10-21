@@ -72,6 +72,17 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 
 > ✅ **国产五家适配器已接入（v1.52.0）**：`detect_gpu_vendors`（lib/platform.sh）已补寒武纪/壁仞/摩尔线程/沐曦/天数智芯的 lspci 厂商串映射，单厂商与 mixed 混插均分发到厂商适配器（04_gpu.sh）。**厂商串【待真机核对】**——各厂 lspci vendor name 以真机输出为准校准；未匹配时回落 generic lspci 兜底，行为不劣于改前。
 
+### 采集侧行为约定（v1.53.34–.44）
+
+| 场景 | 行为 |
+|------|------|
+| 非 NVIDIA 加速卡主机（AMD OAM / 昇腾 / 国产） | **不判 GPU 机头**——`nvidia-smi` 报 0 卡时补跑 lspci 多厂商探测，有加速卡即按 GPU 形态判；同时**跳过**仅 NVIDIA 适用的模块（`05_nvswitch` / `14_dcgm` / `15_firmware` / `99_os` 的 NVIDIA 分支） |
+| AMD 平台工具探测 | `amd-smi` 与 `rocm-smi` 都先试 `--json` 再试 `-j`（老版 amd-smi 只认 `-j`），确定后全程用同一选项；**用哪个工具/版本落盘 `gpu/gpu_amd_tool.log`**（新版 amd-smi 的异构 JSON schema 另存 `gpu_amd_new_schema.log`，不顶掉 rocm-smi） |
+| 开机后立即采集 | `/proc/uptime` < 120 秒时打印 `[WARN] 系统开机仅 N 秒——GPU/网卡可能尚未枚举完成`，**继续采集**；报告端同步给「采集时机」提示，且不把「无 GPU」当结论 |
+| USB 网卡 / USB 设备 | 跳过 `ethtool -m` 与 `lspci -s`（无光模块、BDF 不是 PCI 地址）；USB 类设备在链路统计里单列「外设」 |
+| 假 WARN 豁免（v1.53.37） | `psu_present`（服务器 PSU 走 BMC，无 `/sys/class/power_supply`）、`ipmi_lan2`（BMC 只暴露 1 个 LAN 通道）、`ipmi_fru_all`（末段 FRU 读不到但其余 13 段全出）均按**内容级**豁免，不再计 WARN；BMC 整体不可达仍照常记 WARN |
+| 功耗读数 | `16_power` 复用 `10_psu` 已取到的 `psu/ipmi_dcmi_power.log`，避免同一报告出现两个不同的 DCMI 瞬时值；文件无效才自行查询 |
+
 ## 报告生成
 
 > 报告体系为独立 `report/` 模块（v1.35.0）：主入口 `report/report.sh`（v1.35.3 起移除 tools/ 兼容 wrapper，统一新路径）。
