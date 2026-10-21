@@ -100,8 +100,8 @@ run_firmware() {
     if ! has_nvidia_gpu; then
         _vbios_cmd="echo '# SKIP: 本机无 NVIDIA GPU（AMD/昇腾等平台无 nvidia VBIOS）'"
     fi
-    run_and_log_parallel 4 \\
-        "${_vbios_cmd}" "${dir}/gpu_vbios.csv" \\
+    run_and_log_parallel 4 \
+        "${_vbios_cmd}" "${dir}/gpu_vbios.csv" \
         "${fw_ipmi_fast} bash -c \"ipmitool mc info 2>&1\"" "${dir}/bmc_mc.log" \
         "mlxfwmanager --query 2>&1" "${dir}/nic_fwmanager.log" \
         "nvswitch-audit --help 2>&1" "${dir}/nvswitch_version.log"
@@ -118,20 +118,53 @@ run_firmware() {
         done
     fi
 
+    # v1.53.38：模块上下文里没有 OUT 变量（父进程导出的是 OUTPUT_BASE/OUTPUT_DIR），
+    #   本文件内统一用 _root 反推采集根目录——用 ${OUT} 会变成「/motherboard/…」而整段落空。
+    local _root="${dir%/firmware}"
+
     # ─── 汇总原始版本清单（fw_versions.log，供人工核阅） ───
+    # v1.53.38：清单改为**厂商无关**。此前只收 nvidia-smi / mlxfwmanager / nvswitch 三路，
+    #   在 AMD 整机上三路全空（实测 8×MI300X），固件清单只剩空标题、验收判「无固件数据」。
+    #   现补：① BIOS（dmidecode Type 0）② AMD GPU VBIOS + 微码（rocm-smi JSON）
+    #        ③ 存储盘固件（smartctl/nvme 日志）④ 保留原 NVIDIA/NIC/NVSwitch 各段。
+    #   ⚠️ 另修一处致命回归：v1.53.34 那次改动把上面 run_and_log_parallel 的续行符写成 `\\`，
+    #      4 条命令因此根本没执行（实测 hwscope.log 报 `... ipmitool mc info 2>&1: command not found`，
+    #      firmware/ 只剩 2 个文件）——续行符已改正。
     {
         echo "# HwScope 固件版本清单 $(date '+%Y-%m-%d %H:%M:%S')"
         echo ""
-        echo "## GPU VBIOS"
+        echo "## BIOS（dmidecode Type 0）"
+        grep -iE "Vendor:|Version:|Release Date:" "${_root}/motherboard/dmidecode_bios.log" 2>/dev/null \
+            | sed 's/^[[:space:]]*/  /' | head -6
+        echo ""
+        echo "## BMC（ipmitool mc info）"
+        grep -iE "Firmware Revision|Manufacturer Name|Product Name" "${dir}/bmc_mc.log" 2>/dev/null \
+            | sed 's/^[[:space:]]*/  /'
+        echo ""
+        echo "## GPU VBIOS（NVIDIA）"
         grep -v "^#" "${dir}/gpu_vbios.csv" 2>/dev/null | grep -v "^$" | sed 's/^/  /'
         echo ""
-        echo "## BMC"
-        grep -iE "Firmware Revision" "${dir}/bmc_mc.log" 2>/dev/null | sed 's/^/  /'
+        echo "## GPU VBIOS（AMD / rocm-smi --showallinfo）"
+        grep -oE '"VBIOS version":[[:space:]]*"[^"]*"' "${_root}/gpu/gpu_amd_full.log" 2>/dev/null \
+            | cut -d'"' -f4 | sort -u | sed 's/^/  VBIOS: /'
         echo ""
-        echo "## NIC (mlxfwmanager)"
+        echo "## GPU 微码固件（AMD / rocm-smi --showfwinfo，取 card0）"
+        grep -oE '"(SMC|SOS|TA RAS|TA XGMI|VCN|MEC|MEC2|RLC|SDMA|SDMA2) firmware version":[[:space:]]*"[^"]*"' \
+            "${_root}/gpu/gpu_amd_fw.log" 2>/dev/null | head -10 | sed 's/^/  /'
+        echo ""
+        echo "## NIC（mlxfwmanager）"
         grep -E "Device Type:|Firmware Version:|PCI Device Name:" "${dir}/nic_fwmanager.log" 2>/dev/null | sed 's/^/  /'
         echo ""
-        echo "## NIC (ethtool 兜底)"
+        echo "## NIC（network/nic_inventory.csv——07_network 已采，厂商无关）"
+        local _nf
+        if [ -f "${_root}/network/nic_inventory.csv" ]; then
+            # 列序: dev|bdf|mac|serial|part_number|firmware|speed|width|psid|cap_speed|cap_width
+            grep -v "^#" "${_root}/network/nic_inventory.csv" 2>/dev/null | grep -v "^$" \
+                | awk -F'|' '{ m=$5; gsub(/^[ \t]+|[ \t]+$/,"",m); f=$6; gsub(/^[ \t]+|[ \t]+$/,"",f); if (f!="" && f!="N/A") print "  " (m==""||m=="N/A" ? $1 : m) " → FW " f }' \
+                | sort -u | head -20
+        fi
+        echo ""
+        echo "## NIC（ethtool 兜底）"
         local _f _n
         for _f in "${dir}"/nic_ethtool_*.log; do
             [ -f "$_f" ] || continue
@@ -139,7 +172,11 @@ run_firmware() {
             echo "  $_n: $(grep -m1 'firmware-version' "$_f" 2>/dev/null | cut -d: -f2- | xargs)"
         done
         echo ""
-        echo "## NVSwitch"
+        echo "## 存储盘固件（smartctl / nvme）"
+        grep -rhE "^Firmware Version|^Firmware Revision" "${_root}/storage"/smart_*.log "${_root}/storage"/nvme_*_health.log 2>/dev/null \
+            | sed 's/^[[:space:]]*/  /' | sort | uniq -c | sed 's/^ *[0-9]* *//' | head -12
+        echo ""
+        echo "## NVSwitch（nvidia-fabricmanager 包）"
         grep -v "^#" "${dir}/nvswitch_version.log" 2>/dev/null | grep --line-buffered -iE "Version|Firmware" | sed 's/^/  /'
     } > "${dir}/fw_versions.log"
 
@@ -211,6 +248,39 @@ run_firmware() {
             [ -n "$cur" ] && { fw_emit "NIC" "$_n" "$cur"; nic_hit=1; }
         done
     fi
+
+    # NIC 固件（来自 nic_inventory.csv，厂商无关；同型号同版本只判一次）
+    if [ -f "${_root}/network/nic_inventory.csv" ]; then
+        while IFS='|' read -r _nd _nb _nm _ns _npn _nfw _rest; do
+            case "$_nd" in ""|"#"*) continue ;; esac
+            _npn=$(printf '%s' "$_npn" | xargs); _nfw=$(printf '%s' "$_nfw" | xargs)
+            [ -z "$_nfw" ] || [ "$_nfw" = "N/A" ] && continue
+            # 型号缺失（USB 网卡 part_number 为 N/A）时回退到接口名，避免出现「NIC|N/A」这种行
+            _ndev_lbl="$_npn"
+            case "$_ndev_lbl" in ""|"N/A") _ndev_lbl="$_nd" ;; esac
+            fw_emit "NIC" "$_ndev_lbl" "$_nfw"
+        done < <(grep -v "^#" "${_root}/network/nic_inventory.csv" 2>/dev/null | awk -F'|' '!seen[$5"|"$6]++')
+    fi
+
+    # v1.53.38：补齐非 NVIDIA 平台的固件判定项（此前 AMD 机 fw_compliance.csv 只有表头，
+    #   验收只能判「无固件数据」）。无基线时 fw_emit 会写「未知」，属如实记录而非漏采。
+    cur=$(grep -iE "^[[:space:]]*Version:" "${_root}/motherboard/dmidecode_bios.log" 2>/dev/null \
+          | head -1 | cut -d: -f2- | xargs)
+    [ -n "$cur" ] && fw_emit "BIOS" "主板 BIOS" "$cur"
+
+    if [ -f "${_root}/gpu/gpu_amd_full.log" ]; then
+        for cur in $(grep -oE '"VBIOS version":[[:space:]]*"[^"]*"' "${_root}/gpu/gpu_amd_full.log" 2>/dev/null \
+                     | cut -d'"' -f4 | sort -u); do
+            fw_emit "GPU_VBIOS" "AMD GPU（rocm-smi）" "$cur"
+        done
+    fi
+
+    for _sf in "${_root}/storage"/smart_*.log "${_root}/storage"/nvme_*_health.log; do
+        [ -f "$_sf" ] || continue
+        _sdev=$(basename "$_sf" | sed 's/^smart_//; s/_health\.log$//; s/\.log$//')
+        cur=$(grep -m1 -E "^Firmware Version|^Firmware Revision" "$_sf" 2>/dev/null | cut -d: -f2- | xargs)
+        [ -n "$cur" ] && fw_emit "STORAGE" "$_sdev" "$cur"
+    done
 
     # NVSwitch 版本（v1.51.3 起来源为 `nvswitch-audit --help`——注意**不加 `| head -1`**：
     # 其 --help 首行是**空行**，加了会让下方解析链整体落空、固件表该行消失，v1.51.3 实测踩坑。

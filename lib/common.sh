@@ -321,6 +321,13 @@ _rc_content_known_benign() {
     if grep -qF 'FRU Device Description' "$_lf" 2>/dev/null; then
         return 0
     fi
+    # ── 用例④（v1.53.38）：`ipmitool lan print <N>` 打印了完整 LAN 配置却 exit=1 ──
+    #   实测 G7768 M6（重采后）：channel 1 输出了 MAC/IP/网关等全部字段后仍退出 1
+    #   （某个可选字段读失败），旧判定记 WARN。判据：日志含 `MAC Address :` 行即数据已取到；
+    #   空输出/纯错误仍记 WARN（不放过真失败）。
+    if grep -qE "^[[:space:]]*MAC Address[[:space:]]*:" "$_lf" 2>/dev/null; then
+        return 0
+    fi
     # ── 用例③（v1.53.37）：`ipmitool lan print <N>` 的通道不存在 ──
     #   实测该平台只有 1 个 LAN 通道，`lan print 2` 报 `Get Channel Info command failed: Destination unavailable`
     #   + `Invalid channel: 2` —— 平台形态，不是故障。

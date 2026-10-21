@@ -24,6 +24,45 @@ if [ -n "$FW_COMPLIANCE_DETAILS" ]; then
     fi
 fi
 
+# ─── v1.53.38：固件清单**报告端兜底**（旧采集 / 15_firmware 无产出时）───
+# 背景：15_firmware 的清单与合规 csv 是**采集时**生成的；旧采集（或 v1.53.34~37 那版
+#   续行符 bug 期间）firmware/ 里没有 fw_compliance.csv 行，报告固件段整段消失——
+#   客户以为没采，其实 BIOS/GPU/网卡/硬盘固件数据都在别的日志里。
+#   此处用**已有日志**汇总一份最小清单（BIOS / GPU VBIOS / 网卡 / 硬盘），全部标「未知（无基线）」，
+#   并在说明里注明来源是报告端兜底，提示重采可拿到完整清单（含 BMC / NVSwitch / 微码）。
+if [ -z "$FW_COMPLIANCE_DETAILS" ]; then
+    _fw_fb=""
+    # BIOS
+    _fw_bios=$(grep -iE "^[[:space:]]*Version:" "${OUT}/motherboard/dmidecode_bios.log" 2>/dev/null | head -1 | cut -d: -f2- | xargs)
+    [ -n "$_fw_bios" ] && _fw_fb="${_fw_fb}BIOS|主板 BIOS|${_fw_bios}|—|未知|无基线（报告端兜底汇总）"$'\n'
+    # GPU VBIOS
+    if [ -f "${OUT}/gpu/gpu_amd_full.log" ]; then
+        for _fw_v in $(grep -oE '"VBIOS version":[[:space:]]*"[^"]*"' "${OUT}/gpu/gpu_amd_full.log" 2>/dev/null | cut -d'"' -f4 | sort -u); do
+            _fw_fb="${_fw_fb}GPU_VBIOS|AMD GPU（rocm-smi）|${_fw_v}|—|未知|无基线（报告端兜底汇总）"$'\n'
+        done
+    fi
+    # 网卡（nic_inventory.csv 固件列）
+    if [ -f "${OUT}/network/nic_inventory.csv" ]; then
+        _fw_nic=$(grep -v "^#" "${OUT}/network/nic_inventory.csv" 2>/dev/null | awk -F'|' '!seen[$5"|"$6]++' \
+            | while IFS='|' read -r _d _b _m _s _pn _fw _r; do
+                  _pn=$(printf '%s' "$_pn" | xargs); _fw=$(printf '%s' "$_fw" | xargs)
+                  [ -z "$_fw" ] || [ "$_fw" = "N/A" ] && continue
+                  case "$_pn" in ""|"N/A") _pn="$_d" ;; esac
+                  printf '%s|%s|%s|—|未知|无基线（报告端兜底汇总）\n' "NIC" "$_pn" "$_fw"
+              done)
+        [ -n "$_fw_nic" ] && _fw_fb="${_fw_fb}${_fw_nic}"$'\n'
+    fi
+    # 硬盘
+    for _fw_sf in "${OUT}/storage"/smart_*.log "${OUT}/storage"/nvme_*_health.log; do
+        [ -f "$_fw_sf" ] || continue
+        _fw_dev=$(basename "$_fw_sf" | sed 's/^smart_//; s/_health\.log$//; s/\.log$//')
+        _fw_sv=$(grep -m1 -E "^Firmware Version|^Firmware Revision" "$_fw_sf" 2>/dev/null | cut -d: -f2- | xargs)
+        [ -n "$_fw_sv" ] && _fw_fb="${_fw_fb}STORAGE|${_fw_dev}|${_fw_sv}|—|未知|无基线（报告端兜底汇总）"$'\n'
+    done
+    FW_COMPLIANCE_DETAILS=$(printf '%s' "$_fw_fb" | grep -v "^$")
+    FW_SUMMARY="报告端兜底汇总（旧采集缺 firmware/fw_compliance.csv）：共 $(printf '%s\n' "$FW_COMPLIANCE_DETAILS" | grep -c .) 项，重建采集可获得 BMC/NVSwitch/GPU 微码等完整清单"
+fi
+
 # ─── 能耗台账（16_power 模块输出；无数据段隐藏） ───
 PWR_DIR="${OUT}/power"
 load_manifest "${PWR_DIR}" energy_inventory "energy_inventory.csv"
