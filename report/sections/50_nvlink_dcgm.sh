@@ -66,7 +66,7 @@ if [ -f "${dcgmi_diag_level1}" ]; then
     DCGM_DIAG_VER=$(grep -m1 "DCGM Version" "${dcgmi_diag_level1}" 2>/dev/null | grep -oP 'DCGM Version\s+\|\s*\K[0-9.]+' | head -1)
     if grep -qiE "No available testing entities|Unable to complete diagnostic|Return: \(-30\)|Couldn't find match" "${dcgmi_diag_level1}" 2>/dev/null; then
         if [ "$HEAD_NODE" -eq 1 ]; then
-            DCGM_SUMMARY="N/A（GPU 机头无 GPU，模组单独采集）"
+            DCGM_SUMMARY="N/A（未识别到 GPU 模组——PCI 未枚举到加速卡）"
         else
             DCGM_SUMMARY="N/A（无 GPU/无测试实体，未运行诊断）"
         fi
@@ -109,7 +109,7 @@ fi
 HEALTH_TXT=""
 if [ "$GPU_COUNT" -eq 0 ]; then
     if [ "$HEAD_NODE" -eq 1 ]; then
-        HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (GPU 机头无本地 GPU，模组单独采集)"$'\n'
+        HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : N/A (未识别到 GPU 模组，PCI 未枚举到加速卡)"$'\n'
     elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
         HEALTH_TXT="${HEALTH_TXT}  PCIe链路 : ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU 但管理工具无数据（驱动未安装或异常）"$'\n'
     else
@@ -124,7 +124,7 @@ fi
 if [ -n "$DCGM_SUMMARY" ] && [ "$DCGM_SUMMARY" != "N/A" ]; then
     HEALTH_TXT="${HEALTH_TXT}  DCGM诊断 : ${DCGM_SUMMARY}"$'\n'
 elif [ "$HEAD_NODE" -eq 1 ]; then
-    HEALTH_TXT="${HEALTH_TXT}  DCGM诊断 : N/A（GPU 机头无 GPU，模组单独采集）"$'\n'
+    HEALTH_TXT="${HEALTH_TXT}  DCGM诊断 : N/A（未识别到 GPU 模组）"$'\n'
 fi
 if [ -n "$DCGM_NOTICE" ]; then
     HEALTH_TXT="${HEALTH_TXT}  ⚠️ ${DCGM_NOTICE}"$'\n'

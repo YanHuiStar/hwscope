@@ -254,7 +254,7 @@ $(if [ "$GPU_COUNT" -eq 0 ]; then
     if [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         echo "  ⚠️ 未识别到 GPU 模组（本次采集未枚举到加速卡：${GPU_MODULE_REASON}）——建议开机 ≥2 分钟后复采；如现场应有模组请核查在位/上电"
     elif [ "$HEAD_NODE" -eq 1 ]; then
-        echo "  GPU 机头（无本地 GPU，GPU 模组经 PCIe Fabric 单独接入，需单独采集）"
+        echo "  未识别到 GPU 模组（PCI 未枚举到加速卡，采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}）——如本机应有模组请现场核查在位/上电"
     elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
         echo "  ⚠️ 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} GPU（PCI 3D controller/加速卡），但管理工具无数据（驱动未安装或异常）"
     else
