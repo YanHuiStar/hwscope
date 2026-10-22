@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.54.4 (2026-10)
+# Version : 1.54.5 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,10 +85,11 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.54.4"
+HWSCOPE_VERSION="v1.54.5"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
+BMC_AUTO="${BMC_AUTO:-1}"        # v1.54.5：不给 --bmc-ip 时自动从带内探测 BMC 地址（--no-bmc-auto 关闭）
 FORCE_MODE="${FORCE:-0}"; STAMP_MODE=0; QUIET=0; PARALLEL=1; NO_MODULE=0; MODULE_PARALLEL=1
 TEST_DIR=""
 
@@ -154,6 +155,8 @@ while [[ $# -gt 0 ]]; do
             fi
             TEST_DIR="$2"; shift 2 ;;
         # v1.53.45：BMC 直连参数（不给则沿用 conf；密码一律运行时交互输入，不接受命令行/环境变量）
+        --bmc-auto)        BMC_AUTO=1; shift ;;
+        --no-bmc-auto)     BMC_AUTO=0; shift ;;
         --bmc-ip)          [ -n "${2:-}" ] || { echo -e "${RED}错误: --bmc-ip 需要 BMC 地址${NC}"; exit 1; }; BMC_IP="$2"; shift 2 ;;
         --bmc-user)        [ -n "${2:-}" ] || { echo -e "${RED}错误: --bmc-user 需要用户名${NC}"; exit 1; }; BMC_USER="$2"; shift 2 ;;
         --hgx-bmc-ip)      [ -n "${2:-}" ] || { echo -e "${RED}错误: --hgx-bmc-ip 需要 HGX 基板 BMC 地址${NC}"; exit 1; }; HGX_BMC_IP="$2"; shift 2 ;;
@@ -315,26 +318,78 @@ _bmc_prompt_pass() {
     local _var="$1" _label="$2"
     [ -n "${!_var:-}" ] && return 0
     local _p=""
+    # v1.54.5：自动探测/手工补录得到 IP 时，密码等 ${BMC_PASS_TIMEOUT_AUTO:-20}s 即可跳过，
+    #   且不刷 WARN（无人值守批量采集不该因没人看着就报错）。显式 --bmc-ip 仍用 300s + WARN。
+    local _tmo="${BMC_PASS_TIMEOUT:-300}" _quiet=0 _hint=""
+    if [ "${BMC_PASS_FROM_AUTO:-0}" -eq 1 ] 2>/dev/null; then
+        _tmo="${BMC_PASS_TIMEOUT_AUTO:-20}"; _quiet=1; _hint="（回车跳过带外）"
+    fi
     # 顺序很重要：**stdin 是管道时优先读 stdin**（remote_collect 通过管道递密码的场景），
     # 再回退到 /dev/tty 交互提示。反过来会死锁 —— 无交互终端时 /dev/tty 存在且"可读"，
     # 但 read 永远等不到输入（WSL / CI / nohup 实测：脚本挂到 timeout 124、零输出）。
     if [ ! -t 0 ]; then
         # P3-1：管道分支也加超时 —— 若 stdin 是一条不关闭的管道（挂着的 ssh 会话等），
         #   无超时的 read 会无限阻塞，把采集变成"卡住"
-        IFS= read -r -t "${BMC_PASS_TIMEOUT:-300}" _p || true
+        IFS= read -r -t "$_tmo" _p || true
     elif [ -r /dev/tty ]; then
-        printf '%s: ' "$_label" > /dev/tty
+        printf '%s%s: ' "$_label" "$_hint" > /dev/tty
         # 超时兜底：无人值守时最多等 BMC_PASS_TIMEOUT 秒（默认 300），超时按"未输入"继续
-        IFS= read -rs -t "${BMC_PASS_TIMEOUT:-300}" _p < /dev/tty || true
+        IFS= read -rs -t "$_tmo" _p < /dev/tty || true
         printf '\n' > /dev/tty
     fi
     if [ -n "$_p" ]; then
         export "$_var=$_p"
+    elif [ "$_quiet" -eq 1 ]; then
+        # 自动探测场景：没输密码 = 明确跳过带外，顺手清掉 IP 免得多跑一遍必失败的带外命令
+        unset "$_var" 2>/dev/null || true
+        if [ "$_var" = "BMC_PASS" ]; then BMC_IP=""; export BMC_IP; fi
+        echo -e "${YELLOW}[INFO] 未输入 BMC 密码 — 跳过带外采集（只采带内）${NC}" >&2
     else
         echo -e "${YELLOW}[WARN] ${_label} 未输入，${_var%%_PASS}_BMC 带外采集可能失败${NC}" >&2
     fi
     unset _p
 }
+# ─── v1.54.5：带外 BMC 地址自动探测（仅当没给 --bmc-ip 时）───
+#   依据：带内（KCS）读 BMC 的 LAN 配置**不需要密码**，所以本机采集能自己问出来。
+#   但通道各家不一（实测同一台机：channel 1 = 0.0.0.0、channel 7 = 169.254.x、channel 8 = 真实管理口），
+#   故遍历 1–14 取第一个「非 0.0.0.0 / 非 169.254.x」的 IPv4，并把**命中的通道号打印出来**便于现场核对。
+BMC_AUTO_CHANNEL=""; BMC_PASS_FROM_AUTO=0
+#   能力探测代替 uid 判断：先用一条 `ipmitool mc info`（带内 KCS）确认带内可用——
+#   不可用就整块跳过（否则 14 个通道各等一次超时，白拖十几秒）。
+if [ -z "${BMC_IP:-}" ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null && check_cmd ipmitool \
+   && timeout 5 ipmitool mc info >/dev/null 2>&1; then
+    _cands=""
+    for _ch in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
+        _ip=$(timeout "${IPMI_TIMEOUT_FAST:-30}" ipmitool lan print "$_ch" 2>/dev/null \
+              | awk -F: '/^IP Address[ ]*:/ && $0 !~ /Source/ {v=$2; gsub(/[ \t]/,"",v); if (v != "" && v != "0.0.0.0" && v !~ /^169[.]254[.]/) print v; exit}')
+        [ -n "$_ip" ] && _cands="${_cands}${_ch}|${_ip}\n"
+    done
+    if [ -n "$_cands" ]; then
+        BMC_AUTO_CHANNEL=$(printf '%b' "$_cands" | head -1 | cut -d'|' -f1)
+        BMC_IP=$(printf '%b' "$_cands" | head -1 | cut -d'|' -f2)
+        export BMC_IP
+        echo -e "${CYAN}[INFO] 带内探测到 BMC 地址: ${BMC_IP}（通道 ${BMC_AUTO_CHANNEL}）${NC}"
+        _n=$(printf '%b' "$_cands" | grep -c .)
+        if [ "$_n" -gt 1 ]; then
+            echo -e "${CYAN}[INFO] 共 ${_n} 个通道配了地址: $(printf '%b' "$_cands" | tr '\n' ' ')（已取通道 ${BMC_AUTO_CHANNEL}；要指定请用 --bmc-ip）${NC}"
+        fi
+        BMC_PASS_FROM_AUTO=1
+    elif [ -r /dev/tty ]; then
+        # 探测不到（未配置 / 全 0.0.0.0 / 无带内权限）→ 交互补录，超时不阻塞无人值守
+        printf '[输入] 未从带内探测到 BMC IP（各通道均为 0.0.0.0 / 169.254 或未配置）。\n        请手输带外 BMC IP（直接回车 = 本次不采带外）: ' > /dev/tty
+        _ans=""
+        IFS= read -r -t "${BMC_IP_PROMPT_TIMEOUT:-20}" _ans < /dev/tty || true
+        printf '\n' > /dev/tty
+        if [ -n "$_ans" ]; then
+            BMC_IP="$_ans"; export BMC_IP
+            echo -e "${CYAN}[INFO] 使用手工输入的 BMC 地址: ${BMC_IP}${NC}"
+            BMC_PASS_FROM_AUTO=1
+        else
+            echo -e "${YELLOW}[INFO] 未提供 BMC IP — 本次只采带内（KCS），不做带外采集${NC}"
+        fi
+    fi
+fi
+
 [ -n "${BMC_IP:-}" ]     && _bmc_prompt_pass BMC_PASS     "BMC 密码"
 [ -n "${HGX_BMC_IP:-}" ] && _bmc_prompt_pass HGX_BMC_PASS "HGX 基板 BMC 密码"
 

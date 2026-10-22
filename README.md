@@ -1,6 +1,6 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.54.4-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
+![Version](https://img.shields.io/badge/Version-1.54.5-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。针对 HGX 系列（H200/B200/B300）、PCIe GPU 服务器、AMD Instinct（ROCm）、华为昇腾（Atlas）及无 GPU 机头，以组件级粒度采集硬件信息，自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
@@ -26,6 +26,12 @@ sudo bash hwscope.sh --skip dcgm,nvsm    # 跳过指定模块
 
 # 生成报告（采集后自动生成；也可对任意采集目录手动重跑）
 bash report/report.sh output/<机器ID> --acceptance
+
+# 带外 BMC（FRU/SEL/传感器/DCMI 走网口；地址默认从带内自动探测，并打印命中的通道号）
+sudo bash hwscope.sh                      # 自动探测 BMC 地址 → 提示输入密码（回车=跳过带外）
+sudo bash hwscope.sh --bmc-ip 10.0.0.9 --bmc-user admin           # 手动指定
+sudo bash hwscope.sh --bmc-ip <主机BMC> --hgx-bmc-ip <HGX基板BMC>       # HGX 双 BMC
+sudo bash hwscope.sh --no-bmc-auto        # 只采带内（KCS），不探测也不采带外
 
 # 模块开关 / BMC 凭据 / 输出目录：conf/hwscope.conf（默认全开，缺失工具自动跳过）
 
