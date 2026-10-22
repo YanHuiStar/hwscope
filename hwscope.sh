@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.54.2 (2026-10)
+# Version : 1.54.4 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.54.2"
+HWSCOPE_VERSION="v1.54.4"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -375,6 +375,13 @@ export NO_MODULE         # 跳光模块开关（--no-module 置 1；07_network �
 #   `<OUTPUT_BASE>/.ipmi_snapshot`（不存在）→ 清理恒为空操作、快照残留；TTL 3600s 内二次采集
 #   会**静默复用上一轮的 BMC 传感器数据**（写进新输出目录，报告当本次数据渲染）。
 export OUTPUT_BASE
+# v1.54.3：BMC 参数必须 export（真机实测 2026-10-22 发现的 bug）
+#   模块全部在**独立 bash 子进程**执行，只拿到位置参数（输出目录）；父进程里
+#   `--bmc-ip` 解析出的 BMC_IP / BMC_USER / BMC_PASS 若不 export 就不进子进程环境，
+#   而 12_bmc.sh 会 source conf/hwscope.conf，那里写的是 `BMC_IP="${BMC_IP:-}"`
+#   → 子进程里 BMC_IP 被重新置空 → 只采带内（KCS），带外永远不跑，
+#   表现为「给了 --bmc-ip 却看不到 -H/-I lanplus 命令」（v1.53.45 的指令行 BMC 配置因此从未生效）。
+export BMC_IP BMC_USER BMC_PASS BMC_INTERFACE HGX_BMC_IP HGX_BMC_USER HGX_BMC_PASS
 # timeout 兜底：精简容器可能无 timeout（coreutils）——缺失时直接执行（无超时保护，但模块不会因命令缺失而静默失败）
 TIMEOUT_PREFIX="timeout ${MODULE_TIMEOUT:-${MODULE_TIMEOUT_DEFAULT}}"
 check_cmd timeout || TIMEOUT_PREFIX=""

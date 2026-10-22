@@ -84,7 +84,7 @@
 ### `remote_collect.sh` — SSH 远程采集
 - **用法**：`bash tools/remote_collect.sh -H user@host [hwscope 参数...]`
 
-- **BMC 参数（v1.53.45）**：`--bmc-ip` / `--bmc-user` / `--hgx-bmc-ip` / `--hgx-bmc-user` 透传给远端 `hwscope.sh`。**BMC 密码**：root 目标机在**本地**提示输入后经 stdin 送到远端（不落盘、不进 ps）；普通用户目标机（`-t` 已分配终端）由远端 `hwscope.sh` 自己提示。
+- **BMC 参数（v1.53.45；v1.54.3 修复其从未生效的 bug）**：`--bmc-ip` / `--bmc-user` / `--hgx-bmc-ip` / `--hgx-bmc-user` 透传给远端 `hwscope.sh`。**v1.54.3**：父进程解析出的 `BMC_IP/BMC_USER/BMC_PASS/HGX_BMC_*` 原先**没有 export**，而模块在独立 bash 子进程执行、且会 `source conf/hwscope.conf`（`BMC_IP="${BMC_IP:-}"`）→ 子进程里被重新置空，实测「给了 `--bmc-ip` 却只采带内、日志里没有 `-H/-I lanplus`」；现已在 hwscope.sh 统一 export。**Windows 版 `remote_collect.ps1` 自 v1.54.4 起同样支持这四个参数**（`-BmcIp/-BmcUser/-HgxBmcIp/-HgxBmcUser`；带 BMC 参数时自动改走三步模式——单次认证模式的 stdin 被项目包占用）。**BMC 密码**：root 目标机在**本地**提示输入后经 stdin 送到远端（不落盘、不进 ps）；普通用户目标机（`-t` 已分配终端）由远端 `hwscope.sh` 自己提示。
 - **功能**：从运维机 SSH 到目标机执行完整采集（tar 推送→执行→结果回拉→清理），无需登录服务器手动跑
 - **`--install <1,2,...>`**（v1.42.0）：推送后先远端非交互装依赖（`install_tool.sh -c <列表> -y`）再采集——远程冷启动一条龙；普通用户时安装+采集合并一条 `-t` 命令（sudo 密码只输一次），安装失败中止不采集
 - **Windows 版 `tools/win/remote_collect.ps1/.bat`**（功能等价）：**root/免 sudo 走「单次认证模式」**（v1.48.63，一条 ssh 内完成推送→采集→回拉，只需输 1 次密码）；**v1.53.19 修复完成信息串台**——原用「回拉前后目录差集」定位本轮目录，多台并发采集时每一台都会看到其它台新建的目录，`$newDirs[0]` 取到另一台（实测多台同采：B 机横幅印成 A 机的 SN 与归档包），改为记录本轮实际写入的 `$replacedSNs` 优先匹配，差集仅作兜底；**采集进度实时显示**（远端输出经 stderr 透传，v1.48.82/83 修复了"整类丢弃 stderr"与"空行被刷成类型名"两个问题）；**host key 变更自动处理**（v1.48.82：备份 known_hosts → `ssh-keygen -R` → 打印新旧指纹 → 自动重试一次，仅对已知主机的变化放行）

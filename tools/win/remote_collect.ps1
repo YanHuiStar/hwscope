@@ -11,13 +11,21 @@
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -Modules gpu,cpu
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -OutDir D:\hwout
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -InstallItems 1,2   # 先远端装基础+压测依赖再采集（v1.42.1，等价 Linux --install）
+#   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -BmcIp 10.0.0.9   # 带外 BMC 采集（v1.54.4，等价 Linux --bmc-ip；运行时提示输 BMC 密码）
+#   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -BmcIp 10.0.0.9 -HgxBmcIp 10.0.0.10   # 主机 BMC + HGX 基板 BMC
 # =============================================================================
 param(
     [Parameter(Mandatory = $true)][string]$H,          # SSH 目标 user@host
     [string]$Modules = "",                             # 可选: gpu,cpu 只采部分
     [string]$OutDir = "",                              # 本地回拉目录（默认脚本同级的 output\）
     [switch]$NoSudo = $false,                          # 远端以当前用户执行（默认 sudo）
-    [string]$InstallItems = ""                         # 可选: 1,2 推送后先远端非交互装依赖（install_tool -c/-y）再采集
+    [string]$InstallItems = "",                        # 可选: 1,2 推送后先远端非交互装依赖（install_tool -c/-y）再采集
+    # v1.54.4：带外 BMC（等价 Linux --bmc-ip / --bmc-user / --hgx-bmc-ip / --hgx-bmc-user）
+    #   密码一律运行时交互输入（不落盘、不进命令行 / 进程列表 / 日志）
+    [string]$BmcIp = "",
+    [string]$BmcUser = "admin",
+    [string]$HgxBmcIp = "",
+    [string]$HgxBmcUser = "admin"
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -57,6 +65,14 @@ $TtyOpt = if ($Sudo) { " -t" } else { "" }
 # v1.48.48：native 命令（tar/ssh/scp）写 stderr 在 $ErrorActionPreference="Stop" 下会抛
 # NativeCommandError 中断脚本（即使 exit code=0，如 tar 的 "file changed as we read it" 警告）。
 # 统一包装：内层作用域设 Continue（与 native 调用同作用域，函数级赋值对脚本块不生效），成败只信退出码
+# v1.54.4：SecureString → 明文（用完由调用方置空）。BMC 密码全程只在内存里，不写临时文件。
+function ConvertFrom-SecureStringPlain {
+    param([System.Security.SecureString]$Sec)
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Sec)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+}
+
 function Invoke-Native {
     param([scriptblock]$Action)
     & { $ErrorActionPreference = "Continue"; & $Action 2>&1 } | Out-Host
@@ -173,6 +189,15 @@ try {
     $pushFile = Join-Path $env:TEMP "hwscope_push_$TS.tgz"
     $hwArgs = ""
     if ($Modules) { $hwArgs = " --modules $Modules" }
+    # v1.54.4：BMC 参数透传（与 Linux 版同形）。密码不在此处，运行时提示后经 stdin 送远端。
+    if ($BmcIp)    { $hwArgs += " --bmc-ip $BmcIp --bmc-user $BmcUser" }
+    if ($HgxBmcIp) { $hwArgs += " --hgx-bmc-ip $HgxBmcIp --hgx-bmc-user $HgxBmcUser" }
+    # 需要本地喂 BMC 密码的条件：给了 BMC IP 且远端不需要 tty（root / -NoSudo）。
+    #   单次认证模式把项目 tar 灌进 stdin，无法再用 stdin 送密码 → 此时改走三步模式。
+    $NeedBmcPipe = ((($BmcIp) -or ($HgxBmcIp)) -and (-not $Sudo))
+    if ($NeedBmcPipe) {
+        Write-Host "[INFO] 检测到 BMC 参数：本次改用三步模式（单次认证模式的 stdin 被项目包占用，无法同时传 BMC 密码）" -ForegroundColor Gray
+    }
     $rcTar = Invoke-Native { & $TarExe czf $pushFile -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp . }
     if ($rcTar -ne 0) { Write-Host "[ERROR] 本地打包失败" -ForegroundColor Red; exit 1 }
 
@@ -183,7 +208,7 @@ try {
     # v1.48.57：回拉前快照 remote_output 已有目录——本次导入的机器目录 = 新增目录（历史多机目录时不可全局搜 json，否则会取到旧机器）
     $dirsBefore = @(Get-ChildItem $remoteOutDir -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
 
-    if (-not $Sudo) {
+    if ((-not $Sudo) -and (-not $NeedBmcPipe)) {
         # ── 单次认证模式（v1.48.63）：一条 ssh 连接完成 推送 → 采集 → 回拉，全程只输 1 次密码 ──
         # 做法：本地 tar 经 stdin 送入（远端 `tar xzf -` 直接解包）；远端采集输出重定向到 stderr
         #       （本地仍逐行实时可见）；结果 tar 从 stdout 回来，由 cmd /c 重定向落盘（二进制安全，
@@ -219,7 +244,33 @@ try {
             $installCmd = "$Sudo bash tools/install_tool.sh -c $InstallItems -y && "
         }
         Write-Host "[INFO] 远端执行: $Sudo bash hwscope.sh$hwArgs（默认输出 output/<MACHINE_ID>/）" -ForegroundColor Yellow
-        $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs" } -HostName $H
+        $remoteRun = "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs"
+        if ($NeedBmcPipe) {
+            # v1.54.4：BMC 密码通道（与 Linux 版同构）——密码只经 stdin 进远端 read，随后 export 给模块。
+            #   远端命令用 ; 连接（cmd 不当分隔符），read 用 -r 防反斜杠被吃掉。
+            $reads = ""; $pwLines = @()
+            if ($BmcIp) {
+                $sec = Read-Host -AsSecureString "主机 BMC 密码（$BmcIp）"
+                $pwLines += (ConvertFrom-SecureStringPlain $sec)
+                $reads += "read -r BMC_PASS || true; export BMC_PASS; "
+            }
+            if ($HgxBmcIp) {
+                $sec = Read-Host -AsSecureString "HGX 基板 BMC 密码（$HgxBmcIp）"
+                $pwLines += (ConvertFrom-SecureStringPlain $sec)
+                $reads += "read -r HGX_BMC_PASS || true; export HGX_BMC_PASS; "
+            }
+            $bad = @($pwLines | Where-Object { $_ -match "[^\x20-\x7E]" })
+            if ($bad.Count -gt 0) {
+                Write-Host "[WARN] BMC 密码含非 ASCII 字符：Windows 版经管道可能出现编码问题，建议改用 WSL 的 tools/remote_collect.sh 跑一次" -ForegroundColor Yellow
+            }
+            $remoteRun = "mkdir -p $RemoteDir; tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null; rm -f ${RemoteDir}.tgz; cd $RemoteDir; ${reads}$installCmd$Sudo bash hwscope.sh$hwArgs"
+            $pwPayload = ($pwLines -join "`n") + "`n"
+            Write-Host "[INFO] BMC 密码经 stdin 送入远端（不落盘、不进命令行）" -ForegroundColor Gray
+            $rc = Invoke-SSHRetry "远端执行" { $pwPayload | & ssh ($SSHOpts + $TtyOpt).Split(" ") $H $remoteRun } -HostName $H
+            $pwPayload = $null; $pwLines = @()
+        } else {
+            $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H $remoteRun } -HostName $H
+        }
         if ($rc -ne 0) {
             if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源网络可达性)" -ForegroundColor Red }
             else { Write-Host "[ERROR] 推送或远端采集失败 (exit=$rc)" -ForegroundColor Red }
