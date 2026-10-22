@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.54.7 (2026-10)
+# Version : 1.54.8 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.54.7"
+HWSCOPE_VERSION="v1.54.8"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -110,7 +110,8 @@ usage() {
     echo "  --output /path/to/dir           指定输出目录"
     echo "  --force                         覆盖已有输出目录（v1.45.6 起默认即覆盖，此参数保留兼容）"
     echo "  --stamp                         输出目录加时间戳后缀（output/<SN>-<时间戳>/，保留多版本对比）"
-    echo "  --bmc-ip <IP>                   BMC 地址（不给则不采带外；密码运行时交互输入，不落盘）"
+    echo "  --bmc-ip <IP>                   BMC 地址（不给则从带内自动探测；密码运行时交互输入，不落盘）"
+    echo "  --bmc-auto / --no-bmc-auto      自动探测开关（默认开：带内读通道 1–11，通道 1 优先）"
     echo "  --bmc-user <user>               BMC 用户名（默认 admin）"
     echo "  --hgx-bmc-ip <IP>               HGX 基板 BMC 地址（板载 GPU/NVSwitch 管理口）"
     echo "  --hgx-bmc-user <user>           HGX 基板 BMC 用户名（默认 admin）"
@@ -129,7 +130,9 @@ usage() {
     echo "  sudo bash $0 --serial                     # 串行采集（实时输出）"
     echo "  sudo bash $0 --quiet                      # 并行静默采集"
     echo "  sudo bash $0 --modules gpu,storage        # 只采 GPU+存储"
-    echo "  sudo bash $0 --bmc-ip 10.0.0.1            # 带 BMC 带外采集（会提示输入 BMC 密码）"
+    echo "  sudo bash $0                              # 不带参数=自动探测 BMC 地址后提示输入密码（回车跳过带外）"
+    echo "  sudo bash $0 --no-bmc-auto                # 只采带内（KCS），不探测、不采带外"
+    echo "  sudo bash $0 --bmc-ip 10.0.0.1            # 显式指定 BMC（会提示输入 BMC 密码）"
     echo "  sudo bash $0 --bmc-ip 10.0.0.1 --hgx-bmc-ip 10.0.0.2   # HGX 双 BMC"
 }
 

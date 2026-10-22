@@ -99,7 +99,20 @@ sudo bash hwscope.sh --bmc-ip 10.0.0.1 --hgx-bmc-ip 10.0.0.2  # HGX 双 BMC（�
 - **密码**：给了 `--bmc-ip` 后**运行时提示输入**（不回显）—— 不落盘、不进 git / shell history / `ps`
 - **也可写进 `conf/hwscope.conf`（`BMC_PASS`）**：方便脚本化，但那是**明文落盘**，且远程采集会把 conf 一起推到目标机
 - **不要手工 `export BMC_PASS`** —— 会进 shell history（`remote_collect` 内部用的 stdin 传递不算手工 export）
-- 不给 `--bmc-ip` 时完全不连 BMC、也不会提示输密码（与旧行为一致）
+- **不给 `--bmc-ip`（v1.54.5 起行为变化）**：先用带内（KCS）自动探测地址（通道 1 优先，读到后打印命中的通道号），探测到才提示输密码；探测不到会提示手输 IP（20s 超时）。**只想采带内**用 `--no-bmc-auto`（完全不探测、不提示、不连 BMC）
+
+**厂商默认账户参考**（`admin` 只是最可能值，认证失败先换大小写再换厂商账户）：
+
+| 平台 | 默认账户 | 说明 |
+|------|---------|------|
+| Supermicro / ASUS / 技嘉（AMI MegaRAC） | `admin` / `admin` | 与 hwscope 默认一致 |
+| 英业达 Inventec（P9000G7 等）/ Quanta | **`ADMIN` / `ADMIN`** | **全大写**，小写会认证失败（实测踩过） |
+| Dell iDRAC | `root` / `calvin` | 用户名不是 admin |
+| HPE iLO | `Administrator` / 随机（贴标签） | 出厂随机 |
+| 联想 XCC | `USERID` / `PASSW0RD`（数字 0） | 或 `admin`/`admin` |
+| 超聚变 / 浪潮 | `admin` / `admin` 或 `Admin@9000` | 以随机标签为准 |
+
+> 带外失败只会看到 `Unable to establish IPMI v2 / RMCP+ session`，不区分"网络不通"与"认证失败"——先 `ping`/`ipmitool -H <IP> mc info` 手工确认一次。
 - 远程采集见 [docs/TOOLS.md](TOOLS.md)：`remote_collect.sh` 同样接受这四个参数
 
 ## 报告生成
