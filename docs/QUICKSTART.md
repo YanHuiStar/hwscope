@@ -63,7 +63,7 @@ sudo bash hwscope.sh --no-bmc-auto
 要点：
 
 - **默认通道 1**（IPMI 规范里的第一个 LAN 通道，多数厂商把共享口/专用口配在这里）：通道 1 有有效地址就直接用它，屏幕上会注明「通道 1，默认通道」。
-- **通道 1 未配置时才会往后找**：有些机器的 `channel 1` 是 `0.0.0.0`（共享口未启用）、`channel 7` 是 `169.254.x`（link-local），真实管理口在 `channel 8`。此时探测按 2→14 继续取第一个有效地址，并明确打出「通道 1 未配置…通道 N 命中」；多个通道都有地址会全部列出，要用别的就 `--bmc-ip` 指定。
+- **通道 1 未配置时才会往后找**：有些机器的 `channel 1` 是 `0.0.0.0`（共享口未启用）、`channel 7` 是 `169.254.x`（link-local），真实管理口在 `channel 8`。此时探测按 2→11 继续取第一个有效地址（IPMI 规范共 11 个通道），并明确打出「通道 1 未配置…通道 N 命中」；多个通道都有地址会全部列出，要用别的就 `--bmc-ip` 指定。
 - 探测不到（全 `0.0.0.0` / `169.254` / 无带内权限）会**提示手输 IP**，20 秒无人应答自动跳过带外（`BMC_IP_PROMPT_TIMEOUT` 可调），不阻塞无人值守批量采集。
 - **密码一律运行时输入**，不落盘、不进命令行/进程列表/日志；`BMC_PASS_TIMEOUT`（默认 300s；自动探测场景 20s）控制等待。
 - 带外结果落 `bmc/remote_bmc_*.log`，报告「BMC」段合并展示；带内仍是默认路径，两者互补。
@@ -73,12 +73,36 @@ sudo bash hwscope.sh --no-bmc-auto
 ```bash
 # Linux/WSL 运维机
 bash tools/remote_collect.sh -H root@10.0.0.1
+bash tools/remote_collect.sh -H root@10.0.0.1 --install 1,2      # 冷启动：先远端装基础+压测依赖再采
 
-# Windows 运维机
+# Windows 运维机（PowerShell 原生，与 sh 版功能等价）
 tools\win\remote_collect.bat -H root@10.0.0.1
+powershell -ExecutionPolicy Bypass -File tools\win\remote_collect.ps1 -H root@10.0.0.1 -Modules gpu,cpu
 ```
 
-默认交互式密码（不落盘），认证失败自动重试 3 次；结果回拉到 `output/remote_output/<机器ID>/`。
+默认交互式密码（不落盘），认证失败自动重试 3 次；结果回拉到 `output/remote_output/<机器ID>/`，归档包进 `logs/remote_logs/`。
+
+### 远程采集 + 带外 BMC（推荐，一条命令拿全带内+带外）
+
+```bash
+# Linux/WSL
+bash tools/remote_collect.sh -H root@10.0.0.1 \
+     --bmc-ip 10.0.0.9 --bmc-user admin
+#   → 先提示 SSH 密码，再提示「主机 BMC 密码」；密码经 stdin 送远端，不落盘
+
+bash tools/remote_collect.sh -H root@10.0.0.1 \
+     --bmc-ip 10.0.0.9 --hgx-bmc-ip 10.0.0.10      # HGX 双 BMC（两处密码分别提示）
+
+# Windows（v1.54.4 起支持）
+powershell -ExecutionPolicy Bypass -File tools\win\remote_collect.ps1 -H root@10.0.0.1 `
+    -BmcIp 10.0.0.9 -BmcUser admin
+powershell -ExecutionPolicy Bypass -File tools\win\remote_collect.ps1 -H root@10.0.0.1 `
+    -BmcIp 10.0.0.9 -HgxBmcIp 10.0.0.10
+```
+
+- **带内 IP 不给时远端不会自动探测**：自动探测走带内 KCS，只在**目标机上直接跑** `hwscope.sh` 时生效（远程采集时由运维机明确给出 `--bmc-ip`）。
+- 远程 root 目标机（免 sudo）：密码由**本地**提示后经 stdin 送到远端 `read`，不进远端命令行/日志；普通用户 + sudo 目标机：由远端 `hwscope.sh` 自行提示（已分配 `-t`）。
+- Windows 版给 BMC 参数时自动改走**三步模式**（单次认证模式的 stdin 已被项目包占用，无法同时携带密码）。
 
 ## 清理采集输出
 

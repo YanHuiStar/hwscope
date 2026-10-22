@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.54.6 (2026-10)
+# Version : 1.54.7 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.54.6"
+HWSCOPE_VERSION="v1.54.7"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -352,7 +352,7 @@ _bmc_prompt_pass() {
 # ─── v1.54.5：带外 BMC 地址自动探测（仅当没给 --bmc-ip 时）───
 #   依据：带内（KCS）读 BMC 的 LAN 配置**不需要密码**，所以本机采集能自己问出来。
 #   **默认通道 1**（IPMI 规范第一个 LAN 通道，多数厂商把共享/专用口配在这里）；
-#   只有通道 1 为空（0.0.0.0 / 169.254.x）才按 2→14 继续找——实测有机器 ch1=0.0.0.0、
+#   只有通道 1 为空（0.0.0.0 / 169.254.x）才按 2→11 继续找（规范共 11 个通道）——实测有机器 ch1=0.0.0.0、
 #   ch7=169.254.x、ch8=真实管理口，故取第一个「非 0.0.0.0 / 非 169.254.x」的 IPv4，
 #   并把命中的通道号打印出来（1 命中时注明"默认通道"，非 1 时说明 1 为什么不可用）。
 BMC_AUTO_CHANNEL=""; BMC_PASS_FROM_AUTO=0
@@ -361,7 +361,9 @@ BMC_AUTO_CHANNEL=""; BMC_PASS_FROM_AUTO=0
 if [ -z "${BMC_IP:-}" ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null && check_cmd ipmitool \
    && timeout 5 ipmitool mc info >/dev/null 2>&1; then
     _cands=""
-    for _ch in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
+    # IPMI 规范里通道编号 1–11（通道 0 是"当前通道"，不是实体通道）；12 以上不存在，
+    #   旧写法扫到 14 会白跑 3 次 Invalid channel，慢 BMC 上要多等几秒。
+    for _ch in 1 2 3 4 5 6 7 8 9 10 11; do
         _ip=$(timeout "${IPMI_TIMEOUT_FAST:-30}" ipmitool lan print "$_ch" 2>/dev/null \
               | awk -F: '/^IP Address[ ]*:/ && $0 !~ /Source/ {v=$2; gsub(/[ \t]/,"",v); if (v != "" && v != "0.0.0.0" && v !~ /^169[.]254[.]/) print v; exit}')
         [ -n "$_ip" ] && _cands="${_cands}${_ch}|${_ip}\n"
