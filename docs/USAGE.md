@@ -112,6 +112,8 @@ sudo bash hwscope.sh --bmc-ip 10.0.0.1 --hgx-bmc-ip 10.0.0.2  # HGX 双 BMC（�
 | 联想 XCC | `USERID` / `PASSW0RD`（数字 0） | 或 `admin`/`admin` |
 | 超聚变 / 浪潮 | `admin` / `admin` 或 `Admin@9000` | 以随机标签为准 |
 
+> `curl` 用的 netrc 凭据文件（600 权限）自 v1.54.9 起优先生成在 `/dev/shm`（tmpfs，重启即清），弥补 `kill -9`/OOM 时 trap 来不及删除的残留。
+
 > 带外失败只会看到 `Unable to establish IPMI v2 / RMCP+ session`，不区分"网络不通"与"认证失败"——先 `ping`/`ipmitool -H <IP> mc info` 手工确认一次。
 - 远程采集见 [docs/TOOLS.md](TOOLS.md)：`remote_collect.sh` 同样接受这四个参数
 

@@ -38,7 +38,7 @@ run_bmc() {
             "${ipmi_fast} bash -c \"ipmitool chassis power status 2>&1\"" "${dir}/ipmi_power.log" \
             "${ipmi_fast} bash -c \"ipmitool lan print 1 2>&1\"" "${dir}/ipmi_lan1.log" \
             "${ipmi_fast} bash -c \"ipmitool lan print 2 2>&1\"" "${dir}/ipmi_lan2.log" \
-            "for ch in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do echo \"=== Channel \$ch ===\"; ${ipmi_fast} ipmitool lan print \$ch 2>&1 | grep --line-buffered -E 'IP Address |MAC Address|IP Address Source' ; done; true" "${dir}/ipmi_lan_all.log" \
+            "for ch in 1 2 3 4 5 6 7 8 9 10 11; do echo \"=== Channel \$ch ===\"; ${ipmi_fast} ipmitool lan print \$ch 2>&1 | grep --line-buffered -E 'IP Address |MAC Address|IP Address Source' ; done; true" "${dir}/ipmi_lan_all.log" \
             "${ipmi_fast} bash -c \"ipmitool bmc guid 2>&1\"" "${dir}/ipmi_bmc_guid.log" \
             "${ipmi_fast} bash -c \"ipmitool user list 1 2>&1\"" "${dir}/ipmi_users.log" \
             "${ipmi_to} bash -c \"ipmitool fru print 2>&1\"" "${dir}/ipmi_fru_all.log" \
@@ -99,7 +99,9 @@ run_bmc() {
         echo -e "${BLUE}[BMC] Redfish API check: ${BMC_IP}${NC}"
         # 临时 netrc（权限 600，用完即删）：curl --netrc-file 读取，命令字符串不含密码
         # 中断/超时也清理（模块被 timeout 杀时 trap 兜底，防密码文件残留 /tmp）
-        NETRC_TMP=$(mktemp)
+        # v1.54.9（外部审查 P5）：优先落在 /dev/shm（tmpfs，重启即清）——弥补 kill -9 / OOM 时
+        #   trap 来不及执行导致的密码文件残留；/dev/shm 不可用时退回默认临时目录。
+        NETRC_TMP=$(mktemp -p /dev/shm 2>/dev/null || mktemp)
         chmod 600 "$NETRC_TMP"
         trap 'rm -f "$NETRC_TMP"' EXIT INT TERM
         printf 'machine %s login %s password %s\n' "$BMC_IP" "$BMC_USER" "$BMC_PASS" > "$NETRC_TMP"
