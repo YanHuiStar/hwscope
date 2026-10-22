@@ -334,7 +334,8 @@ if [ -f "$_fq" ] || [ -f "$_nr" ]; then
             # v1.53.3：机头形态（无本地 GPU）——无 GPU 模组就没有 NVSwitch 硬件，
             #   FM 起不来是**必然**，不是故障；旧实现报 ⚠️ 并建议「拉起 FM 后重测」，
             #   而机头拉起 FM 也没用（无硬件可管），属误导。改判平台固有，不给重测建议。
-            NVSWITCH_FABRIC="平台固有：GPU 机头无 GPU 模组（Fabric Manager 状态 Active: ${_fmst}）——NVSwitch 域不适用于本形态，模组接入后另行采集验收"
+            # v1.54.2：措辞与 GPU 段统一——只陈述「未识别到」，不断言「无模组」
+            NVSWITCH_FABRIC="平台固有：未识别到 GPU 模组（Fabric Manager 状态 Active: ${_fmst}）——NVSwitch 域不适用于本形态，模组接入后另行采集验收"
         else
             _seg="⚠️ NVSwitch 域未建立：Fabric Manager 未运行（Active: ${_fmst}）"
             [ -n "$_fstate" ] && _seg="${_seg}；Fabric State=${_fstate}"

@@ -58,7 +58,7 @@ gen_acceptance() {
         if [ "${GPU_MODULE_STATE:-present}" = "unknown" ]; then
             add_item "$1" "N/A" "未识别到 GPU 模组（本次采集未枚举到加速卡：${GPU_MODULE_REASON}）——本项无法判定，计入数据不足；建议开机 ≥2 分钟后复采"
         else
-            add_item "$1" "N/A" "GPU 机头（未检测到本地 GPU，模组单独采集验收）" 1
+            add_item "$1" "N/A" "未识别到 GPU 模组（PCI 未枚举到加速卡；采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}，不属采集过早）——如本机应有模组请现场核查在位/上电；模组经 PCIe Fabric 接入时单独采集验收" 1
         fi
     }
 
