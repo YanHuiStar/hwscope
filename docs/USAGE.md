@@ -83,6 +83,7 @@ bash modules/04_gpu.sh /path/output           # 单模块（调试）
 | 假 WARN 豁免（v1.53.37） | `psu_present`（服务器 PSU 走 BMC，无 `/sys/class/power_supply`）、`ipmi_lan2`（BMC 只暴露 1 个 LAN 通道）、`ipmi_fru_all`（末段 FRU 读不到但其余 13 段全出）均按**内容级**豁免，不再计 WARN；BMC 整体不可达仍照常记 WARN |
 | 功耗读数 | `16_power` 复用 `10_psu` 已取到的 `psu/ipmi_dcmi_power.log`，避免同一报告出现两个不同的 DCMI 瞬时值；文件无效才自行查询 |
 | 带外 BMC（v1.53.45，v1.54.3 修复） | `--bmc-ip/--bmc-user/--hgx-bmc-ip/--hgx-bmc-user` 指定后，`12_bmc` 在带内（KCS）之外再跑一组 `ipmitool -E -H <BMC_IP> -U <user> -I lanplus`，结果落 `bmc/remote_bmc_*.log`。**BMC 密码运行时交互输入**（`/dev/tty`，300s 超时兜底），不落盘、不进 ps/日志；远程采集时 root 目标机由本地提示经 stdin 送远端 |
+| **BMC 地址自动探测（v1.54.5）** | 不给 `--bmc-ip` 时，用带内（KCS）遍历 `ipmitool lan print 1..14`，取第一个「非 `0.0.0.0` / 非 `169.254.x`」的 IPv4 作带外地址，**并打印命中的通道号**（实测同机 `ch1=0.0.0.0`、`ch7=169.254.x`、`ch8=10.0.0.9`）；多通道有地址时全部列出、取第一个。探测不到则提示手输 IP（`BMC_IP_PROMPT_TIMEOUT`，默认 20s，超时自动跳过带外）；无人值守场景不会卡住。`--no-bmc-auto` 关闭探测。密码在自动探测场景只需 20s 等待期（`BMC_PASS_TIMEOUT_AUTO`），空输入=明确跳过带外且不刷 WARN |
 | 父进程参数必须 `export` | 模块在**独立 bash 子进程**执行，只拿到位置参数（输出目录）。`hwscope.sh` 里解析出的参数若不 export 就不进子进程，而模块会 `source conf/hwscope.conf`（其中写 `BMC_IP="${BMC_IP:-}"` 之类）→ 变量被重新置空。**v1.54.3 的 bug 就属此类**：`--bmc-ip` 给了却只采带内。新增任何"父进程解析、子进程使用"的变量，务必加进 `hwscope.sh` 的 export 组 |
 
 ### BMC 带外采集（IPMI / Redfish）
