@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.54.5 (2026-10)
+# Version : 1.54.6 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.54.5"
+HWSCOPE_VERSION="v1.54.6"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -351,8 +351,10 @@ _bmc_prompt_pass() {
 }
 # ─── v1.54.5：带外 BMC 地址自动探测（仅当没给 --bmc-ip 时）───
 #   依据：带内（KCS）读 BMC 的 LAN 配置**不需要密码**，所以本机采集能自己问出来。
-#   但通道各家不一（实测同一台机：channel 1 = 0.0.0.0、channel 7 = 169.254.x、channel 8 = 真实管理口），
-#   故遍历 1–14 取第一个「非 0.0.0.0 / 非 169.254.x」的 IPv4，并把**命中的通道号打印出来**便于现场核对。
+#   **默认通道 1**（IPMI 规范第一个 LAN 通道，多数厂商把共享/专用口配在这里）；
+#   只有通道 1 为空（0.0.0.0 / 169.254.x）才按 2→14 继续找——实测有机器 ch1=0.0.0.0、
+#   ch7=169.254.x、ch8=真实管理口，故取第一个「非 0.0.0.0 / 非 169.254.x」的 IPv4，
+#   并把命中的通道号打印出来（1 命中时注明"默认通道"，非 1 时说明 1 为什么不可用）。
 BMC_AUTO_CHANNEL=""; BMC_PASS_FROM_AUTO=0
 #   能力探测代替 uid 判断：先用一条 `ipmitool mc info`（带内 KCS）确认带内可用——
 #   不可用就整块跳过（否则 14 个通道各等一次超时，白拖十几秒）。
@@ -368,7 +370,13 @@ if [ -z "${BMC_IP:-}" ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null && check_cmd i
         BMC_AUTO_CHANNEL=$(printf '%b' "$_cands" | head -1 | cut -d'|' -f1)
         BMC_IP=$(printf '%b' "$_cands" | head -1 | cut -d'|' -f2)
         export BMC_IP
-        echo -e "${CYAN}[INFO] 带内探测到 BMC 地址: ${BMC_IP}（通道 ${BMC_AUTO_CHANNEL}）${NC}"
+        # 通道 1 是默认通道（IPMI 规范里第一个 LAN 通道、多数厂商的共享/专用口都配在这里）：
+        #   1 有地址就直接用它；1 为空（0.0.0.0 / 169.254）才继续往后找，并把"为什么不是 1"写出来。
+        if [ "$BMC_AUTO_CHANNEL" = "1" ]; then
+            echo -e "${CYAN}[INFO] 带内探测到 BMC 地址: ${BMC_IP}（通道 1，默认通道）${NC}"
+        else
+            echo -e "${CYAN}[INFO] 通道 1 未配置有效地址（0.0.0.0 / 169.254）——继续查找，通道 ${BMC_AUTO_CHANNEL} 命中: ${BMC_IP}${NC}"
+        fi
         _n=$(printf '%b' "$_cands" | grep -c .)
         if [ "$_n" -gt 1 ]; then
             echo -e "${CYAN}[INFO] 共 ${_n} 个通道配了地址: $(printf '%b' "$_cands" | tr '\n' ' ')（已取通道 ${BMC_AUTO_CHANNEL}；要指定请用 --bmc-ip）${NC}"
