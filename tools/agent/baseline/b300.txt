@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=315
+  table_rows=316
 [gpu]
   gpu_detail_rows=8
   model:  NVIDIA B300 SXM6 AC
@@ -25,13 +25,13 @@
   nic_rows=21
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=36617
+  json_bytes=36619
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=28
   html_table_close=28
-  html_bytes=52826
+  html_bytes=53069
 [acceptance]
         3 N/A
        13 PASS

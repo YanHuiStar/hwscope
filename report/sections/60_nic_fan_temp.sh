@@ -557,8 +557,18 @@ fi
 # 跳过 Present/discrete 等离散值（如 PSU1 Slow FAN1 是 discrete 状态位 0x1，非真实转速）
 # v1.54.10：把 PSU 自带风扇与机箱风扇分开计数——放宽正则后 PSU_FAN_01/PSU6_Fan_Speed 会被纳入，
 #   合并成一个数字会让"30 把风扇"变成"38"看不出构成；报告按「总数（系统 X + 电源 Y）」展示。
-FAN_SYS_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($1) !~ /psu/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
-FAN_PSU_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($1) ~ /psu/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
+# v1.54.11：按部件分类计数——B200 的 50 个风扇其实是 系统 12 + GPU 托盘 30 + 后部背板 8，
+#   合并成一个数字看不出构成；分类关键字取自各厂命名（GPU_80_FAN_* / REAR_BP_80_FAN_* / SPD_FAN_PSU*）。
+_fan_class() {
+    local pat="$1" neg="${2:-}" 
+    grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' -v pat="$pat" -v neg="$neg" '
+        tolower($1) ~ /fan/ && tolower($1) ~ pat && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/ {c++}
+        END{print c+0}'
+}
+FAN_GPU_COUNT=$(_fan_class "gpu")
+FAN_BP_COUNT=$(_fan_class "rear_bp|bp_")
+FAN_PSU_COUNT=$(_fan_class "psu")
+FAN_SYS_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($1) !~ /psu/ && tolower($1) !~ /gpu/ && tolower($1) !~ /rear_bp/ && tolower($1) !~ /bp_/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
 FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
 # v1.48.88：区分「采集失败」与「平台真无风扇传感器」——此前两者都渲染成「数量 0」，会让客户以为机器没风扇。
 #   判据：日志有实际数据行 = 采集成功（此时 0 才是真无传感器）；日志空/仅注释 = 命令超时或不可读（BMC 慢）。
@@ -571,6 +581,16 @@ if [ -f "${ipmi_fan_sensors}" ] && [ -s "${ipmi_fan_sensors}" ]; then
 fi
 FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | head -1)
 FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | tail -1)
+# v1.54.11：数量构成串（只在总数>0 时给；某类为 0 则该类不出现）
+FAN_COUNT_BREAKDOWN=""
+if [ "${FAN_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+    _parts=""
+    [ "${FAN_SYS_COUNT:-0}" -gt 0 ] 2>/dev/null && _parts="系统 ${FAN_SYS_COUNT}"
+    [ "${FAN_GPU_COUNT:-0}" -gt 0 ] 2>/dev/null && _parts="${_parts:+${_parts} + }GPU ${FAN_GPU_COUNT}"
+    [ "${FAN_BP_COUNT:-0}"  -gt 0 ] 2>/dev/null && _parts="${_parts:+${_parts} + }背板 ${FAN_BP_COUNT}"
+    [ "${FAN_PSU_COUNT:-0}" -gt 0 ] 2>/dev/null && _parts="${_parts:+${_parts} + }电源 ${FAN_PSU_COUNT}"
+    [ -n "$_parts" ] && FAN_COUNT_BREAKDOWN="${FAN_COUNT}（${_parts}）"
+fi
 FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 

@@ -449,6 +449,13 @@ if [ -f "$_fru_src" ]; then
             [ "${_psu_has_pout:-0}" -gt 0 ] 2>/dev/null && _ppn="${_ppn}；BMC 另提供一组 _Pout（输出功率）以不同编号体系命名，与 SMBIOS 槽位编号无法一一对应，故未做映射"
             PSU_PLATFORM_NOTE="${PSU_PLATFORM_NOTE:+${PSU_PLATFORM_NOTE}；}${_ppn}"
         fi
+        # v1.54.11：**完全没有任何 PSU 功率传感器**（既无逐颗 _Pin 也无 Total_Power/_Pout）时明确说明，
+        #   否则明细整列空白会被当成采集失败（实测 B200 NVL8：sensors 里只有 PS*_Status 离散状态）。
+        _any_pwr_sens=$(grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" "${BMC_DIR}/ipmi_sensors_power.log" 2>/dev/null \
+            | grep -icE "_pin|_pout|total_power")
+        if [ "$_any_pwr_sens" = "0" ] && [ "${_psu_nopwr:-0}" -gt 0 ] 2>/dev/null; then
+            PSU_PLATFORM_NOTE="${PSU_PLATFORM_NOTE:+${PSU_PLATFORM_NOTE}；}该平台 BMC 未暴露任何 PSU 功率传感器（既无逐颗 _Pin/_Pout 也无 Total_Power），「当前功耗」整列为空属平台限制，非采集失败"
+        fi
     fi    # 整机功耗（Total_Power 行首精确匹配，避免误取 CPU_Total_Power/MEM_Total_Power 等分段功耗）
     # 独立展示（不放 PSU 表内：语义是整机级而非单电源，且避免 N/A 占位列突兀）
     PSU_EXTRA=""
@@ -462,7 +469,27 @@ if [ -f "$_fru_src" ]; then
             | awk -F'|' 'tolower($1) ~ /^h_total_power|^total_power/{gsub(/ /,"",$2); if ($2 ~ /\./) sub(/\.?0+$/,"",$2); print $2"W"; exit}')
     fi
     # v1.48.24：分口径标注——TOTAL_POWER=PSU 输入总功率（含 GPU），DCMI=主板侧（不含 GPU）；此前都叫"整机功耗"易误读
-    [ -n "$total_pwr" ] && PSU_EXTRA="整机功耗（PSU 输入，含 GPU）: ${total_pwr}"
+    # v1.54.11：**标出来源**——Total_Power 是 BMC 的**单点总功率传感器**，不是"各 PSU 相加"。
+    #   原实现无论来源一律标"各 PSU 输入功率合计"（实测 Supermicro 只有 Total_Power 一个传感器，
+    #   客户拿 PSU 逐颗读数相加会对不上，属口径造假）。
+    PSU_TOTAL_SRC=""
+    if [ -n "$total_pwr" ]; then
+        if grep -qv "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null &&            grep -v "^#" "${PSU_DIR}/ipmi_psu_power.log" 2>/dev/null | awk -F'|' 'tolower($1) ~ /^total_power/{f=1} END{exit !f}'; then
+            PSU_TOTAL_SRC="BMC 总功率传感器 Total_Power"
+        else
+            PSU_TOTAL_SRC="BMC 总功率传感器 H_Total_Power"
+        fi
+        PSU_EXTRA="整机功耗（BMC 总功率传感器）: ${total_pwr}"
+    fi
+    # v1.54.11：PSU 逐颗输入功率合计（明细里有读数的相加）——与 Total_Power / DCMI 互为校验
+    PSU_PIN_SUM=""; PSU_PIN_N=0
+    if [ -n "${PSU_DETAILS:-}" ]; then
+        _psum=$(printf '%s\n' "$PSU_DETAILS" | awk -F'|' '
+            { v=$6; gsub(/[ \t]/,"",v); sub(/W$/,"",v)
+              if (v != "" && v != "N/A" && v ~ /^[0-9]+(\.[0-9]+)?$/) { s+=v; n++ } }
+            END { printf "%d %d", s+0, n+0 }')
+        PSU_PIN_SUM=${_psum% *}; PSU_PIN_N=${_psum#* }
+    fi
     # DCMI 功耗统计（dcmi power reading：Instantaneous/Minimum/Maximum/Average，标准 IPMI 功耗统计）
     # v1.48.88：去掉「主板侧，不含 GPU」这个未经证实的口径标注——
     #   DCMI 规范的 power reading 定义是**平台总功耗**，但各厂 BMC 实现不一（有的只上报主板域）。
@@ -488,6 +515,25 @@ if [ -f "$_fru_src" ]; then
             [ -n "$dcmi_max" ] && _win_stat="${_win_stat}${_win_stat:+ / }最大 ${dcmi_max}W"
             [ -n "$dcmi_avg" ] && _win_stat="${_win_stat}${_win_stat:+ / }平均 ${dcmi_avg}W"
             PSU_DCMI="DCMI 平台功耗读数（ipmitool dcmi power reading）: 瞬时 ${dcmi_cur}W"
+
+    # v1.54.11：逐颗合计与 DCMI 瞬时偏差过大 → 提示「PSU 传感器疑似未实测」。
+    #   实测 8×MI300X（混装 ACBEL + APLUSPOWER）：APLUSPOWER 六颗恒报 900/930W，
+    #   逐颗合计 6270W，而 DCMI 整机只有 780W（ACBEL 两颗 840W ≈ 整机输入）→ 前者是占位值。
+    PSU_PIN_WARN=""
+    if [ "${PSU_PIN_N:-0}" -ge 2 ] 2>/dev/null && [ -n "${dcmi_cur:-}" ]; then
+        _ratio=$(awk -v a="${PSU_PIN_SUM:-0}" -v b="${dcmi_cur:-0}" 'BEGIN{ if (b+0 <= 0) { print 0; exit } printf "%.1f", a/b }')
+        if [ "${_ratio:-0}" != "0" ] && awk -v r="${_ratio:-0}" 'BEGIN{exit !(r > 3)}'; then
+            PSU_PIN_WARN="逐颗「当前功耗」相加 ${PSU_PIN_SUM}W（${PSU_PIN_N} 颗有读数），而 DCMI 整机瞬时仅 ${dcmi_cur}W（约 ${_ratio} 倍）——**PSU 功率读数疑似恒定占位值（未实测）**，请以 DCMI 读数为准"
+        fi
+    fi
+    # v1.54.11：BMC 的 Total_Power 单点读数同样可能是占位值（实测 MI300X 报 5900W，DCMI 仅 780W）
+    if [ -n "${total_pwr:-}" ] && [ -n "${dcmi_cur:-}" ]; then
+        _tp=${total_pwr%W}
+        _ratio2=$(awk -v a="$_tp" -v b="$dcmi_cur" 'BEGIN{ if (b+0 <= 0) { print 0; exit } printf "%.1f", a/b }')
+        if [ "${_ratio2:-0}" != "0" ] && awk -v r="${_ratio2:-0}" 'BEGIN{exit !(r > 3)}'; then
+            PSU_PIN_WARN="${PSU_PIN_WARN:+${PSU_PIN_WARN}；}BMC Total_Power 读数 ${total_pwr} 亦约为 DCMI 的 ${_ratio2} 倍，同样疑似未实测"
+        fi
+    fi
             [ -n "$_win_stat" ] && PSU_DCMI="${PSU_DCMI} ｜ ${_win_stat}${_win_txt}"
         fi
     fi

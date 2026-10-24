@@ -392,7 +392,7 @@ fi)$(if [ -n "$BMC_CONSISTENCY" ]; then
 fi)
 
 [风扇]
-  数量   : $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then if [ "${FAN_PSU_COUNT:-0}" -gt 0 ] 2>/dev/null; then echo "${FAN_COUNT:-0}（系统 ${FAN_SYS_COUNT:-0} + 电源 ${FAN_PSU_COUNT:-0}）"; else echo "${FAN_COUNT:-0}"; fi; else echo "N/A（未取到数据）"; fi)
+  数量   : $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT_BREAKDOWN:-${FAN_COUNT:-0}}"; else echo "N/A（未取到数据）"; fi)
   转速   : ${FAN_SPEED:-N/A（该平台风扇转速未经标准 IPMI 传感器暴露）}
   温度   : ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}}
 $(if [ -n "$FAN_DETAILS" ]; then echo "  来源   : ${FAN_SOURCE:-IPMI}"; fi)
