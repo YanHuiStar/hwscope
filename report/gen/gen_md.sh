@@ -777,7 +777,7 @@ fi)
 ## 风扇
 | 项 | 值 |
 |----|----|
-| 数量 | $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT:-0}"; else echo "N/A（未取到数据）"; fi) |
+| 数量 | $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then if [ "${FAN_PSU_COUNT:-0}" -gt 0 ] 2>/dev/null; then echo "${FAN_COUNT:-0}（系统 ${FAN_SYS_COUNT:-0} + 电源 ${FAN_PSU_COUNT:-0}）"; else echo "${FAN_COUNT:-0}"; fi; else echo "N/A（未取到数据）"; fi) |
 | 转速 | ${FAN_SPEED:-N/A（该平台风扇转速未经标准 IPMI 传感器暴露，详见下方说明）} |
 | 温度 | ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}} |$(if [ -n "$FAN_DETAILS" ]; then echo "
 | 数据来源 | ${FAN_SOURCE:-IPMI} |"; fi)
@@ -801,14 +801,22 @@ fi)
 | # | 描述 | 型号 | 部件号 | 序列号 | 额定容量 | 当前功耗 |
 |----|------|------|-----------|--------|-----------|--------|
 $(if [ -n "$PSU_DETAILS" ]; then
-    pseq=0
+    pseq=0; _pnomodel=0
     while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
         [ -z "$pdesc" ] && continue
         pseq=$((pseq+1))
         pcap_d="${pcap:-}"; case "$pcap_d" in N/A|n/a|"") pcap_d="—" ;; esac
           ppwr_d="${ppower:-}"; case "$ppwr_d" in N/A|n/a|"") ppwr_d="—" ;; esac
+          case "${pmodel:-}" in ""|N/A|n/a|—) _pnomodel=$((_pnomodel+1)) ;; esac
           printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$pseq" "$pdesc" "$pmodel" "$ppn" "$psn" "$pcap_d" "$ppwr_d"
     done < <(printf '%s\n' "$PSU_DETAILS")
+    # v1.54.10：型号/部件号/序列号**整列皆空**时给出平台说明，避免看起来像采集失败。
+    #   实测 NVIDIA DGX A100：BMC 只有 MID/IOEL/IOER/PDB/GB/M.2/SW 七段 FRU，**没有 PSU 独立 FRU 段**，
+    #   容量（3315W）与实时功率均来自 IPMI 传感器（PSUx_PIN/PSUx_POUT）→ 三列必然为空。
+    if [ "$pseq" -gt 0 ] && [ "$_pnomodel" -eq "$pseq" ]; then
+        echo ""
+        echo "> 该平台 PSU **无独立 FRU 记录**（型号/部件号/序列号不可得）；额定容量与实时功率取自 IPMI 传感器读数。"
+    fi
 else
     # v1.49.18：无 FRU/型号明细 ≠ 平台没有电源——IPMI 状态传感器可见在位颗数时如实区分
     if [ "${PSU_SENSOR_SEEN:-0}" -gt 0 ] 2>/dev/null; then
