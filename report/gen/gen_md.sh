@@ -208,8 +208,13 @@ gen_md() {
             *": "*) _pl="${PSU_EXTRA%%: *}"; _pv="$(_ptrim "${PSU_EXTRA#*: }")" ;;
             *)      _pl="整机功耗";          _pv="$(_ptrim "$PSU_EXTRA")" ;;
         esac
-        PWR_TABLE_MD="${PWR_TABLE_MD}| ${_pl} | ${_pv} | 各 PSU 输入功率合计 |"$'\n'
+        # v1.54.11：口径按**真实来源**标注（BMC 单点总功率传感器 ≠ 各 PSU 相加）
+        PWR_TABLE_MD="${PWR_TABLE_MD}| ${_pl} | ${_pv} | BMC 总功率传感器单点读数 |"$'\n'
     fi
+      # v1.54.11：逐颗相加的合计单独一行（与上面 Total_Power 单点读数区分）
+      if [ "${PSU_PIN_N:-0}" -ge 2 ] 2>/dev/null; then
+          PWR_TABLE_MD="${PWR_TABLE_MD}| 各 PSU 输入功率合计 | ${PSU_PIN_SUM}W（${PSU_PIN_N} 颗有读数） | 逐颗「当前功耗」相加 |"$'\n'
+      fi
     if [ -n "$PSU_DCMI" ]; then
         _dv="$(_ptrim "${PSU_DCMI#*: }")"; [ "$_dv" = "$PSU_DCMI" ] && _dv="$(_ptrim "$PSU_DCMI")"
         case "$_dv" in
@@ -777,7 +782,7 @@ fi)
 ## 风扇
 | 项 | 值 |
 |----|----|
-| 数量 | $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then if [ "${FAN_PSU_COUNT:-0}" -gt 0 ] 2>/dev/null; then echo "${FAN_COUNT:-0}（系统 ${FAN_SYS_COUNT:-0} + 电源 ${FAN_PSU_COUNT:-0}）"; else echo "${FAN_COUNT:-0}"; fi; else echo "N/A（未取到数据）"; fi) |
+| 数量 | $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT_BREAKDOWN:-${FAN_COUNT:-0}}"; else echo "N/A（未取到数据）"; fi) |
 | 转速 | ${FAN_SPEED:-N/A（该平台风扇转速未经标准 IPMI 传感器暴露，详见下方说明）} |
 | 温度 | ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}} |$(if [ -n "$FAN_DETAILS" ]; then echo "
 | 数据来源 | ${FAN_SOURCE:-IPMI} |"; fi)
@@ -853,6 +858,7 @@ $(if [ -n "$PWR_TABLE_MD" ]; then
     echo "|------|------|------|"
     printf '%s' "$PWR_TABLE_MD"
     echo ""
+    [ -n "${PSU_PIN_WARN:-}" ] && echo "> ⚠️ ${PSU_PIN_WARN}"
     echo "> 各读数口径与时间基准不同（PSU 输入合计 / BMC DCMI 瞬时与窗口统计 / CPU 内部计数器），仅作对照参考，不互相印证；逐颗 PSU 实时功率见上表"
 fi)
 
