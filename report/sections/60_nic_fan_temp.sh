@@ -540,7 +540,7 @@ load_manifest "${FAN_DIR}" sensors_all "sensors_all.log"
 #   后果：报告「风扇 数量 N/A（未取到数据）」，而同一份日志里风扇转速标标准准。
 #   修复分两处：① 采集端（modules/11_fan.sh）加 `grep --line-buffered`，从源头杜绝缓冲丢数据；
 #            ② 本处兜底：ipmi_fan_sensors 为空时改用 bmc/ipmi_sensors.log（同为 sensor list 全量，
-#               字段格式一致，下游 awk 自带 /fan[0-9]/ 过滤，不会把其他传感器算进来）。
+#               字段格式一致，下游 awk 自带 /fan/ 过滤，不会把其他传感器算进来）。
 #   注意仅「空/无有效行」时才兜底：有数据仍以专用文件为准（避免行为变化）。
 _fan_have=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | grep -cE "[^[:space:]]")
 if [ "${_fan_have:-0}" -eq 0 ]; then
@@ -551,8 +551,15 @@ if [ "${_fan_have:-0}" -eq 0 ]; then
     fi
 fi
 # 风扇匹配：兼容 Fan10_Speed_F / FAN1_Speed / Fan2 等大小写变体；只统计转速传感器（$3=RPM），
+# v1.54.10：正则由 /fan[0-9]/ 放宽为 /fan/ —— NVIDIA DGX A100 的风扇名是
+#   SPD_FAN_SYS0_R / SPD_FAN_PSU0（"fan" 后跟下划线而非数字），旧正则一个都不匹配，
+#   实测 22 个风扇传感器全在日志里，报告却写「数量 0 / 转速 N/A」（假数据缺口）。
 # 跳过 Present/discrete 等离散值（如 PSU1 Slow FAN1 是 discrete 状态位 0x1，非真实转速）
-FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
+# v1.54.10：把 PSU 自带风扇与机箱风扇分开计数——放宽正则后 PSU_FAN_01/PSU6_Fan_Speed 会被纳入，
+#   合并成一个数字会让"30 把风扇"变成"38"看不出构成；报告按「总数（系统 X + 电源 Y）」展示。
+FAN_SYS_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($1) !~ /psu/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
+FAN_PSU_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($1) ~ /psu/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
+FAN_COUNT=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{c++} END{print c+0}')
 # v1.48.88：区分「采集失败」与「平台真无风扇传感器」——此前两者都渲染成「数量 0」，会让客户以为机器没风扇。
 #   判据：日志有实际数据行 = 采集成功（此时 0 才是真无传感器）；日志空/仅注释 = 命令超时或不可读（BMC 慢）。
 #   实测 Giga B200（B200-sample-c）：ipmitool sensor list 10s 超时 → 日志空 → 报告写「数量 0」，
@@ -562,15 +569,15 @@ if [ -f "${ipmi_fan_sensors}" ] && [ -s "${ipmi_fan_sensors}" ]; then
     _fan_lines=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | grep -cE "[^[:space:]]")
     [ "${_fan_lines:-0}" -gt 0 ] && FAN_DATA_OK=1
 fi
-FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | head -1)
-FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | tail -1)
+FAN_MIN=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | head -1)
+FAN_MAX=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{gsub(/ /,"",$2); if($2 ~ /^[0-9]+\.[0-9]+$/) sub(/\.?0+$/,"",$2); if($2 ~ /^[0-9]+$/) print $2}' | sort -n | tail -1)
 FAN_SPEED=""
 [ -n "$FAN_MIN" ] && FAN_SPEED="${FAN_MIN}-${FAN_MAX} RPM"
 
 # 风扇每风扇明细
 FAN_DETAILS=""
 if [ -f "${ipmi_fan_sensors}" ]; then
-    FAN_DETAILS=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan[0-9]/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{
+    FAN_DETAILS=$(grep -v "^#" "${ipmi_fan_sensors}" 2>/dev/null | awk -F'|' 'tolower($1) ~ /fan/ && tolower($3) ~ /rpm/ && tolower($1) !~ /present/ && tolower($1) !~ /total/{
         name=$1; gsub(/^ +| +$/,"",name)
         val=$2; gsub(/^ +| +$/,"",val)
         # 转速去尾零（9300.000 → 9300）
