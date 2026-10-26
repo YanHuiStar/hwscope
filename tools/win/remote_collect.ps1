@@ -97,6 +97,19 @@ function Initialize-SshAskPass {
     $script:AskPassFile = $null; $script:SshPwPlain = $null
     return $false
 }
+# v1.54.17：BMC 密码**先校验再开跑**。
+#   现象：用户在交互提示里输错（或密码含不可见字符）时，整轮采集跑完 70 秒才发现
+#   「5 条 remote_bmc_* 全 exit=1 / Unable to establish IPMI v2」——白等一轮。
+#   做法：拿到密码后立刻发一条极短的 ssh（密码走 stdin、不进远端 argv）验证 BMC 认证，
+#   失败就提示重输（最多 3 次），通过后才继续。
+function Test-BmcPassword {
+    param([string]$BmcIp, [string]$BmcUser, [string]$Password)
+    if ([string]::IsNullOrEmpty($Password)) { return $false }
+    $rc = 'read -r P || true; IPMI_PASSWORD="$P" timeout 25 ipmitool -E -H ' + $BmcIp + ' -U ' + $BmcUser + ' -I lanplus mc info >/dev/null 2>&1; echo rc=$?'
+    $out = & { $ErrorActionPreference='Continue'; ($Password + "`n") | & ssh ($SSHOpts + $TtyOpt).Split(" ") $H $rc 2>&1 }
+    return (($out -join "`n") -match 'rc=0')
+}
+
 function Clear-SshAskPass {
     if ($script:AskPassFile) { Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue }
     Remove-Item Env:SSH_ASKPASS, Env:SSH_ASKPASS_REQUIRE, Env:HWSCOPE_SSH_PW -ErrorAction SilentlyContinue
@@ -308,11 +321,31 @@ try {
             # v1.54.16：自动化/测试可用 $env:HWSCOPE_BMC_PASSWORD / HWSCOPE_HGX_BMC_PASSWORD 预置，
             #   交互场景仍走掩码提示（与 SSH 密码同一套约定；密码只经内存与 stdin，不落盘）
             if ($BmcIp) {
-                if ($env:HWSCOPE_BMC_PASSWORD) { $pwLines += $env:HWSCOPE_BMC_PASSWORD }
-                else {
-                    $sec = Read-Host -AsSecureString "主机 BMC 密码（$BmcIp）"
-                    $pwLines += (ConvertFrom-SecureStringPlain $sec)
+                $bmcPw = $null; $pwFromEnv = $false
+                if ($env:HWSCOPE_BMC_PASSWORD) { $bmcPw = $env:HWSCOPE_BMC_PASSWORD; $pwFromEnv = $true }
+                for ($try = 1; $try -le 3; $try++) {
+                    if (-not $bmcPw) {
+                        $sec = Read-Host -AsSecureString "主机 BMC 密码（$BmcIp）"
+                        $bmcPw = ConvertFrom-SecureStringPlain $sec
+                    }
+                    Write-Host "[INFO] 校验 BMC 凭据（$BmcIp / $BmcUser）..." -ForegroundColor Gray
+                    if (Test-BmcPassword -BmcIp $BmcIp -BmcUser $BmcUser -Password $bmcPw) {
+                        Write-Host "[OK]   BMC 认证通过" -ForegroundColor Green
+                        break
+                    }
+                    if ($pwFromEnv) {
+                        # 自动化预置的密码失败就不要再问人（无人在场会卡住）——直接报错退出
+                        Write-Host "[ERROR] HWSCOPE_BMC_PASSWORD 校验失败（$BmcIp / $BmcUser）：用户名或密码不对" -ForegroundColor Red
+                        exit 1
+                    }
+                    Write-Host "[WARN] BMC 认证失败（用户名或密码不对）；请重输（第 $try/3 次）" -ForegroundColor Yellow
+                    $bmcPw = $null
                 }
+                if (-not $bmcPw) {
+                    Write-Host "[ERROR] BMC 密码 3 次校验均失败，中止（先用 ipmitool -H $BmcIp -U $BmcUser mc info 手工核对）" -ForegroundColor Red
+                    exit 1
+                }
+                $pwLines += $bmcPw
                 $reads += "read -r BMC_PASS || true; export BMC_PASS; "
             }
             if ($HgxBmcIp) {
