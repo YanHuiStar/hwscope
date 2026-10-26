@@ -73,7 +73,29 @@ run_bmc() {
             "${ipmi_cmd} mc info" "${dir}/remote_bmc_mc.log" \
             "${ipmi_cmd} sensor list" "${dir}/remote_bmc_sensors.log" \
             "${ipmi_cmd} sel list" "${dir}/remote_bmc_sel.log" \
-            "${ipmi_cmd} chassis status" "${dir}/remote_bmc_chassis.log" 
+            "${ipmi_cmd} chassis status" "${dir}/remote_bmc_chassis.log"
+
+        # v1.54.18：**并发抢占 IPMI 会话**的兜底重试。
+        #   实测（DGX A100，BMC 固件 0.18）：4 条并发 + 紧随其后的校验会话超过 BMC 并发上限时，
+        #   5 条命令会在 0.1~0.2s 内**同时**返回 "Unable to establish IPMI v2 / RMCP+ session"，
+        #   看起来像"密码错"，实则 BMC 没有空闲会话（间隔几分钟再跑就又正常）。
+        #   处理：对含该报错的日志**串行**重试一次（间隔 3s），仍失败才认作真失败。
+        _bmc_retry_serial() {
+            local _log="$1" _cmd="$2"
+            grep -q "Unable to establish IPMI" "$_log" 2>/dev/null || return 0
+            sleep 3
+            run_and_log "$_cmd" "$_log"
+            if grep -q "Unable to establish IPMI" "$_log" 2>/dev/null; then
+                echo -e "${YELLOW}[WARN] $(basename "$_log") 仍无法建立 IPMI 会话（BMC 会话已满或凭据不可用）${NC}" >&2
+            else
+                echo -e "${CYAN}[INFO] $(basename "$_log") 串行重试成功（原为并发抢占 BMC 会话）${NC}" >&2
+            fi
+        }
+        _bmc_retry_serial "${dir}/remote_bmc_mc.log"      "${ipmi_cmd} mc info"
+        _bmc_retry_serial "${dir}/remote_bmc_chassis.log" "${ipmi_cmd} chassis status"
+        _bmc_retry_serial "${dir}/remote_bmc_sel.log"     "${ipmi_cmd} sel list"
+        _bmc_retry_serial "${dir}/remote_bmc_sensors.log" "${ipmi_cmd} sensor list"
+        _bmc_retry_serial "${dir}/remote_bmc_fru.log"     "${ipmi_cmd} fru print"
     else
         echo -e "${YELLOW}[SKIP] Remote BMC not configured (BMC_IP is empty)${NC}"
     fi
