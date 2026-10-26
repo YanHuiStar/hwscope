@@ -224,7 +224,11 @@ try {
             $preCmd = "bash tools/install_tool.sh -c $InstallItems -y; rc=`$?; if [ `$rc -ne 0 ]; then rm -rf $RemoteDir; exit `$rc; fi; "
             Write-Host "[INFO]   远端先非交互安装依赖: install_tool -c $InstallItems -y" -ForegroundColor Gray
         }
-        $rs = "cd /tmp; rm -rf $RemoteDir; mkdir -p $RemoteDir; tar xzf - -C $RemoteDir; cd $RemoteDir; ${preCmd}bash hwscope.sh$hwArgs >&2; rc=`$?; if [ `$rc -eq 0 ]; then tar czf - --warning=no-timestamp -C $RemoteDir/output . -C $RemoteDir logs; fi; rm -rf $RemoteDir; exit `$rc"
+        # v1.54.15：回拉 tar **必须只用一个 -C**（`-C DIR output logs`）。
+        #   原写法 `-C $RemoteDir/output . -C $RemoteDir logs` 在 GNU tar 下报
+        #   "-C ... has no effect / Exiting with failure status"（exit=2），**logs/ 根本没进包**
+        #   （实测 291KB vs 607KB），而单次认证模式用 `exit $rc` 吞掉了这个错误码 → 静默丢日志包。
+        $rs = "cd /tmp; rm -rf $RemoteDir; mkdir -p $RemoteDir; tar xzf - -C $RemoteDir; cd $RemoteDir; ${preCmd}bash hwscope.sh$hwArgs >&2; rc=`$?; if [ `$rc -eq 0 ]; then tar czf - --warning=no-timestamp -C $RemoteDir output logs; fi; rm -rf $RemoteDir; exit `$rc"
         $rc = Invoke-SSHRetry "远程采集" { & cmd /c ("ssh $SSHOpts -T $H `"$rs`" < `"$pushFile`" > `"$pullFile`"") } -HostName $H
         if ($rc -ne 0) {
             if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源可达性)" -ForegroundColor Red }
@@ -263,12 +267,17 @@ try {
             if ($bad.Count -gt 0) {
                 Write-Host "[WARN] BMC 密码含非 ASCII 字符：Windows 版经管道可能出现编码问题，建议改用 WSL 的 tools/remote_collect.sh 跑一次" -ForegroundColor Yellow
             }
-            $remoteRun = "mkdir -p $RemoteDir; tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null; rm -f ${RemoteDir}.tgz; cd $RemoteDir; ${reads}$installCmd$Sudo bash hwscope.sh$hwArgs"
+            # v1.54.15：采集完成后**在同一条 ssh 里**把结果打成远端包（tar 只用一个 -C），
+            #   回拉改用 scp（与推送同一命令族，Windows 上已证明稳定），
+            #   避免原来那条「ssh + cmd 重定向」的回拉调用（实测第 3 次 ssh 认证被接受但客户端立刻 255、
+            #   远端命令根本没执行 → 远端临时目录残留、结果没拉回）。
+            $remoteRun = "mkdir -p $RemoteDir; tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null; rm -f ${RemoteDir}.tgz; cd $RemoteDir; ${reads}$installCmd$Sudo bash hwscope.sh$hwArgs; rc=`$?; tar czf --warning=no-timestamp ${RemoteDir}.pull.tgz -C $RemoteDir output logs; exit `$rc"
             $pwPayload = ($pwLines -join "`n") + "`n"
             Write-Host "[INFO] BMC 密码经 stdin 送入远端（不落盘、不进命令行）" -ForegroundColor Gray
             $rc = Invoke-SSHRetry "远端执行" { $pwPayload | & ssh ($SSHOpts + $TtyOpt).Split(" ") $H $remoteRun } -HostName $H
             $pwPayload = $null; $pwLines = @()
         } else {
+            $remoteRun = "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs; rc=`$?; tar czf --warning=no-timestamp ${RemoteDir}.pull.tgz -C $RemoteDir output logs; exit `$rc"
             $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H $remoteRun } -HostName $H
         }
         if ($rc -ne 0) {
@@ -277,10 +286,17 @@ try {
             exit $rc
         }
 
-        # 4. 回拉结果（-C 切换打包 output/<MACHINE_ID>/ 内容 + logs/）+ 顺带清理远端
-        #    （cmd /c 仅做二进制重定向；远端命令用 ; 连接——cmd 不拆 ;，bash 正常解析）
-        $rc = Invoke-SSHRetry "回拉" { & cmd /c ("ssh $SSHOpts$TtyOpt $H `"$Sudo tar czf - --warning=no-timestamp -C $RemoteDir/output . -C $RemoteDir logs 2>/dev/null; rm -rf $RemoteDir`" > `"$pullFile`"") }
-        if ($rc -ne 0) { Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red; exit 1 }
+        # 4. 回拉结果（远端包在「远端执行」里已打好，这里用 scp 取回——与推送同一命令族）
+        $rc = Invoke-SSHRetry "回拉" { & scp $SSHOpts.Split(" ") "${H}:${RemoteDir}.pull.tgz" $pullFile } -HostName $H
+        if ($rc -ne 0) {
+            Write-Host "[ERROR] 结果回拉失败 (exit=$rc)" -ForegroundColor Red
+            Write-Host "        远端包: ${RemoteDir}.pull.tgz（可手工 scp 回来排查）" -ForegroundColor Gray
+            exit 1
+        }
+        # 远端清理：**不再单独开一条 ssh**（那会变成第 4 次密码输入，且实测这条路最容易出问题）。
+        #   远端临时目录与 pull 包留在 /tmp，由系统清理策略回收；如要立刻清，可手工：
+        #     ssh <host> "rm -rf /tmp/hwscope_remote_*"
+        Write-Host "[INFO] 远端临时目录保留（/tmp/hwscope_remote_*），由系统清理" -ForegroundColor Gray
     }
     Remove-Item $pushFile -Force -ErrorAction SilentlyContinue
 
