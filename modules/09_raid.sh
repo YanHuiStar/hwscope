@@ -23,7 +23,19 @@ run_raid() {
     module_start "$MODULE_NAME"
 
     # Phase 1: 串行获取所有设备数量 / 列表（后续命令依赖这些值）
-    run_and_log "lspci 2>/dev/null | grep --line-buffered -iE 'RAID|SAS|SATA|MegaRAID|Broadcom|LSI|AVAGO'" \
+    # v1.54.12：**按 PCI class 过滤**，不再按厂商标。
+    #   原写法 `grep -iE 'RAID|SAS|SATA|MegaRAID|Broadcom|LSI|AVAGO'` 会把 PCIe 交换芯片当 RAID 卡：
+    #   实测 NVIDIA DGX A100 上 Broadcom/LSI **PEX880xx PCIe Switch** 有几十个，全部命中 'Broadcom|LSI'，
+    #   于是 pci_raid_hba_list.log 塞满 "PCI bridge: ... PEX880xx"，而该机真正的 RAID 控制器（class 0104）是 0 个
+    #   ——报告端按 class 判断没被骗，但人翻日志会以为有卡。
+    #   判据用 **class 名称**（lspci 有无 -nn 都成立）：
+    #     0104 = "RAID bus controller"，0107 = "Serial Attached SCSI controller"（SAS HBA 落这一类）。
+    #   ⚠️ 只用 class 码还不够：实测 PEX880xx 的**管理端点**就报 `Serial Attached SCSI controller [0107]`，
+    #     名字里写着 "PCIe Switch management endpoint"（DGX A100 4 个、MI300X 6~8 个、B300 2 个全是这种），
+    #     必须按名字把交换芯片/管理端点排除，否则 class 判据照样误收。
+    #   保留型号特征兜底（MegaRAID / Smart Array / PERC / Adaptec），实测一台 headless 样本的
+    #     "RAID bus controller: Broadcom / LSI MegaRAID 12GSAS/PCIe Secure SAS39xx" 靠这条命中。
+    run_and_log "lspci -nn 2>/dev/null | grep --line-buffered -iE 'RAID bus controller|Serial Attached SCSI controller|MegaRAID|Smart Array|PERC [0-9]|Adaptec' | grep --line-buffered -viE 'PCIe Switch|management endpoint|PEX[0-9]{4}|Switchtec|PCI bridge'" \
         "${dir}/pci_raid_hba_list.log"
 
     # v1.48.69：storcli64 探测带固定路径——Broadcom 官方包装到 /opt/MegaRAID/storcli/ 且不建 PATH 软链

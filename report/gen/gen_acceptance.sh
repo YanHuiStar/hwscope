@@ -732,9 +732,9 @@ gen_acceptance() {
         echo ""
         echo "| 项目 | 规格型号描述（含配置） | 单位 | 数量 |"
         echo "|------|------------------------|------|------|"
-        echo "| 准系统 | ${MB_MANUFACTURER:-N/A} ${MB_PRODUCT:-N/A}（机箱 SN: ${CHASSIS_SN:-N/A}，BIOS: ${BIOS_VERSION:-N/A}） | 台 | 1 |"
+        echo "| 准系统 | ${MB_MANUFACTURER:-N/A} ${MB_PRODUCT:-N/A}（系统 SN: ${MB_SN:-N/A}，机箱 SN: ${CHASSIS_SN:-N/A}，BIOS: ${BIOS_VERSION:-N/A}） | 台 | 1 |"
         echo "| CPU | ${CPU_MODEL:-N/A}（${CPU_CORES:-0} 核/颗，${CPU_MAX_SPEED:-N/A}MHz） | 颗 | ${CPU_SOCKETS:-0} |"
-        echo "| 内存 | ${MEM_TYPE:-DDR} ${ACC_MEM_DIMM:-N/A} ECC RDIMM（额定 ${MEM_NOM:-N/A}，实际 ${MEM_SPEED:-N/A}） | 条 | ${MEM_POPULATED:-0} |"
+        echo "| 内存 | ${MEM_TYPE:-DDR} ${ACC_MEM_DIMM:-N/A} ECC RDIMM（额定 ${MEM_NOM:-N/A}，实际 ${MEM_SPEED:-N/A}；合计 ${MEM_TOTAL:-N/A}） | 条 | ${MEM_POPULATED:-0} |"
         # GPU 显存类型（数据中心 HBM / 消费与专业 GDDR；未识别型号不标注，避免误导）
         ACC_GPU_MEMTYPE=""
         if [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
@@ -770,6 +770,20 @@ gen_acceptance() {
             _ethd=$(_dist_str eth)
             echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 张 | ${ACC_NIC_ETH_COUNT}（${_ethd:-${ACC_NIC_ETH_PORT} 口}，共 ${ACC_NIC_ETH_PORT} 口） |"
         fi
+        # v1.54.12：网卡合计（卡数/口数分开累计）——原来各类各写「N 张（M 口）」，
+        #   客户得自己相加，易被误读成重复计数；只有两类以上才出合计行。
+        _nic_cards=0; _nic_ports=0; _nic_kinds=0
+        for _v in "${ACC_NIC_IB_COUNT:-0}" "${ACC_NIC_DPU_COUNT:-0}" "${ACC_NIC_ETH_COUNT:-0}"; do
+            [ "${_v:-0}" -gt 0 ] 2>/dev/null && _nic_kinds=$((_nic_kinds+1))
+            _nic_cards=$((_nic_cards + ${_v:-0}))
+        done
+        for _v in "${ACC_NIC_IB_PORT:-0}" "${ACC_NIC_DPU_PORT:-0}" "${ACC_NIC_ETH_PORT:-0}"; do
+            _nic_ports=$((_nic_ports + ${_v:-0}))
+        done
+        if [ "$_nic_kinds" -ge 2 ] 2>/dev/null; then
+            echo "| 网卡合计 | 以上各类合计（含板载） | 张 | ${_nic_cards}（共 ${_nic_ports} 口） |"
+        fi
+
         # v1.52.17：区分「平台无本地数据盘」与「采集失败」。实测一台 ASUS B300 本机只有
         #   USB 安装盘（sda 476.9G）+ 4 个 0B 虚拟盘 → STORAGE_COUNT=0，原渲染 `N/A（0 GiB）`
         #   让读者以为「没采到数据」；实际是「该机未配本地数据盘」（GPU 服务器常走网络存储）。
@@ -789,6 +803,14 @@ gen_acceptance() {
             fi
         fi
         echo "| 电源模块 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
+        # v1.54.12：风扇与阵列补进概览——原来只在正文有，配置单/交接单上看不到。
+        if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then
+            echo "| 风扇 | ${FAN_COUNT_BREAKDOWN:-${FAN_COUNT:-0}} | 个 | ${FAN_COUNT:-0} |"
+        fi
+        if [ -n "${MD_RAID_LIST:-}" ]; then
+            _mdn=$(printf '%s' "$MD_RAID_LIST" | tr ',' '\n' | grep -c .)
+            echo "| 阵列 | mdadm 软件 RAID：${MD_RAID_LIST}（无硬件 RAID 卡） | 组 | ${_mdn} |"
+        fi
         echo "| 系统管理 | BMC（固件 ${BMC_FW:-N/A}） | 套 | 1 |"
         echo ""
         echo "## 验收信息"
