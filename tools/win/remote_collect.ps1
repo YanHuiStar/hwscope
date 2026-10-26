@@ -11,7 +11,7 @@
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -Modules gpu,cpu
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -OutDir D:\hwout
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -InstallItems 1,2   # 先远端装基础+压测依赖再采集（v1.42.1，等价 Linux --install）
-#   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -BmcIp 10.0.0.9   # 带外 BMC 采集（v1.54.4，等价 Linux --bmc-ip；运行时提示输 BMC 密码）
+#   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -BmcIp 10.0.0.9   # 带外 BMC 采集（v1.54.4；BMC 密码另行提示）
 #   powershell -ExecutionPolicy Bypass -File remote_collect.ps1 -H root@10.0.0.1 -BmcIp 10.0.0.9 -HgxBmcIp 10.0.0.10   # 主机 BMC + HGX 基板 BMC
 # =============================================================================
 param(
@@ -58,6 +58,50 @@ $TarExe = if (Test-Path "$env:SystemRoot\System32\tar.exe") { "$env:SystemRoot\S
 $IsRoot = $H -like "root@*"
 $Sudo = if ($NoSudo -or $IsRoot) { "" } else { "sudo" }
 $TtyOpt = if ($Sudo) { " -t" } else { "" }
+
+# ─── v1.54.16：SSH 密码只输一次（OpenSSH 原生 SSH_ASKPASS）───
+#   以前三步模式要输 3 次密码（推送/执行/回拉），用户明确要求改成一次。
+#   做法：开头问一次密码 → 写一个**不含密码的** askpass 脚本（只回显环境变量）→
+#         后续 ssh/scp 由 OpenSSH 自己调用它取密码，全程不再打断。
+#   密码只经进程环境变量传递：不落盘（askpass 文件里只有 %HWSCOPE_SSH_PW%）、不进命令行。
+#   探测失败（老版本 OpenSSH 不支持 ASKPASS）时自动退回「每条命令各输一次」的老行为。
+$AskPassFile = $null
+$SshPwPlain  = $null
+$UseAskPass  = $false
+function Initialize-SshAskPass {
+    $pw = $null
+    # 自动化/测试可用环境变量预置（CI 场景）；交互场景一律走掩码提示
+    if ($env:HWSCOPE_SSH_PASSWORD) { $pw = $env:HWSCOPE_SSH_PASSWORD }
+    else {
+        $sec = Read-Host -AsSecureString "SSH 密码（$H，只输这一次）"
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+        try { $pw = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    }
+    if ([string]::IsNullOrEmpty($pw)) { return $false }
+
+    $script:AskPassFile = Join-Path $env:TEMP "hwscope_askpass_$TS.cmd"
+    # 文件里只有变量名，没有密码本身
+    Set-Content -Path $script:AskPassFile -Encoding ASCII -Value '@echo %HWSCOPE_SSH_PW%' -Force
+    $env:HWSCOPE_SSH_PW     = $pw
+    $env:SSH_ASKPASS        = $script:AskPassFile
+    $env:SSH_ASKPASS_REQUIRE = 'force'
+    $script:SshPwPlain = $pw
+
+    # 探测：无 tty、不给交互机会时能否认证成功
+    $probe = & cmd /c ("ssh -o BatchMode=no -o NumberOfPasswordPrompts=1 $SSHOpts $H `"true`" < NUL 2>&1")
+    if ($LASTEXITCODE -eq 0) { return $true }
+    # 失败则清掉环境，回到交互老路
+    Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue
+    Remove-Item Env:SSH_ASKPASS, Env:SSH_ASKPASS_REQUIRE, Env:HWSCOPE_SSH_PW -ErrorAction SilentlyContinue
+    $script:AskPassFile = $null; $script:SshPwPlain = $null
+    return $false
+}
+function Clear-SshAskPass {
+    if ($script:AskPassFile) { Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue }
+    Remove-Item Env:SSH_ASKPASS, Env:SSH_ASKPASS_REQUIRE, Env:HWSCOPE_SSH_PW -ErrorAction SilentlyContinue
+    $script:AskPassFile = $null; $script:SshPwPlain = $null
+}
 
 # SSH 认证重试（最多 3 次）：仅对认证/连接类失败重试（输出含 Permission denied/密码错误），其他错误直接返回
 # 注意：ForEach-Object 累积捕获 + Out-Host 强制显示——`$out = @( ... | Tee-Object )` 赋值上下文截获管道，
@@ -183,6 +227,14 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  HwScope 远程采集 → $H (Windows)" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
+# v1.54.16：先问一次 SSH 密码，后续 ssh/scp 全靠 askpass 免交互（三步模式不再输 3 次）
+$UseAskPass = Initialize-SshAskPass
+if ($UseAskPass) {
+    Write-Host "[INFO] SSH 密码已缓存（本次运行内所有 ssh/scp 复用，不再打断）" -ForegroundColor Gray
+} else {
+    Write-Host "[WARN] 未启用密码缓存（OpenSSH 不支持 SSH_ASKPASS 或密码为空）——按老行为逐条提示" -ForegroundColor Yellow
+}
+
 try {
     # ─── 1. 本地打包项目（PowerShell 直调 bsdtar；避免 cmd /c 管道引号地狱——cmd 会剥 ssh 命令引号并把 && 当本地分隔符） ───
     Write-Host "[INFO] 打包项目..." -ForegroundColor Yellow
@@ -228,7 +280,7 @@ try {
         #   原写法 `-C $RemoteDir/output . -C $RemoteDir logs` 在 GNU tar 下报
         #   "-C ... has no effect / Exiting with failure status"（exit=2），**logs/ 根本没进包**
         #   （实测 291KB vs 607KB），而单次认证模式用 `exit $rc` 吞掉了这个错误码 → 静默丢日志包。
-        $rs = "cd /tmp; rm -rf $RemoteDir; mkdir -p $RemoteDir; tar xzf - -C $RemoteDir; cd $RemoteDir; ${preCmd}bash hwscope.sh$hwArgs >&2; rc=`$?; if [ `$rc -eq 0 ]; then tar czf - --warning=no-timestamp -C $RemoteDir output logs; fi; rm -rf $RemoteDir; exit `$rc"
+        $rs = "cd /tmp; rm -rf $RemoteDir; mkdir -p $RemoteDir; tar xzf - -C $RemoteDir; cd $RemoteDir; ${preCmd}bash hwscope.sh$hwArgs >&2; rc=`$?; if [ `$rc -eq 0 ]; then mkdir -p $RemoteDir/.pack; cp -a $RemoteDir/output/. $RemoteDir/.pack/ 2>/dev/null; cp -a $RemoteDir/logs $RemoteDir/.pack/logs 2>/dev/null; tar czf - --warning=no-timestamp -C $RemoteDir/.pack .; fi; rm -rf $RemoteDir; exit `$rc"
         $rc = Invoke-SSHRetry "远程采集" { & cmd /c ("ssh $SSHOpts -T $H `"$rs`" < `"$pushFile`" > `"$pullFile`"") } -HostName $H
         if ($rc -ne 0) {
             if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源可达性)" -ForegroundColor Red }
@@ -253,14 +305,22 @@ try {
             # v1.54.4：BMC 密码通道（与 Linux 版同构）——密码只经 stdin 进远端 read，随后 export 给模块。
             #   远端命令用 ; 连接（cmd 不当分隔符），read 用 -r 防反斜杠被吃掉。
             $reads = ""; $pwLines = @()
+            # v1.54.16：自动化/测试可用 $env:HWSCOPE_BMC_PASSWORD / HWSCOPE_HGX_BMC_PASSWORD 预置，
+            #   交互场景仍走掩码提示（与 SSH 密码同一套约定；密码只经内存与 stdin，不落盘）
             if ($BmcIp) {
-                $sec = Read-Host -AsSecureString "主机 BMC 密码（$BmcIp）"
-                $pwLines += (ConvertFrom-SecureStringPlain $sec)
+                if ($env:HWSCOPE_BMC_PASSWORD) { $pwLines += $env:HWSCOPE_BMC_PASSWORD }
+                else {
+                    $sec = Read-Host -AsSecureString "主机 BMC 密码（$BmcIp）"
+                    $pwLines += (ConvertFrom-SecureStringPlain $sec)
+                }
                 $reads += "read -r BMC_PASS || true; export BMC_PASS; "
             }
             if ($HgxBmcIp) {
-                $sec = Read-Host -AsSecureString "HGX 基板 BMC 密码（$HgxBmcIp）"
-                $pwLines += (ConvertFrom-SecureStringPlain $sec)
+                if ($env:HWSCOPE_HGX_BMC_PASSWORD) { $pwLines += $env:HWSCOPE_HGX_BMC_PASSWORD }
+                else {
+                    $sec = Read-Host -AsSecureString "HGX 基板 BMC 密码（$HgxBmcIp）"
+                    $pwLines += (ConvertFrom-SecureStringPlain $sec)
+                }
                 $reads += "read -r HGX_BMC_PASS || true; export HGX_BMC_PASS; "
             }
             $bad = @($pwLines | Where-Object { $_ -match "[^\x20-\x7E]" })
@@ -271,13 +331,13 @@ try {
             #   回拉改用 scp（与推送同一命令族，Windows 上已证明稳定），
             #   避免原来那条「ssh + cmd 重定向」的回拉调用（实测第 3 次 ssh 认证被接受但客户端立刻 255、
             #   远端命令根本没执行 → 远端临时目录残留、结果没拉回）。
-            $remoteRun = "mkdir -p $RemoteDir; tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null; rm -f ${RemoteDir}.tgz; cd $RemoteDir; ${reads}$installCmd$Sudo bash hwscope.sh$hwArgs; rc=`$?; tar czf --warning=no-timestamp ${RemoteDir}.pull.tgz -C $RemoteDir output logs; exit `$rc"
+            $remoteRun = "mkdir -p $RemoteDir; tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null; rm -f ${RemoteDir}.tgz; cd $RemoteDir; ${reads}$installCmd$Sudo bash hwscope.sh$hwArgs; rc=`$?; mkdir -p $RemoteDir/.pack; cp -a $RemoteDir/output/. $RemoteDir/.pack/ 2>/dev/null; cp -a $RemoteDir/logs $RemoteDir/.pack/logs 2>/dev/null; tar czf ${RemoteDir}.pull.tgz --warning=no-timestamp -C $RemoteDir/.pack .; rm -rf $RemoteDir/.pack; exit `$rc"
             $pwPayload = ($pwLines -join "`n") + "`n"
             Write-Host "[INFO] BMC 密码经 stdin 送入远端（不落盘、不进命令行）" -ForegroundColor Gray
             $rc = Invoke-SSHRetry "远端执行" { $pwPayload | & ssh ($SSHOpts + $TtyOpt).Split(" ") $H $remoteRun } -HostName $H
             $pwPayload = $null; $pwLines = @()
         } else {
-            $remoteRun = "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs; rc=`$?; tar czf --warning=no-timestamp ${RemoteDir}.pull.tgz -C $RemoteDir output logs; exit `$rc"
+            $remoteRun = "mkdir -p $RemoteDir && tar xzf ${RemoteDir}.tgz -C $RemoteDir 2>/dev/null && rm -f ${RemoteDir}.tgz && cd $RemoteDir && $installCmd$Sudo bash hwscope.sh$hwArgs; rc=`$?; mkdir -p $RemoteDir/.pack; cp -a $RemoteDir/output/. $RemoteDir/.pack/ 2>/dev/null; cp -a $RemoteDir/logs $RemoteDir/.pack/logs 2>/dev/null; tar czf ${RemoteDir}.pull.tgz --warning=no-timestamp -C $RemoteDir/.pack .; rm -rf $RemoteDir/.pack; exit `$rc"
             $rc = Invoke-SSHRetry "远端执行" { & ssh ($SSHOpts + $TtyOpt).Split(" ") $H $remoteRun } -HostName $H
         }
         if ($rc -ne 0) {
@@ -406,4 +466,6 @@ finally {
     # 会把 hwscope_push_*.tgz / hwscope_pull_*.tgz 残留在 %TEMP%（实测多次失败后累积）
     if ($pushFile) { Remove-Item $pushFile -Force -ErrorAction SilentlyContinue }
     if ($pullFile) { Remove-Item $pullFile -Force -ErrorAction SilentlyContinue }
+    # v1.54.16：清掉 askpass 脚本与内存中的密码
+    Clear-SshAskPass
 }
