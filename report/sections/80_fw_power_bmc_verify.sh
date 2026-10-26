@@ -27,15 +27,19 @@ if [ -n "${FW_COMPLIANCE_DETAILS:-}" ]; then
         | awk '{u=0; for(i=2;i<=NF;i++) if($i=="usb") u=1; if(u) print $1}' | tr '\n' '|' | sed 's/|$//')
     FW_COMPLIANCE_DETAILS=$(printf '%s\n' "$FW_COMPLIANCE_DETAILS" | while IFS='|' read -r fc fd fcur fbase fst fnote; do
         [ -z "$fc" ] && continue
-        case "$fc" in
-            NVSWITCH)
-                case "${GPU_PLATFORM:-none}" in nvidia|mixed) : ;; *) continue ;; esac ;;
-            STORAGE)
-                case "|${_fw_usb_devs}|" in *"|${fd}|"*) continue ;; esac ;;
-            NIC)
-                # 设备名里带接口路径（4-1.4:1.0 之类）的是 USB 网卡
-                printf '%s' "$fd" | grep -qE '^[0-9]+-[0-9.]+:' && continue ;;
-        esac
+        # v1.54.14：**不要用「内层 case … esac ;;」写法**。
+        #   实测 bash 5.1.16（Ubuntu 22.04 / DGX A100）在 `$( … | while … done )` 里遇到
+        #   `case … in …) continue ;; esac ;;` 会报 `syntax error near unexpected token ';;'`，
+        #   而 bash 5.2（本机 WSL）解析正常 —— 于是整份 80 段（固件合规/能耗台账/BMC 校验/压测归档）
+        #   在这类机器上**静默全部缺失**，本地回归完全看不出来。改用 if/elif 后两版本一致。
+        if [ "$fc" = "NVSWITCH" ]; then
+            case "${GPU_PLATFORM:-none}" in nvidia|mixed) : ;; *) continue ;; esac
+        elif [ "$fc" = "STORAGE" ]; then
+            case "|${_fw_usb_devs}|" in *"|${fd}|"*) continue ;; esac
+        elif [ "$fc" = "NIC" ]; then
+            # 设备名里带接口路径（4-1.4:1.0 之类）的是 USB 网卡
+            printf '%s' "$fd" | grep -qE '^[0-9]+-[0-9.]+:' && continue
+        fi
         printf '%s|%s|%s|%s|%s|%s\n' "$fc" "$fd" "$fcur" "$fbase" "$fst" "$fnote"
     done)
     [ -z "$FW_COMPLIANCE_DETAILS" ] && FW_COMPLIANCE_DETAILS=""
