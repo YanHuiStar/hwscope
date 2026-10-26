@@ -770,19 +770,6 @@ gen_acceptance() {
             _ethd=$(_dist_str eth)
             echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 张 | ${ACC_NIC_ETH_COUNT}（${_ethd:-${ACC_NIC_ETH_PORT} 口}，共 ${ACC_NIC_ETH_PORT} 口） |"
         fi
-        # v1.54.12：网卡合计（卡数/口数分开累计）——原来各类各写「N 张（M 口）」，
-        #   客户得自己相加，易被误读成重复计数；只有两类以上才出合计行。
-        _nic_cards=0; _nic_ports=0; _nic_kinds=0
-        for _v in "${ACC_NIC_IB_COUNT:-0}" "${ACC_NIC_DPU_COUNT:-0}" "${ACC_NIC_ETH_COUNT:-0}"; do
-            [ "${_v:-0}" -gt 0 ] 2>/dev/null && _nic_kinds=$((_nic_kinds+1))
-            _nic_cards=$((_nic_cards + ${_v:-0}))
-        done
-        for _v in "${ACC_NIC_IB_PORT:-0}" "${ACC_NIC_DPU_PORT:-0}" "${ACC_NIC_ETH_PORT:-0}"; do
-            _nic_ports=$((_nic_ports + ${_v:-0}))
-        done
-        if [ "$_nic_kinds" -ge 2 ] 2>/dev/null; then
-            echo "| 网卡合计 | 以上各类合计（含板载） | 张 | ${_nic_cards}（共 ${_nic_ports} 口） |"
-        fi
 
         # v1.52.17：区分「平台无本地数据盘」与「采集失败」。实测一台 ASUS B300 本机只有
         #   USB 安装盘（sda 476.9G）+ 4 个 0B 虚拟盘 → STORAGE_COUNT=0，原渲染 `N/A（0 GiB）`
@@ -803,13 +790,10 @@ gen_acceptance() {
             fi
         fi
         echo "| 电源模块 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
-        # v1.54.12：风扇与阵列补进概览——原来只在正文有，配置单/交接单上看不到。
+        # v1.54.12：风扇补进概览——原来只在正文有，配置单/交接单上看不到。
+        #   （阵列不进概览：硬件概览只列硬件部件，阵列属 RAID 段，有阵列卡时在 RAID 控制器段呈现。）
         if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then
             echo "| 风扇 | ${FAN_COUNT_BREAKDOWN:-${FAN_COUNT:-0}} | 个 | ${FAN_COUNT:-0} |"
-        fi
-        if [ -n "${MD_RAID_LIST:-}" ]; then
-            _mdn=$(printf '%s' "$MD_RAID_LIST" | tr ',' '\n' | grep -c .)
-            echo "| 阵列 | mdadm 软件 RAID：${MD_RAID_LIST}（无硬件 RAID 卡） | 组 | ${_mdn} |"
         fi
         echo "| 系统管理 | BMC（固件 ${BMC_FW:-N/A}） | 套 | 1 |"
         echo ""
