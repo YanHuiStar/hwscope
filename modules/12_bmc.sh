@@ -96,6 +96,19 @@ run_bmc() {
         _bmc_retry_serial "${dir}/remote_bmc_sel.log"     "${ipmi_cmd} sel list"
         _bmc_retry_serial "${dir}/remote_bmc_sensors.log" "${ipmi_cmd} sensor list"
         _bmc_retry_serial "${dir}/remote_bmc_fru.log"     "${ipmi_cmd} fru print"
+
+        # v1.54.19：带外**全部**失败时给出一份排查清单。
+        #   实测 DGX A100：BMC 网页/Redfish 能登、带内 KCS 正常，但本机走 lanplus 一律
+        #   "Unable to establish IPMI v2 / RMCP+ session"（0.1~0.3s 即失败），而**从另一台主机
+        #   用同一账号密码却能成功** —— 说明不是密码、不是 OS，而是「该主机 → BMC 的 IPMI-LAN 通路」。
+        _fail_n=$(grep -l "Unable to establish IPMI" "${dir}"/remote_bmc_*.log 2>/dev/null | wc -l)
+        if [ "${_fail_n:-0}" -ge 5 ]; then
+            echo -e "${YELLOW}[WARN] 带外 5 项全部失败——请按下面顺序排查（不是密码问题时的常见原因）${NC}" >&2
+            echo -e "       ① BMC 侧是否允许「IPMI over LAN」/ 是否有 IP 访问白名单（网页 → 设置 → 网络/IPMI）" >&2
+            echo -e "       ② 本机到 BMC 的 UDP 623 是否被拦：ping $BMC_IP ｜ sudo ufw status ｜ 交换机 ACL" >&2
+            echo -e "       ③ cipher suite 不匹配：手工试 ipmitool -E -C 17 -I lanplus -H $BMC_IP -U $BMC_USER mc info" >&2
+            echo -e "       ④ 对照测试：换一台主机用同账号同密码跑 ipmitool mc info，若成功即定位为本机↔BMC 通路" >&2
+        fi
     else
         echo -e "${YELLOW}[SKIP] Remote BMC not configured (BMC_IP is empty)${NC}"
     fi
