@@ -356,6 +356,13 @@ try {
                     }
                 }
                 $pwLines += $bmcPw   # ← 必须写进 payload，否则远端 read 拿到空密码
+                # v1.54.24：把「收到什么样的密码」以不含秘密的方式回显出来——
+                #   长度/是否纯 ASCII/@ 个数。全角、多打一个空格、少一位，靠掩码根本看不出来，
+                #   而这三种都会让 BMC 报同一句 Unable to establish（实测同一台机、同一份代码，
+                #   交互输入成功过、也失败过，差别就在这几个字符上）。
+                $atN = ($bmcPw.ToCharArray() | Where-Object { $_ -eq '@' }).Count
+                $asciiOk = if (Test-PasswordAscii $bmcPw) { '是' } else { '**否（含全角/非 ASCII）**' }
+                Write-Host ("[INFO] 已接收 BMC 密码：长度 {0}、@ 个数 {1}、纯 ASCII {2}（可与实际密码核对）" -f $bmcPw.Length, $atN, $asciiOk) -ForegroundColor Gray
                 $reads += "read -r BMC_PASS || true; export BMC_PASS; "
             }
             if ($HgxBmcIp) {
