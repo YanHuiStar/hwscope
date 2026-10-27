@@ -27,18 +27,13 @@ sudo bash hwscope.sh --skip dcgm,nvsm    # 跳过指定模块
 # 生成报告（采集后自动生成；也可对任意采集目录手动重跑）
 bash report/report.sh output/<机器ID> --acceptance
 
-# 带内（KCS，本机 /dev/ipmi0）**始终**是默认采集路径；带外（走网口拿 FRU/SEL/风扇/PSU/DCMI）是可选补充
-sudo bash hwscope.sh                      # 默认只采带内：会问一次「BMC 密码」——直接回车 = 不采带外
-sudo bash hwscope.sh --bmc-ip 10.0.0.9 --bmc-user admin    # 显式指定 = 带内 + 带外都采
-sudo bash hwscope.sh --bmc-ip <主机BMC> --hgx-bmc-ip <HGX基板BMC>   # HGX 双 BMC
-sudo bash hwscope.sh --no-bmc-auto        # 连探测都不做：不问、不采带外
+# 默认只采带内（KCS，本机 /dev/ipmi0）——不带任何参数即可
 
 # 模块开关 / BMC 凭据 / 输出目录：conf/hwscope.conf（默认全开，缺失工具自动跳过）
 
 # 远程采集（无需在目标机安装）—— Linux/WSL 运维机
 bash tools/remote_collect.sh -H root@10.0.0.1
 bash tools/remote_collect.sh -H root@10.0.0.1 --install 1,2                 # 冷启动：先远端装基础+压测依赖再采
-bash tools/remote_collect.sh -H root@10.0.0.1 --bmc-ip 10.0.0.9 --bmc-user admin   # 远程采集 + 带外 BMC
 
 # 远程采集 —— Windows 运维机（PowerShell 原生，等价 sh 版）
 tools\win\remote_collect.bat -H root@10.0.0.1
