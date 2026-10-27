@@ -81,6 +81,12 @@
 
 ## 🟡 远程采集
 
+### `redfish_fw_list.sh` — Redfish 固件版本收集（v1.54.22）
+- **用法**：`bash tools/redfish_fw_list.sh <BMC_IP> <NETRC_FILE>`（密码经 netrc 传入，命令行/ps 不含密码）
+- **输出**：每行 `名字=版本`（如 `BMC Firmware=0.18.3` / `System BIOS=1.13`），供报告 BMC 段「Redfish 固件明细」使用；取不到就输出空，报告端据此隐藏该行
+- **为什么要分层**：各厂 Redfish 路径不同——Dell/AMI 有 `/UpdateService/FirmwareInventory` 集合（可枚举 BIOS/BMC/CPLD/PSU）；**NVIDIA DGX 实测该集合 404**，版本在 `/Managers/*` 的 `FirmwareVersion`（完整号 `0.18.3`，比 `ipmitool mc info` 的 `0.18` 全）与 `/Systems/*` 的 `BiosVersion`（`1.13`）。脚本按「FirmwareInventory → Managers → Systems → Chassis.Power」顺序各试一遍，能取到哪个就取哪个
+- 由 `modules/12_bmc.sh` 调用（同一次采集内完成，不额外开 BMC 连接）
+
 ### `remote_collect.sh` — SSH 远程采集
 - **用法**：`bash tools/remote_collect.sh -H user@host [hwscope 参数...]`
 

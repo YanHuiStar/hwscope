@@ -145,7 +145,7 @@ run_bmc() {
         run_and_log_parallel 4 \
             "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Systems/System.Embedded.1 2>&1" "${dir}/redfish_system.log" \
             "curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/Managers 2>&1" "${dir}/redfish_managers.log" \
-            "_idl=\$(curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/UpdateService/FirmwareInventory 2>/dev/null | grep -oE '\"@odata.id\":\"[^\"]*FirmwareInventory/[^\"]*\"' | sed 's|.*FirmwareInventory/||; s|\"||g'); [ -z \"\$_idl\" ] && _idl='BIOS BMCImage1 BMCImage2 CPLD PSU'; for _m in \$_idl; do _j=\$(curl -sk --connect-timeout 5 --netrc-file '${NETRC_TMP}' https://${BMC_IP}/redfish/v1/UpdateService/FirmwareInventory/\$_m 2>/dev/null); _n=\$(printf '%s' \"\$_j\" | grep -oE '\"Name\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' | head -1 | sed 's|.*:[[:space:]]*\"||; s|\"\$||'); _v=\$(printf '%s' \"\$_j\" | grep -oE '\"Version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' | head -1 | sed 's|.*:[[:space:]]*\"||; s|\"\$||'); [ -n \"\$_v\" ] && printf '%s=%s\n' \"\${_n:-\$_m}\" \"\$_v\"; done" "${dir}/redfish_fw_versions.log"
+            "bash ${SCRIPT_DIR}/../tools/redfish_fw_list.sh ${BMC_IP} '${NETRC_TMP}'" "${dir}/redfish_fw_versions.log"  # v1.54.22：分层收集（各厂 Redfish 路径不同）
         rm -f "$NETRC_TMP"
         trap - EXIT INT TERM
     fi

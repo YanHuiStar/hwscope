@@ -65,6 +65,7 @@
 
 | 脚本 | 说明 |
 |------|------|
+| `redfish_fw_list.sh` | Redfish 固件版本收集（v1.54.22）：`<BMC_IP> <NETRC>` → 逐行 `名字=版本`；分层尝试 FirmwareInventory / Managers / Systems / Chassis.Power，兼容 Dell/AMI 与 **NVIDIA DGX（无 FirmwareInventory 集合）**；供报告 BMC 段「Redfish 固件明细」 |
 | `remote_collect.sh` | 远程采集：tar 推送 → 远端执行 → 回拉（交互式密码 + ControlMaster）；带外 BMC 参数 `--bmc-ip/--bmc-user/--hgx-bmc-ip/--hgx-bmc-user`（v1.53.45，v1.54.3 修复参数未 export 致带外从不执行；密码本地提示经 stdin 送远端，不落盘）；Windows 版 `.ps1` 自 v1.54.4 支持同名参数 `-BmcIp/-BmcUser/-HgxBmcIp/-HgxBmcUser`；`--install <1,2,...>` 先远端非交互装依赖再采集（v1.42.0）；**v1.53.6 起完成信息打印「采集目录 + 报告 + 归档包完整路径」**（归档包在 `logs/remote_logs/<机器ID>-<时间戳>.tar.gz`）；**v1.53.19 修复完成信息串台**——原按 `find … hwscope_report.json \| head -1` 取目录，多台历史或**多台并发采集**时会把本轮的采集目录/归档包印成另一台（实测多台同采：B 机横幅印成 A 机的 SN 与归档包），改为用本轮实际写入的机器目录（`_REPLACED`）定位，兜底才取最近修改的含报告目录；**v1.53.45** 加 `--bmc-ip/--bmc-user/--hgx-bmc-ip/--hgx-bmc-user`（BMC 密码运行时提示，root 目标机走 stdin）|
 | `remote_run.sh` | 远程执行：多机命令 / 推送文件 / 推送执行脚本（--script）+ 日志回拉（--pull-logs，v1.49.21 起逐机先清空再解包 + 归档校验）；v1.43.0 由 remote_batch.sh 改名 |
 
