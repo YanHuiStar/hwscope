@@ -37,8 +37,6 @@ bash tools/remote_collect.sh -H root@10.0.0.1 --install 1,2                 # �
 
 # 远程采集 —— Windows 运维机（PowerShell 原生，等价 sh 版）
 tools\win\remote_collect.bat -H root@10.0.0.1
-powershell -ExecutionPolicy Bypass -File tools\win\remote_collect.ps1 -H root@10.0.0.1 -BmcIp 10.0.0.9 -BmcUser admin
-powershell -ExecutionPolicy Bypass -File tools\win\remote_collect.ps1 -H root@10.0.0.1 -BmcIp 10.0.0.9 -HgxBmcIp 10.0.0.10
 ```
 
 ## 文档
