@@ -93,14 +93,13 @@ function Initialize-SshAskPass {
     $env:SSH_ASKPASS_REQUIRE = 'force'
     $script:SshPwPlain = $pw
 
-    # 探测：无 tty、不给交互机会时能否认证成功
-    $probe = & cmd /c ("ssh -o BatchMode=no -o NumberOfPasswordPrompts=1 $SSHOpts $H `"true`" < NUL 2>&1")
-    if ($LASTEXITCODE -eq 0) { return $true }
-    # 失败则清掉环境，回到交互老路
-    Remove-Item $script:AskPassFile -Force -ErrorAction SilentlyContinue
-    Remove-Item Env:SSH_ASKPASS, Env:SSH_ASKPASS_REQUIRE, Env:HWSCOPE_SSH_PW -ErrorAction SilentlyContinue
-    $script:AskPassFile = $null; $script:SshPwPlain = $null
-    return $false
+    # v1.54.21：**不再做连通性探测**。
+    #   旧实现在这里发一条 ssh 试探，失败就判定「OpenSSH 不支持 askpass」并关掉密码缓存——
+    #   但探测同样会因 host key 变化 / 网络抖动 / 端口未开 而失败（实测换盘后的 22.54：
+    #   密钥变了 → 探测 exit 255 → 关缓存 → 后面每次 ssh 都重新要密码）。
+    #   askpass 的支持与否取决于 OpenSSH 版本：不支持时这些环境变量会被忽略、行为与以前一致
+    #   （照旧逐条提示），不会更糟；支持时省掉重复输入。故直接启用。
+    return $true
 }
 # v1.54.18：**检测全角/非 ASCII 字符**。
 #   现象：中文输入法处于全角状态时，敲 "dgxluna.admin" 得到的是 ｄｇｘｌｕｎａ．ａｄｍｉｎ
