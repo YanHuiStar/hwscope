@@ -249,15 +249,23 @@ BMC_FW=$(extract "Firmware Revision" "${ipmi_mc}")
 load_manifest "${BMC_DIR}" redfish_fw_versions "redfish_fw_versions.log"
 RF_FW_BMC=""; RF_FW_BIOS=""; RF_FW_CPLD=""; RF_FW_PSU=""; RF_FW_OTHER=""
 if [ -f "${redfish_fw_versions}" ]; then
-    while IFS='|' read -r _rfname _rfver; do
-        [ -z "$_rfname" ] && continue
-        _rfver=$(echo "$_rfver" | tr -d ' \r')
+    # v1.54.20：只认「名字=版本」且版本以数字开头。旧采集/异常输出（整行被 | 拼一起、混入
+    #   "# Command"/"# --- output end ---"）一律忽略——原来会把命令行本身塞进表格，渲染成
+    #   "BIOS=BMCImage1|BMCImage2|CPLD|PSU|#---outputend---, # Command : for _m in ..." 这种垃圾。
+    while IFS='=' read -r _rfname _rfver; do
+        [ -z "${_rfname:-}" ] && continue
+        case "$_rfname" in \#*|\|*) continue ;; esac
+        case "$_rfname" in *"|"*) continue ;; esac
+        _rfname=$(printf '%s' "$_rfname" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+        _rfver=$(printf '%s' "${_rfver:-}" | tr -d ' \r' | head -c 40)
+        case "$_rfver" in [0-9]*) : ;; *) continue ;; esac
+        # 名字用两侧通配：Redfish 的 Name 常带前缀（"System BIOS" / "BMC Firmware" / "PSU 1"）
         case "$_rfname" in
-            BMCImage*) [ -n "$_rfver" ] && RF_FW_BMC="$_rfver" ;;
-            BIOS)      [ -n "$_rfver" ] && RF_FW_BIOS="$_rfver" ;;
-            CPLD)      [ -n "$_rfver" ] && RF_FW_CPLD="$_rfver" ;;
-            PSU)       [ -n "$_rfver" ] && RF_FW_PSU="$_rfver" ;;
-            *)         [ -n "$_rfver" ] && RF_FW_OTHER="${RF_FW_OTHER}${_rfname}=${_rfver}, " ;;
+            *BMC*)  [ -n "$_rfver" ] && RF_FW_BMC="$_rfver" ;;
+            *BIOS*) [ -n "$_rfver" ] && RF_FW_BIOS="$_rfver" ;;
+            *CPLD*) [ -n "$_rfver" ] && RF_FW_CPLD="$_rfver" ;;
+            *PSU*)  [ -n "$_rfver" ] && RF_FW_PSU="$_rfver" ;;
+            *)      [ -n "$_rfver" ] && RF_FW_OTHER="${RF_FW_OTHER}${_rfname}=${_rfver}, " ;;
         esac
     done < "${redfish_fw_versions}"
 fi
