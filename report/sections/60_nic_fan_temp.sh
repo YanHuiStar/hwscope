@@ -740,3 +740,35 @@ if [ -f "${BMC_DIR}/ipmi_sdr.log" ] || [ -f "${FAN_DIR}/ipmi_fan_redundancy.log"
         esac
     fi
 fi
+
+# ─── v1.54.32：端口总览与计算网卡汇总（从 NIC_DETAILS 逐口行统计）─────────────
+#   背景：原来「IB 设备数 / IB 活动口 / IB Link 状态 / 协议模式 / 端口模式」五个计数
+#   口径各不相同（固件 CA 数、LINK_TYPE 行数、BDF 端口数），读者拼不出"到底几个口"。
+#   这里统一按**端口行**统计一次，报告只展示这一个数。
+NIC_PORT_TOTAL=0; NIC_PORT_UP=0; NIC_PORT_DOWN=0; NIC_GD_PORT=0
+NIC_GD_CARDS=0
+if [ -n "${NIC_DETAILS:-}" ]; then
+    declare -A _gd_card_seen=()
+    while IFS='|' read -r _nic _bdf _mac _sn _pn _fw _pcie _psid _gd _chip _port _link _loc; do
+        [ -z "${_nic:-}" ] && continue
+        NIC_PORT_TOTAL=$((NIC_PORT_TOTAL + 1))
+        case "${_link:-}" in
+            Down*|down*|"") NIC_PORT_DOWN=$((NIC_PORT_DOWN + 1)) ;;
+            *)              NIC_PORT_UP=$((NIC_PORT_UP + 1)) ;;
+        esac
+        # 计算网卡 = GPU 直连 **且** 卡型为 ConnectX/BlueField（同 v1.48.86 口径：
+        #   PXB/PIX 会把同 PCIe 域的非计算卡一并纳入，实测 A100 HGX 的 MCX556A-ECAT(CX-5)、
+        #   B200 板载 X710 等都会命中，不过滤会把管理口算成计算网卡）。
+        #   型号串在不同平台写法不同：NVIDIA 平台带「[ConnectX-7]」后缀，
+        #   AMD 平台（实测 MI300X）只有部件号「MCX753436MS-HEAB」——两种都要认。
+        case "${_pn:-}" in
+            *ConnectX*|*BlueField*|*MCX*)
+                if [ -n "${_gd:-}" ]; then
+                    NIC_GD_PORT=$((NIC_GD_PORT + 1))
+                    [ -n "${_bdf:-}" ] && _gd_card_seen["${_bdf%%.*}"]=1
+                fi ;;
+        esac
+    done < <(printf '%s\n' "$NIC_DETAILS")
+    NIC_GD_CARDS=${#_gd_card_seen[@]}
+    unset _gd_card_seen
+fi

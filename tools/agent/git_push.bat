@@ -5,7 +5,7 @@ rem git_push.bat - HwScope one-click git push (Windows launcher)
 rem Usage: double-click, or pass args:
 rem   git_push.bat            (review + push, interactive confirm)
 rem   git_push.bat -y         (skip confirm)
-rem   git_push.bat --fetch    (fetch first, detect behind)
+rem   (fetch is the default; use --no-fetch to skip it)
 rem   git_push.bat --dry-run  (review only, no push)
 rem Deps: Git for Windows (git-bash). Locates bash.exe automatically.
 rem NOTE: keep this file pure ASCII - Chinese output comes from git_push.sh.

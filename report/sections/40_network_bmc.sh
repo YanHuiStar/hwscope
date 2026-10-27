@@ -295,6 +295,54 @@ for _lf in "${ipmi_lan1}" "${ipmi_lan2}" "${ipmi_lan_all}"; do
         fi
     fi
 done
+# v1.54.30：BMC 管理地址来源（DHCP / 静态）——交接单登记管理口时，静态还是动态会影响
+#   后续换网/换机是否要改回固定 IP，客户常问，故与地址一起标注。
+BMC_IP_SRC=""
+if [ "${BMC_IP:-0.0.0.0}" != "0.0.0.0" ]; then
+    for _sf in "${ipmi_lan_all}" "${ipmi_lan1}" "${ipmi_lan2}"; do
+        [ -f "$_sf" ] || continue
+        # 取 IP 所在通道段内的 Source。
+        #   注意两点（都曾踩过）：① 排除 `^#` 命令头行——头行里就含 `IP Address Source` 字样，
+        #   不排除会把自己的命令行当成解析结果；② ipmitool 输出里 Source 在 IP **之前**，
+        #   所以要边扫边记住本段的 Source，等遇到目标 IP 再吐出（不能"先见 IP 后找 Source"）。
+        _src=$(awk -v ip="$BMC_IP" '
+            /^[[:space:]]*#/ { next }
+            /=== Channel/ { if (hit) exit; src=""; next }
+            /^[[:space:]]*IP Address Source/ { s=$0; sub(/.*: */, "", s); src=s; next }
+            /^[[:space:]]*IP Address[[:space:]]*:/ {
+                if (!hit && index($0, ip) > 0) { print src; hit=1; exit }
+            }' "$_sf" 2>/dev/null)
+        [ -z "$_src" ] && _src=$(grep -m1 -E "^[[:space:]]*IP Address Source" "$_sf" 2>/dev/null | sed 's/.*: *//')
+        [ -n "$_src" ] && { case "$_src" in DHCP*) BMC_IP_SRC="DHCP 获取" ;; Static*) BMC_IP_SRC="静态设置" ;; Unspecified*|"") BMC_IP_SRC="" ;; *) BMC_IP_SRC="$_src" ;; esac; break; }
+    done
+fi
+
+# ─── v1.54.35：模块信息（线缆）采集失败提示 —— 只认「mlxlink 真失败」────────────
+#   用户口径：出厂/验收测试**通常不插光模块与线缆**，没模块是常态，不是缺陷；
+#   只有少数场景才接线验互通。所以「读不到模块」绝不该告警（v1.54.33 修过头，实测
+#   4 台机器每台都冒一条 ⚠️，而它们的 8 个口是明确的 Cable is unplugged）。
+#   现在只统计**命令本身失败**的设备（日志里有 `-E-` 报错行或 exit code ≠ 0），
+#   那才意味着"本来能读到却读不到"，且文案为中性提示、不用告警色。
+CABLE_MODULE_NOTE=""; CABLE_MODULE_FAIL=0; CABLE_MODULE_SEEN=0; CABLE_MODULE_BAD_DEV=""
+if [ -d "${NET_DIR}" ]; then
+    for _mf in "${NET_DIR}"/mlxlink_mlx5_*_module.log; do
+        [ -f "$_mf" ] || continue
+        CABLE_MODULE_SEEN=$((CABLE_MODULE_SEEN + 1))
+        _fail=0
+        grep -qE '^-E-|^[[:space:]]*-E-' "$_mf" 2>/dev/null && _fail=1
+        _rc=$(grep -m1 -oE 'exit code: *[0-9]+' "$_mf" 2>/dev/null | grep -oE '[0-9]+$')
+        [ -n "${_rc:-}" ] && [ "$_rc" != "0" ] && _fail=1
+        if [ "$_fail" = "1" ]; then
+            CABLE_MODULE_FAIL=$((CABLE_MODULE_FAIL + 1))
+            _dv=$(basename "$_mf" | sed 's/^mlxlink_//; s/_module\.log$//')
+            CABLE_MODULE_BAD_DEV="${CABLE_MODULE_BAD_DEV}${CABLE_MODULE_BAD_DEV:+, }${_dv}"
+        fi
+    done
+fi
+if [ "$CABLE_MODULE_FAIL" -gt 0 ] 2>/dev/null; then
+    CABLE_MODULE_NOTE="${CABLE_MODULE_SEEN} 个设备中 ${CABLE_MODULE_FAIL} 个 mlxlink 读取失败（${CABLE_MODULE_BAD_DEV}）——这几项无模块数据；未插线缆属常态，如本次要核对线缆请复采"
+fi
+
 # SEL 数据有效性（采集失败时统计全为 0，验收不能判 PASS，须区分"无数据"）
 SEL_DATA_VALID=0
 if [ -f "${ipmi_sel_elist}" ]; then

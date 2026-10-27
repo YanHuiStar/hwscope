@@ -13,7 +13,9 @@ gen_txt() {
         while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank dwidth; do
             [ -z "$dslot" ] && continue
             # v1.50.3：空槽内部标记 -> 展示文案
-            [ "$dsize" = "EMPTY_SLOT" ] && dsize="（未插）"
+            # v1.54.33：`（未插）`→`空槽`——配置单口径（"32 槽已插 16、空槽 16"），
+            #   且「未插」易被读成"该插没插/漏件"，与真实缺件混淆；JSON 仍保留 EMPTY_SLOT 供程序消费
+            [ "$dsize" = "EMPTY_SLOT" ] && dsize="空槽"
             dseq=$((dseq+1))
             dimms_txt="${dimms_txt}    ${dseq}. ${dslot}  ${dsize}  ${dmfr}  SN:${dsn}  P/N:${dpn}  额定${dnom}/现${dcur}  Rank:${drank:-N/A}${dwidth:+ ${dwidth}}"$'\n'
         done < <(printf '%s\n' "$MEM_DIMMS")
@@ -356,10 +358,10 @@ fi)$(if [ -z "$HBA_DETAILS" ] && [ -n "$HBA_PCI_PRESENT" ]; then
 fi)
 
 [网络]
-  IB设备 : ${IB_COUNT:-0}
-  活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
-  Link状态: Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED")
-  额定速率: ${IB_NOMINAL:-N/A}$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n  固件一致性: [警告] 同型号卡固件版本不一致（仅供核对，非故障判定）：%s' "${IB_FW_INCONSISTENT}"; fi)
+  端口总览: $(if [ "${NIC_PORT_TOTAL:-0}" -gt 0 ]; then printf '%s 口｜Up %s / Down %s%s' "${NIC_PORT_TOTAL}" "${NIC_PORT_UP:-0}" "${NIC_PORT_DOWN:-0}" "$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED")"; else printf '%s 个 CA（无端口级数据）' "${IB_COUNT:-0}"; fi)
+  协议分布: ${NIC_LINKTYPE_SUMMARY:-未识别（无 mlxconfig 数据）}
+  速率   : 额定 ${IB_NOMINAL:-N/A}${IB_ACTIVE_SPEED:+ · 协商 ${IB_ACTIVE_SPEED}}$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n  固件一致性: [警告] 同型号卡固件版本不一致（仅供核对）: %s' "${IB_FW_INCONSISTENT}"; fi)
+$(if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ]; then printf '  计算网卡: %s 张 / %s 口（GPU 直连，与硬件概览同源）\n' "${ACC_NIC_IB_COUNT}" "${ACC_NIC_IB_PORT}"; fi)
 $(if [ -n "${NIC_LINKTYPE_SUMMARY:-}" ]; then printf "  协议模式: %s\n" "${NIC_LINKTYPE_SUMMARY}"; fi)$(if [ -n "${NIC_SRIOV_SUMMARY:-}" ]; then printf "  SR-IOV  : %s\n" "${NIC_SRIOV_SUMMARY}"; fi)
   网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)
   网卡(卡级):$(if [ -n "$NIC_CARD_TXT" ]; then printf '\n%s' "$NIC_CARD_TXT"; else printf ' N/A'; fi)$(if [ -n "$nic_details_txt" ]; then printf '\n  网卡(端口级):%s' "$nic_details_txt"; fi)$(if printf '%s\n' "$nic_details_txt" | grep -q "能力 " 2>/dev/null; then printf '\n  注: PCIe(协商) 标"(能力 …)"= 卡能力高于当前协商，多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障\n'; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
@@ -373,7 +375,7 @@ fi)
 [BMC]
   型号   : ${BMC_FRU:-N/A}
   固件   : ${BMC_FW:-N/A}
-  IP     : ${BMC_IP:-N/A}
+  IP     : ${BMC_IP:-N/A}${BMC_IP_SRC:+（${BMC_IP_SRC}）}
   MAC    : ${BMC_MAC:-N/A}
   SEL    : $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} (未解除 Critical ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+，已自愈 $SEL_CRIT_RECOVERED})"; else echo "⚠️ 数据不可用"; fi)
 $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
@@ -440,8 +442,9 @@ fi)
 
 [健康检查]
 $(printf '%s' "$HEALTH_TXT")
+$(if [ -n "${MEM_EDAC:-}" ] && [ "${MEM_EDAC}" != "N/A" ]; then printf '  内存 ECC : %s（EDAC）\n' "${MEM_EDAC}"; fi)
+$(if [ -n "${PSU_REDUNDANCY:-}" ]; then printf '  电源冗余 : %s\n' "${PSU_REDUNDANCY}"; fi)$(if [ -n "${FAN_REDUNDANCY:-}" ]; then printf '  风扇冗余 : %s\n' "${FAN_REDUNDANCY}"; fi)
   SEL PCIe : ${SEL_PCIE_ERR:-0} 条错误${SEL_PCIE_ERR_NOTE:-}$(if [ "${PCIE_AER_UNCORR:-0}" -gt 0 ] 2>/dev/null; then printf '\n  PCIe AER : ❌ 不可纠正 %s 处 / 可纠正 %s 处（%s；来源 %s）' "${PCIE_AER_UNCORR}" "${PCIE_AER_CORR}" "${PCIE_AER_BDFS}" "${PCIE_AER_SRC}"; elif [ "${PCIE_AER_CORR:-0}" -gt 0 ] 2>/dev/null; then printf '\n  PCIe AER : ⚠️ 可纠正 %s 处（%s；来源 %s）——链路持续纠错，建议重插/换槽/查线缆后复测' "${PCIE_AER_CORR}" "${PCIE_AER_BDFS}" "${PCIE_AER_SRC}"; fi)
-  线缆配对 : ${CABLE_PAIRS:-N/A（未取到模块 EEPROM 序列号——IB 链路未起，或该口未插光模块）}$(if [ -n "${GPU_XID:-}" ]; then printf '\n  GPU XID  : ⚠️ 检出 %s 类（来源: %s）' "${GPU_XID_COUNT}" "${GPU_XID_SRC}"; fi)$(if [ -n "${MCE_HITS:-}" ]; then printf '\n  CPU MCE  : ⚠️ 检出 %s 条机器检查异常（来源: %s）' "${MCE_COUNT}" "${MCE_SRC}"; fi)$(if [ -n "${IB_PERF_NONZERO:-}" ]; then printf '\n  IB 误码  : ⚠️ %s' "${IB_PERF_NONZERO}"; fi)$(if [ "${NVME_ERR_MEDIA:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 介质错误: ⚠️ %s（介质/盘自身类，建议复查）' "${NVME_ERR_MEDIA_D}"; fi)$(if [ "${NVME_ERR_SHUTDOWN:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 掉电   : ⚠️ %s（Unsafe Shutdown，建议排查供电）' "${NVME_ERR_SHUTDOWN_D}"; fi)$(if [ "${NVME_ERR_CMD:-0}" -gt 0 ] 2>/dev/null; then printf '\n  NVMe 命令兼容: %s Invalid Field（主机侧命令不兼容，非介质故障）' "${NVME_ERR_CMD_D}"; fi)$(if [ -n "${RAID_BBU_SUMMARY:-}" ]; then printf '\n  RAID电池 : %s%s' "${RAID_BBU_SUMMARY}" "$([ "${RAID_BBU_WARN:-0}" -eq 1 ] 2>/dev/null && echo '（⚠️ 异常）')"; fi)$(if [ -n "${RAID_CACHE_POLICY:-}" ]; then printf '\n  写缓存   : %s' "${RAID_CACHE_POLICY}"; fi)$(if [ -n "$TEST_DETAILS" ]; then
     printf '\n\n[压测归档]  目录: %s\n' "$TEST_DIR_LABEL"
     echo "$TEST_DETAILS" | while IFS='|' read -r tname tstatus telapsed tfile; do
         [ -z "$tname" ] && continue

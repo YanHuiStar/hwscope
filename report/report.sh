@@ -5,7 +5,7 @@
 # 用法: bash report/report.sh [output_dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>] [--bmc-verify]
 # 功能: 从采集日志提取关键信息，生成 .json + .md + .txt + .html 汇总报告与验收清单。
 #       本文件是装配入口：解析参数后 source report/lib（辅助+规格库）+ report/sections
-#       （数据解析）×9 + report/gen（生成器）×7 各部件执行。
+#       （数据解析）×10 + report/gen（生成器）×7 各部件执行。
 #       v1.35.0 自 tools/report.sh 拆分（行为不变，仅文件组织变化）；v1.35.3 移除 tools/ 兼容 wrapper，统一本路径。
 # 依赖: lib/common.sh（颜色/帮助）、lib/nvlink.sh（NVLink 解析库）
 # =============================================================================
@@ -62,7 +62,7 @@ echo -e "${CYAN}[REPORT] 解析目录: ${OUT}${NC}"
 # 如 GPU_DIR 定义在 30_gpu 之前、GPU_DETAILS 依赖 gpu_spec 函数——勿调整顺序）
 source "${REPORT_DIR}/lib/report_common.sh"
 source "${REPORT_DIR}/lib/gpu_spec.sh"
-for _s in 10_env_mb_cpu 20_gpu 30_storage_gpu_extra 40_network_bmc 50_nvlink_dcgm 60_nic_fan_temp 70_psu_raid_hba 80_fw_power_bmc_verify 90_test_baseline; do
+for _s in 10_env_mb_cpu 20_gpu 30_storage_gpu_extra 40_network_bmc 50_nvlink_dcgm 60_nic_fan_temp 65_nic_accounting 70_psu_raid_hba 80_fw_power_bmc_verify 90_test_baseline; do
     source "${REPORT_DIR}/sections/${_s}.sh"
 done
 unset _s

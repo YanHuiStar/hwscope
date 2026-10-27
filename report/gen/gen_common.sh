@@ -44,7 +44,6 @@ net_extra_md() {
     # v1.50.0：端口模式改为摘要行（逐端口明细见网络段「端口模式（每端口）」表）
     if [ -n "$LINKTYPE_SUMMARY" ] && [ "$LINKTYPE_SUMMARY" != "N/A" ]; then
         _ltc=$(printf '%s' "$LINKTYPE_SUMMARY" | tr ',' '\n' | grep -c .)
-        out="${out}| 端口模式 | ${_ltc} 个 CA（逐端口明细见下表）|"$'\n'
     fi
     [ -n "$MST_NOTICE" ]      && out="${out}| ⚠️ 提示 | ${MST_NOTICE} |"$'\n'
     [ -n "$PSID_NOTICE" ]     && out="${out}| ⚠️ PSID | ${PSID_NOTICE} |"$'\n'

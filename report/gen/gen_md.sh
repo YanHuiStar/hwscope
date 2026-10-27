@@ -16,7 +16,9 @@ gen_md() {
         while IFS='|' read -r dslot dsize dmfr dsn dpn dnom dcur drank dwidth; do
             [ -z "$dslot" ] && continue
             # v1.50.3：空槽内部标记 -> 展示文案（统计端已排除该标记，仅渲染时转换）
-            [ "$dsize" = "EMPTY_SLOT" ] && dsize="（未插）"
+            # v1.54.33：`（未插）`→`空槽`——配置单口径（"32 槽已插 16、空槽 16"），
+            #   且「未插」易被读成"该插没插/漏件"，与真实缺件混淆；JSON 仍保留 EMPTY_SLOT 供程序消费
+            [ "$dsize" = "EMPTY_SLOT" ] && dsize="空槽"
             dseq=$((dseq+1))
             if [ "$d_width_any" -eq 1 ]; then
                 dimms_md="${dimms_md}| ${dseq} | ${dslot} | ${dsize} | ${dmfr} | ${dsn} | ${dpn} | ${dnom} | ${dcur} | ${drank:-N/A} | ${dwidth:-N/A} |"$'\n'
@@ -288,11 +290,11 @@ gen_md() {
 ## 环境
 | 项 | 值 |
 |----|----|
+| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |
 | OS | ${OS_NAME:-N/A} |
 | 内核 | ${KERNEL:-N/A} |
 | 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；${GPU_MODULE_REASON}）"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}，PCI 未枚举到加速卡）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
-| CUDA | ${GPU_CUDA:-N/A} |"; fi)
-| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then echo "
+| CUDA | ${GPU_CUDA:-N/A} |"; fi)$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then echo "
 | Compute Mode | ${DCGM_COMPUTE_MODE} |"; fi)$(if [ -n "${DCGM_ECC_MODE:-}" ]; then echo "
 | ECC Mode | ${DCGM_ECC_MODE}${DCGM_CONFIG_NOTE} |"; fi)
 | 采集耗时 | ${TIMING_TOTAL:-N/A} |
@@ -302,9 +304,9 @@ gen_md() {
 |----|----|
 | 制造商 | ${MB_MANUFACTURER:-N/A} |
 | 型号 | ${MB_PRODUCT:-N/A} |
+| BIOS | ${BIOS_VERSION:-N/A} |
 | SN | ${MB_SN:-N/A} |
 | 主板 SN | ${MB_BOARD_SN:-N/A} |
-| BIOS | ${BIOS_VERSION:-N/A} |
 | 机箱 SN | ${CHASSIS_SN:-N/A} |
 $(if [ -n "$FABRIC_SW" ] && [ "$GPU_COUNT" -eq 0 ]; then echo "| PCIe Fabric Switch | ${FABRIC_SW}（模组互联通道，NVIDIA HGX 或 AMD OAM 通用） |"; fi)
 ## PCIe 拓扑与链路
@@ -360,8 +362,8 @@ fi)
 | 项 | 值 |
 |----|----|
 | 型号 | ${CPU_MODEL:-N/A} |
-| 核心数 | ${CPU_CORES:-N/A}/颗 × ${CPU_SOCKETS:-N/A} 路 = ${CPU_TOTAL_CORES:-N/A} 总核 |
 | 插槽数 | ${CPU_SOCKETS:-N/A} |
+| 核心数 | ${CPU_CORES:-N/A}/颗 × ${CPU_SOCKETS:-N/A} 路 = ${CPU_TOTAL_CORES:-N/A} 总核 |
 | Stepping | ${CPU_STEPPING:-N/A} |
 | 频率 | ${CPU_MAX_SPEED:-N/A} MHz（当前 ${CPU_CUR_SPEED:-N/A} MHz） |
 $(if [ -n "${CPU_FREQ_POLICY:-}" ]; then echo "| 频率策略 | ${CPU_FREQ_POLICY} |"; fi)
@@ -397,9 +399,9 @@ fi)
 | 项 | 值 |
 |----|----|
 | 总量 | ${MEM_TOTAL_PHYS:-${MEM_TOTAL:-N/A}}/${MEM_TOTAL:-N/A} 可见 |
+| 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
 | 类型 | ${MEM_TYPE:-N/A} |
 | 速率 | ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-} |
-| 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
 
 ### 内存模块明细（DIMM）
 $(if printf '%s\n' "$MEM_DIMMS" | grep -qE '\|x[0-9]+$' 2>/dev/null; then
@@ -447,7 +449,7 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
     fi
     echo "| 额定功耗 | ${GPU_POWER:-N/A} |"
     [ -n "${GPU_PL_MISMATCH:-}" ] && echo "| ⚠️ 功耗上限 | **被改过**：${GPU_PL_MISMATCH}<br>满载时这些卡只有相应比例的功耗预算（掉频、各卡算力不均）；若非刻意设置，执行 sudo nvidia-smi -pl ${GPU_PL_DEFAULT:-默认值} 恢复后复测 |"
-    echo "| 温度 | ${GPU_TEMP:-N/A} |"
+    echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
     # v1.48.36: 厂商感知字段——NVIDIA 显示 ECC/退役行（nvidia-smi 字段），AMD 显示 RAS（ECC 对应物），其余平台隐藏（NVIDIA 专属概念）
     case "${GPU_PLATFORM:-}" in
         amd)
@@ -456,9 +458,9 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
         nvidia)
             echo "| ECC | ${GPU_ECC:-N/A} |"
             echo "| 退役行 | ${GPU_REMAP:-N/A} |"
+    echo "| 温度 | ${GPU_TEMP:-N/A} |"
             ;;
     esac
-    echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
         if [ -n "${GPU_ASCEND_NOTE:-}" ]; then
             echo "| 昇腾 | ${GPU_ASCEND_NOTE} |"
         fi
@@ -633,13 +635,12 @@ fi)
 ## 网络
 | 项 | 值 |
 |----|----|
-| IB 设备数 | ${IB_COUNT:-0} |
-| IB 活动口 | ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})} |
-| IB Link 状态 | Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED") |
-| IB 额定速率 | ${IB_NOMINAL:-N/A} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)
-| 以太网口 up | ${ETH_LINK_UP:-0} |
-$(if [ -n "${NIC_LINKTYPE_SUMMARY:-}" ]; then echo "| 协议模式 | ${NIC_LINKTYPE_SUMMARY} |"; fi)
+| 端口总览 | $(if [ "${NIC_PORT_TOTAL:-0}" -gt 0 ]; then printf '%s 口｜Up %s / Down %s%s' "${NIC_PORT_TOTAL}" "${NIC_PORT_UP:-0}" "${NIC_PORT_DOWN:-0}" "$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED")"; else printf '%s' "${IB_COUNT:-0} 个 CA（无端口级数据）"; fi) |
+| 协议分布 | $(if [ -n "${NIC_LINKTYPE_SUMMARY:-}" ]; then printf '%s（按网卡固件 mlxconfig 统计，与上面接口数不同源）' "${NIC_LINKTYPE_SUMMARY}"; else printf '未识别（无 mlxconfig 数据）'; fi) |
+| 速率 | 额定 ${IB_NOMINAL:-N/A}${IB_ACTIVE_SPEED:+ · 协商 ${IB_ACTIVE_SPEED}} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)
+$(if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ]; then echo "| 计算网卡（GPU 直连） | ${ACC_NIC_IB_COUNT} 张 / ${ACC_NIC_IB_PORT} 口（与硬件概览同源口径） |"; fi)
 $(if [ -n "${NIC_SRIOV_SUMMARY:-}" ]; then echo "| SR-IOV | ${NIC_SRIOV_SUMMARY} |"; fi)
+$(if [ -n "${CABLE_MODULE_NOTE:-}" ]; then echo "| 模块信息 | ${CABLE_MODULE_NOTE} |"; fi)
 $(net_extra_md)
 
 ### 网络适配器明细（卡级）
@@ -729,7 +730,7 @@ $(rf_line=""
 [ -n "${RF_FW_PSU:-}" ] && rf_line="${rf_line}PSU=${RF_FW_PSU}, "
 [ -n "${RF_FW_OTHER:-}" ] && rf_line="${rf_line}${RF_FW_OTHER}"
 if [ -n "$rf_line" ]; then echo "| Redfish 固件明细 | $(echo "$rf_line" | sed 's/, $//') |"; fi)
-| IP | ${BMC_IP:-N/A} |
+| IP | $(if [ "${BMC_IP:-}" = "0.0.0.0" ]; then echo "0.0.0.0（未配置）"; else printf '%s' "${BMC_IP:-N/A}$([ -n "${BMC_IP_SRC:-}" ] && printf '（%s）' "${BMC_IP_SRC}")"; fi) |
 | MAC | ${BMC_MAC:-N/A} |
 | SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0}（未解除 Critical ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+，已自愈 $SEL_CRIT_RECOVERED}）"; else echo "⚠️ 数据不可用"; fi) |
 $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
@@ -771,7 +772,7 @@ $(if [ -n "$BOARD_IFACE_MD" ] || [ -n "$BMC_IP" ]; then
     # ⚠️ 必须 printf '%s\n'：BOARD_IFACE_MD 由 $( ) 命令替换赋值，尾换行已被剥掉，
     #    用 %s 会让最后一行与下一行（BMC 管理口）黏成一行 → 表列数不一致
     printf '%s\n' "$BOARD_IFACE_MD"
-    [ -n "$BMC_IP" ] && echo "| BMC 管理口 | 带外管理网口 | — | IP ${BMC_IP}${BMC_MAC:+ · MAC ${BMC_MAC}}（远程管理/KVM，不经操作系统）|"
+    [ -n "$BMC_IP" ] && echo "| BMC 管理口 | 带外管理网口 | — | IP ${BMC_IP}${BMC_IP_SRC:+（${BMC_IP_SRC}）}${BMC_MAC:+ · MAC ${BMC_MAC}}（远程管理/KVM，不经操作系统）|"
     echo ""
     echo "> 仅列出 lspci/lsusb 可见的接口；机箱后面板的具体接口数量与形态（USB 口数、VGA 口位、串口）以厂商机箱规格为准"
     echo ""
@@ -913,6 +914,19 @@ fi)
 | 项 | 状态 |
 |----|------|
 $(
+    # v1.54.32：内存 ECC（EDAC）——原来 MEM_EDAC 解析了却"报告不输出"，
+    #   而内存可纠正错误积累是内存条劣化最早的信号。平台未暴露计数时不显示本行。
+    if [ -n "${MEM_EDAC:-}" ] && [ "${MEM_EDAC}" != "N/A" ]; then
+        _ce=$(printf '%s' "$MEM_EDAC" | sed -n 's/.*CE:\([0-9]*\).*/\1/p')
+        _ue=$(printf '%s' "$MEM_EDAC" | sed -n 's/.*UE:\([0-9]*\).*/\1/p')
+        if [ "${_ue:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| ❌ 内存 ECC | 不可纠正 ${_ue} / 可纠正 ${_ce:-0}（EDAC 内存控制器计数，UE>0 需立即处理） |"
+        elif [ "${_ce:-0}" -gt 0 ] 2>/dev/null; then
+            echo "| ⚠️ 内存 ECC | 可纠正 ${_ce} / 不可纠正 0（EDAC）；建议复查该内存条 |"
+        else
+            echo "| 内存 ECC | ✓ 无错误（EDAC CE 0 / UE 0） |"
+        fi
+    fi
     if [ "$GPU_COUNT" -eq 0 ]; then
         if [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
             echo "| GPU PCIe 链路 | N/A（未识别到 GPU 模组——${GPU_MODULE_REASON}；需复采确认） |"
@@ -1005,8 +1019,9 @@ $(
         echo "| RAID 写缓存策略 | ${RAID_CACHE_POLICY} |"
     fi
 )
+$(if [ -n "${PSU_REDUNDANCY:-}" ]; then echo "| 电源冗余 | ${PSU_REDUNDANCY} |"; fi)
+$(if [ -n "${FAN_REDUNDANCY:-}" ]; then echo "| 风扇冗余 | ${FAN_REDUNDANCY} |"; fi)
 | SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条${SEL_PCIE_ERR_NOTE:-} |
-| 线缆配对 | ${CABLE_PAIRS:-N/A（未取到模块 EEPROM 序列号——IB 链路未起，或该口未插光模块）} |
 
 $(if [ -n "$TEST_DETAILS" ]; then
     echo ""

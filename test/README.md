@@ -1,97 +1,139 @@
 # HwScope 硬件压测（test/）
 
-> ⚠️ **状态：占位（未完成、未经检验）** —— 本模块目前**仅供框架占位**：
-> ① **测试项目尚未最终确定**（现有脚本会增删调整，不代表最终清单）；
-> ② **未在真实硬件上完成验证**（脚本可执行，但参数取值、输出正确性、判定口径均未经检验）。
-> **请勿据本模块结果下硬件验收结论** —— 正式交付以厂商工具（DCGM / NCCL / FLD 等）为准。
+> ⚠️ **状态：占位（未完成、未经真机验证）。**
+> ① 测试项目尚未最终确定，现有脚本会增删调整，不代表最终清单；
+> ② 未在真实硬件上完成验证 —— 脚本可执行，但参数取值、输出正确性、判定口径均未经检验。
+>
+> **本模块结果不得作为硬件验收依据。** 正式交付验收以厂商工具（DCGM / NCCL / FLD 等）为准。
 
-> 硬件压力测试脚本：**只测不改**（不修改硬件/系统配置；仅 fio/dd 会在指定盘写测试文件并自动清理）。
-> 所有压测日志统一落盘 `logs/test/<SN>/`（test/lib/test_common.sh 负责），不污染采集目录。
-> 工具概览索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）。
+原则：**只测不改** —— 不修改硬件与系统配置；仅 `fio` / `dd` 会在指定盘写入测试文件并自动清理。
+索引见 [docs/TOOLS.md](../docs/TOOLS.md)（本文件为详细说明）。
 
 ## 架构：聚合与实现解耦
 
 ```
 test/
-├── test_all.sh           ← 纯聚合入口（菜单/--all，不含测试逻辑）
-├── lib/test_common.sh    ← 公共库（日志落盘/结果记录/server_info 头）
-├── cpu/    memory/    disk/    network/    ib/    gpu/    nccl/
+├── test_all.sh           ← 纯聚合入口（菜单 / --all，不含测试逻辑）
+├── lib/test_common.sh    ← 公共库（日志落盘 / 结果记录 / server_info 头）
+├── cpu/  memory/  disk/  network/  ib/  gpu/  nccl/
 │   └── <组件>_<工具>.sh   ← 单工具脚本（可独立执行）
 └── README.md
 ```
 
-- **单脚本独立可跑**：`bash test/cpu/cpu_stress_ng.sh 60`（不依赖聚合）
-- **聚合只编排**：`bash test/test_all.sh`（分类菜单）或 `--all`（全部顺序）
-- **新增工具**：加一个薄脚本 + test_all 工具表一行（零侵入）
+- **单脚本独立可跑**：`bash test/cpu/cpu_stress_ng.sh 60`（不依赖聚合入口）
+- **聚合只编排**：`bash test/test_all.sh`（分类菜单）或 `--all`（全部顺序执行）
+- **新增工具**：加一个薄脚本 + `test_all.sh` 工具表一行，无需改聚合逻辑
 
-## 测试项速查
+## 测试项
 
-| 单脚本 | 测试内容 | 依赖 | 注意 |
-|--------|---------|------|------|
-| `cpu/cpu_stress_ng.sh` | CPU 满载压测 | stress-ng | 默认 30s |
-| `cpu/cpu_sysbench.sh` | CPU 性能基准 | sysbench | |
-| `cpu/cpu_mprime.sh` | 素数计算散热验证 | mprime | 外层 300s 限制 |
-| `memory/mem_stress_ng.sh` | 内存压力 | stress-ng | vm 80% |
-| `memory/mem_memtester.sh` | 内存位翻转 | memtester | 内存一半 ×2 轮 |
-| `memory/mem_sysbench.sh` | 内存带宽基准 | sysbench | |
-| `disk/disk_fio.sh` | IOPS/延迟 | fio | ⚠️ 选盘 + 写测试文件（自动清理）；**v1.49.21**：盘未挂载时**直接 SKIP**（原来静默回落 /tmp —— 等于测系统盘/内存盘，还绕过系统盘保护） |
-| `disk/disk_hdparm.sh` | 缓存/盘面读取 | hdparm | |
-| `disk/disk_dd.sh` | 顺序读吞吐 | dd | v1.49.21：日志名带设备名（`disk_dd_<dev>.log`），参数指定盘时不再与其它盘互相覆盖 |
-| `network/net_iperf3.sh` | TCP 吞吐 | iperf3 | 需服务端地址 |
-| `network/net_mtr.sh` | 路径质量 | mtr | |
-| `ib/ib_perftest.sh` | IB 打流配对 | perftest, mlxlink | 自动配对 serial 相同端口 |
-| `gpu/gpu_bandwidth.sh` | GPU 带宽 | bandwidthTest | 逐卡 + P2P；v1.49.21：补 `test_finish`（此前 manifest 无 `summary=`，压测报告读不到结论） |
-| `gpu/gpu_burn_test.sh` | GPU 长压测 | gpu-burn | 默认 1800s（-tc 张量核心） |
-| `gpu/gpu_nvbandwidth.sh` | 带宽基准 | nvbandwidth | |
-| `gpu/gpu_partnerdiag.sh` | 出厂诊断 | partnerdiag | FLD 包 |
-| `nccl/nccl_test.sh` | 集合通信 | nccl-tests | 需编译产物 |
-| `test_server_info.sh` | 测试前服务器信息（v1.38.0，非压测项） | 无 | 机器 ID/型号/CPU/内存/GPU/OS ~10 行只读；**各单脚本 `test_init` 后自动调用**（日志自包含服务器身份），也可单独执行 |
+| 单脚本 | 测试内容 | 参数 | 依赖 | 备注 |
+|--------|---------|------|------|------|
+| `cpu/cpu_stress_ng.sh` | CPU 满载压测 | 时长秒（默认 30） | stress-ng | 全核 |
+| `cpu/cpu_sysbench.sh` | CPU 性能基准 | 时长秒（默认 30） | sysbench | |
+| `cpu/cpu_mprime.sh` | 素数计算散热验证 | 时长秒（默认 300） | mprime | 内部固定 `timeout 300`，时长参数不改变该上限 |
+| `memory/mem_stress_ng.sh` | 内存压力 | 时长秒（默认 30） | stress-ng | `--vm 4 --vm-bytes 80%` |
+| `memory/mem_memtester.sh` | 内存位翻转 | 时长秒（默认 60） | memtester | 取 `MemTotal/2` × 2 轮；时长参数未参与实际命令 |
+| `memory/mem_sysbench.sh` | 内存带宽基准 | 时长秒（默认 30） | sysbench | |
+| `disk/disk_fio.sh` | IOPS / 延迟 | `/dev/<dev>` 或交互选盘；`--force` 跳过系统盘确认 | fio | 写测试文件（自动清理）；未挂载盘 `[SKIP]` |
+| `disk/disk_hdparm.sh` | 缓存 / 盘面读取 | 交互选盘 | hdparm | |
+| `disk/disk_dd.sh` | 顺序读吞吐 | `/dev/<dev>` 或交互选盘；`--force` | dd | 日志名带设备名 `disk_dd_<dev>.log` |
+| `network/net_iperf3.sh` | TCP 吞吐 | 交互输入服务端地址 | iperf3 | 命令内固定 `-t 10 -P 4` |
+| `network/net_mtr.sh` | 路径质量 | 时长秒（默认 10） | mtr | |
+| `ib/ib_perftest.sh` | IB 打流配对 | 自动配对 / 手动配对 | perftest、mlxlink | 按 EEPROM serial 相同配对端口，支持单口回环 |
+| `gpu/gpu_bandwidth.sh` | GPU 带宽 | 无 | bandwidthTest | 逐卡 + P2P |
+| `gpu/gpu_burn_test.sh` | GPU 长压测 | 时长秒（默认 1800） | gpu-burn | `-tc` 走张量核心 |
+| `gpu/gpu_nvbandwidth.sh` | 带宽基准 | 无 | nvbandwidth | |
+| `gpu/gpu_partnerdiag.sh` | 出厂诊断 | 交互输入诊断参数 | partnerdiag（FLD 包） | |
+| `nccl/nccl_test.sh` | 集合通信 | 无 | nccl-tests | 需已编译产物 |
+| `test_server_info.sh` | 测试前机器信息（v1.38.0，非压测项） | `--append <文件>` / `--out <目录>` / `--help` | 无 | 机器 ID / 型号 / CPU / 内存 / GPU / OS 约 10 行只读；各单脚本 `test_init` 后自动调用 |
 
-> **多平台提示（v1.46.x）**：GPU 压测工具均为 **CUDA/NVIDIA 生态**（bandwidthTest/gpu-burn/nvbandwidth/partnerdiag/nccl-tests），**AMD Instinct（ROCm）平台暂不适用**——采集与报告支持 AMD，压测扩展后续规划；GPU 压力测试请用采集侧 ROCm 路径（rocminfo/amd-smi ras）做基础核验。
+> **平台限制（v1.46.x）**：GPU 压测工具均属 CUDA / NVIDIA 生态（bandwidthTest / gpu-burn / nvbandwidth /
+> partnerdiag / nccl-tests），**AMD Instinct（ROCm）平台暂不适用**。采集与报告支持 AMD；压测扩展在规划中，
+> 该平台的基础核验请使用采集侧的 ROCm 路径（`rocminfo` / `amd-smi ras`）。
 
 ## 使用
 
 ```bash
-# 菜单式入口（推荐）
+# 菜单式入口
 bash test/test_all.sh
 
-# 全部顺序执行
+# 全部顺序执行（可选第二参数作为各测试项的时长秒）
 bash test/test_all.sh --all
+bash test/test_all.sh --all 60
 
-# 单脚本独立执行（以 CPU 为例，60 秒）
+# 单脚本独立执行（60 秒 CPU 满载）
 bash test/cpu/cpu_stress_ng.sh 60
+
+# 指定盘的可破坏性测试（系统盘需 YES 确认，--force 跳过）
+sudo bash test/disk/disk_fio.sh /dev/<dev> --force
 ```
 
-## 日志位置
+## 日志与报告
 
-- 所有测试输出：`logs/test/<SN>/`（含 `test_report.txt` 汇总 + 各测试项 detail 日志 + manifest.txt）
-- 报告归档：采集后可用 `report/report.sh <out> --test-dir <压测目录>` 将压测结果并入交付报告
-- **标准测试报告**（v1.45.0；**v1.49.21** 修正内存速率取数与峰值守卫——原来 `awk '{print $NF}'` 会把 dmidecode 的 `MT/s` 当成速率，插值进公式触发除零、利用率列整列空白）：`bash test/report.sh <logs/test/<SN>/目录>` 生成 `hwscope_test_report.{md,html}`——测试环境/工具方法/理论峰值/结果对比/分析/结论/附录，数据口径科学可追溯（内存理论峰值 = 通道×速率×8B，STREAM 利用率评价；HTML 可浏览器打印 PDF）；**⚠️ 报告头部已带"占位模块、不构成验收依据"声明**
-- **单组件测试 + 单组件报告**（v1.45.1）：只跑单个脚本（如 `bash test/memory/mem_sysbench.sh`）→ 日志目录只有该组件 → `bash test/report.sh <该目录>` 即出单组件报告（目录自适应，不需要额外参数）
-- **目录组织语义**（v1.45.2-5）：**`logs/test/<SN>/` 稳定按机器累积**（用户方案）——单测/菜单/--all 全部落同一 SN 目录，文件名带时间戳（`<测试名>-<时间戳>.log`）区分重复测试；无 SN 平台兜底 `logs/test/<时间戳>/`；手动累积可 `export HW_TEST_SESSION_DIR=<目录>` 指定
-- **磁盘测试默认屏蔽系统盘**（v1.45.1）：fio/dd 交互列表自动排除系统盘；参数指定系统盘时警告并要求输入 YES 确认（`--force` 跳过）——防写测试压垮系统盘/数据安全
-- **聚合入口日志根修正**（**v1.49.21**）：`test_all.sh --all` 此前把自身 `SCRIPT_DIR`（=仓库根/test）当仓库根，`test/lib/test_common.sh` 里 `source <root>/test/lib/common.sh` 静默失败（文件不存在）→ `detect_machine_id` 不可用，整轮日志落到 `test/logs/test/<时间戳>/`，偏离上面的 `logs/test/<SN>/` 约定；现由 `test_common.sh` 从 `BASH_SOURCE` 自行推根，独立执行与聚合执行一致
+- **所有测试输出**：`logs/test/<SN>/`（`test/lib/test_common.sh` 负责），含 `test_report.txt` 汇总、
+  各测试项 detail 日志与 `manifest.txt`。
+- **目录语义**（v1.45.2–5）：`logs/test/<SN>/` 按机器稳定累积 —— 单测、菜单、`--all` 全部落同一 SN 目录，
+  文件名带时间戳（`<测试名>-<时间戳>.log`）区分重复测试；无 SN 平台（WSL / 开发机）兜底
+  `logs/test/<时间戳>/`；可用 `export HW_TEST_SESSION_DIR=<目录>` 指定会话目录。
+- **聚合入口日志根**（v1.49.21）：`test_all.sh --all` 原先把自身 `SCRIPT_DIR`（`<仓库>/test`）当仓库根，
+  `test_common.sh` 内 `source <root>/test/lib/common.sh` 静默失败致 `detect_machine_id` 不可用，整轮日志落到
+  `test/logs/test/<时间戳>/`；现由 `test_common.sh` 从 `BASH_SOURCE` 自行推根，独立执行与聚合执行一致。
+- **磁盘保护**（v1.45.1）：`fio` / `dd` 的交互列表默认排除系统盘（识别方式：根挂载所在物理盘）。
+  用参数显式指定系统盘时给出警告并要求输入 `YES`，`--force` 跳过确认。
+- **并入交付报告**：`bash report/report.sh <采集目录> --test-dir <压测目录>`。
+
+### 压测报告生成器（`test/report.sh`）
+
+```bash
+bash test/report.sh logs/test/<SN>/
+bash test/report.sh logs/test/<SN>/ --channels 8 --speed 5600
+```
+
+| 参数 | 说明 |
+|------|------|
+| `<压测目录>` | 压测日志目录（必填） |
+| `--channels N` | 内存通道数（默认自动探测：`dmidecode` 的 Bank Locator 去掉 DIMM 槽位维度后去重；厂商命名不含 DIMM 时退化为槽级，可能大于真实通道数） |
+| `--speed MT/s` | 内存速率（默认从 `Configured Memory Speed` 提取数字） |
+| `-h` / `--help` | 显示用法 |
+
+输出 `hwscope_test_report.{md,html}`（测试环境 / 工具方法 / 理论峰值 / 结果对比 / 分析 / 结论 / 附录），
+HTML 可浏览器打印 PDF。单组件测试同样适用：日志目录只含该组件即生成单组件报告，无需额外参数。
+报告头部带「占位模块、不构成验收依据」声明。
+
+- **理论峰值口径**：内存 = 通道 × 速率 × 8 B，结果与 STREAM 实测对比给出利用率。
+- **v1.49.21 修正**：原 `awk '{print $NF}'` 取到的是 `MT/s`（非速率），文本插值进公式后 `MT/s` 被解析为
+  `MT / s`（`s=0`）触发除零，导致「与理论峰值比」整列消失。
+
+## 已知限制
+
+| 限制 | 说明 |
+|------|------|
+| 时长参数不生效 | `cpu_mprime.sh`（固定 `timeout 300`）、`mem_memtester.sh`、`net_iperf3.sh`（固定 `-t 10`）接受时长参数但不用于实际命令 |
+| 需要交互 | `disk_*` / `net_iperf3` / `gpu_partnerdiag` 需终端输入，不适合无人值守批量执行 |
+| 未验证 | 全部测试项的判定口径待真机标定，指标不作验收依据 |
 
 ## 依赖安装
 
 ```bash
-# Ubuntu
+# Ubuntu 基础压测工具
 sudo apt install -y stress-ng sysbench fio iperf3 mtr infiniband-diags perftest
-# MFT（mlxlink，IB 测试需要）
-bash tools/install_tool.sh   # 选 3 IB 诊断 / 5 MFT
+
+# MFT（mlxlink，IB 测试需要）：install_tool 菜单项 3（IB 诊断）/ 5（MFT）
+sudo bash tools/install_tool.sh
+
 # nccl-tests（GPU 集合通信）
 git clone https://github.com/NVIDIA/nccl-tests && cd nccl-tests && make NCCL_HOME=/usr/local/nccl2
+
 # gpu-burn（GPU 长压测）
 git clone https://github.com/wilicc/gpu-burn && make
 ```
 
 ---
 
-## 报告解析回归测试（report_regression.sh，v1.48.3；v1.48.14 迁 tools/agent/）
+## 报告解析回归测试（`tools/agent/report_regression.sh`）
 
-> 与硬件压测无关：本脚本用**固定采集样本**跑报告生成，提取关键指标与基线比对，
-> 防解析器/渲染层改动引入**静默回归**（历史教训：AMD 多卡明细全显示 card0、内存通道数
-> 算成插槽数、表格列错位、1T9 容量误判——都只能靠真机样本发现，人工 review 易漏）。
+> 与硬件压测无关：用固定采集样本重跑报告生成，提取关键指标与基线比对，防止解析器 / 渲染层改动引入
+> **静默回归**。完整机制见 [tools/agent/README.md](../tools/agent/README.md)。
 
 ```bash
 bash tools/agent/report_regression.sh <采集目录>              # 跑报告 + 比对基线
@@ -100,25 +142,23 @@ bash tools/agent/report_regression.sh --all                   # 遍历样本根�
 HWSCOPE_SAMPLE_ROOT=<多机样本根> bash tools/agent/report_regression.sh --all --update
 ```
 
-- **10 组指标**：表格列数一致 / GPU / 内存 / PSU / PCIe 链路统计 / 磁盘 / NIC / JSON 字段与体积 / HTML 标签闭合 / 验收清单判定结果
-  - **判据分两类（v1.52.14）**：`json_bytes`/`html_bytes` 属**长度指标**（同语义换机器/换次采集本就浮动 0.2%~0.3%），差异 **<5% 输出 `[NOTE]` 不判回归**；其余 **32 项结构指标**（行数/列数/字段名/值格式/硬件概览）不一致才报 `[DIFF]`。基线另记 `source_fp_hash`（来源样本哈希，非 SN）便于确认基线出自哪台机器。
-- **样本零污染**：仅备份并还原 6 个报告文件（不复制整个采集目录——数百日志文件复制极慢）
-- **基线**：`tools/agent/baseline/<语义名>.txt`（h200/a100/b200/b300/amd_oam/headless；指标摘要入库、几 KB、**零真实 SN**）；采集数据不入仓库。（v1.49.23 更正：早期写 `test/baseline/<机器ID>.txt`，路径与命名都不对）
-- **退出码**：0=一致/已更新，1=存在差异（回归候选），2=无基线/无样本
-- **改动解析器/渲染层的正确姿势**：改动前跑一次（确认当前一致）→ 改完再跑一次 → 有差异则人工确认是预期改动还是回归；确认预期后 `--update` 刷新基线
+| 项 | 说明 |
+|----|------|
+| 指标组 | 表格列数 / GPU / 内存 / PSU / PCIe 链路统计 / 磁盘 / NIC / JSON 字段与体积 / HTML 标签闭合 / 验收清单判定 |
+| 判据分类（v1.52.14） | `json_bytes` / `html_bytes` 为长度指标，差异 < 5% 输出 `[NOTE]`；其余 32 项结构指标不一致才报 `[DIFF]` |
+| 基线 | `tools/agent/baseline/<语义名>.txt`（h200 / a100 / b200 / b300 / amd_oam / headless；零真实 SN） |
+| 退出码 | 0 = 一致或已更新；1 = 存在差异；2 = 无基线 / 无样本 |
+| 样本零污染 | 仅备份并还原 6 个报告文件，不复制整个采集目录 |
 
-> **运行环境**：需 Linux（或 fork 稳定的环境）——`report.sh` 含数百个 `$( )`，
-> Windows git-bash 下可能触发 MSYS fork 崩溃（AGENTS.md“环境故障止损纪律”）。
->
-> **WSL 使用注意（实测坑）**：Windows 工作区文件是 **CRLF**（`core.autocrlf=true`），
-> Linux bash 跑 CRLF 的 `.sh` 会**静默失败**（`\r: command not found`）——表现为报告"生成成功"
-> 实际是旧的，指标全是旧值。Windows + WSL 场景务必先跑：
-> ```bash
-> cp -r /mnt/d/<项目> /tmp/hw && cd /tmp/hw && bash fixcrlf.sh   # 再跑回归
-> ```
->
-> **定位（v1.48.4）：主要给 Agent 用，也给人用。**
-> - **Agent（WorkBuddy / Hermes 等）改动 `report/sections/`、`report/gen/`、`report/lib/` 或采集模块输出格式后，提交前必跑一次**——
->   本脚本存在的理由：v1.44–v1.48 实录的 4 个解析 bug（AMD 多卡明细全显示 card0、内存通道数算成插槽数、
->   表格列错位、1T9 容量误判）全是 Agent 改解析/渲染代码时引入、人工 review 漏掉的。改完跑一次，差异立刻暴露。
-> - **人（交付/验收）**：真机采集后交付前自检、升级报告版本后确认输出未漂移。
+**运行环境**：需 Linux（或 fork 稳定的环境）。`report/report.sh` 含大量 `$( )`，在 Windows git-bash 下会触发
+MSYS fork 崩溃（见 [AGENTS.md](../AGENTS.md)「环境故障止损纪律」）。
+
+**WSL 的 CRLF 问题**：Windows 工作区文件为 CRLF（`core.autocrlf=true`），Linux bash 执行 CRLF 的 `.sh`
+会静默失败（`$'\r': command not found`），表现为「报告生成成功」但内容仍是旧值。WSL 场景先转换换行：
+
+```bash
+cp -r /mnt/d/<项目> /tmp/hw && cd /tmp/hw && bash fixcrlf.sh
+```
+
+**触发规则**：改动 `report/{sections,gen,lib}` 或采集模块输出格式 → 提交前必跑；
+纯文档 / 版本号 / 非报告逻辑改动不跑。
