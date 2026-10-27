@@ -286,6 +286,7 @@ function toc_short(s,   r) {
     else if (s == "RAID 控制器")           r = "RAID"
     else if (s == "主机总线适配器明细（HBA）") r = "HBA 明细"
     else if (s == "验收项")               r = "验收项目"
+    else if (s == "验收项目") r = "验收项目"
     else if (s == "结论")                 r = "验收结论"
     if (r != "") return r
     # 建议4：侧栏按 4 字设计，未映射的长标题会折行 —— 打一行 stderr 提示补映射。

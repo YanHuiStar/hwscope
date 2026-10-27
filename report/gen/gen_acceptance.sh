@@ -48,7 +48,51 @@ gen_acceptance() {
         #   结果该行 MD 出 6 个竖线、HTML 该行 5 个 <td>（其余行 4 个）→ 表格错位。
         #   在唯一出口统一替换为全角"／"，一处修复覆盖全部判定项。
         _desc=$(printf '%s' "$3" | tr '|' '／')
-        rows="${rows}| ${n} | $1 | ${st} | ${_desc} |"$'\n'
+        # v1.54.27：行按**报告章节顺序**排列（原先按代码执行顺序，读者看到的是东一个西一个）。
+        #   存 `${rank}|${序号}|名称|状态|说明`，渲染时 sort 再重排序号；
+        #   名称与说明里的 `|` 已在上方 / 下方各自处理，不会破坏分隔。
+        rows="${rows}$(_acc_rank "$1")|${n}|$1|${st}|${_desc}|"$'\n'
+    }
+
+    # v1.54.27：验收项分组 rank —— 与报告正文章节顺序一致
+    #   PCIe 链路 → CPU → 内存 → GPU → 存储 → 温度/风扇 → 电源 → 固件 → 健康检查（SEL/XID/MCE/AER）
+    #   未命中映射的项排最后（rank 200），保持其原始插入顺序。
+    _acc_rank() {
+        # v1.54.27：验收项排序 = 「数据可信度 → 平台通路 → 部件（对齐配置单）→ 合规 → 事件」，
+        #   条件项（AER/XID/MCE/RAID 电池）跟各自部件走，不集中堆在末尾——
+        #   它们只是"检出才出现"，不代表优先级低。
+        case "$1" in
+            # ⓪ 数据可信度（命中即解释后续 GPU 项为何全 N/A，必须最先看到）
+            "采集时机")                  echo 10 ;;
+            # ① 平台通路
+            "PCIe 链路完整")             echo 20 ;;
+            "PCIe AER 错误")            echo 21 ;;   # 链路层错误，紧跟链路判定
+            # ② 部件（顺序对齐验收清单「硬件概览/配置单」：CPU → 内存 → GPU → 存储 → 电源 → 风扇）
+            "CPU 配置一致")              echo 30 ;;
+            "CPU MCE")                  echo 31 ;;   # 机器检查异常归 CPU
+            "内存容量一致")              echo 40 ;;
+            "内存运行速率")              echo 41 ;;
+            "内存 ECC")                 echo 42 ;;
+            # GPU 组内顺序（用户口径 v1.54.27）：固件/静态配置 → 运行计数 → 链路 → 错误历史 → 互联 → 主动诊断
+            "GPU VBIOS 版本一致")        echo 50 ;;
+            "GPU 功耗上限")              echo 51 ;;
+            "GPU ECC")                  echo 52 ;;
+            "GPU PCIe 链路完整")         echo 53 ;;
+            "GPU XID 错误历史")          echo 54 ;;
+            "NVLink 互联")              echo 55 ;;
+            "DCGM 诊断")                echo 56 ;;
+            "磁盘寿命")                  echo 60 ;;
+            "SMART 健康状态")            echo 61 ;;
+            "RAID 缓存电池")             echo 62 ;;   # RAID 控制器归存储
+            "电源状态")                  echo 70 ;;   # 配置单里电源在风扇之前
+            "整机温度正常")              echo 80 ;;   # 环境读数，位于部件判定之后
+            # ③ 合规与一致性（跨部件）
+            "固件版本合规")              echo 90 ;;
+            "OS-BMC 口径一致")           echo 91 ;;
+            # ④ 平台事件汇总（SEL 跨部件，作兜底收口）
+            "SEL 事件")                 echo 95 ;;
+            *)                          echo 200 ;;
+        esac
     }
 
     # v1.53.41：GPU 项在「读不到 GPU」时分两种情形——
@@ -799,22 +843,34 @@ gen_acceptance() {
         if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then
             echo "| 风扇 | ${FAN_COUNT_BREAKDOWN:-${FAN_COUNT:-0}} | 个 | ${FAN_COUNT:-0} |"
         fi
-        echo "| 系统管理 | BMC（固件 ${BMC_FW:-N/A}） | 套 | 1 |"
+        # v1.54.27：① 无 BMC 的平台不显示本行（原先恒写 `BMC（固件 N/A）` 属噪音）
+        #   ② 有 BMC 时补管理地址——交接单上登记管理口比"固件版本"更常用
+        if [ "${BMC_PRESENT:-0}" = "1" ] 2>/dev/null || [ -n "${BMC_FW:-}" ]; then
+            _sm_val="BMC（固件 ${BMC_FW:-N/A}"
+            [ -n "${BMC_IP:-}" ] && _sm_val="${_sm_val} · 管理地址 ${BMC_IP}"
+            _sm_val="${_sm_val}）"
+            echo "| 系统管理 | ${_sm_val} | 套 | 1 |"
+        fi
         echo ""
         echo "## 验收信息"
         echo ""
         # v1.48.41：验收口径声明——平台形态 + 适用项计数（固有 N/A 折叠后客户一眼看懂按什么口径验收）
         _na_n=$(printf '%s' "$NA_INHERENT" | tr -cd '|' | wc -c)
         _na_p=$(printf '%s' "$NA_PENDING" | tr -cd '|' | wc -c)
-        echo "- 验收口径: ${MACHINE_CLASS_LABEL:-N/A}（GPU 平台: ${GPU_PLATFORM:-none}；${_na_n:-0} 项平台固有 N/A 不适用，下表 ${n} 项为实际判定项）"
-        echo "- 生成时间: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "- 采集版本: ${VERSION:-unknown} / 报告版本: ${REPORT_VERSION:-unknown}"
+        # v1.54.27：三条信息改两列表格（原先 bullet 长短不齐、冒号不对齐）
+        echo "| 项 | 内容 |"
+        echo "|----|------|"
+        echo "| 验收口径 | ${MACHINE_CLASS_LABEL:-N/A}（GPU 平台: ${GPU_PLATFORM:-none}；${_na_n:-0} 项平台固有 N/A 不适用，下表 ${n} 项为实际判定项） |"
+        echo "| 生成时间 | $(date '+%Y-%m-%d %H:%M:%S') |"
+        echo "| 采集版本 / 报告版本 | ${VERSION:-unknown} / ${REPORT_VERSION:-unknown} |"
         echo ""
-        echo "## 验收项"
+        echo "## 验收项目"
         echo ""
         echo "| # | 检查项 | 结果 | 说明 |"
         echo "|---|--------|------|------|"
-        printf '%s' "$rows"
+        # v1.54.27：按 rank（章节顺序）稳定排序后连续重排序号
+        printf '%s' "$rows" | grep -v '^$' | sort -t'|' -k1,1n -k2,2n \
+            | awk -F'|' '{ printf "| %d | %s | %s | %s |\n", NR, $3, $4, $5 } '
         if [ -n "$NA_INHERENT" ]; then
             echo ""
             echo "> 本平台固有/宽容 N/A（不计入数据不足，共 ${_na_n:-0} 项）：$(printf '%s' "$NA_INHERENT" | sed 's/|$//; s/|/、/g')"
