@@ -32,6 +32,9 @@ run_gpu_nvidia() {
     [ -n "$prefix" ] && inv_csv="gpu_inventory_${prefix}.csv"
     gpu_jobs+=(
         "nvidia-smi -q"                                                              "${dir}/gpu_full.log"
+        # v1.54.25：裸 nvidia-smi（默认表格）——Pwr:Usage/Cap / 显存占用 / 利用率一屏可见，
+        #   是现场最常看的形态；此前只采了 -q 与 query-gpu，缺这一份。
+        "nvidia-smi"                                                                 "${dir}/gpu_smi.log"
         "nvidia-smi --query-gpu=index,name,serial,pci.bus_id,gpu_uuid,memory.total,memory.used,power.limit,power.draw,temperature.gpu,utilization.gpu,clocks.current.graphics,clocks.current.memory,ecc.mode.current,pcie.link.gen.current,pcie.link.width.current,pcie.link.gen.max,pcie.link.width.max --format=csv" "${dir}/${inv_csv}"
         "nvidia-smi nvlink --status"                                                  "${dir}/gpu_nvlink_status.log"
         "nvidia-smi nvlink --capabilities"                                            "${dir}/gpu_nvlink_cap.log"
@@ -56,6 +59,7 @@ run_gpu_nvidia() {
 # NOTE: gpu_N_detail.log and gpu_N_ecc.log are generated per GPU (N=0,1,...)
     gpu_adapter_manifest "$dir" \
         "gpu_full" "gpu_full.log" \
+        "gpu_smi" "gpu_smi.log" \
         "gpu_inventory" "${inv_csv}" \
         "gpu_nvlink_status" "gpu_nvlink_status.log" \
         "gpu_nvlink_cap" "gpu_nvlink_cap.log" \

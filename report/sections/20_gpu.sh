@@ -529,3 +529,27 @@ if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         GPU_MODULE_REASON="开机正常且 PCI 未枚举到加速卡"
     fi
 fi
+# ─── v1.54.25：GPU 功耗上限被改检测（Current ≠ Default）────────────────────
+#   实测 B200 交付批次两台：8 张卡里 3 张被设成 800W，默认/最大都是 1000W，而报告只写
+#   「功耗(检测/额定) 248W/1000W」——表面完全看不出上限被改过，客户会当成正常，满载才发现
+#   这 3 张只有 80% 功耗预算（掉频、8 卡算力不均）。
+#   解析要点：nvidia-smi -q 的取值行是「字段名 : 值 单位」，$NF 是单位 "W"，必须按冒号右取。
+load_manifest "${GPU_DIR}" gpu_full "gpu_full.log"
+GPU_PL_MISMATCH=""; GPU_PL_DEFAULT=""
+if [ -f "${gpu_full}" ]; then
+    GPU_PL_MISMATCH=$(awk '
+        function val(   s) { s=$0; sub(/.*:[ \t]*/, "", s); sub(/[ \t]+$/, "", s); return s }
+        /^GPU [0-9A-Fa-f]+:/   { gi++ ; cur="" ; def="" ; next }
+        /^[ ]+Serial Number/  { sn=val() }
+        /Current Power Limit/ { cur=val()+0 }
+        /Default Power Limit/ {
+            def=val()+0
+            if (cur > 0 && def > 0 && cur != def) {
+                printf "%sGPU%d(SN %s) %.0fW/默认%.0fW", (out?", ":""), gi-1, sn, cur, def
+                out=1
+            }
+        }' "${gpu_full}")
+    GPU_PL_DEFAULT=$(awk '
+        function val(   s) { s=$0; sub(/.*:[ \t]*/, "", s); sub(/[ \t]+$/, "", s); return s }
+        /Default Power Limit/ { d=val()+0; if (d>0) { printf "%.0f", d; exit } }' "${gpu_full}")
+fi

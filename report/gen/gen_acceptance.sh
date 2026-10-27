@@ -173,6 +173,10 @@ gen_acceptance() {
     else
         add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
     fi
+    # v1.54.25：GPU 功耗上限被改（Current ≠ Default）——仅检出时追加，不改变无此项机器的项数
+    if [ -n "${GPU_PL_MISMATCH:-}" ]; then
+        add_item "GPU 功耗上限" "WARN" "与默认值不一致：${GPU_PL_MISMATCH}——满载时这些卡功耗预算被压低（掉频、算力不均）；若非刻意设置请执行 sudo nvidia-smi -pl ${GPU_PL_DEFAULT:-默认值} 恢复后复测"
+    fi
 
     # 5. 内存运行速率（v1.48.69 先定 DPC 口径；v1.51.9 增「混插」独立一档）
     #   v1.51.10 判据顺序修正（用户口径："内存插满/超过 1DPC 降速很正常，不该一刀切；

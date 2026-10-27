@@ -444,6 +444,7 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
         echo "| 显存异常 | ⚠️ ${GPU_AMD_SUSPECT%, }（疑似显存魔改或伪装，需核实） |"
     fi
     echo "| 额定功耗 | ${GPU_POWER:-N/A} |"
+    [ -n "${GPU_PL_MISMATCH:-}" ] && echo "| ⚠️ 功耗上限 | **被改过，与默认不一致**：${GPU_PL_MISMATCH}——满载时这些卡只有相应比例的功耗预算（掉频、各卡算力不均）；若非刻意设置，执行 sudo nvidia-smi -pl ${GPU_PL_DEFAULT:-默认值} 恢复后复测 |"
     echo "| 温度 | ${GPU_TEMP:-N/A} |"
     # v1.48.36: 厂商感知字段——NVIDIA 显示 ECC/退役行（nvidia-smi 字段），AMD 显示 RAS（ECC 对应物），其余平台隐藏（NVIDIA 专属概念）
     case "${GPU_PLATFORM:-}" in
