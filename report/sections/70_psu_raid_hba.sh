@@ -819,3 +819,26 @@ if [ -n "${PSU_DETAILS:-}" ]; then
             if (NF>=4 && ($5=="N/A" || $5=="" || $5=="—")) $5=why; print }')
     fi
 fi
+
+PSU_REDUNDANCY=""
+# ─── v1.54.26：PSU 冗余状态（平台暴露则显示，不暴露则整行不出现）──────────────
+#   覆盖率实测：DGX(REDUNDANCY_PSU)、Giga 系(Redundant_PSU/B_PSU_Redundant) 有；
+#   B200 / MI300X / Supermicro / Dell 的 IPMI 不暴露 —— 缺失时不写 N/A、不计数据不足。
+（平台暴露则显示，不暴露则整行不出现）──────────────
+#   覆盖率实测：DGX(REDUNDANCY_PSU) 与 Giga 系(Redundant_PSU/B_PSU_Redundant) 有；
+#   B200 / MI300X / Supermicro / Dell 的 IPMI 不暴露 —— 故缺失时不写 N/A、不计数据不足。
+
+if [ -f "${BMC_DIR}/ipmi_sdr.log" ] || ls "${PSU_DIR}"/*.log >/dev/null 2>&1; then
+    _pr=$(grep -hiE "redundan.*(psu|ps[0-9]|power)|(psu|ps[0-9]|power).*redundan" \
+        "${BMC_DIR}/ipmi_sdr.log" "${PSU_DIR}"/*.log 2>/dev/null | grep -viE "^#" | head -1)
+    if [ -n "$_pr" ]; then
+        _rn=$(printf '%s' "$_pr" | awk -F'|' '{gsub(/^ +| +$/,"",$1); print $1}')
+        _rv=$(printf '%s' "$_pr" | awk -F'|' '{gsub(/^ +| +$/,"",$2); print $2}')
+        _rs=$(printf '%s' "$_pr" | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}')
+        case "$_rs" in
+            ok|Ok|OK) PSU_REDUNDANCY="✅ 正常（${_rn} ${_rv}）" ;;
+            "")       PSU_REDUNDANCY="" ;;
+            *)        PSU_REDUNDANCY="⚠️ 异常（${_rn} ${_rv} / ${_rs}）" ;;
+        esac
+    fi
+fi

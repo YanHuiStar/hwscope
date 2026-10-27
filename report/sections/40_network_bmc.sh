@@ -454,3 +454,47 @@ for f in "${NET_DIR}"/mlxlink_mlx5_*_module.log; do
     fi
 done
 CABLE_PAIRS=$(echo "$CABLE_PAIRS" | sed 's/,$//')
+
+# ─── v1.54.26：网卡协议模式（IB/ETH）与 SR-IOV（数据早有，报告此前不展示）──────────
+#   实测差异真实存在：DGX A100 的 SWB 口 P1 全 IB，但双口卡的 P2 有 8 口跑 ETH；
+#   SRIOV_EN 也因交付配置不同（DGX 12 张卡全 False/VF=0，B200 全 True/VF=16）。
+#   这些是「客户配了 IB 却跑 ETH」「SR-IOV 没开」这类核对项的直接证据。
+NIC_LT_IB=0; NIC_LT_ETH=0; NIC_LT_OTHER=0
+NIC_SRIOV_ON=0; NIC_SRIOV_OFF=0; NIC_SRIOV_VF=0
+if [ -d "${NET_DIR}" ]; then
+    for _mf in "${NET_DIR}"/mlxconfig_mlx5_*.log; do
+        [ -f "$_mf" ] || continue
+        case "$_mf" in *_linktype.log) continue ;; esac   # 跳过派生的精简日志，避免重复计数
+        while IFS= read -r _lt; do
+            case "$_lt" in
+                IB*)  NIC_LT_IB=$((NIC_LT_IB+1)) ;;
+                ETH*) NIC_LT_ETH=$((NIC_LT_ETH+1)) ;;
+                "")   : ;;
+                *)    NIC_LT_OTHER=$((NIC_LT_OTHER+1)) ;;
+            esac
+        done < <(grep -hoE "LINK_TYPE_P[0-9]+[ ]+[A-Za-z()0-9]+" "$_mf" 2>/dev/null | awk '{print $2}')
+        _sr=$(grep -m1 -oE "SRIOV_EN[ ]+[A-Za-z()0-9]+" "$_mf" 2>/dev/null | awk '{print $2}')
+        case "$_sr" in
+            True*) NIC_SRIOV_ON=$((NIC_SRIOV_ON+1)) ;;
+            False*) NIC_SRIOV_OFF=$((NIC_SRIOV_OFF+1)) ;;
+        esac
+        _vf=$(grep -m1 -oE "NUM_OF_VFS[ ]+[0-9]+" "$_mf" 2>/dev/null | awk '{print $2}')
+        [ -n "${_vf:-}" ] && [ "$_vf" -gt "${NIC_SRIOV_VF:-0}" ] 2>/dev/null && NIC_SRIOV_VF="$_vf"
+    done
+fi
+NIC_LINKTYPE_SUMMARY=""
+if [ $((NIC_LT_IB+NIC_LT_ETH+NIC_LT_OTHER)) -gt 0 ]; then
+    NIC_LINKTYPE_SUMMARY="${NIC_LT_IB} 口 IB"
+    [ "$NIC_LT_ETH" -gt 0 ] && NIC_LINKTYPE_SUMMARY="${NIC_LINKTYPE_SUMMARY} · ${NIC_LT_ETH} 口 ETH"
+    [ "$NIC_LT_OTHER" -gt 0 ] && NIC_LINKTYPE_SUMMARY="${NIC_LINKTYPE_SUMMARY} · ${NIC_LT_OTHER} 口其他"
+fi
+NIC_SRIOV_SUMMARY=""
+if [ $((NIC_SRIOV_ON+NIC_SRIOV_OFF)) -gt 0 ]; then
+    if [ "$NIC_SRIOV_ON" -gt 0 ] && [ "$NIC_SRIOV_OFF" -gt 0 ]; then
+        NIC_SRIOV_SUMMARY="部分启用（${NIC_SRIOV_ON} 张启用 / ${NIC_SRIOV_OFF} 张关闭，最大 VF=${NIC_SRIOV_VF}）"
+    elif [ "$NIC_SRIOV_ON" -gt 0 ]; then
+        NIC_SRIOV_SUMMARY="启用（${NIC_SRIOV_ON} 张卡，最大 VF=${NIC_SRIOV_VF}）"
+    else
+        NIC_SRIOV_SUMMARY="关闭（${NIC_SRIOV_OFF} 张卡，VF=0）"
+    fi
+fi

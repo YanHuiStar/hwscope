@@ -177,6 +177,36 @@ CPU_CUR_SPEED=$(grep -m1 "Current Speed" "${dmidecode_processor}" 2>/dev/null | 
 echo "$CPU_CUR_SPEED" | grep -qE "^[0-9]+$" || CPU_CUR_SPEED=""
 [ -z "$CPU_CUR_SPEED" ] && CPU_CUR_SPEED=$(grep -m1 "CPU MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
 
+# ─── v1.54.26：CPU 频率策略（是否被限频）────────────────────────────────────
+#   **只做同源对比**：cpufreq 的 policy 上限（scaling_max_freq） vs 硬件上限（cpuinfo_max_freq）。
+#   严禁拿规格书最大频率比 —— EPYC 7742 规格 3.4GHz 而 cpufreq 报 2250（基频）是正常的，
+#   那样比会 100% 误报。
+load_manifest "${CPU_DIR}" cpufreq_policy "cpufreq_policy.log"
+CPU_FREQ_POLICY=""
+if [ -f "${cpufreq_policy}" ]; then
+    _cfdrv=$(grep -m1 '^scaling_driver:' "${cpufreq_policy}" | awk -F': *' '{print $2}')
+    _cfgov=$(grep -m1 '^scaling_governor:' "${cpufreq_policy}" | awk -F': *' '{print $2}')
+    _cfsmax=$(grep -m1 '^scaling_max_freq:' "${cpufreq_policy}" | awk -F': *' '{print $2}')
+    _cfcmax=$(grep -m1 '^cpuinfo_max_freq:' "${cpufreq_policy}" | awk -F': *' '{print $2}')
+    _cfboost=$(grep -m1 -i "Frequency boost" "${lscpu}" 2>/dev/null | awk '{print $NF}')
+    _cfboost_txt=""
+    case "$_cfboost" in
+        enabled)  _cfboost_txt="boost 启用" ;;
+        disabled) _cfboost_txt="⚠️ boost 关闭" ;;
+    esac
+    if echo "$_cfsmax" | grep -qE '^[0-9]+$' && echo "$_cfcmax" | grep -qE '^[0-9]+$'; then
+        _smax_mhz=$((_cfsmax / 1000)); _cmax_mhz=$((_cfcmax / 1000))
+        if [ "$_smax_mhz" -lt "$_cmax_mhz" ]; then
+            CPU_FREQ_POLICY="⚠️ **被限制**：当前上限 ${_smax_mhz} MHz < 硬件上限 ${_cmax_mhz} MHz（驱动 ${_cfdrv:-?}，governor ${_cfgov:-?}${_cfboost_txt:+，${_cfboost_txt}}）——压测性能偏低时先查 cpupower / BIOS 节能设置"
+        else
+            CPU_FREQ_POLICY="${_cfboost_txt:-boost 未知} ｜ 驱动 ${_cfdrv:-?} · governor ${_cfgov:-?} ｜ 上限 ${_smax_mhz} MHz = 硬件上限 ${_cmax_mhz} MHz（未被限制）"
+        fi
+    elif [ -n "$_cfboost_txt" ]; then
+        CPU_FREQ_POLICY="boost 状态：${_cfboost_txt}（本机 cpufreq 未暴露上限值）"
+    fi
+fi
+
+
 # CPU 每颗明细（从 dmidecode_processor.log 按 Processor Information 块解析）
 # 标识（DMI）列：取自 SMBIOS Type 4 Serial Number（BIOS 提供）。该值跟随物理 CPU 本身——
 #   换到别的机器仍不变，可用于配件流转核对；但非厂商印字序列号，勿与原厂 SN 对账。

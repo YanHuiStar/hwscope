@@ -724,3 +724,19 @@ if [ -z "$TEMP_SUMMARY" ] && [ -f "${sensors_all}" ]; then
         [ -n "$_os_cpu2" ] && TEMP_SUMMARY_OS="CPU ${_os_cpu2}（OS 侧 lm-sensors）"
     fi
 fi
+
+# ─── v1.54.26：风扇冗余状态（平台暴露则显示，不暴露则整行不出现）──────────────
+FAN_REDUNDANCY=""
+if [ -f "${BMC_DIR}/ipmi_sdr.log" ] || [ -f "${FAN_DIR}/ipmi_fan_redundancy.log" ]; then
+    _fr=$(grep -hiE "fan.*redundan|redundan.*fan" "${FAN_DIR}/ipmi_fan_redundancy.log" "${BMC_DIR}/ipmi_sdr.log" 2>/dev/null | grep -viE "^#" | head -1)
+    if [ -n "$_fr" ]; then
+        _fn=$(printf '%s' "$_fr" | awk -F'|' '{gsub(/^ +| +$/,"",$1); print $1}')
+        _fv=$(printf '%s' "$_fr" | awk -F'|' '{gsub(/^ +| +$/,"",$2); print $2}')
+        _fs=$(printf '%s' "$_fr" | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}')
+        case "$_fs" in
+            ok|Ok|OK) FAN_REDUNDANCY="✅ 正常（${_fn} ${_fv}）" ;;
+            "")       FAN_REDUNDANCY="" ;;
+            *)        FAN_REDUNDANCY="⚠️ 异常（${_fn} ${_fv} / ${_fs}）" ;;
+        esac
+    fi
+fi

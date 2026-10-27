@@ -227,6 +227,7 @@ fi)
 
 [CPU]
   型号   : ${CPU_MODEL:-N/A}
+$(if [ -n "${CPU_FREQ_POLICY:-}" ]; then printf "  频率策略: %s\n" "${CPU_FREQ_POLICY}"; fi)
   核心数 : ${CPU_CORES:-N/A}/颗 × ${CPU_SOCKETS:-N/A} 路 = ${CPU_TOTAL_CORES:-N/A} 总核
   插槽数 : ${CPU_SOCKETS:-N/A}
   Stepping: ${CPU_STEPPING:-N/A}
@@ -359,6 +360,7 @@ fi)
   活动口 : ${IB_ACTIVE:-0}${IB_ACTIVE_SPEED:+ (${IB_ACTIVE_SPEED})}
   Link状态: Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED")
   额定速率: ${IB_NOMINAL:-N/A}$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n  固件一致性: [警告] 同型号卡固件版本不一致（仅供核对，非故障判定）：%s' "${IB_FW_INCONSISTENT}"; fi)
+$(if [ -n "${NIC_LINKTYPE_SUMMARY:-}" ]; then printf "  协议模式: %s\n" "${NIC_LINKTYPE_SUMMARY}"; fi)$(if [ -n "${NIC_SRIOV_SUMMARY:-}" ]; then printf "  SR-IOV  : %s\n" "${NIC_SRIOV_SUMMARY}"; fi)
   网口up : ${ETH_LINK_UP:-0}$(net_extra_txt)
   网卡(卡级):$(if [ -n "$NIC_CARD_TXT" ]; then printf '\n%s' "$NIC_CARD_TXT"; else printf ' N/A'; fi)$(if [ -n "$nic_details_txt" ]; then printf '\n  网卡(端口级):%s' "$nic_details_txt"; fi)$(if printf '%s\n' "$nic_details_txt" | grep -q "能力 " 2>/dev/null; then printf '\n  注: PCIe(协商) 标"(能力 …)"= 卡能力高于当前协商，多为平台通路设计（扩展板卡/端口按 x8 配置、BIOS 端口拆分），非链路故障\n'; fi)$(if [ -z "$nic_details_txt" ] && [ -n "$NIC_FALLBACK_DETAILS" ]; then
     printf '\n  网卡明细（ibstat 回退，旧采集无 nic_inventory）:\n'
@@ -395,6 +397,7 @@ fi)
 [风扇]
   数量   : $(if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then echo "${FAN_COUNT_BREAKDOWN:-${FAN_COUNT:-0}}"; else echo "N/A（未取到数据）"; fi)
   转速   : ${FAN_SPEED:-N/A（该平台风扇转速未经标准 IPMI 传感器暴露）}
+$(if [ -n "${FAN_REDUNDANCY:-}" ]; then printf "  冗余   : %s\n" "${FAN_REDUNDANCY}"; fi)
   温度   : ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}}
 $(if [ -n "$FAN_DETAILS" ]; then echo "  来源   : ${FAN_SOURCE:-IPMI}"; fi)
 $(if [ -n "$FAN_DETAILS" ]; then
@@ -425,7 +428,7 @@ else
     else
         echo "  N/A（无 PSU 数据：无电源 FRU 且电源传感器为空，可能采集时 BMC 传感器不可读）"
     fi
-fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)$(if [ -n "$PWR_CUR" ] || [ -n "$PWR_ENERGY" ]; then
+fi)$(if [ -n "${PSU_REDUNDANCY:-}" ]; then printf '  电源冗余: %s\n' "${PSU_REDUNDANCY}"; fi)$(if [ -n "$PSU_NOTE_TXT" ]; then printf '\n%s' "$PSU_NOTE_TXT"; fi)$(if [ -n "$PWR_CUR" ] || [ -n "$PWR_ENERGY" ]; then
     printf '\n[能耗台账]\n'
     [ -n "$PWR_CUR" ] && printf '  当前功耗 : %s\n' "$PWR_CUR"
     [ -n "$PWR_MIN" ] && printf '  采样最小 : %s\n' "$PWR_MIN"

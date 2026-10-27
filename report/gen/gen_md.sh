@@ -215,6 +215,7 @@ gen_md() {
       if [ "${PSU_PIN_N:-0}" -ge 2 ] 2>/dev/null; then
           PWR_TABLE_MD="${PWR_TABLE_MD}| 各 PSU 输入功率合计 | ${PSU_PIN_SUM}W（${PSU_PIN_N} 颗有读数） | 逐颗「当前功耗」相加 |"$'\n'
       fi
+      [ -n "${PSU_REDUNDANCY:-}" ] && PWR_TABLE_MD="${PWR_TABLE_MD}| 电源冗余 | ${PSU_REDUNDANCY} | 来自 BMC 冗余传感器（平台不暴露时不显示本行） |"$'\n'
     if [ -n "$PSU_DCMI" ]; then
         _dv="$(_ptrim "${PSU_DCMI#*: }")"; [ "$_dv" = "$PSU_DCMI" ] && _dv="$(_ptrim "$PSU_DCMI")"
         case "$_dv" in
@@ -363,6 +364,7 @@ fi)
 | 插槽数 | ${CPU_SOCKETS:-N/A} |
 | Stepping | ${CPU_STEPPING:-N/A} |
 | 频率 | ${CPU_MAX_SPEED:-N/A} MHz（当前 ${CPU_CUR_SPEED:-N/A} MHz） |
+$(if [ -n "${CPU_FREQ_POLICY:-}" ]; then echo "| 频率策略 | ${CPU_FREQ_POLICY} |"; fi)
 $(if [ -n "$CPU_DETAILS" ]; then
     cseq=0
     local c_has_sn=0
@@ -636,6 +638,8 @@ fi)
 | IB Link 状态 | Active ${IB_ACTIVE:-0}${IB_INITIALIZING:+ / Initializing ${IB_INITIALIZING}} / Down ${IB_LINK_DOWN:-0}$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED") |
 | IB 额定速率 | ${IB_NOMINAL:-N/A} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)
 | 以太网口 up | ${ETH_LINK_UP:-0} |
+$(if [ -n "${NIC_LINKTYPE_SUMMARY:-}" ]; then echo "| 协议模式 | ${NIC_LINKTYPE_SUMMARY} |"; fi)
+$(if [ -n "${NIC_SRIOV_SUMMARY:-}" ]; then echo "| SR-IOV | ${NIC_SRIOV_SUMMARY} |"; fi)
 $(net_extra_md)
 
 ### 网络适配器明细（卡级）
@@ -787,6 +791,7 @@ fi)
 | 转速 | ${FAN_SPEED:-N/A（该平台风扇转速未经标准 IPMI 传感器暴露，详见下方说明）} |
 | 温度 | ${TEMP_SUMMARY:-${TEMP_SUMMARY_OS:-N/A}} |$(if [ -n "$FAN_DETAILS" ]; then echo "
 | 数据来源 | ${FAN_SOURCE:-IPMI} |"; fi)
+$(if [ -n "${FAN_REDUNDANCY:-}" ]; then echo "| 冗余 | ${FAN_REDUNDANCY} |"; fi)
 $(if [ -n "$FAN_DETAILS" ]; then
     echo "### 散热风扇明细"
     echo "| # | 风扇 | 转速(RPM) | 状态 |"

@@ -48,6 +48,9 @@ run_cpu() {
         "cat /sys/devices/system/cpu/smt/active 2>/dev/null" "${dir}/smt_status.log" \
         "awk -F':[ \\t]*' '/cpu MHz/{s+=\$2; c++} END{if(c>0) printf \"Average: %.0f MHz, Total CPUs: %d\\n\", s/c, c; else print \"N/A (no cpu MHz in cpuinfo)\"}' /proc/cpuinfo 2>/dev/null" "${dir}/cpu_freq.log" \
         "LANG=C lscpu | grep --line-buffered -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log"
+        # v1.54.26：频率策略（是否被限频）——cpufreq 的 policy 上限 vs 硬件上限，
+        #   两者同源才能比；拿规格书最大频率比会 100% 误报（EPYC 7742 规格 3.4GHz，cpufreq 报 2250 基频是正常的）。
+        "for f in scaling_driver scaling_governor scaling_max_freq scaling_min_freq cpuinfo_max_freq cpuinfo_min_freq; do printf '%s: %s\n' \"\$f\" \"\$(cat /sys/devices/system/cpu/cpu0/cpufreq/\$f 2>/dev/null)\"; done" "${dir}/cpufreq_policy.log"
 
 write_manifest "${dir}/manifest.txt" \
         "dmidecode_processor" "dmidecode_processor.log" \
@@ -60,7 +63,8 @@ write_manifest "${dir}/manifest.txt" \
         "lscpu_extended" "lscpu_extended.log" \
         "smt_status" "smt_status.log" \
         "cpu_freq" "cpu_freq.log" \
-        "cpu_freq_range" "cpu_freq_range.log"
+        "cpu_freq_range" "cpu_freq_range.log" \
+        "cpufreq_policy" "cpufreq_policy.log"
 
     module_end "$MODULE_NAME"
 }
