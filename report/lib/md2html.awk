@@ -260,6 +260,8 @@ function trim_cell(s) {
 #   用途：表格单元格里「结论」与「解释/建议」分两行，避免一行长文把表格拉宽、也更好读。
 function cell_br(s) {
     gsub(/&lt;br[ \t]*\/?&gt;/, "<br>", s)
+    # 表格单元格里的「——」= 结论与解释/建议的分界，同样换行（只影响 HTML 呈现）
+    gsub(/——/, "<br>", s)
     return s
 }
 

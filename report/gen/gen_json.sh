@@ -435,6 +435,8 @@ GLOSSARY_ENTRIES=(
     "SXM|NVIDIA 数据中心 GPU 模块化形态（非 PCIe 插卡），如 B300 SXM6"
     "PSID|网卡产品 ID（Mellanox 卡标识，用于固件匹配）"
     "退役行(Remapped Rows)|GPU 显存中检测到故障后自动重映射隐藏的行，计数>0 提示显存健康问题"
+    "CE/UE|ECC 计数口径：CE=可纠正错误（Correctable Error，可纠错恢复，属观察项）；UE=不可纠正错误（Uncorrectable Error，数据完整性受影响，需报修）"
+    "volatile/aggregate|nvidia-smi 的 ECC 计数窗口：volatile=本次驱动加载以来（看当前是否有错）；aggregate=终身累计（含出厂测试，RMA 依据）"
     "标识（DMI）|CPU 标识取自 SMBIOS Type 4 Serial Number（BIOS 提供，dmidecode -t processor）。同一颗物理 CPU 换到其他机器后该值不变，可用于配件流转核对；部分厂商 BIOS 未填充时该列不显示。非厂商印字序列号，请勿用于与原厂 SN 或跨品牌机器对账"
     "2DPC|DIMM Per Channel=每内存通道插 2 条；超过 1DPC（每通道多于 1 条）时信号负载大，内存降速运行属平台规范正常现象——与是否插满无关，如 24 根插 32 槽同样降速"
 )

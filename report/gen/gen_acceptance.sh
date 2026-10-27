@@ -48,6 +48,9 @@ gen_acceptance() {
         #   结果该行 MD 出 6 个竖线、HTML 该行 5 个 <td>（其余行 4 个）→ 表格错位。
         #   在唯一出口统一替换为全角"／"，一处修复覆盖全部判定项。
         _desc=$(printf '%s' "$3" | tr '|' '／')
+        # v1.54.29：说明里的「——」一律作为「结论 / 解释·建议」的分行点（13 处用法一致），
+        #   避免一条长句把验收项表格拉宽；MD 里写 <br>，HTML 由 md2html 还原为真实换行。
+        _desc=$(printf '%s' "$_desc" | sed 's/——/<br>/g')
         # v1.54.27：行按**报告章节顺序**排列（原先按代码执行顺序，读者看到的是东一个西一个）。
         #   存 `${rank}|${序号}|名称|状态|说明`，渲染时 sort 再重排序号；
         #   名称与说明里的 `|` 已在上方 / 下方各自处理，不会破坏分隔。
@@ -524,12 +527,13 @@ gen_acceptance() {
         if [ "${GPU_ECC_AMD_RAS:-0}" = "1" ]; then
             _ecc_desc="AMD RAS 单比特(CE) ${GPU_ECC_CORR_VOL:-?} / 双比特(UE) ${GPU_ECC_UNCORR_VOL:-?}（ROCm 口径，本次驱动加载以来）"
         else
-        _ecc_desc="本次(volatile) 可纠正 ${GPU_ECC_CORR_VOL:-?} / 不可纠正 ${GPU_ECC_UNCORR_VOL:-?}；累计(aggregate) 可纠正 ${GPU_ECC_CORR_AGG:-?} / 不可纠正 ${GPU_ECC_UNCORR_AGG:-?}"
+        # v1.54.29：短标签 + 去掉 volatile/aggregate 英文（术语表有）；结论与建议分两行
+        _ecc_desc="本次 CE ${GPU_ECC_CORR_VOL:-?} / UE ${GPU_ECC_UNCORR_VOL:-?}；累计 CE ${GPU_ECC_CORR_AGG:-?} / UE ${GPU_ECC_UNCORR_AGG:-?}"
         fi
-        [ -n "${GPU_ECC_BADCARDS:-}" ] && _ecc_desc="${_ecc_desc}；不可纠正记录集中在 GPU${GPU_ECC_BADCARDS//,/,GPU}"
+        [ -n "${GPU_ECC_BADCARDS:-}" ] && _ecc_desc="${_ecc_desc}（UE 集中在 GPU${GPU_ECC_BADCARDS//,/,GPU}）"
         case "${GPU_ECC_VERDICT:-PASS}" in
-            FAIL) add_item "GPU ECC" "FAIL" "${_ecc_desc} —— ⚠️ 本次运行检出不可纠正错误（volatile>0），数据完整性受影响，需报修" ;;
-            WARN) add_item "GPU ECC" "WARN" "${_ecc_desc} —— 当前无正在发生的错误（volatile 全 0），但存在历史记录；建议跑一轮显存压力后复测 volatile 是否增长" ;;
+            FAIL) add_item "GPU ECC" "FAIL" "${_ecc_desc}<br>⚠️ 本次运行检出不可纠正错误（volatile > 0），数据完整性受影响，需报修" ;;
+            WARN) add_item "GPU ECC" "WARN" "${_ecc_desc}<br>当前无正在发生的错误，仅历史记录；建议跑显存压力后复测是否增长" ;;
             *)    # v1.54.28：全 0 时不必复述四组计数，一句话够用
                   if echo "${GPU_ECC_CORR_VOL:-0}${GPU_ECC_UNCORR_VOL:-0}${GPU_ECC_CORR_AGG:-0}${GPU_ECC_UNCORR_AGG:-0}" | grep -qx '0000'; then
                       add_item "GPU ECC" "PASS" "本次与累计均无错误（volatile 0 / aggregate 0）"
