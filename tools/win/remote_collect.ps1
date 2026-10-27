@@ -25,7 +25,11 @@ param(
     [string]$BmcIp = "",
     [string]$BmcUser = "admin",
     [string]$HgxBmcIp = "",
-    [string]$HgxBmcUser = "admin"
+    [string]$HgxBmcUser = "admin",
+    # v1.54.23：BMC 密码预校验改为**可选**（默认关闭）。原因：ipmitool 对「密码错」和
+    #   「这条校验连接本身失败 / BMC 暂时没空会话」报同一句，默认开着会连报三次假告警，
+    #   反而让人以为密码错了。需要前置校验时加 -VerifyBmc。
+    [switch]$VerifyBmc = $false
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -335,41 +339,23 @@ try {
             # v1.54.16：自动化/测试可用 $env:HWSCOPE_BMC_PASSWORD / HWSCOPE_HGX_BMC_PASSWORD 预置，
             #   交互场景仍走掩码提示（与 SSH 密码同一套约定；密码只经内存与 stdin，不落盘）
             if ($BmcIp) {
-                $bmcPw = $null; $pwFromEnv = $false
-                if ($env:HWSCOPE_BMC_PASSWORD) { $bmcPw = $env:HWSCOPE_BMC_PASSWORD; $pwFromEnv = $true }
-                for ($try = 1; $try -le 3; $try++) {
-                    if (-not $bmcPw) {
-                        for ($k = 1; $k -le 3; $k++) {
-                            $sec = Read-Host -AsSecureString "主机 BMC 密码（$BmcIp）"
-                            $bmcPw = ConvertFrom-SecureStringPlain $sec
-                            if (Test-PasswordAscii $bmcPw) { break }
-                            Write-Host "[WARN] 密码含全角/非 ASCII 字符（输入法可能处于全角状态），请切到英文后重输" -ForegroundColor Yellow
-                            $bmcPw = $null
-                        }
-                    }
+                $bmcPw = $null
+                if ($env:HWSCOPE_BMC_PASSWORD) { $bmcPw = $env:HWSCOPE_BMC_PASSWORD }
+                if (-not $bmcPw) {
+                    $sec = Read-Host -AsSecureString "主机 BMC 密码（$BmcIp）"
+                    $bmcPw = ConvertFrom-SecureStringPlain $sec
+                }
+                # 预校验默认关闭（-VerifyBmc 才开）：它只能证明"这次连接 + 认证是否都成功"，
+                #   失败原因既可能是密码，也可能是这条 ssh/BMC 会话暂时不可用，默认开着会误报。
+                if ($VerifyBmc) {
                     Write-Host "[INFO] 校验 BMC 凭据（$BmcIp / $BmcUser）..." -ForegroundColor Gray
                     if (Test-BmcPassword -BmcIp $BmcIp -BmcUser $BmcUser -Password $bmcPw) {
                         Write-Host "[OK]   BMC 认证通过" -ForegroundColor Green
-                        break
+                    } else {
+                        Write-Host "[WARN] 预校验未通过（可能是密码不对，也可能是校验连接/BMC 会话临时不可用）——继续采集，结果以采集日志为准" -ForegroundColor Yellow
                     }
-                    if ($pwFromEnv) {
-                        # 自动化预置的密码：不再中止——BMC 会话已满/瞬时不可用时 ipmitool 报的也是同一句
-                        #   "Unable to establish IPMI v2"，中止会把可恢复的情况判成密码错。
-                        Write-Host "[WARN] 预置的 BMC 密码校验未通过（$BmcIp / $BmcUser）；继续采集，由采集端的串行重试再试" -ForegroundColor Yellow
-                        break
-                    }
-                    Write-Host "[WARN] BMC 认证失败（用户名或密码不对）；请重输（第 $try/3 次）" -ForegroundColor Yellow
-                    $bmcPw = $null
                 }
-                if (-not $bmcPw) {
-                    # 处理：**不中止**。ipmitool 对"密码错"和"BMC 会话已满/不可达"报同一句
-                    #   "Unable to establish IPMI v2 / RMCP+ session"，凭一句报错就中止会把可恢复情况
-                    #   判死（实测同一台 DGX A100：并发会话打满时校验必失败，隔几分钟再跑就正常）。
-                    #   这里如实告警，交给采集端「串行重试」再试一次。
-                    Write-Host "[WARN] BMC 凭据校验未通过——继续采集（采集端会对 remote_bmc_* 串行重试一次）" -ForegroundColor Yellow
-                    $bmcPw = $null
-                }
-                if ($bmcPw) { $pwLines += $bmcPw } else { $pwLines += '' }
+                $pwLines += $bmcPw   # ← 必须写进 payload，否则远端 read 拿到空密码
                 $reads += "read -r BMC_PASS || true; export BMC_PASS; "
             }
             if ($HgxBmcIp) {
