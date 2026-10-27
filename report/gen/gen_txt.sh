@@ -269,7 +269,7 @@ else
        echo "  显存异常: ⚠️ ${GPU_AMD_SUSPECT%, }（疑似显存魔改或伪装，需核实）"
    fi
     echo "  功耗   : ${GPU_POWER:-N/A}（额定）"
-    [ -n "${GPU_PL_MISMATCH:-}" ] && echo "  ⚠️ 功耗上限: 被改过（${GPU_PL_MISMATCH}）——满载功耗预算不足，可用 sudo nvidia-smi -pl ${GPU_PL_DEFAULT:-默认值} 恢复"
+    [ -n "${GPU_PL_MISMATCH:-}" ] && echo "$(printf '  ⚠️ 功耗上限: 被改过（%s）\n              恢复 sudo nvidia-smi -pl %s 后复测' "${GPU_PL_MISMATCH}" "${GPU_PL_DEFAULT:-默认值}")"
     echo "  温度   : ${GPU_TEMP:-N/A}"
     case "${GPU_PLATFORM:-}" in
         amd)

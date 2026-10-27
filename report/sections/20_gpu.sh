@@ -545,8 +545,19 @@ if [ -f "${gpu_full}" ]; then
         /Default Power Limit/ {
             def=val()+0
             if (cur > 0 && def > 0 && cur != def) {
-                printf "%sGPU%d(SN %s) %.0fW/默认%.0fW", (out?", ":""), gi-1, sn, cur, def
-                out=1
+                # v1.54.28：不再逐卡带 SN（8 张卡被改时串成 180+ 字，把表格撑爆）；
+                #   按限值归组 -> 「GPU0/1/4 -> 800W（默认 1000W）」，SN 在 GPU 明细表里查
+                k = sprintf("%.0f", cur)
+                if (!(k in seen)) { seen[k]=1; order[++nk]=k }
+                cards[k] = (cards[k] == "" ? gi-1 : cards[k] "/" gi-1)
+                defs[k] = def
+            }
+        }
+        END {
+            for (i = 1; i <= nk; i++) {
+                k = order[i]
+                printf "%sGPU%s → %sW（默认 %.0fW）", (out ? "；" : ""), cards[k], k, defs[k]
+                out = 1
             }
         }' "${gpu_full}")
     GPU_PL_DEFAULT=$(awk '

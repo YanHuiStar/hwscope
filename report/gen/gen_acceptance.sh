@@ -219,7 +219,7 @@ gen_acceptance() {
     fi
     # v1.54.25：GPU 功耗上限被改（Current ≠ Default）——仅检出时追加，不改变无此项机器的项数
     if [ -n "${GPU_PL_MISMATCH:-}" ]; then
-        add_item "GPU 功耗上限" "WARN" "与默认值不一致：${GPU_PL_MISMATCH}——满载时这些卡功耗预算被压低（掉频、算力不均）；若非刻意设置请执行 sudo nvidia-smi -pl ${GPU_PL_DEFAULT:-默认值} 恢复后复测"
+        add_item "GPU 功耗上限" "WARN" "功耗上限被改：${GPU_PL_MISMATCH}<br>满载仅部分预算，会掉频且各卡算力不均；恢复：sudo nvidia-smi -pl ${GPU_PL_DEFAULT:-默认值} 后复测"
     fi
 
     # 5. 内存运行速率（v1.48.69 先定 DPC 口径；v1.51.9 增「混插」独立一档）
@@ -329,7 +329,7 @@ gen_acceptance() {
         [ "$_pn" -eq 0 ] 2>/dev/null && _pn=${PSU_COUNT_DMI:-0}
         if [ "$_pn" -gt 0 ] 2>/dev/null; then
             _pwr_slot="；在位 ${_pn}/${PSU_SLOT_TOTAL} 个电源槽位"
-            [ "$_pn" -lt "$PSU_SLOT_TOTAL" ] 2>/dev/null && _pwr_slot="${_pwr_slot}（若因场地供电受限降配，请确认仍满足冗余要求并在验收单备注）"
+            [ "$_pn" -lt "$PSU_SLOT_TOTAL" ] 2>/dev/null && _pwr_slot="${_pwr_slot}（场地降配需确认冗余并在验收单备注）"   # v1.54.28 精简
         fi
     fi
     if [ "${PSU_STATUS_BAD:-0}" -gt 0 ] 2>/dev/null; then
@@ -530,7 +530,12 @@ gen_acceptance() {
         case "${GPU_ECC_VERDICT:-PASS}" in
             FAIL) add_item "GPU ECC" "FAIL" "${_ecc_desc} —— ⚠️ 本次运行检出不可纠正错误（volatile>0），数据完整性受影响，需报修" ;;
             WARN) add_item "GPU ECC" "WARN" "${_ecc_desc} —— 当前无正在发生的错误（volatile 全 0），但存在历史记录；建议跑一轮显存压力后复测 volatile 是否增长" ;;
-            *)    add_item "GPU ECC" "PASS" "${_ecc_desc}（全部为 0）" ;;
+            *)    # v1.54.28：全 0 时不必复述四组计数，一句话够用
+                  if echo "${GPU_ECC_CORR_VOL:-0}${GPU_ECC_UNCORR_VOL:-0}${GPU_ECC_CORR_AGG:-0}${GPU_ECC_UNCORR_AGG:-0}" | grep -qx '0000'; then
+                      add_item "GPU ECC" "PASS" "本次与累计均无错误（volatile 0 / aggregate 0）"
+                  else
+                      add_item "GPU ECC" "PASS" "${_ecc_desc}"
+                  fi ;;
         esac
     elif [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
         # v1.52.15：区分「采集缺失」与「平台工具链限制」——

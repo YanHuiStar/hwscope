@@ -55,7 +55,12 @@ BEGIN {
     print "@media (max-width:1024px){.toc ul{display:flex;flex-wrap:wrap;gap:3px;overflow:visible;flex:1 1 100%;width:100%;min-height:0;min-width:0;}}"
     print "@media (max-width:1024px){.toc li{margin:0;}.toc a{padding:2px 8px;border:1px solid #e3e9f2;}.toc li.sep{display:none;}}"
     print "@media (max-width:1400px){.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:6px 0 10px;}}"
-    print "@media (max-width:1400px){.tw>table{margin:0;min-width:max-content;}}"
+    # v1.54.28：只有列数多的「宽表」才按 max-content 撑开横向滚动；
+    #   窄表（≤5 列，如验收项/硬件概览/结论）改用正常换行——
+    #   实测 B200 验收项表被 182 字的说明撑到 1843px（容器 1129px），
+    #   结果/说明两列被推出屏幕，看起来像排版坏了。
+    print "@media (max-width:1400px){.tw>table{margin:0;}}"
+    print "@media (max-width:1400px){.tw.wide>table{margin:0;min-width:max-content;}}"
     print "@media (max-width:1024px){.main{grid-column:auto;grid-row:auto;}}"
     print "@media (max-width:760px){body{padding:12px 8px;}.card{padding:12px 14px;}h1{font-size:20px;}.subtitle{margin-bottom:14px;}table{font-size:12px;}th,td{padding:5px 7px;}.top{right:10px;bottom:10px;}}"
     print "html{scroll-behavior:smooth;}"
@@ -72,6 +77,10 @@ BEGIN {
     print "table{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0 10px;}"
     print "th{background:#1e3a5f;color:#fff;padding:7px 10px;text-align:left;font-weight:500;white-space:nowrap;}"
     print "td{padding:6px 10px;border-bottom:1px solid #e8ecf2;word-break:break-all;}"
+    # v1.54.28：序号列与结果状态列不换行 —— 窄表改自动换行后，长说明会把这些短列挤到逐字折行
+    #   （实测「10」被拆成「1 / 0」、「✅ PASS」被拆两行），加 nowrap 后只让说明列换行。
+    print "td:first-child,th:first-child{white-space:nowrap;}"
+    print "td.pass,td.warn,td.fail,td.na{white-space:nowrap;}"
     # P3-5：必须在上面基础 td 规则**之后**才能生效（同特异度按源序，后者胜）
     print "@media (max-width:1400px){td{word-break:normal;overflow-wrap:anywhere;}}"
     # P3-6：窄屏（≤1024）toc 变成顶部吸附条（高 64~121px），锚点跳转需要更大的顶部留白，
@@ -190,7 +199,7 @@ pass == 1 {
     if (line ~ /^[-:|[:space:]]+$/) next
     n = split(line, cells, "|")
     if (in_table == 0) {
-        print "<div class='tw'><table><thead><tr>"
+        print "<div class='tw" (n >= 6 ? " wide" : "") "'><table><thead><tr>"
         for (i = 1; i <= n; i++) {
             c = trim_cell(cells[i])
             print "<th>" inline_md(esc_html(c)) "</th>"
@@ -203,8 +212,8 @@ pass == 1 {
     for (i = 1; i <= n; i++) {
         c = trim_cell(cells[i])
         cls = cell_class(c)
-        if (cls != "") print "<td class='" cls "'>" inline_md(esc_html(c)) "</td>"
-        else print "<td>" inline_md(esc_html(c)) "</td>"
+        if (cls != "") print "<td class='" cls "'>" cell_br(inline_md(esc_html(c))) "</td>"
+        else print "<td>" cell_br(inline_md(esc_html(c))) "</td>"
     }
     print "</tr>"
     next
@@ -247,6 +256,13 @@ function trim_cell(s) {
 }
 
 # HTML 转义（先 & 后 < > "，防二次转义）；cell_class 在转义前调用（用原始文本判色）
+# v1.54.28：受控换行——MD 源里写 <br> 时，还原成真正的换行标签（其余标签仍转义）。
+#   用途：表格单元格里「结论」与「解释/建议」分两行，避免一行长文把表格拉宽、也更好读。
+function cell_br(s) {
+    gsub(/&lt;br[ \t]*\/?&gt;/, "<br>", s)
+    return s
+}
+
 function esc_html(s) {
     gsub(/&/, "\\&amp;", s)
     gsub(/</, "\\&lt;", s)
