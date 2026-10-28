@@ -278,6 +278,32 @@ ${raid_vd_json}
     "cables": "$(jesc "${CABLE_SUMMARY:-N/A}")",
     "cable_pairs": "$(jesc "${CABLE_PAIRS:-N/A}")",
     "port_modes": "$(jesc "${LINKTYPE_SUMMARY:-N/A}")",
+    "port_total": "${NIC_PORT_TOTAL:-0}",
+    "port_up": "${NIC_PORT_UP:-0}",
+    "port_down": "${NIC_PORT_DOWN:-0}",
+    "link_type": {
+      "ib_ports": "${NIC_LT_IB:-0}",
+      "eth_ports": "${NIC_LT_ETH:-0}",
+      "available": "$([ $(( ${NIC_LT_IB:-0} + ${NIC_LT_ETH:-0} + ${NIC_LT_OTHER:-0} )) -gt 0 ] 2>/dev/null && echo true || echo false)",
+      "source": "mlxconfig（网卡固件，与接口数不同源）"
+    },
+    "sriov": {
+      "enabled_cards": "${NIC_SRIOV_ON:-0}",
+      "disabled_cards": "${NIC_SRIOV_OFF:-0}",
+      "max_vfs": "${NIC_SRIOV_VF:-0}",
+      "available": "$([ $(( ${NIC_SRIOV_ON:-0} + ${NIC_SRIOV_OFF:-0} )) -gt 0 ] 2>/dev/null && echo true || echo false)"
+    },
+    "compute_nic": {
+      "cards": "${ACC_NIC_IB_COUNT:-0}",
+      "ports": "${ACC_NIC_IB_PORT:-0}",
+      "model": "$(jesc "${ACC_NIC_IB:-N/A}")",
+      "note": "GPU 直连（PIX/PXB 级），与硬件概览同源口径"
+    },
+    "cable_module": {
+      "devices": "${CABLE_MODULE_SEEN:-0}",
+      "read_failed": "${CABLE_MODULE_FAIL:-0}",
+      "read_failed_devices": "$(jesc "${CABLE_MODULE_BAD_DEV:-}")"
+    },
     "nics": [
 ${nic_details_json}
     ],
@@ -372,7 +398,24 @@ $(printf '%s' "$nvs_json")
     "nvlink_crc_errors": "${NVLINK_CRC:+存在非零CRC错误}",
     "dcgm_diag": "${DCGM_SUMMARY:-N/A}",
     "sel_pcie_errors": "${SEL_PCIE_ERR:-0}",
-    "cable_pairs": "${CABLE_PAIRS:-N/A}"
+    "cable_pairs": "${CABLE_PAIRS:-N/A}",
+    "mem_edac": {
+      "counts": "$(jesc "${MEM_EDAC:-N/A}")",
+      "ce": "$(printf '%s' "${MEM_EDAC:-}" | sed -n 's/.*CE:\([0-9]*\).*/\1/p')",
+      "ue": "$(printf '%s' "${MEM_EDAC:-}" | sed -n 's/.*UE:\([0-9]*\).*/\1/p')",
+      "source": "EDAC（内存控制器计数）"
+    },
+    "psu_redundancy": "$(jesc "${PSU_REDUNDANCY:-N/A}")",
+    "fan_redundancy": "$(jesc "${FAN_REDUNDANCY:-N/A}")",
+    "pcie_aer": {
+      "correctable": "${PCIE_AER_CORR:-0}",
+      "uncorrectable": "${PCIE_AER_UNCORR:-0}",
+      "bdfs": "$(jesc "${PCIE_AER_BDFS:-}")",
+      "source": "$(jesc "${PCIE_AER_SRC:-}")"
+    },
+    "nvme_media_errors": "${NVME_ERR_MEDIA:-0}",
+    "raid_cache_policy": "$(jesc "${RAID_CACHE_POLICY:-N/A}")",
+    "raid_bbu": "$(jesc "${RAID_BBU_SUMMARY:-N/A}")"
   },
   "firmware": {
     "summary": "${FW_SUMMARY:-N/A}",

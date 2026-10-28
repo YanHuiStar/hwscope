@@ -640,7 +640,6 @@ fi)
 | 速率 | 额定 ${IB_NOMINAL:-N/A}${IB_ACTIVE_SPEED:+ · 协商 ${IB_ACTIVE_SPEED}} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)
 $(if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ]; then echo "| 计算网卡（GPU 直连） | ${ACC_NIC_IB_COUNT} 张 / ${ACC_NIC_IB_PORT} 口（与硬件概览同源口径） |"; fi)
 $(if [ -n "${NIC_SRIOV_SUMMARY:-}" ]; then echo "| SR-IOV | ${NIC_SRIOV_SUMMARY} |"; fi)
-$(if [ -n "${CABLE_MODULE_NOTE:-}" ]; then echo "| 模块信息 | ${CABLE_MODULE_NOTE} |"; fi)
 $(net_extra_md)
 
 ### 网络适配器明细（卡级）

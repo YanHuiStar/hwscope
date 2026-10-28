@@ -339,9 +339,10 @@ if [ -d "${NET_DIR}" ]; then
         fi
     done
 fi
-if [ "$CABLE_MODULE_FAIL" -gt 0 ] 2>/dev/null; then
-    CABLE_MODULE_NOTE="${CABLE_MODULE_SEEN} 个设备中 ${CABLE_MODULE_FAIL} 个 mlxlink 读取失败（${CABLE_MODULE_BAD_DEV}）——这几项无模块数据；未插线缆属常态，如本次要核对线缆请复采"
-fi
+# 说明：这三项只进 JSON（cable_module 段），**不进报告正文**——
+#   实测 B200 / B300 / Dell H200 三台不同厂商机器的失败设备恒为 mlx5_5、mlx5_6，
+#   说明是 mlxlink 对这类设备的固定失败（采集侧问题），不是某台机缺模块；
+#   而"未插模块/未接线"在验收环境是常态，写进交付报告只会被当成告警。
 
 # SEL 数据有效性（采集失败时统计全为 0，验收不能判 PASS，须区分"无数据"）
 SEL_DATA_VALID=0
