@@ -92,13 +92,17 @@ hwscope/
 
 平台标识由 `uname -m` 与硬件信号组合而成，格式为 `<架构>_<形态>`（如 `x86_64_SXM`、`aarch64_SXM`）。
 
-| 平台标识 | 识别方式 | 典型场景 |
-|---------|---------|---------|
-| `<架构>_SXM` | `nvidia-smi` 可用且 SXM 四路检测任一命中：`nvswitch` CLI 见 Switch Name；`lspci` 见 NVSwitch / SXM Bridge；`nv-fabricmanager` 进程且 `nvlink --status` 可用；`/dev/nvidia-nvswitchctl` 存在或 dmesg 见 `Nvlink Core is being initialized` | HGX B200 / B300 一体化主机 |
-| `<架构>_OAM` | `GPU_OAM=1`（AMD Instinct OAM 型号：MI250X / MI300X / MI325X 等） | AMD OAM 模组整机（xGMI / Infinity Fabric 互联） |
-| `<架构>_PCIe` | 存在加速卡（NVIDIA 非 SXM / AMD / 昇腾 / Intel / 国产） | PCIe GPU 服务器、GPU 模组直通到主机的形态 |
-| `<架构>_head` | GPU 数为 0 且 `lspci` 见 `PEX89` / `PEX97` / `Switchtec` | GPU 机头（模组经 PCIe Fabric 接入，单独采集） |
-| `<架构>_none` | 无 GPU、无 Fabric 交换机 | 传统服务器、虚拟机 |
+| 内部标识（`PLATFORM`） | 报告/验收展示值 | 识别方式 | 典型场景 |
+|---|---|---|---|
+| `<架构>_SXM` | `x86_64_SXM` | `nvidia-smi` 可用且 SXM 四路检测任一命中：`nvswitch` CLI 见 Switch Name；`lspci` 见 NVSwitch / SXM Bridge；`nv-fabricmanager` 进程且 `nvlink --status` 可用；`/dev/nvidia-nvswitchctl` 存在或 dmesg 见 `Nvlink Core is being initialized` | HGX B200 / B300 一体化主机 |
+| `<架构>_OAM` | `x86_64_OAM` | `GPU_OAM=1`（AMD Instinct OAM 型号：MI250X / MI300X / MI325X 等） | AMD OAM 模组整机（xGMI / Infinity Fabric 互联） |
+| `<架构>_PCIe` | `x86_64_PCIe` | 存在加速卡（NVIDIA 非 SXM / AMD / 昇腾 / Intel / 国产） | PCIe GPU 服务器、GPU 模组直通到主机的形态 |
+| `<架构>_head` | `x86_64_Head` | GPU 数为 0 且 `lspci` 见 `PEX89` / `PEX97` / `Switchtec` | GPU 机头（模组经 PCIe Fabric 接入，单独采集） |
+| `<架构>_none` | `x86_64_None` | 无 GPU、无 Fabric 交换机 | 传统服务器、虚拟机 |
+
+> **命名约定**：内部标识用于机器消费，保持稳定写法——架构前缀 `x86_64` / `aarch64` 原样，形态后缀中缩写与专有名词（`SXM` / `OAM` / `PCIe`）保留厂商大小写，普通词小写（`head` / `none`）。
+> 展示层按「后缀段首字母大写」输出（`head` → `Head`、`none` → `None`），即报告与验收清单中显示为 `x86_64_Head`、`x86_64_None`；JSON 同时给出两个字段：`platform`（原值）与 `platform_label`（展示值）。
+> 旧版本采集的机器若标识与日志矛盾（例如有 Fabric 交换机却写成 `_none`），报告端会按 `pcie/lspci_all.log` 纠偏并标注「采集时版本较早，平台标识按 PCIe 日志重新判定」。
 
 判定补充：
 

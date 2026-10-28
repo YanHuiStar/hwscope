@@ -101,26 +101,37 @@ HEAD_NODE=0
 #   JSON 的 "platform" 字段仍为原值，只有 platform_label 走 DISPLAY）。
 #   注意：架构名本身含下划线（x86_64 / aarch64），所以先剥前缀再处理后缀；
 #   且 SXM/OAM/PCIe 是缩写/含大写，必须原样保留，不能套「首字母大写」。
-case "$PLATFORM" in
-    x86_64_*)  _pfx="x86_64_";  _sfx="${PLATFORM#x86_64_}" ;;
-    aarch64_*) _pfx="aarch64_"; _sfx="${PLATFORM#aarch64_}" ;;
-    *)         _pfx="";         _sfx="$PLATFORM" ;;
-esac
-case "$_sfx" in
-    head) _sfx="Head" ;;
-    none) _sfx="None" ;;
-    SXM|OAM|PCIe) : ;;   # 缩写/专有大小写，保持原样
-    *) _sfx="$(printf '%s' "${_sfx:0:1}" | tr '[:lower:]' '[:upper:]')${_sfx:1}" ;;
-esac
-PLATFORM_DISPLAY="${_pfx}${_sfx}"
-PLATFORM_LABEL="$PLATFORM_DISPLAY"
-case "$PLATFORM" in
-    # v1.53.40：**厂商中立**——PEX Fabric 底座既可能接 NVIDIA HGX 模组，也可能接 AMD OAM 模组
-    #   （实测 8×MI300X 的 G7768 M6 底座：PEX890xx×40 + 无本地 GPU）。原文案硬写「HGX 机头」，
-    #   对 AMD 模组机头是错的。厂商可判定时（GPU_PLATFORM=nvidia/amd…）由报告段追加说明。
-    *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM_DISPLAY}（GPU 机头：PCIe Fabric 接模组，模组单独采集）" ;;
-    *_OAM)  PLATFORM_LABEL="${PLATFORM_DISPLAY}（AMD OAM 模组：xGMI/Infinity Fabric 互联，v1.48.0）" ;;
-esac
+# 展示值转换：抽取为函数，供「旧采集平台纠偏」后重新计算（v1.54.37）
+platform_display_for() {
+    local _p="$1" _pfx="" _sfx=""
+    case "$_p" in
+        x86_64_*)  _pfx="x86_64_";  _sfx="${_p#x86_64_}" ;;
+        aarch64_*) _pfx="aarch64_"; _sfx="${_p#aarch64_}" ;;
+        *)         _pfx="";         _sfx="$_p" ;;
+    esac
+    case "$_sfx" in
+        head) _sfx="Head" ;;
+        none) _sfx="None" ;;
+        SXM|OAM|PCIe) : ;;   # 缩写/专有大小写，保持原样
+        *) _sfx="$(printf '%s' "${_sfx:0:1}" | tr '[:lower:]' '[:upper:]')${_sfx:1}" ;;
+    esac
+    printf '%s' "${_pfx}${_sfx}"
+}
+# 依当前 PLATFORM 刷新展示串与标签（纠偏后需再调用一次）
+platform_refresh_labels() {
+    PLATFORM_DISPLAY="$(platform_display_for "${PLATFORM}")"
+    PLATFORM_LABEL="$PLATFORM_DISPLAY"
+    HEAD_NODE=0
+    case "$PLATFORM" in
+        # v1.53.40：**厂商中立**——PEX Fabric 底座既可能接 NVIDIA HGX 模组，也可能接 AMD OAM 模组
+        #   （实测 8×MI300X 的 G7768 M6 底座：PEX890xx×40 + 无本地 GPU）。原文案硬写「HGX 机头」，
+        #   对 AMD 模组机头是错的。厂商可判定时（GPU_PLATFORM=nvidia/amd…）由报告段追加说明。
+        *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM_DISPLAY}（GPU 机头：PCIe Fabric 接模组，模组单独采集）" ;;
+        *_OAM)  PLATFORM_LABEL="${PLATFORM_DISPLAY}（AMD OAM 模组：xGMI/Infinity Fabric 互联，v1.48.0）" ;;
+    esac
+}
+PLATFORM_CORRECTED=""       # 非空 = 平台标识按日志纠偏过（旧采集），报告会附注
+platform_refresh_labels
 TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 's/^ //')
 
 # ─── 采集耗时（summary 耗时统计段） ───

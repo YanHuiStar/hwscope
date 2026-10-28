@@ -566,3 +566,24 @@ if [ -f "${gpu_full}" ]; then
         function val(   s) { s=$0; sub(/.*:[ \t]*/, "", s); sub(/[ \t]+$/, "", s); return s }
         /Default Power Limit/ { d=val()+0; if (d>0) { printf "%.0f", d; exit } }' "${gpu_full}")
 fi
+
+# ─── v1.54.37：旧采集的平台标识纠偏（GPU 机头被写成 none / PCIe）──────────────
+#   场景（实测样本：旧版本 v1.26.53 采集，summary 写 x86_64_none）：机器有 PEX890xx ×68 的
+#   Fabric 底座、本地 GPU 为 0，而报告端 classify_machine 按日志判成「GPU 机头」——同一份
+#   报告里「平台: x86_64_None」与「验收口径: GPU 机头」自相矛盾。
+#   以日志证据为准纠偏：GPU 数为 0 且 lspci 出现 PEX89/PEX97/Switchtec → 判为 head。
+#   仅 GPU_COUNT=0 时生效，SXM 一体化主机（主板也带 PEX89 但有 GPU）不受影响。
+if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+    case "${PLATFORM:-}" in
+        *_none|*_PCIe)
+            if [ -f "${OUT}/pcie/lspci_all.log" ] && \
+               grep -qiE 'PEX89|PEX97|Switchtec' "${OUT}/pcie/lspci_all.log" 2>/dev/null; then
+                PLATFORM="${PLATFORM%_*}_head"
+                PLATFORM_CORRECTED="采集版本较早，平台标识按 PCIe 日志（Fabric 交换机）判定"
+                if command -v platform_refresh_labels >/dev/null 2>&1; then
+                    platform_refresh_labels
+                fi
+            fi
+            ;;
+    esac
+fi

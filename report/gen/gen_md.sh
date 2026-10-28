@@ -285,7 +285,7 @@ gen_md() {
     cat > "$f" << EOF
 # HwScope 硬件巡检报告
 
-**采集版本:** ${VERSION:-unknown} · **报告生成器:** ${REPORT_VERSION:-unknown} · **主机:** ${HOSTNAME:-unknown} · **平台:** ${PLATFORM_LABEL:-unknown} · **时间:** ${TIMESTAMP:-unknown}
+**采集版本:** ${VERSION:-unknown} · **报告生成器:** ${REPORT_VERSION:-unknown} · **主机:** ${HOSTNAME:-unknown} · **平台:** ${PLATFORM_LABEL:-unknown}${PLATFORM_CORRECTED:+；}${PLATFORM_CORRECTED:-} · **时间:** ${TIMESTAMP:-unknown}
 
 ## 环境
 | 项 | 值 |
