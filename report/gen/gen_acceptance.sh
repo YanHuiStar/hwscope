@@ -771,7 +771,7 @@ gen_acceptance() {
         # v1.54.27：三条信息改两列表格（原先 bullet 长短不齐、冒号不对齐）
         echo "| 项 | 内容 |"
         echo "|----|------|"
-        echo "| 验收口径 | ${MACHINE_CLASS_LABEL:-N/A}（GPU 平台: ${GPU_PLATFORM:-none}；${_na_n:-0} 项平台固有 N/A 不适用，下表 ${n} 项为实际判定项） |"
+        echo "| 验收口径 | ${MACHINE_CLASS_LABEL:-N/A}${MACHINE_CLASS_NOTE:+（${MACHINE_CLASS_NOTE}）}（GPU 平台: ${GPU_PLATFORM:-none}；${_na_n:-0} 项平台固有 N/A 不适用，下表 ${n} 项为实际判定项） |"
         echo "| 生成时间 | $(date '+%Y-%m-%d %H:%M:%S') |"
         echo "| 采集版本 / 报告版本 | ${VERSION:-unknown} / ${REPORT_VERSION:-unknown} |"
         echo ""

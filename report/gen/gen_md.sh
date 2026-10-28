@@ -290,7 +290,7 @@ gen_md() {
 ## 环境
 | 项 | 值 |
 |----|----|
-| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}} |
+| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}}$(if [ -n "${MACHINE_CLASS_NOTE:-}" ]; then printf '（%s）' "${MACHINE_CLASS_NOTE}"; fi) |
 | OS | ${OS_NAME:-N/A} |
 | 内核 | ${KERNEL:-N/A} |
 | 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；${GPU_MODULE_REASON}）"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}，PCI 未枚举到加速卡）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "

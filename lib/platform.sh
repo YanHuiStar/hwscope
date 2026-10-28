@@ -260,6 +260,9 @@ detect_gpu_vendors() {
 classify_machine() {
     local _dir="${1:-}"
     MACHINE_CLASS="unknown"
+    # v1.54.41：形态判定依据说明（缺信号时必须写明，避免把"证据不足"当结论交付）
+    MACHINE_CLASS_NOTE=""
+    MACHINE_CLASS_EVIDENCE=""
     local _chassis="" _ecc=0 _bmc=0
     if [ -n "$_dir" ]; then
         # 报告端：只读日志 + 已判定变量（零新采集）
@@ -295,6 +298,31 @@ classify_machine() {
         [ "$(lspci 2>/dev/null | grep -ciE 'PEX89|PEX97|Switchtec')" -gt 0 ] && _fabric=1
     fi
 
+    # ─── v1.54.41：强信号优先（模组形态 / 多卡）─────────────────────────────
+    #   实测事故：Supermicro B200 SXM6×8 整机（Platform x86_64_SXM, GPU 8）被判成
+    #   「工作站（服务器版）」——两个原因叠加：
+    #     ① BIOS 把 SMBIOS Chassis Type 填成 **Other**（不是 Rack Mount），
+    #     ② 该机未装 ipmitool → 无任何 BMC 数据，
+    #   于是 chassis/BMC 两个信号都不可用，旧逻辑落到「ECC=1 → 工作站」那条。
+    #   但 8 张 SXM 模组不可能是工作站：模组形态与多卡数量本身就是服务器强证据，
+    #   应**先于** chassis/BMC 判定，不因采集环境缺工具而降级。
+    local _plat_sfx=""
+    case "${PLATFORM:-}" in
+        *_SXM) _plat_sfx="SXM" ;;
+        *_OAM) _plat_sfx="OAM" ;;
+    esac
+    local _strong_gpu=0
+    { [ "$_gpu_cnt" -ge 4 ] 2>/dev/null || [ -n "$_plat_sfx" ]; } && _strong_gpu=1
+    if [ "$_strong_gpu" -eq 1 ] && [ "$_gpu_cnt" -gt 0 ] 2>/dev/null; then
+        case "$_gpu_plat" in
+            amd) MACHINE_CLASS="server-amd-gpu" ;;
+            nvidia|"") MACHINE_CLASS="server-nvidia-gpu" ;;
+            *)   MACHINE_CLASS="server-gpu-other" ;;
+        esac
+        MACHINE_CLASS_EVIDENCE="${_gpu_cnt} 张加速卡${_plat_sfx:+（${_plat_sfx} 模组形态）}"
+    fi
+
+    if [ "$MACHINE_CLASS" = "unknown" ]; then
     case "$_chassis" in
         *Portable*|*Notebook*|*Laptop*|*"Sub Notebook"*|*Tablet*)
             MACHINE_CLASS="laptop" ;;
@@ -342,6 +370,7 @@ classify_machine() {
                 MACHINE_CLASS="desktop"
             fi ;;
     esac
+    fi
     # GB300 机架级（v1.46.2 特征占位：GB300 NVL72 液冷——GPU 温度极低 + 无风扇传感器 + 大量 NVLink）
     # v1.46.3 只读修复：报告端（_dir 模式）从 gpu 日志判断，不再调 nvidia-smi（报告只读原则）
     if [ "$MACHINE_CLASS" = "server-nvidia-gpu" ]; then
@@ -352,6 +381,24 @@ classify_machine() {
             nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | grep -qi "GB300\|GB200" && _gb300=1
         fi
         [ "$_gb300" -eq 1 ] && MACHINE_CLASS="server-gb300"
+    fi
+    # ─── v1.54.41：判定依据与缺失信号（报告「设备形态」行与验收口径展示）─────────
+    local _miss=""
+    local _chassis_weak=0
+    case "${_chassis:-}" in
+        ""|*Other*|*Unknown*) _miss="chassis 类型未提供（BIOS 填 Other / 无 dmidecode 数据）"; _chassis_weak=1 ;;
+    esac
+    # BMC 缺失只在「chassis 也不可用」时才写进依据说明——台式机/笔记本本来就没 BMC，
+    # 单列出来只是噪音（实测某 Supermicro SXM 样本曾被拼出「；；结论」这种残句）
+    if [ "$_chassis_weak" -eq 1 ] && [ "${_bmc:-0}" -eq 0 ] 2>/dev/null; then
+        _miss="${_miss}${_miss:+、}无 BMC 数据（ipmitool 未安装或未配置）"
+    fi
+    if [ -n "$_miss" ]; then
+        if [ -n "${MACHINE_CLASS_EVIDENCE:-}" ]; then
+            MACHINE_CLASS_NOTE="判定依据不足：${_miss}；结论以 ${MACHINE_CLASS_EVIDENCE} 为主"
+        else
+            MACHINE_CLASS_NOTE="判定依据不足：${_miss}"
+        fi
     fi
     # 中文标签（gen 渲染用；随 MACHINE_CLASS 同步计算，勿放 sections——那时 MACHINE_CLASS 未就绪）
     case "$MACHINE_CLASS" in

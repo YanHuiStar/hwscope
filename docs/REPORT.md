@@ -33,6 +33,8 @@ Markdown 报告的章节顺序如下（`##` 级标题即 HTML 卡片与侧栏目
 | 章节 | 主要内容 | 出现条件 |
 |------|---------|---------|
 | 环境 | 设备形态、OS、内核、驱动、CUDA、Compute Mode、ECC Mode、采集耗时 | 始终 |
+
+> **判定依据**：设备形态由 `classify_machine` 综合 chassis 类型、内存 ECC、BMC 是否存在、加速卡数量与模组形态判定。模组形态（`_SXM` / `_OAM`）或加速卡 ≥4 张属强信号，先于 chassis 与 BMC 生效——因此采集环境缺 `ipmitool`、或 BIOS 把 Chassis Type 填成 `Other` 时，不会把 GPU 服务器降级判成工作站；证据不足时该行末会附「判定依据不足：…」，说明结论主要由哪条信号得出。
 | 主板 | 制造商、型号、BIOS、SN、主板 SN、机箱 SN、PCIe Fabric Switch | 始终（Fabric Switch 仅无本地 GPU 时展示） |
 | PCIe 拓扑与链路 | Fabric Switch 型号与端口数、链路统计、降速/降宽异常表 | 始终（无 `pcie_full` 数据时给 N/A 说明） |
 | CPU | 型号、插槽数、核心数、Stepping、频率、频率策略、处理器明细 | 始终 |
