@@ -160,6 +160,7 @@ hwscope/
 |--------|------|------|
 | `journalctl -k --since "7 days ago"`（限内核消息 + 时间窗 + tail） | 99_os | 持久化内核日志；dmesg 重启即丢，GPU XID / CPU MCE 等历史故障只能靠 journal 回溯 |
 | `perfquery -C <CA> -x`（逐 CA 查询） | 07_network | IB 链路性能计数器（SymbolError / LinkDowned / RcvErrors 等）；ibstat 看不见误码。不带 `-C` 会落到 `(null):0` 端口并必然失败 |
+| `mlxlink -d /dev/mst/*` | 07_network 先按 CA 别名采集；失败时用 `/sys/class/infiniband/<ca>/device` 取 BDF，映射到 `/dev/mst/<dev>` **重试一次**（实测 mlx5_5/6 跨厂商失败属别名解析问题），仍失败记入 `mlxlink_failures.log` |
 | `nvme error-log` | 08_storage | 每盘错误类型、时间戳、LBA；SMART 只给健康度 |
 | `storcli /cN/bbu show all` + `/cN/cv show all` | 09_raid | RAID 缓存电池与写缓存策略，二者必须同看 |
 | 裸 `dmidecode`（覆盖全部 type） | 01_motherboard | 含 Type 27 冷却 / 28 温度 / 29 电流 / 26 电压 / 11 OEM Strings / 38 IPMI；各 type 专用文件保留 |

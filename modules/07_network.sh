@@ -120,6 +120,68 @@ run_network() {
             done < <(printf '%s\n' "$mlx_devs")
         fi
         [ "${#mlx_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${mlx_jobs[@]}"
+
+        # ─── v1.54.39：mlxlink 别名解析失败时，用该 CA 的 BDF 映射 /dev/mst/* 重试一次 ───
+        #   实测（B200 / B300 / Dell H200 三台不同厂商）：失败恒为 mlx5_5、mlx5_6，且
+        #   `mlxlink` 与 `mlxlink -m` 同时失败（日志只有一条
+        #   `-E- ... Failed to send access register: ME_ICMD_BAD_PARAM`）；
+        #   同机其余 10 个 CA 正常。跨厂商同名失败 = 工具侧别名解析不到设备，不是某台机的问题。
+        #   做法：用 /sys/class/infiniband/<ca>/device 取 BDF → 查 mst status -v 得 /dev/mst/<dev>
+        #   → 以设备路径重试；成功则覆盖原日志（日志头记录实际命令，可追溯），
+        #   仍失败则汇总进 mlxlink_failures.log，现场一次看全，不必逐个翻 12 个日志。
+        local _mlx_fail_log="${dir}/mlxlink_failures.log"
+        local _mlx_fail_lines=""
+        local _ib_sysfs="${IB_SYSFS_DIR:-/sys/class/infiniband}"   # 仅测试时可覆盖
+        if check_cmd mst && [ -d "$_ib_sysfs" ]; then
+            local _mlx_ca _mlx_bdf _mlx_mstdev _mlx_log _mlx_res
+            for _mlx_log in "${dir}"/mlxlink_*.log; do
+                [ -f "$_mlx_log" ] || continue
+                case "$_mlx_log" in
+                    *_module.log|*_counters.log|*_eye.log|*_fec.log|*failures*) continue ;;
+                esac
+                grep -qE 'exit code: *[1-9]|^[[:space:]]*-E-' "$_mlx_log" 2>/dev/null || continue
+                _mlx_ca=$(basename "$_mlx_log" .log); _mlx_ca="${_mlx_ca#mlxlink_}"
+                _mlx_bdf=$(readlink -f "${_ib_sysfs}/${_mlx_ca}/device" 2>/dev/null \
+                    | grep -oE '[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]' | tail -1)
+                _mlx_mstdev=""
+                if [ -n "${_mlx_bdf:-}" ]; then
+                    # 首次用到时落一份 mst status（后续设备复用，避免 12 次重复调用）
+                    [ -f "${dir}/mst_status.log" ] || mst status -v > "${dir}/mst_status.log" 2>/dev/null
+                    _mlx_mstdev=$(awk -v b="$_mlx_bdf" '
+                        /^\/dev\/mst\// { dev=$1; next }
+                        dev != "" && index(tolower($0), tolower(b)) > 0 { print dev; exit }
+                    ' "${dir}/mst_status.log" 2>/dev/null)
+                fi
+                if [ -n "${_mlx_mstdev:-}" ]; then
+                    run_and_log "mlxlink -d ${_mlx_mstdev}" "${_mlx_log}"
+                    [ "${NO_MODULE:-0}" -eq 0 ] && [ -f "${dir}/mlxlink_${_mlx_ca}_module.log" ] && \
+                        grep -qE 'exit code: *[1-9]|^[[:space:]]*-E-' "${dir}/mlxlink_${_mlx_ca}_module.log" 2>/dev/null && \
+                        run_and_log "mlxlink -d ${_mlx_mstdev} -m" "${dir}/mlxlink_${_mlx_ca}_module.log"
+                    [ -f "${dir}/mlxlink_${_mlx_ca}_counters.log" ] && \
+                        grep -qE 'exit code: *[1-9]|^[[:space:]]*-E-' "${dir}/mlxlink_${_mlx_ca}_counters.log" 2>/dev/null && \
+                        run_and_log "mlxlink -d ${_mlx_mstdev} -c" "${dir}/mlxlink_${_mlx_ca}_counters.log"
+                    if grep -qE 'exit code: *[1-9]|^[[:space:]]*-E-' "$_mlx_log" 2>/dev/null; then
+                        _mlx_res="仍失败"
+                    else
+                        _mlx_res="重试成功"
+                    fi
+                else
+                    _mlx_res="无 BDF/mst 映射，未重试"
+                fi
+                _mlx_fail_lines="${_mlx_fail_lines}$(printf '%-10s %-14s %-34s %s' \
+                    "$_mlx_ca" "${_mlx_bdf:-—}" "${_mlx_mstdev:-—}" "$_mlx_res")"$'\n'
+            done
+        fi
+        if [ -n "${_mlx_fail_lines:-}" ]; then
+            {
+                echo "# HwScope mlxlink 失败与重试记录（采集侧排障用；报告正文不展示）"
+                echo "# Command : mlxlink -d <ca> 失败 → 以 /dev/mst/<dev> 重试一次（v1.54.39）"
+                echo "# 时间    : $(date '+%Y-%m-%d %H:%M:%S')"
+                printf '# %-10s %-14s %-34s %s\n' "CA" "BDF" "mst 设备" "结果"
+                printf '%s' "$_mlx_fail_lines"
+            } > "$_mlx_fail_log"
+            # 注：manifest 登记放在模块末尾那次全量 write_manifest 之后（此处登记会被覆盖）
+        fi
     fi
 
     # ─── 以太网口（并行） ───
@@ -395,6 +457,9 @@ run_network() {
         "ip_link" "ip_link.log" \
         "ip_route" "ip_route.log" \
         "nic_inventory" "nic_inventory.csv" \
+
+    # v1.54.39：mlxlink 失败汇总（仅在有失败时登记，避免 manifest 指向不存在的文件）
+    [ -f "${dir}/mlxlink_failures.log" ] && write_manifest --append "${dir}/manifest.txt" "mlxlink_failures" "mlxlink_failures.log"
         "lstopo_network" "lstopo_network.txt"
 
     # MST 未启动提示（MST_AUTO_START=1 时已自动 mst start 读真 SN；此提示仅在其被禁用/失败时出现，SN 为 GUID 兜底）
