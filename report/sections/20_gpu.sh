@@ -487,6 +487,11 @@ fi
 #   重启会清空 dmesg，若只依赖 dmesg，则「机器曾经掉过卡」在重启后彻底查不到——
 #   这正是本次补 journalctl 采集的原因。
 GPU_XID=""; GPU_XID_COUNT=0; GPU_XID_SRC=""
+# v1.54.40：拆出三个口径——「XID 码种类 / 涉及卡数 / 记录条数」。
+#   原实现只有一个 GPU_XID_COUNT（= 去重后的**行数**），文案却写「检出 N 类 XID 错误」：
+#   实测一台 B200（8 卡）报 152 条、全部是 XID 149、只因每卡 payload 不同被去重成 8 行，
+#   于是被渲染成「8 类错误」——读者会以为有 8 种不同故障码，判断方向完全走偏。
+GPU_XID_CODES=""; GPU_XID_DEVS=0; GPU_XID_TOTAL=0
 _os_dir="${OS_DIR:-${OUT}/os}"
 for _cand in "${_os_dir}/journal_xid.log" "${_os_dir}/journal_kernel_hw.log" \
              "${_os_dir}/dmesg_nvidia.log" "${_os_dir}/dmesg_hardware.log"; do
@@ -500,8 +505,17 @@ for _cand in "${_os_dir}/journal_xid.log" "${_os_dir}/journal_kernel_hw.log" \
     _hit=$(grep -vE "^#" "$_cand" 2>/dev/null | grep -icE "Xid *\(PCI|NVRM: *Xid")
     if [ "${_hit:-0}" -gt 0 ]; then
         GPU_XID_SRC="$(basename "$_cand")"
-        GPU_XID=$(grep -vE "^#" "$_cand" 2>/dev/null \
-            | grep -iE "Xid *\(PCI|NVRM: *Xid" \
+        _xid_raw=$(grep -vE "^#" "$_cand" 2>/dev/null | grep -iE "Xid *\(PCI|NVRM: *Xid")
+        GPU_XID_TOTAL=$(printf '%s\n' "$_xid_raw" | grep -c .)
+        # XID 码种类（形如 `Xid (PCI:0000:17:00): 149,` 取 149；兼容无 PCI 的旧格式取首个数字段）
+        GPU_XID_CODES=$(printf '%s\n' "$_xid_raw" \
+            | grep -oE 'Xid *\(PCI:[0-9a-fA-F:.]+ *\) *: *[0-9]+' \
+            | grep -oE '[0-9]+$' | sort -n -u | paste -sd ',' -)
+        [ -z "$GPU_XID_CODES" ] && GPU_XID_CODES=$(printf '%s\n' "$_xid_raw" | grep -oE 'Xid[^0-9]*[0-9]+' | grep -oE '[0-9]+' | sort -n -u | paste -sd ',' -)
+        # 涉及卡数（按 BDF 去重；无 BDF 的记录按 1 计）
+        GPU_XID_DEVS=$(printf '%s\n' "$_xid_raw" | grep -oE 'PCI:[0-9a-fA-F:.]+' | sort -u | grep -c .)
+        [ "${GPU_XID_DEVS:-0}" -eq 0 ] && [ "${GPU_XID_TOTAL:-0}" -gt 0 ] && GPU_XID_DEVS=1
+        GPU_XID=$(printf '%s\n' "$_xid_raw" \
             | sed -E 's/^\[[^]]*\] +//; s/^.*(NVRM: *Xid)/\1/' \
             | sed 's/[[:space:]]\+$//' | sort -u | head -12)
         GPU_XID_COUNT=$(printf '%s\n' "$GPU_XID" | grep -c .)

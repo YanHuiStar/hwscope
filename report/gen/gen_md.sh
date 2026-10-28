@@ -471,7 +471,7 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
             echo "| xGMI | ${GPU_XGMI_SUMMARY} |"
         fi
         if [ -n "${GPU_XID:-}" ]; then
-            echo "| XID 错误 | ⚠️ 检出 ${GPU_XID_COUNT} 类 GPU XID 错误（来源: ${GPU_XID_SRC}）——详见下方明细 |"
+            echo "| XID 错误 | ⚠️ 检出 XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行；来源: ${GPU_XID_SRC}）——详见下方明细 |"
         fi
     fi
 fi)
@@ -958,7 +958,7 @@ $(
     # ─── v1.48.90：新增健康项（XID / MCE / IB 误码 / NVMe 错误 / RAID 缓存电池）───
     # 集中放在健康检查段：这五类都是「曾经出过事」的直接证据，客户/供应商谈判时最先看这里。
     if [ -n "${GPU_XID:-}" ]; then
-        echo "| ⚠️ GPU XID 错误 | 检出 ${GPU_XID_COUNT} 类（来源: ${GPU_XID_SRC}）——详见 GPU 段明细 |"
+        echo "| ⚠️ GPU XID 错误 | XID ${GPU_XID_CODES:-?}（${GPU_XID_DEVS:-?} 张卡 / ${GPU_XID_TOTAL:-?} 条记录；来源: ${GPU_XID_SRC}）——详见 GPU 段明细 |"
     fi
     if [ -n "${MCE_HITS:-}" ]; then
         echo "| ⚠️ CPU MCE | 检出 ${MCE_COUNT} 条机器检查异常（来源: ${MCE_SRC}） |"

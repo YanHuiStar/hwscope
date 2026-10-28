@@ -584,7 +584,7 @@ gen_acceptance() {
     #      是跟供应商谈判时最硬的证据，报告必须留痕。
     # 仅在检出时添加：无检出不加项，保证验收项数与既有基线一致。
     if [ -n "${GPU_XID:-}" ]; then
-        add_item "GPU XID 错误历史" "WARN" "检出 ${GPU_XID_COUNT} 类 XID 错误（来源 ${GPU_XID_SRC}）——需确认对应卡是否已更换/复位"
+        add_item "GPU XID 错误历史" "WARN" "XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行，来源 ${GPU_XID_SRC}）——需确认对应卡是否已更换/复位"
     fi
     if [ -n "${MCE_HITS:-}" ]; then
         add_item "CPU MCE" "WARN" "检出 ${MCE_COUNT} 条机器检查异常（来源 ${MCE_SRC}）——需复核 CPU/内存子系统"
