@@ -378,7 +378,7 @@ run_network() {
         run_and_log_parallel 8 "${nic_pcie_jobs[@]}"
     fi
 
-# NOTE: mlxconfig_N.log, mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log, mlxlink_N_counters.log,
+    # NOTE: mlxconfig_N.log, mlxconfig_*_linktype.log, mlxlink_N.log, mlxlink_N_module.log, mlxlink_N_counters.log,
     #       mlxlink_N_eye.log / mlxlink_N_fec.log（v1.52.23 起，仅 MLXLINK_EXTRA=1 时产出）,
     #       ethtool_*.log, ethtool_*_driver.log, ethtool_*_module.log, nic_*_pcie.log
     #       are generated per device

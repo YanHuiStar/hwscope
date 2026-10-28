@@ -64,7 +64,7 @@ gen_json() {
     if [ -n "$PCIE_LINK_TABLE" ]; then
         pcie_link_json=$(printf '%s\n' "$PCIE_LINK_TABLE" | awk -F'|' '
             $1 != "" {
-                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) }
                 printf "      {\"bdf\": \"%s\", \"device\": \"%s\", \"lnk_cap\": \"%s\", \"lnk_sta\": \"%s\", \"verdict\": \"%s\"},\n", $1, $2, $3, $4, $5
             }' | sed '$ s/,$//')
     fi
@@ -74,14 +74,14 @@ gen_json() {
         # awk 一次生成（避免 while read 在本函数上下文的空读异常；与其他管道生成模式一致）
         nic_details_json=$(printf '%s' "$NIC_DETAILS" | awk -F'|' '
             $1 != "" {
-                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) }
                 printf "      {\"dev\": \"%s\", \"bdf\": \"%s\", \"mac\": \"%s\", \"serial\": \"%s\", \"pn\": \"%s\", \"chip\": \"%s\", \"firmware\": \"%s\", \"pcie\": \"%s\", \"psid\": \"%s\", \"gpu_direct\": \"%s\", \"ports\": \"%s\", \"link_state\": \"%s\", \"location\": \"%s\"},\n", $1, $2, $3, $4, $5, $10, $6, $7, $8, $9, ($11 != "" ? $11 : "N/A"), ($12 != "" ? $12 : "N/A"), ($13 != "" ? $13 : "N/A")
             }' | sed '$ s/,$//')
     elif [ -n "$NIC_FALLBACK_DETAILS" ]; then
         # 回退（旧采集无 nic_inventory）：ca|type|guid|state
         nic_details_json=$(printf '%s' "$NIC_FALLBACK_DETAILS" | awk -F'|' '
             $1 != "" {
-                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) }
                 printf "      {\"dev\": \"%s\", \"ca_type\": \"%s\", \"guid\": \"%s\", \"state\": \"%s\", \"fallback\": \"ibstat\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
     fi
@@ -104,7 +104,7 @@ gen_json() {
     if [ "${FW_COMPLIANCE_ACTIVE:-0}" -eq 1 ] 2>/dev/null; then
         fw_details_json=$(printf '%s' "$FW_COMPLIANCE_DETAILS" | awk -F'|' '
             $1 != "" {
-                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) }
                 printf "      {\"component\": \"%s\", \"device\": \"%s\", \"current\": \"%s\", \"baseline\": \"%s\", \"status\": \"%s\", \"note\": \"%s\"},\n", $1, $2, $3, $4, $5, $6
             }' | sed '$ s/,$//')
     fi
@@ -113,7 +113,7 @@ gen_json() {
     if [ -n "$BMC_CONSISTENCY" ]; then
         bmc_consistency_json=$(printf '%s' "$BMC_CONSISTENCY" | awk -F'|' '
             $1 != "" {
-                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) }
                 printf "      {\"item\": \"%s\", \"os_side\": \"%s\", \"bmc_side\": \"%s\", \"result\": \"%s\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
     fi
@@ -122,7 +122,7 @@ gen_json() {
     if [ -n "$TEST_DETAILS" ]; then
         test_details_json=$(printf '%s' "$TEST_DETAILS" | awk -F'|' '
             $1 != "" {
-                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) }
                 printf "      {\"name\": \"%s\", \"status\": \"%s\", \"elapsed_s\": \"%s\", \"detail_file\": \"%s\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
     fi
@@ -131,7 +131,7 @@ gen_json() {
     if [ -n "$FLD_DETAILS" ]; then
         fld_details_json=$(printf '%s' "$FLD_DETAILS" | awk -F'|' '
             $1 != "" {
-                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) }
                 printf "      {\"test\": \"%s\", \"component\": \"%s\", \"result\": \"%s\", \"note\": \"%s\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
         fld_agg_json=$(printf '%s\n' "$FLD_DETAILS" | awk -F'|' '
@@ -150,7 +150,7 @@ gen_json() {
     if [ -n "$BASELINE_COMPARE" ]; then
         baseline_compare_json=$(printf '%s' "$BASELINE_COMPARE" | awk -F'|' '
             $1 != "" {
-                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) }
+                for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) }
                 printf "      {\"item\": \"%s\", \"status\": \"%s\", \"current\": \"%s\", \"baseline\": \"%s\"},\n", $1, $2, $3, $4
             }' | sed '$ s/,$//')
     fi
@@ -215,7 +215,7 @@ gen_json() {
     "current_speed": "${CPU_CUR_SPEED:-N/A}",
     "details": [
 $(if [ -n "$CPU_DETAILS" ]; then
-    echo "$CPU_DETAILS" | awk -F'|' '{for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i) } printf "      {\"index\": \"%d\", \"socket\": \"%s\", \"model\": \"%s\", \"cores\": \"%s\", \"threads\": \"%s\", \"max_speed\": \"%s\", \"cur_speed\": \"%s\", \"stepping\": \"%s\", \"serial\": \"%s\"},\n", NR, $1, $2, $3, $4, $5, $6, $7, $8}' | sed '$ s/,$//'
+    echo "$CPU_DETAILS" | awk -F'|' '{for (i = 1; i <= NF; i++) { gsub(/\\/, "\\\\", $i); gsub(/"/, "\\\"", $i); gsub(/\t/, "\\t", $i); gsub(/\r/, "", $i) } printf "      {\"index\": \"%d\", \"socket\": \"%s\", \"model\": \"%s\", \"cores\": \"%s\", \"threads\": \"%s\", \"max_speed\": \"%s\", \"cur_speed\": \"%s\", \"stepping\": \"%s\", \"serial\": \"%s\"},\n", NR, $1, $2, $3, $4, $5, $6, $7, $8}' | sed '$ s/,$//'
 fi)
     ]
   },

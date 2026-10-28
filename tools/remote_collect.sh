@@ -50,7 +50,9 @@ HOST=""; SUDO="sudo"; LOCAL_OUT=""; INSTALL_ITEMS=""; SSH_OPTS="-o ConnectTimeou
 #   正在使用的 master socket 一并删掉，两个并发实例目标主机不同也会互拆连接。
 #   注：%r@%h 与 "$HOST" 在常规 user@ip 形态下一致；若 %h 被解析成 FQDN 则不匹配，
 #   此时只是残留一个 socket 未清，不影响本次采集（ssh 用 -O exit 之后本就不复用）。
-rm -f "/tmp/ssh_hwscope_mux_${HOST}" 2>/dev/null || true
+# v1.54.38（审查 L1）：此行原先在参数解析**之前**执行，${HOST} 恒为空，
+#   实际清理的是字面量 /tmp/ssh_hwscope_mux_，注释所称"只删本目标"从未生效。
+#   移到 -H 解析之后（见下方 PARSE_DONE 处），解析前不做任何删除。
 while [ $# -gt 0 ]; do
     case "$1" in
         -H) HOST="$2"; shift 2 ;;
@@ -71,6 +73,9 @@ while [ $# -gt 0 ]; do
         *) HWARGS="${HWARGS:-} $1"; shift ;;
     esac
 done
+
+# v1.54.38（审查 L1）：宿主确定后再清理**本目标**的残留 socket
+[ -n "${HOST:-}" ] && rm -f "/tmp/ssh_hwscope_mux_${HOST}" 2>/dev/null || true
 
 [ -z "$HOST" ] && { echo -e "\033[0;31m[ERROR] 缺少 -H user@host\033[0m"; usage; exit 1; }
 command -v ssh >/dev/null 2>&1 || { echo -e "\033[0;31m[ERROR] 未安装 ssh\033[0m"; exit 1; }

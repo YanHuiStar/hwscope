@@ -13,11 +13,18 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 ARCHIVE_DIR="${SCRIPT_DIR}/logs/report"
 WEB_DIR="${ARCHIVE_DIR}/web"
-PORT=8080; OPEN=0
+PORT=8080; OPEN=0; TOKEN=""
+# v1.54.38（审查 L3/M5）：
+#   L3 —— 归档名/SN 直接拼进索引 HTML 未转义（当前 SN 已被清洗为 [A-Za-z0-9_-]，
+#          属纵深防御，仍统一过 html_esc）
+#   M5 —— 服务仅绑 127.0.0.1（v1.33.1 已修），但无鉴权：多用户运维机上任何本地进程都能读。
+#          默认保持"点开即看"，需要时用 --token 生成一次性口令（?token=xxx）
+html_esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e "s/'/\&#39;/g"; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --port) PORT="$2"; shift 2 ;;
+        --token) TOKEN="$2"; shift 2 ;;
         --open) OPEN=1; shift ;;
         --stop) ACTION=stop; shift ;;
         -h|--help) ACTION=help; shift ;;   # v1.35.0: 补 shift 修复 --help 死循环（原版无 shift 致 $# 不减无限循环）
@@ -97,11 +104,38 @@ case "$ACTION" in
         fi
         build_web
         # 必须 --bind 127.0.0.1：python http.server 默认监听 0.0.0.0，会把含 SN/MAC 的报告无鉴权暴露局域网（v1.33.1 安全修复）
-        nohup python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$WEB_DIR" > "${WEB_DIR}/server.log" 2>&1 &
+        # M5：--token 时用带口令校验的静态服务；默认仍是纯 http.server（点开即看）
+        if [ -n "${TOKEN:-}" ]; then
+            cat > "${WEB_DIR}/_auth_server.py" <<'PY'
+import http.server, socketserver, sys, os, urllib.parse
+PORT, TOKEN, ROOT = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+class H(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **kw): super().__init__(*a, directory=ROOT, **kw)
+    def do_GET(self):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        if q.get("token", [""])[0] != TOKEN:
+            self.send_error(403, "token required"); return
+        super().do_GET()
+    def list_directory(self, path):     # 关闭目录列举，只提供已知文件
+        self.send_error(403, "directory listing disabled")
+        return None
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", PORT), H) as httpd:
+    httpd.serve_forever()
+PY
+            nohup python3 "${WEB_DIR}/_auth_server.py" "$PORT" "$TOKEN" "$WEB_DIR" > "${WEB_DIR}/server.log" 2>&1 &
+        else
+            nohup python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$WEB_DIR" > "${WEB_DIR}/server.log" 2>&1 &
+        fi
         echo $! > "$PID_FILE"
         sleep 1
         if kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-            echo -e "\033[0;32m[OK] 报告预览服务: http://127.0.0.1:${PORT}/\033[0m"
+            if [ -n "${TOKEN:-}" ]; then
+                echo -e "\033[0;32m[OK] 报告预览服务（需口令）: http://127.0.0.1:${PORT}/?token=${TOKEN}\033[0m"
+            else
+                echo -e "\033[0;32m[OK] 报告预览服务: http://127.0.0.1:${PORT}/\033[0m"
+                echo "     提示：报告含 SN/MAC/BMC IP，多人共用的运维机建议加 --token <口令> 再启动"
+            fi
             [ "$OPEN" -eq 1 ] && { command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:${PORT}/" >/dev/null 2>&1 || true; }
         else
             echo -e "\033[0;31m[ERROR] 启动失败，日志: ${WEB_DIR}/server.log\033[0m"; rm -f "$PID_FILE"; exit 1

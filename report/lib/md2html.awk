@@ -288,6 +288,10 @@ function inline_md(s) {
         link = substr(s, RSTART, RLENGTH)
         t = link; sub(/^\[/, "", t); sub(/\]\(.*/, "", t)
         u = link; sub(/^[^]]*\]\(/, "", u); sub(/\)$/, "", u)
+        # v1.54.38：href 单引号定界 —— 必须转义单引号，并限制协议白名单，
+        #   否则 [x](javascript:alert(1)) 会被渲染成可点击脚本（纵深防御，当前字段不可控）
+        gsub(/'/, "&#39;", u)
+        if (u !~ /^(https?:|mailto:|\/|#)/) u = ""
         s = substr(s, 1, RSTART-1) "<a href='" u "'>" t "</a>" substr(s, RSTART+RLENGTH)
     }
     return s

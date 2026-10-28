@@ -39,7 +39,9 @@ fw_ver_cmp() {
                 if [ "$x" -lt "$y" ] 2>/dev/null; then echo -1; return; fi
                 if [ "$x" -gt "$y" ] 2>/dev/null; then echo 1; return; fi
             fi
-        elif [[ "$x" =~ ^[0-9A-Fa-f]{1,8}$ ]] && [[ "$y" =~ ^[0-9A-Fa-f]{1,8}$ ]]; then
+        # v1.54.38：要求「含至少一位数字」才算数值段——纯字母段（cafe/dead/beef）会被当成
+        #   十六进制整数比较，把单词型版本段误判大小（L7）
+        elif [[ "$x" =~ ^[0-9A-Fa-f]*[0-9][0-9A-Fa-f]*$ ]] && [[ "$y" =~ ^[0-9A-Fa-f]*[0-9][0-9A-Fa-f]*$ ]]; then
             # 固件版本常含十六进制段（如 VBIOS 92.00.1D.00.11）
             dx=$((16#$x)); dy=$((16#$y))
             if [ "$dx" -lt "$dy" ]; then echo -1; return; fi

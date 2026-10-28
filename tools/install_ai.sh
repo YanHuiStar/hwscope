@@ -95,6 +95,9 @@ install_ollama() {
     if check_cmd ollama; then
         echo -e "${GREEN}已安装: $(ollama --version 2>/dev/null)${NC}"
     else
+        # v1.54.38（审查 M2）：上游安装脚本以 root 执行，无法做 checksum（上游不公布稳定指纹），
+        #   至少打印来源并要求知情——非交互（-y）时也打印一行，便于日志追溯
+        echo -e "${YELLOW}[NOTE] 即将执行 Ollama 官方安装脚本（来源 https://ollama.com/install.sh，以 root 运行）${NC}"
         curl -fsSL https://ollama.com/install.sh | sh
     fi
     echo -e "${GREEN}完成! 使用:${NC}"

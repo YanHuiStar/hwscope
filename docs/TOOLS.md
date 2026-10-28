@@ -12,7 +12,7 @@
 | 帮助入口 | 脚本支持 `-h` / `--help`（打印头部注释块）。唯一例外为 `tools/redfish_fw_list.sh`：由 `modules/12_bmc.sh` 内部调用，只接受两个位置参数，无帮助分支 |
 | 带值参数 | 缺参时明确报错并 `exit 1`（`shift 2` 在只剩一个参数时是静默 no-op，会使 `while` 永不前进） |
 | 远程凭据 | 一律交互式输入密码（SSH ControlMaster 或 askpass 复用）；**不使用 `sshpass` 等明文密码方式**，密码不落盘、不进命令行与进程列表 |
-| 报告预览 | `report/tools/report_server.sh` 必须 `--bind 127.0.0.1`：报告含 SN / MAC，不得暴露至局域网 |
+| 报告预览 | `report/tools/report_server.sh` 必须 `--bind 127.0.0.1`：报告含 SN / MAC，不得暴露至局域网；多用户运维机加 `--token` 口令校验（v1.54.38）|
 | 时间戳 | 文件名时间戳统一 `date '+%Y%m%d%H%M%S'`，14 位连写 |
 
 ## `test/` — 硬件压测
@@ -65,7 +65,7 @@ bash test/report.sh logs/test/<SN>/       # 由压测日志生成报告
 |------|------|----------------|
 | `report/report.sh` | 报告生成：json / md / txt / html 四件套 | `--acceptance` 验收清单 · `--baseline <目录>` 基线对比 · `--test-dir <目录>` 关联压测 · `--fld-dir <目录>` FLD 诊断参考 · `--bmc-verify` OS-BMC 核验 · `--json` / `--md` / `--txt` / `--both` 单格式 |
 | `report/tools/batch_compare.sh` | 多机横向对比（读各机 JSON，差异 ⚠️ 标注） | `--dirs "dir1 dir2"` · `-o <前缀>`；输出 `logs/batch_compare/` |
-| `report/tools/report_server.sh` | 报告在线预览（解包 `logs/report/` 起本地 HTTP） | `--port` · `--open` · `--stop`；**绑定 127.0.0.1** |
+| `report/tools/report_server.sh` | 报告在线预览（解包 `logs/report/` 起本地 HTTP） | `--port` · `--open` · `--stop` · `--token <口令>`；**绑定 127.0.0.1**；`--token` 时校验 `?token=` 并关闭目录列举（多人共用的运维机建议启用） |
 | `report/lib/md2html.awk` | 纯 awk Markdown→HTML 转换（零依赖） | v1.53.12 起两遍扫描，生成左侧可跳转目录与回顶按钮；v1.53.13/14 起目录统一 4 字短名 |
 
 ## `tools/` — 采集与运维

@@ -25,9 +25,25 @@ CONF="${SCRIPT_DIR}/conf/hwscope.conf"
 
 BMC_IP="${BMC_IP:-}"
 BMC_USER="${BMC_USER:-admin}"
-BMC_PASS="${BMC_PASS:-admin}"
+# v1.54.38（审查 M1）：**不再静默回退 admin**——本工具含写操作（清 SEL / 重启 BMC / 改密码），
+#   用默认口令在已改密现场会触发 BMC 账户锁定，在未改密现场等于无确认使用默认凭据。
+#   空密码时：有 tty 就交互输入（不回显），无 tty 则明确告警并提示先 export。
+BMC_PASS="${BMC_PASS:-}"
+if [ -z "$BMC_PASS" ]; then
+    # 只在**交互终端**下提示：`[ -r /dev/tty ]` 在非交互场景（cron/管道/WSL 后台）也为真，
+    #   会静默阻塞等输入（实测 timeout 前一直挂着），此处统一以 stdin 是否 tty 为准。
+    if [ -t 0 ]; then
+        printf 'BMC 密码（%s，不回显）: ' "${BMC_USER}@${BMC_IP:-local}" >&2
+        IFS= read -rs BMC_PASS || true
+        printf '\n' >&2
+    fi
+    if [ -z "$BMC_PASS" ]; then
+        echo -e "${YELLOW}[WARN] 未提供 BMC 密码：带外操作会认证失败（不再默认使用 admin）。${NC}" >&2
+        echo "       可在 conf/hwscope.conf 设置 BMC_PASS，或先执行: export BMC_PASS='...'" >&2
+    fi
+fi
 # 密码通过环境变量传给 ipmitool，避免出现在命令行/日志/ps 中
-export IPMI_PASSWORD="${BMC_PASS}"
+[ -n "${BMC_PASS:-}" ] && export IPMI_PASSWORD="${BMC_PASS}"
 if [ -z "$BMC_IP" ]; then
     echo -e "${CYAN}[INFO] BMC_IP 为空，使用本地 IPMI${NC}"
 else

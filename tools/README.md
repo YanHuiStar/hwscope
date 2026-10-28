@@ -244,7 +244,12 @@ sudo bash tools/bmc_tool.sh
 | 8 | 查看网络（`lan print`） | 只读 |
 
 可逗号多选（如 `1,2,3`）。带内模式走本机 IPMI；设置 `BMC_IP` 后改走 `-I lanplus` 远程 BMC。
-密码经环境变量 `IPMI_PASSWORD` 传给 `ipmitool`，不出现在命令行 / 日志 / `ps`。
+密码经环境变量 `IPMI_PASSWORD` 传给 `ipmitool`，不出现在命令行 / 日志。
+
+密码来源：`conf/hwscope.conf` 的 `BMC_PASS` → 环境变量 `BMC_PASS` → 交互终端提示输入（不回显）。
+**自 v1.54.38 起不再静默回退 `admin`**：本工具含写操作（清 SEL / 重启 BMC / 改密码），用默认口令
+在已改密现场会触发账户锁定，未改密现场等于无确认使用默认凭据。非交互场景（无 tty）会打印告警并继续，
+由操作者决定是否先 `export BMC_PASS=...`。 / `ps`。
 输出：`output/bmc_tool_<时间戳>/`。
 
 ### `nic_tool.sh` — 网卡运维菜单

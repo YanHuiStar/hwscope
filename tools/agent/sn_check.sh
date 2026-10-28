@@ -53,13 +53,24 @@ PATTERN='\b[A-Z]{1,4}[0-9]{3,}[A-Z0-9]{0,8}\b|\b[0-9]{9,13}\b|\b([0-9a-fA-F]{2}[
 #   FAKE… 项目脱敏示例 | 1951526575073 Mellanox 占位序列号 | C0000142 Windows 错误码
 #   206141652992 字节数 | 1000000000/1048576 换算常数 | 113-M300xxxx-xxx VBIOS 片段
 #   版本号(x.y.z) | shields 徽章 | 日期戳
-NOISE='NVD[0-9]{6,}|MCX[0-9A-Z-]+|MT[0-9]{4}|MLX[0-9]{6}|SAS[0-9]{4}|BR[0-9]{3}|GA[0-9]{3}|SC[0-9]{4}|MTFD[A-Z0-9]+|FAKE[A-Z]*[0-9]*|1951526575073|1950626573467|CR68-[A-Z0-9]+|CRPS[0-9A-Z]+|00\.[0-9]+\.[0-9]+\.[0-9]+|219240499839|219760644869|192\.168\.50\.0/24|192\.168\.50\.1|255\.255\.255\.255|192\.168\.1\.255|C0000142|206141652992|1000000000|1048576|113-M300[0-9]{4}-[0-9]+|shields\.io|img\.shields|2026081[0-9]|2026091[0-9]|aa-bb-cc-dd-ee-ff|10\.0\.0\.1|192\.168\.1\.1|127\.0\.0\.1|0\.0\.0\.0|255\.255\.255\.0|192\.168\.1\.100|AABBCCDDEEFF|FFFFFFFFFFFF|000000000000|\b20[0-9]{12}\b|\bSN[0-9]{6,}\b|source_fp_hash=[0-9a-f]{12}|10\.0\.0\.[0-9]{1,2}\>'
+#   1874715648 字节数测试样例（注释里举例说明长度门限用） | 192.168.50.x dhcp_server 文档默认网段
+#   192.168.1.x detect_bmc 文档示例网段
+#   V000xxxxxx 网卡部件号（ConnectX 系列 PN 形态，非序列号）
+NOISE='NVD[0-9]{6,}|MCX[0-9A-Z-]+|MT[0-9]{4}|MLX[0-9]{6}|SAS[0-9]{4}|BR[0-9]{3}|GA[0-9]{3}|SC[0-9]{4}|MTFD[A-Z0-9]+|FAKE[A-Z]*[0-9]*|1951526575073|1950626573467|CR68-[A-Z0-9]+|CRPS[0-9A-Z]+|00\.[0-9]+\.[0-9]+\.[0-9]+|219240499839|219760644869|192\.168\.50\.0/24|192\.168\.50\.1|255\.255\.255\.255|192\.168\.1\.255|C0000142|206141652992|1000000000|1048576|113-M300[0-9]{4}-[0-9]+|shields\.io|img\.shields|2026081[0-9]|2026091[0-9]|aa-bb-cc-dd-ee-ff|10\.0\.0\.1|192\.168\.1\.1|127\.0\.0\.1|0\.0\.0\.0|255\.255\.255\.0|192\.168\.1\.100|AABBCCDDEEFF|FFFFFFFFFFFF|000000000000|\b20[0-9]{12}\b|\bSN[0-9]{6,}\b|source_fp_hash=[0-9a-f]{12}|10\.0\.0\.[0-9]{1,2}\>|1874715648|192\.168\.50\.[0-9]{1,3}|V000[0-9A-Z]{6,}|192\.168\.1\.[0-9]{1,3}'
+# NOISE 里含 '/'（如 192.168.50.0/24、img.shields），故 sed 必须用 @ 作定界符；
+#   启动时先自检一次：自检失败则**不做剥离**（退化为更严格，宁可误报也不漏报）
+NOISE_SED_OK=0
+printf 'x\n' | sed -E "s@(${NOISE})@ @g" >/dev/null 2>&1 && NOISE_SED_OK=1
 
 # 长度门限收敛（关键设计）：产品型号普遍短（B300/A2000/MI300X/SC2163/GA100/C500 ≤6 字符），
 # 真实机箱/部件 SN 普遍长（实测形态：4 字母+3 数字+4 字符 = 11；单字母+6 数字+混合 = 14；
 # 2 字母+7 数字+5 字符 = 14；3 字母+数字+字母 = 14；13 位纯数字）。故：
 #   字母数字混合 token 需 ≥10 字符；纯数字 token 需 9-13 位 —— 否则不算疑似 SN
 sn_filter() {   # stdin=带行号文本，输出=含高置信 SN 的行
+    # v1.54.38（审查 M4）：NOISE 排除**下沉到 token 级**。
+    #   原实现在上游用 `grep -vE "$NOISE"` 做行级过滤：一行里只要出现任一 NOISE 形态
+    #   （如 PSID NVD1234567）整行就被丢弃——同一行若还有真实 SN 就被漏检。
+    #   sn_check 是推送公开仓库的唯一必经隐私关口，false negative 的代价远高于 false positive。
     awk '
         {
             line = $0; keep = ""
@@ -89,7 +100,14 @@ sn_filter() {   # stdin=带行号文本，输出=含高置信 SN 的行
 
 scan_text() {   # $1=描述  stdin=待扫文本
     local desc="$1" hits
-    hits=$(grep -nE "$PATTERN" 2>/dev/null | grep -vE "$NOISE" | sn_filter)
+    # v1.54.38（审查 M4）：NOISE 不再做**行级**整行丢弃（那样"PSID NVD… + 真 SN"同行的真 SN 会被漏检）。
+    #   改为先把每行的 NOISE 形态替换为空格，再对**剩余内容**跑 PATTERN + sn_filter——
+    #   效果等价于 token 级排除，同时保留行号（sed 不改行数）。
+    if [ "${NOISE_SED_OK:-0}" -eq 1 ]; then
+        hits=$(sed -E "s@(${NOISE})@ @g" 2>/dev/null | grep -nE "$PATTERN" 2>/dev/null | sn_filter)
+    else
+        hits=$(grep -nE "$PATTERN" 2>/dev/null | sn_filter)
+    fi
     if [ -n "$hits" ]; then
         echo -e "${RED}[SN-CHECK] ${desc} 命中疑似真实标识（SN/MAC/内网 IP）:${NC}"
         echo "$hits" | head -12 | sed 's/^/    /'
@@ -118,7 +136,7 @@ case "$MODE" in
         [ "$WITH_REMOTES" -eq 1 ] && REV="--all"
         echo "[INFO] 扫描历史（内容 + 提交信息 + 文件名；范围: ${REV}）..."
         if ! git log $REV --format="%s%n%b" 2>/dev/null | scan_text "历史提交信息"; then RC=1; fi
-        if ! git rev-list $REV 2>/dev/null | while read -r c; do git grep -hE "$PATTERN" "$c" -- 2>/dev/null; done | grep -vE "$NOISE" | scan_text "历史文件内容"; then RC=1; fi
+        if ! git rev-list $REV 2>/dev/null | while read -r c; do git grep -hE "$PATTERN" "$c" -- 2>/dev/null; done | scan_text "历史文件内容"; then RC=1; fi   # NOISE 剥离已在 scan_text 内完成
         if ! git log $REV --name-only --pretty=format: 2>/dev/null | scan_text "历史文件名"; then RC=1; fi
         [ "$WITH_REMOTES" -eq 1 ] && echo "[INFO] 已含远程引用（若刚清理过历史，远程仍为旧提交属正常，force push 后复查）"
         ;;

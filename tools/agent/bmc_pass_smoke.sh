@@ -28,9 +28,11 @@ run_case() {   # run_case <名称> <stdin来源> <额外env> <给参数?> <期�
     local out="${TMPD}/o_$(echo "$name" | tr -cd 'a-zA-Z0-9').log"
     local cmd="timeout 120 bash hwscope.sh ${args} --modules os --output ${TMPD}/out_$$ > '$out' 2>&1"
     if [ -n "$extraenv" ]; then
-        eval "env $extraenv $cmd < $stdin_src"
+        # v1.54.38（审查 L4）：去掉 eval 的二次展开——本次 $cmd 由内部构造，但仍按"不做二次
+        #   解释"处理：env 前缀单独拼、命令体交给 sh -c 执行一次
+        env $extraenv sh -c "$cmd" < "$stdin_src"
     else
-        eval "$cmd < $stdin_src"
+        sh -c "$cmd" < "$stdin_src"
     fi
     local rc=$?
     # 注意：不能写 `grep -c ... || echo 0` —— grep -c 无匹配时**已经输出 0**且 exit 1，
