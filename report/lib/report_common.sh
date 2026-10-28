@@ -95,10 +95,15 @@ case "$PLATFORM" in
 esac
 # HGX 机头标记（x86_64_head 等：PCIe Fabric 接模组，无本地 GPU；报告与验收清单使用专门文案）
 HEAD_NODE=0
-PLATFORM_LABEL="$PLATFORM"
+# v1.53.6：展示层首字母大写（用户反馈 x86_64_head 全小写不好看）。
+#   **只改展示**——PLATFORM 原值保持小写不变（机器学习/程序判定的稳定标识），
+#   报告头/环境段/JSON 的 platform_label 走 PLATFORM_DISPLAY。
+#   纯 bash + tr 实现，不依赖 GNU sed 的 \U 扩展。
+PLATFORM_DISPLAY="$(printf '%s' "${PLATFORM:0:1}" | tr '[:lower:]' '[:upper:]')${PLATFORM:1}"
+PLATFORM_LABEL="$PLATFORM_DISPLAY"
 case "$PLATFORM" in
-    *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM}（HGX 机头：PCIe Fabric 接模组，模组单独采集）" ;;
-    *_OAM)  PLATFORM_LABEL="${PLATFORM}（AMD OAM 模组：xGMI/Infinity Fabric 互联，v1.48.0）" ;;
+    *_head) HEAD_NODE=1; PLATFORM_LABEL="${PLATFORM_DISPLAY}（HGX 机头：PCIe Fabric 接模组，模组单独采集）" ;;
+    *_OAM)  PLATFORM_LABEL="${PLATFORM_DISPLAY}（AMD OAM 模组：xGMI/Infinity Fabric 互联，v1.48.0）" ;;
 esac
 TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 's/^ //')
 
