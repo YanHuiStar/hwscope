@@ -292,6 +292,18 @@ push_main() {
     else
         [ -n "${_v_var}" ] && info "版本三处一致: ${_v_var}"
     fi
+    # v1.54.42：三处一致 ≠ 徽章已提交。实测 v1.54.40/.41 两次：本地跑过 sync_version.sh，
+    #   变量/注释/徽章三处都是新版本，但 README 的徽章改动**没进提交**，
+    #   于是推送后 GitHub 页面仍显示 v1.54.39（远程 raw README 可见），用户发现才算。
+    #   这里补一道：版本载体文件（hwscope.sh / README.md）若存在**未提交改动**，拒绝推送。
+    _v_uncommitted=$(git status --porcelain -- hwscope.sh README.md 2>/dev/null | grep -E '^( M|MM|\?\?)' || true)
+    if [ -n "${_v_uncommitted}" ]; then
+        warn "版本载体文件有未提交改动（推送后 GitHub 徽章/注释会停在旧版）："
+        printf '%s\n' "${_v_uncommitted}" | sed 's/^/      /'
+        ai "git add hwscope.sh README.md && git commit（可与本次功能改动合并）后重推"
+        fail "版本信息未提交，拒绝推送"
+        return 1
+    fi
     # SN 兜底检查（v1.49.4）：钩子靠自觉不可靠——`.git/hooks/` 不进仓库，换机器/新 clone 就没有，
     #   历史上三次泄漏都发生在"以为装了钩子"或"钩子没装"的时刻。而推送是进公开仓库的**唯一必经关口**，
     #   放这里不依赖任何人的自觉。扫「暂存区 + 待推提交」（--all-history 太慢，且推送只需保证本次内容干净）。
