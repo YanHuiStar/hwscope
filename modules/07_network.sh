@@ -147,9 +147,12 @@ run_network() {
                 if [ -n "${_mlx_bdf:-}" ]; then
                     # 首次用到时落一份 mst status（后续设备复用，避免 12 次重复调用）
                     [ -f "${dir}/mst_status.log" ] || mst status -v > "${dir}/mst_status.log" 2>/dev/null
-                    _mlx_mstdev=$(awk -v b="$_mlx_bdf" '
+                    # v1.54.43：mst status -v 的表格里 BDF **不带域名前缀**（写作 a7:00.1），
+                    #   而 sysfs 给出的是 0000:a7:00.1 —— 必须归一化后比较，否则永远匹配不上。
+                    _mlx_bdf_short="${_mlx_bdf#0000:}"
+                    _mlx_mstdev=$(awk -v b="$_mlx_bdf" -v bs="$_mlx_bdf_short" '
                         /^\/dev\/mst\// { dev=$1; next }
-                        dev != "" && index(tolower($0), tolower(b)) > 0 { print dev; exit }
+                        dev != "" && (index(tolower($0), tolower(b)) > 0 || index(tolower($0), tolower(bs)) > 0) { print dev; exit }
                     ' "${dir}/mst_status.log" 2>/dev/null)
                 fi
                 if [ -n "${_mlx_mstdev:-}" ]; then
@@ -165,8 +168,25 @@ run_network() {
                     else
                         _mlx_res="重试成功"
                     fi
+                elif [ -n "${_mlx_bdf:-}" ]; then
+                    # v1.54.43：MST 模块未加载时（mst status 显示 "MST PCI module is not loaded"，
+                    #   表格里 MST 列全是 NA），没有 /dev/mst 设备可用；但 mlxlink 本身也接受 BDF
+                    #   作为 -d 参数，因此再退一步用 BDF（不带域名前缀的写法）重试一次。
+                    #   实测 B200 上 mlx5_5/mlx5_6 ↔ a7:00.0/a7:00.1 正是这种情况。
+                    run_and_log "mlxlink -d ${_mlx_bdf_short}" "${_mlx_log}"
+                    [ "${NO_MODULE:-0}" -eq 0 ] && [ -f "${dir}/mlxlink_${_mlx_ca}_module.log" ] && \
+                        grep -qE 'exit code: *[1-9]|^[[:space:]]*-E-' "${dir}/mlxlink_${_mlx_ca}_module.log" 2>/dev/null && \
+                        run_and_log "mlxlink -d ${_mlx_bdf_short} -m" "${dir}/mlxlink_${_mlx_ca}_module.log"
+                    [ -f "${dir}/mlxlink_${_mlx_ca}_counters.log" ] && \
+                        grep -qE 'exit code: *[1-9]|^[[:space:]]*-E-' "${dir}/mlxlink_${_mlx_ca}_counters.log" 2>/dev/null && \
+                        run_and_log "mlxlink -d ${_mlx_bdf_short} -c" "${dir}/mlxlink_${_mlx_ca}_counters.log"
+                    if grep -qE 'exit code: *[1-9]|^[[:space:]]*-E-' "$_mlx_log" 2>/dev/null; then
+                        _mlx_res="BDF 重试仍失败"
+                    else
+                        _mlx_res="BDF 重试成功（MST 未加载）"
+                    fi
                 else
-                    _mlx_res="无 BDF/mst 映射，未重试"
+                    _mlx_res="无 BDF 可取，未重试"
                 fi
                 _mlx_fail_lines="${_mlx_fail_lines}$(printf '%-10s %-14s %-34s %s' \
                     "$_mlx_ca" "${_mlx_bdf:-—}" "${_mlx_mstdev:-—}" "$_mlx_res")"$'\n'
@@ -457,10 +477,10 @@ run_network() {
         "ip_link" "ip_link.log" \
         "ip_route" "ip_route.log" \
         "nic_inventory" "nic_inventory.csv" \
+        "lstopo_network" "lstopo_network.txt"
 
     # v1.54.39：mlxlink 失败汇总（仅在有失败时登记，避免 manifest 指向不存在的文件）
     [ -f "${dir}/mlxlink_failures.log" ] && write_manifest --append "${dir}/manifest.txt" "mlxlink_failures" "mlxlink_failures.log"
-        "lstopo_network" "lstopo_network.txt"
 
     # MST 未启动提示（MST_AUTO_START=1 时已自动 mst start 读真 SN；此提示仅在其被禁用/失败时出现，SN 为 GUID 兜底）
     if [ "$MST_NOT_STARTED" -eq 1 ]; then

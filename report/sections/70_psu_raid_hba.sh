@@ -823,10 +823,7 @@ fi
 PSU_REDUNDANCY=""
 # ─── v1.54.26：PSU 冗余状态（平台暴露则显示，不暴露则整行不出现）──────────────
 #   覆盖率实测：DGX(REDUNDANCY_PSU)、Giga 系(Redundant_PSU/B_PSU_Redundant) 有；
-#   B200 / MI300X / Supermicro / Dell 的 IPMI 不暴露 —— 缺失时不写 N/A、不计数据不足。
-（平台暴露则显示，不暴露则整行不出现）──────────────
-#   覆盖率实测：DGX(REDUNDANCY_PSU) 与 Giga 系(Redundant_PSU/B_PSU_Redundant) 有；
-#   B200 / MI300X / Supermicro / Dell 的 IPMI 不暴露 —— 故缺失时不写 N/A、不计数据不足。
+#   B200 / MI300X / Supermicro / Dell 的 IPMI 不暴露——缺失时不写 N/A、不计数据不足。
 
 if [ -f "${BMC_DIR}/ipmi_sdr.log" ] || ls "${PSU_DIR}"/*.log >/dev/null 2>&1; then
     _pr=$(grep -hiE "redundan.*(psu|ps[0-9]|power)|(psu|ps[0-9]|power).*redundan" \
