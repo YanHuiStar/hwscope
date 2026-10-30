@@ -1,6 +1,6 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.54.43-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
+![Version](https://img.shields.io/badge/Version-1.54.44-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。适用于 HGX 系列（H200/B200/B300）、PCIe GPU 服务器、AMD Instinct（ROCm）、华为昇腾（Atlas）及无 GPU 机头，按组件粒度采集硬件信息，自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
