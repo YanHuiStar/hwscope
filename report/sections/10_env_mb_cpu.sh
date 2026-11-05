@@ -38,6 +38,7 @@ PCIE_LINKS_TOTAL=0
 PCIE_LINK_TABLE=""       # 全量链路行：BDF|设备|LnkCap|LnkSta|判定（排序 = 管理芯片排后 + BDF 升序）
 PCIE_SLOW_COUNT=0
 PCIE_MGMT_COUNT=0
+  PCIE_ONBOARD_LOW_COUNT=0
 PCIE_PERIPH_COUNT=0      # v1.53.20：外设固有（USB 主控等）行数，从满速单列出来
 PCIE_BRIDGE_NEG_COUNT=0  # bridge 下游协商行数（v1.44.3：附录标注"协商（下游能力）"，从"满速"统计中分离）
 # v1.51.8：上游父桥端口能力表（child_bus → 该父桥 LnkCap 原文）
@@ -45,6 +46,19 @@ PCIE_BRIDGE_NEG_COUNT=0  # bridge 下游协商行数（v1.44.3：附录标注"�
 #   为什么需要：端点自己报的 LnkCap 是芯片能力（实测 Mellanox CX-7 报 Gen4 x2，而它所在
 #   root port 只支持 Gen3 x2）——拿芯片能力当基准会把「已跑满端口天花板」误判成降速。
 PCIE_UP_CAP=""
+# v1.56.0：SMBIOS Type 9 槽位表里的 bus 集合——有槽位声明 = 插槽卡（降级要报），
+#   无声明 = 板载设备（BOSS/内置 NVMe、板载 LOM、板载控制器），其宽度由主板走线决定。
+#   实测 7 台 Dell XE9680 全部因 01:00.0(Marvell 88NR2241 BOSS) x8→x4、
+#   02:00.x(BCM5720 千兆 LOM) x2→x1、81:00.1(PMC 板载控制器) x16→x2 报 WARN，
+#   而这些 bus 在 SMBIOS 里均无槽位声明。
+PCIE_SLOT_BUSES=""
+if [ -f "${OUT}/motherboard/dmidecode_slot.log" ]; then
+_mb_dir="${OUT}/motherboard"   # MB_DIR 在本文件靠后才赋值，此处不能用
+    PCIE_SLOT_BUSES=$(grep -iE "Bus Address:" "${_mb_dir}/dmidecode_slot.log" 2>/dev/null \
+        | sed "s/.*Bus Address:[[:space:]]*//" \
+        | awk -F: '{ bus = (NF >= 3) ? $2 : $1; sub(/^0+/, "", bus); if (bus == "") bus = "0"; print bus }' \
+        | sort -u | tr '\n' ',' | sed 's/,$//')
+fi
 if [ -f "${pcie_full}" ]; then
     PCIE_UP_CAP=$(awk '
         /^([0-9a-f]+:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]/ {
@@ -60,11 +74,11 @@ if [ -f "${pcie_full}" ]; then
 fi
 
 if [ -f "${pcie_full}" ]; then
-    PCIE_LINK_TABLE=$(awk -v upmap="${PCIE_UP_CAP}" '
+    PCIE_LINK_TABLE=$(awk -v upmap="${PCIE_UP_CAP}" -v slotbuses="${PCIE_SLOT_BUSES}" '
         # v1.51.5：BDF 块头兼容两位域（00:00.0）与四位域（0000:00:00.0）——lspci 在**多 PCI 域平台**
         #   默认输出带域名，旧写法 [0-9a-f]{2}: 只认两位 → 块头永不匹配 → check() 从不被调用
         #   → 链路表恒空 → 报告误写「旧采集无 pcie_full」（实测该机 pcie_full.log 有 16203 行/179 条 LnkCap）
-        BEGIN { nu = split(upmap, _L, "\n"); for (_i = 1; _i <= nu; _i++) { if (_L[_i] == "") continue; split(_L[_i], _kv, "|"); if (_kv[1] != "") UPM[_kv[1]] = _kv[2] } }
+        BEGIN { nu = split(upmap, _L, "\n"); for (_i = 1; _i <= nu; _i++) { if (_L[_i] == "") continue; split(_L[_i], _kv, "|"); if (_kv[1] != "") UPM[_kv[1]] = _kv[2] }; ns = split(slotbuses, _S, ","); for (_j = 1; _j <= ns; _j++) if (_S[_j] != "") SBS[_S[_j]] = 1 }
         /^([0-9a-f]+:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]/ { if (b != "") check(); b=$1; d=substr($0,index($0,$2)); c=""; s="" }
         /LnkCap:/ { c=$0 }
         /LnkSta:/ { s=$0 }
@@ -80,7 +94,10 @@ if [ -f "${pcie_full}" ]; then
             if (swd == 0) return            # x0 = 端口未连接（PEX 下行空置）
             # v1.51.8：本链路可达上限 = min(设备芯片能力, 上游父桥端口能力)。
             #   找不到父桥映射时退回设备自身能力（保持旧行为，不劣化）。
-            devbus = b; sub(/^[0-9a-f]+:/, "", devbus); sub(/:.*/, "", devbus)
+            # v1.56.0：原实现 sub(/^[0-9a-f]+:/,"") 无条件剥第一段——对 2 段式 BDF "01:00.0"
+            #   会把 bus 本身删掉（只剩 ".0"），上游能力表与槽位表因此全部查不到；
+            #   3 段(0000:01:00.0) 取第 2 段、2 段(01:00.0) 取第 1 段。
+            nb = split(b, _bp, ":"); devbus = (nb >= 3) ? _bp[2] : _bp[1]
             sub(/^0+/, "", devbus); if (devbus == "") devbus = "0"
             bases = csp; basew = cwd
             if (devbus in UPM) { uc = UPM[devbus]; bases = mn(csp, spd(uc)); basew = mn(cwd, wdt(uc)); }
@@ -104,7 +121,12 @@ if [ -f "${pcie_full}" ]; then
             # v1.44.2）。真问题（线缆/接触/插槽）会体现在下游端点自身 LnkCap vs LnkSta——端点判定已覆盖。
             # 故 bridge 一律不判异常（仅附录展示）；端点设备（NIC/GPU/RAID 卡）速率+宽度降均判异常
             } else if (!isbridge && (ssp < bases || swd < basew)) {
-                verdict = (swd < basew && ssp < bases) ? "⚠️ 降宽+降速" : ((swd < basew) ? "⚠️ 降宽" : "⚠️ 降速")
+                # v1.56.0：无 SMBIOS 槽位声明 = 板载设备，宽度由主板走线决定 → 单列「板载低速位」，不计异常
+                if (slotbuses != "" && !(devbus in SBS)) {
+                    verdict = "板载低速位"
+                } else {
+                    verdict = (swd < basew && ssp < bases) ? "⚠️ 降宽+降速" : ((swd < basew) ? "⚠️ 降宽" : "⚠️ 降速")
+                }
             # v1.44.3：bridge 降速标注"协商（下游能力）"——附录显示不再误写"✓ 满速"（判定仍不计异常）
             } else if (ssp < csp || swd < cwd) {
                 verdict = "协商（下游能力）"
@@ -120,6 +142,7 @@ if [ -f "${pcie_full}" ]; then
         PCIE_MGMT_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '管理芯片')
         PCIE_PERIPH_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '外设固有')
         PCIE_BRIDGE_NEG_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '协商（下游能力）')
+        PCIE_ONBOARD_LOW_COUNT=$(printf '%s\n' "$PCIE_LINK_TABLE" | grep -c '板载低速位')
         PCIE_SLOW_LINKS=$(printf '%s\n' "$PCIE_LINK_TABLE" | awk -F'|' '$5 ~ /⚠️/ {print $1" "$2" | cap "$3", sta "$4}')
     fi
 # 旧采集无 pcie_full：pcie_speed_width.log 是 grep 行流（缺 LnkCap 的设备导致 cap/sta 错配，
@@ -307,10 +330,27 @@ fi
 # v1.51.10 文案分档（用户口径）：
 #   真混插（额定/Rank 不同）→ ⚠️ 必须提示     同规格不同料号 → 普通括注，不加 ⚠️
 #   降速本身：>1DPC 属平台规范 → 不加 ⚠️；≤1DPC 降速才是真问题 → ⚠️
+# v1.56.0：CPU 内存控制器上限——DIMM 额定高于 CPU 上限时，"降速"是正常的
+#   （实测 Xeon Platinum 8580 官方 DDR5-5600，插 6400 条只能跑 5600）
+MEM_CPU_LIMIT=""; MEM_AT_CPU_LIMIT=0
+command -v cpu_mem_limit >/dev/null 2>&1 && MEM_CPU_LIMIT=$(cpu_mem_limit "${CPU_MODEL:-}")
+if [ -n "$MEM_CPU_LIMIT" ] && [ -n "$MEM_SPEED" ]; then
+    _nom_n=$(printf '%s' "$MEM_NOM" | grep -oE '^[0-9]+' | head -1)
+    _cur_n=$(printf '%s' "$MEM_SPEED" | grep -oE '^[0-9]+' | head -1)
+    if [ -n "$_nom_n" ] && [ -n "$_cur_n" ] \
+       && [ "${_nom_n:-0}" -gt "$MEM_CPU_LIMIT" ] 2>/dev/null \
+       && [ "${_cur_n:-0}" -le "$MEM_CPU_LIMIT" ] 2>/dev/null; then
+        MEM_AT_CPU_LIMIT=1
+    fi
+fi
 if [ -n "$MEM_SPEED" ]; then
     _down=""
     [ -n "$MEM_NOM" ] && [ "$MEM_SPEED" != "$MEM_NOM" ] 2>/dev/null && _down=1
-    if [ "$MEM_MIXED_SPEC" -eq 1 ]; then
+    if [ "${MEM_AT_CPU_LIMIT:-0}" -eq 1 ] && [ "$MEM_MIXED_SPEC" -eq 0 ]; then
+        # 运行在 CPU 上限：DIMM 额定更高是白买带宽，不是故障 → 不加 ⚠️
+        MEM_SPEED_NOTE="（DIMM 额定 ${MEM_NOM}，运行在 CPU 内存控制器上限 ${MEM_CPU_LIMIT} MT/s，属正常）"
+        _down=""
+    elif [ "$MEM_MIXED_SPEC" -eq 1 ]; then
         MEM_SPEED_NOTE="⚠️ 内存规格混插（${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank / ${MEM_PN_KINDS} 种部件号），控制器按最低额定 ${MEM_NOM} 训练"
     elif [ -n "$_down" ] && [ "$MEM_OVER_1DPC" -eq 1 ]; then
         MEM_SPEED_NOTE="（降速运行：额定 ${MEM_NOM}，已插 ${MEM_POPULATED}/${MEM_SLOTS} 槽属 >1DPC 配置，为平台规范正常现象）"

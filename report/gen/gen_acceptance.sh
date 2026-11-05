@@ -250,6 +250,9 @@ gen_acceptance() {
         _at_min=""
         [ "$MEM_SPEED" = "$MEM_NOM" ] && _at_min="；现速 ${MEM_SPEED} 即该配置的最低额定，无额外降速"
         add_item "内存运行速率" "WARN" "内存规格混插（${MEM_NOM_KINDS} 档额定速率 / ${MEM_RANK_KINDS} 种 Rank / ${MEM_PN_KINDS} 种部件号），控制器按最低额定 ${MEM_NOM} 训练${_at_min}"
+    # v1.56.0：运行在 CPU 内存控制器上限 → PASS（DIMM 额定更高属正常，非故障）
+    elif [ "${MEM_AT_CPU_LIMIT:-0}" -eq 1 ] && [ "${MEM_MIXED_SPEC:-0}" -eq 0 ]; then
+        add_item "内存运行速率" "PASS" "运行在 CPU 内存控制器上限（现速 ${MEM_SPEED}；DIMM 额定 ${MEM_NOM}，该 CPU 官方最高 ${MEM_CPU_LIMIT} MT/s，属正常）"
     # 注：料号差异（规格一致）不单独提示（市场常态），直接走「额定速率运行」分支
     elif [ -n "$MEM_SPEED_NOTE" ]; then
         if [ "${MEM_OVER_1DPC:-0}" -eq 1 ] || [ "${MEM_FULL:-0}" -eq 1 ]; then

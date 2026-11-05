@@ -327,10 +327,13 @@ $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_T
     fi
     # v1.44.0 摘要 + 异常明细（v1.44.1）：满速链路不逐条列（全量明细见文末附录）
     if [ "$PCIE_LINKS_TOTAL" -gt 0 ] && [ -n "$PCIE_LINK_TABLE" ]; then
-        _full=$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT - ${PCIE_BRIDGE_NEG_COUNT:-0} - ${PCIE_PERIPH_COUNT:-0}))
+        _full=$((PCIE_LINKS_TOTAL - PCIE_SLOW_COUNT - PCIE_MGMT_COUNT - ${PCIE_BRIDGE_NEG_COUNT:-0} - ${PCIE_PERIPH_COUNT:-0} - ${PCIE_ONBOARD_LOW_COUNT:-0}))
         _peri=""
         [ "${PCIE_PERIPH_COUNT:-0}" -gt 0 ] 2>/dev/null && _peri=" · 外设 ${PCIE_PERIPH_COUNT}"
-        echo "| 链路统计 | ${PCIE_LINKS_TOTAL} 条 · 满速 ${_full} · 降速/降宽 ${PCIE_SLOW_COUNT} · bridge 协商 ${PCIE_BRIDGE_NEG_COUNT:-0} · 管理芯片 ${PCIE_MGMT_COUNT}${_peri} |"
+        # v1.56.0：板载设备（无 SMBIOS 槽位声明）的宽度由主板走线决定 → 单列展示、不计异常
+        _ob=""
+        [ "${PCIE_ONBOARD_LOW_COUNT:-0}" -gt 0 ] 2>/dev/null && _ob=" · 板载低速位 ${PCIE_ONBOARD_LOW_COUNT}"
+        echo "| 链路统计 | ${PCIE_LINKS_TOTAL} 条 · 满速 ${_full} · 降速/降宽 ${PCIE_SLOW_COUNT} · bridge 协商 ${PCIE_BRIDGE_NEG_COUNT:-0} · 管理芯片 ${PCIE_MGMT_COUNT}${_peri}${_ob} |"
         echo ""
         if [ "$PCIE_SLOW_COUNT" -gt 0 ] 2>/dev/null; then
             echo "### ⚠️ 降速/降宽链路"
@@ -351,8 +354,13 @@ $(if [ -n "$PCIE_PEX_DETAILS" ] || [ -n "$PCIE_SLOW_LINKS" ] || [ "$PCIE_LINKS_T
             echo "> 外设控制器（USB 主控等）${PCIE_PERIPH_COUNT} 条按主板设计协商带宽，不计链路异常"
             echo ""
         fi
+        # v1.56.0：板载设备低速位说明（无 SMBIOS 槽位声明 → 主板走线宽度，非插槽卡降级）
+        if [ "${PCIE_ONBOARD_LOW_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+            echo "> 板载设备（BOSS/内置 NVMe、板载网口等，无独立槽位声明）${PCIE_ONBOARD_LOW_COUNT} 条链路宽度低于设备自身能力——由主板走线决定，不计链路异常"
+            echo ""
+        fi
         if [ "$PCIE_SLOW_COUNT" -eq 0 ] 2>/dev/null; then
-            echo "> 全部非管理芯片链路满速（全量明细见文末附录）"
+            echo "> 全部插槽设备链路满速（全量明细见文末附录）"
             echo ""
         fi
     elif [ -n "$PCIE_SLOW_LINKS" ]; then

@@ -268,6 +268,19 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **内存「降速」要先问是不是 CPU 上限，PCIe「降速」要先问有没有槽位（v1.56.0 立规，7 台 Dell 误报）**：
+  两个最容易误报的判据，共同点是**拿部件的额定值当基准，而平台根本没那个能力**。
+  **① 内存速率**：基准必须是 `min(DIMM 额定, CPU 内存控制器上限)`——实测 Dell XE9680 + Xeon Platinum 8580
+  （官方 DDR5-5600）插 6400 条跑 5600，旧判据按 DIMM 额定比 → 7 台同型号机全部误报「建议核查 BIOS」，
+  而 BIOS 根本调不上去。CPU 上限表在 `report/lib/report_common.sh` 的 `cpu_mem_limit()`（只收已确认型号，
+  未命中回退旧行为，禁止臆测）。
+  **② PCIe 降速**：判据 = **该 bus 在 SMBIOS Type 9 里有没有槽位声明**——有声明才是插槽卡（降级要报）；
+  无声明是板载设备（BOSS/内置 NVMe、板载 LOM、板载 BMC/控制器），宽度由**主板走线**决定，
+  单列「板载低速位」不计异常。实测同批 7 台 XE9680 全部因 `01:00.0`(Marvell 88NR2241 BOSS) x8→x4、
+  `02:00.x`(BCM5720 千兆 LOM) x2→x1 报 WARN，而这几条 bus 在 SMBIOS 里都没有槽位。
+  **③ 配套修掉的真 bug**：`devbus` 原来用 `sub(/^[0-9a-f]+:/,"")` 无条件剥第一段，对 2 段式 BDF
+  （`01:00.0`）会把 **bus 本身**删掉（只剩 `.0`）→ 上游能力表 `UPM` 与槽位表全部查不到，
+  "上游端口天花板"逻辑（v1.51.8）对这类日志**完全没生效**。改按段数取：3 段取第 2 段、2 段取第 1 段。
 - **判 PCIe 降速：先看 `LnkCap` 还是 `LnkSta`，再用内核的 `limited by … link at <BDF>` 定位瓶颈端（v1.55.2 立规）**：
   `LnkSta` 低于 `LnkCap` 才是**真降速**；两者相等（如 ConnectX-7 多 function 卡各 `16GT/s x2`）是**该设备能力本身如此**，
   不算问题——报告端按 `cap==sta` 判满速是对的，别为了让数字"好看"把这类算成降级。

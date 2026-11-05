@@ -197,3 +197,37 @@ xid_level() {
         *)    printf 'warn' ;;
     esac
 }
+
+# ─── CPU 支持的内存速率上限（v1.56.0）──────────────────────────────────────
+#   目的：内存「额定 6400 跑 5600」可能不是故障，而是 CPU 内存控制器上限。
+#   实测 Dell XE9680 + Xeon Platinum 8580（Emerald Rapids）：DIMM 额定 6400，
+#   Configured 5600 —— Intel 官方 8580 内存规格就是 DDR5 @ 5600 MT/s(1DPC)，BIOS 调不上去，
+#   旧判据按 DIMM 额定比 → 7 台同型号机全部误报「内存运行速率降速，建议核查 BIOS」。
+#   表按厂商公开规格整理，**只收已确认型号**；未命中返回空（回退旧行为，不臆测）。
+cpu_mem_limit() {
+    local m="${1:-}" u
+    u=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
+    case "$u" in
+        # ── Intel：6 代至强（Granite Rapids）──
+        *"XEON"*6[0-9][0-9][0-9]"P"*|*"PLATINUM 6"[0-9][0-9][0-9]"P"*) printf '6400'; return 0 ;;
+        *[[:space:]]6[0-9][0-9][0-9]"P"*)                              printf '6400'; return 0 ;;
+        # ── Intel：6 代 能效核（Sierra Forest, xxxxE）──
+        *[[:space:]]6[0-9][0-9][0-9]"E"*)                              printf '5600'; return 0 ;;
+        # ── Intel：5 代至强（Emerald Rapids，85xx–89xx）──
+        *[[:space:]]8[5-9][0-9][0-9]*)                                 printf '5600'; return 0 ;;
+        # ── Intel：4 代至强（Sapphire Rapids，80xx–84xx / 5xxx / 4xxx / 3xxx）──
+        *[[:space:]]8[0-4][0-9][0-9]*)                                 printf '4800'; return 0 ;;
+        *[[:space:]]6[0-9][0-9][0-9]*)                                 printf '4800'; return 0 ;;
+        *[[:space:]]5[0-9][0-9][0-9]*)                                 printf '4800'; return 0 ;;
+        *[[:space:]]4[0-9][0-9][0-9]*)                                 printf '4800'; return 0 ;;
+        *[[:space:]]3[0-9][0-9][0-9]*)                                 printf '4800'; return 0 ;;
+        # ── AMD EPYC 9005（Turin）──
+        *EPYC*9[0-9][0-9]5*)                                           printf '6000'; return 0 ;;
+        # ── AMD EPYC 9004（Genoa / Bergamo）──
+        *EPYC*9[0-9][0-9]4*)                                           printf '4800'; return 0 ;;
+        # ── AMD EPYC 7003/7002（Milan / Rome）──
+        *EPYC*7[0-9][0-9]3*)                                           printf '3200'; return 0 ;;
+        *EPYC*7[0-9][0-9]2*)                                           printf '3200'; return 0 ;;
+    esac
+    printf ''
+}
