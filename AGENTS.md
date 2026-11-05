@@ -268,6 +268,13 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **XID 必须按码分档，Fabric 类事件不判警告（v1.55.1 立规，验收结论误判事故）**：XID 149 =
+  `NETIR_MFDE_EVENT`，是 **NVSwitch/NVLink Fabric 管理事件**（Nonfatal），不涉及卡与显存——实测
+  一台 8×A100 测试项全过、该事件记录 56 条，报告却按 WARN 计，整机结论从「合格」被拉成「有条件通过」。
+  **规则**：① 硬件类（48 双bit ECC / 62 页退役 / 63 行重映射 / 74 NVLink 错 / 79 掉总线 / 13·31 非法访问）
+  → WARN 或 FAIL，计入结论；② Fabric 与已纠正类（149 / 119 / 120 / 94 / 95 / 38）→ 新增状态
+  **「提示」(ℹ️)**，**列出但不计入 WARN**，结论仍可为「合格」；③ 未知码 → 保守按 WARN（不错放）。
+  实现：`report/lib/report_common.sh` 的 `xid_level()`；验收端 `add_item … INFO`，渲染端 ℹ️/⚠️ 图标自动切换。
 - **HTML 状态着色只认「单元格开头」的状态词，且首列（标签）不着色（v1.54.51 立规，客户展示事故）**：
   `md2html.awk` 的 `cell_class()` 原先对单元格**全文**搜 `FAIL|不合格|❌`——验收清单新增的「判定规则」行
   正文就是「有『失败』判不合格；…否则合格」，于是**一条规则说明被渲染成红色 FAIL**，客户会以为该项不通过；

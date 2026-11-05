@@ -112,7 +112,9 @@ fi
 
 [ "${#TARGETS[@]}" -eq 0 ] && { echo "[ERROR] 无有效样本目录"; exit 2; }
 
-echo "=== 批量重生成报告（${#TARGETS[@]} 份样本，v1.55.0，并行度 ${JOBS}）==="
+# 版本号取实际值（原先硬编码 → 每次升版本这个横幅都过期，看着像旧工具在跑）
+_HW_VER=$(grep -m1 -oE 'HWSCOPE_VERSION="v[0-9.]+"' "${PROJECT_DIR}/hwscope.sh" 2>/dev/null | grep -oE 'v[0-9.]+')
+echo "=== 批量重生成报告（${#TARGETS[@]} 份样本，${_HW_VER:-unknown}，并行度 ${JOBS}）==="
 
 # 单份重生成（并行 worker 与串行分支共用）——输出一行 "SN<TAB>OK/FAIL<TAB>判定"
 regen_one() {

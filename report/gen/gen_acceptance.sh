@@ -9,7 +9,7 @@
 # =============================================================================
 gen_acceptance() {
     local f="${OUT}/hwscope_acceptance.md"
-    local n=0 pass=0 fail=0 warn=0 na=0
+    local n=0 pass=0 fail=0 warn=0 na=0 info=0
     local rows="" st=""
     local verdict="合格"
     NA_INHERENT=""   # v1.48.41：平台固有 N/A 项名收集（表尾汇总；不渲染行避免满表 N/A）
@@ -26,6 +26,9 @@ gen_acceptance() {
             PASS) pass=$((pass + 1)); st="✅ PASS" ;;
             FAIL) fail=$((fail + 1)); st="❌ FAIL" ;;
             WARN) warn=$((warn + 1)); st="⚠️ WARN" ;;
+            # v1.55.1：INFO = 已确认非故障的事件（如 XID 149 属 NVLink/NVSwitch Fabric 管理事件，
+            #   实测测试全过、不影响卡与显存）——**列出但不计入 WARN**，否则把正常机判成"有条件通过"。
+            INFO) info=$((info + 1)); st="ℹ️ 提示" ;;
             *)
                 st="— N/A"
                 if [ "${4:-0}" = "1" ]; then
@@ -584,7 +587,8 @@ gen_acceptance() {
     #      是跟供应商谈判时最硬的证据，报告必须留痕。
     # 仅在检出时添加：无检出不加项，保证验收项数与既有基线一致。
     if [ -n "${GPU_XID:-}" ]; then
-        add_item "GPU XID 错误历史" "WARN" "XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行，来源 ${GPU_XID_SRC}）——$(xid_advice "${GPU_XID_CODES:-}")"
+        _xid_lvl=$(xid_level "${GPU_XID_CODES:-}")
+        add_item "GPU XID 错误历史" "$([ "$_xid_lvl" = "info" ] && echo INFO || echo WARN)" "XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行，来源 ${GPU_XID_SRC}）——$(xid_advice "${GPU_XID_CODES:-}")"
     fi
     if [ -n "${MCE_HITS:-}" ]; then
         add_item "CPU MCE" "WARN" "检出 ${MCE_COUNT} 条机器检查异常（来源 ${MCE_SRC}）——需复核 CPU/内存子系统"
@@ -604,6 +608,10 @@ gen_acceptance() {
         verdict="基本通过（${na} 项无数据，其余项正常）"
     else
         verdict="合格（全部通过）"
+    fi
+    # v1.55.1：有「提示」项时在结论里点名（提示 = 已确认非故障，不参与判定）
+    if [ "${info:-0}" -gt 0 ] 2>/dev/null; then
+        verdict="${verdict}；另有 ${info} 项提示（非故障，不计入判定）"
     fi
 
     # ── 配置单派生（硬件概览表格数据：内存每槽/网卡归类/PSU 汇总/盘型号） ──
@@ -786,7 +794,7 @@ gen_acceptance() {
             _na_line="${_na_line}；${_na_p} 项待启用/待配置 N/A（${_na_pend}，同样不计入数据不足）"
         fi
         echo "| N/A 说明 | ${_na_line} |"
-        echo "| 判定规则 | 有「失败」判不合格；有「警告」无「失败」判有条件通过；无数据项 ≥4 判数据不足；否则合格 |"
+        echo "| 判定规则 | 有「失败」判不合格；有「警告」无「失败」判有条件通过；无数据项 ≥4 判数据不足；否则合格（「提示」= 已确认非故障的事件，不影响结论） |"
         echo "| 生成时间 | $(date '+%Y-%m-%d %H:%M:%S') |"
         # v1.54.52：拆成两行——两列版本号并排时列宽参差，且"采集版本/报告版本"作为行名过长
         echo "| 采集版本 | ${VERSION:-unknown} |"
@@ -815,6 +823,7 @@ gen_acceptance() {
         echo "| 通过 | ${pass} |"
         echo "| 警告 | ${warn} |"
         echo "| 失败 | ${fail} |"
+        [ "${info:-0}" -gt 0 ] 2>/dev/null && echo "| 提示（非故障） | ${info} |"
         echo "| 无数据 | ${na} |"
         echo "| **判定** | **${verdict}** |"
         echo ""

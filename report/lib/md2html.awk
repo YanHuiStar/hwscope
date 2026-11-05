@@ -92,7 +92,16 @@ BEGIN {
     print ".warn{color:#b45309;font-weight:600;}"
     print ".fail{color:#dc2626;font-weight:600;}"
     print ".na{color:#9ca3af;}"
-    print "blockquote{background:#fffaf0;border-left:4px solid #ed8936;padding:8px 14px;margin:8px 0;color:#7c5314;font-size:12.5px;border-radius:0 6px 6px 0;}"
+    # v1.55.1：引用块按语义分三档——裸 `>` 是**提示/正常现象**（中性灰蓝），
+    #   只有 `> ⚠️` / `> ❌` 才是注意/异常。原先所有引用块统一橙黄，
+    #   连"管理芯片 1 条固有低速为正常现象"都长成告警色（实测客户误读）。
+    print "blockquote{background:#f4f7fb;border-left:4px solid #a0aec0;padding:8px 14px;margin:8px 0;color:#4a5568;font-size:12.5px;border-radius:0 6px 6px 0;}"
+    print "blockquote.warn{background:#fffaf0;border-left-color:#ed8936;color:#7c5314;}"
+    print "blockquote.fail{background:#fdf2f2;border-left-color:#dc2626;color:#9b1c1c;}"
+    # 代码块：原先无样式 → 走浏览器默认等宽字体（13~16px）且不换行，XID 原始行又长又显大
+    print "pre{background:#f7f9fc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin:8px 0;font-size:11.5px;line-height:1.5;overflow-x:auto;}"
+    print "pre code{background:none;padding:0;font-size:inherit;border:none;}"
+    print "code{background:#f1f4f9;padding:1px 4px;border-radius:3px;font-size:.92em;}"
     print "li{margin:3px 0;font-size:13px;}"
     print "hr{border:none;border-top:1px solid #e2e8f0;margin:14px 0;}"
     # v1.53.31：打印 / PDF 版式整备（此前 PDF 排版异常：页头右移、卡片无边界、纸张为默认 Letter）
@@ -106,7 +115,7 @@ BEGIN {
     # 表头深色底必须强制输出（否则浏览器"省墨"打成白底黑字）
     print "@media print{th{background:#1e3a5f !important;color:#fff !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid #1e3a5f;} td{border-bottom:1px solid #cbd5e0;} table{border-collapse:collapse;width:100%;}}"
     # 附录长表允许跨页，但每行不拆开
-    print "@media print{tr{break-inside:avoid;page-break-inside:avoid;} blockquote{border-left:3px solid #ed8936;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}"
+    print "@media print{tr{break-inside:avoid;page-break-inside:avoid;} blockquote{border-left:3px solid #a0aec0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}"
     # v1.53.31 补：A4 纵向纸宽 ≈794px < 900px 断点，窄屏的「表格转块级横向滚动」会漏进打印
     #   → 表格收缩不占满、列不换行。打印里必须复位成正常 table 布局
     print "@media print{table{display:table !important;overflow:visible !important;white-space:normal !important;width:100% !important;min-width:0 !important;} thead{display:table-header-group;} tbody{display:table-row-group;}}"
@@ -224,7 +233,11 @@ pass == 1 {
 # 引用块（注释/提示）
 /^> / {
     note = substr($0, 3)
-    print "<blockquote>" inline_md(esc_html(note)) "</blockquote>"
+    # v1.55.1：首字符决定语义档（⚠️→warn，❌→fail，其余→中性提示）
+    _bqc = ""
+    if (note ~ /^[[:space:]]*(⚠|❌)/) _bqc = " class='warn'"
+    if (note ~ /^[[:space:]]*❌/) _bqc = " class='fail'"
+    print "<blockquote" _bqc ">" inline_md(esc_html(note)) "</blockquote>"
     next
 }
 

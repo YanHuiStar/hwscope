@@ -484,7 +484,8 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
             echo "| xGMI | ${GPU_XGMI_SUMMARY} |"
         fi
         if [ -n "${GPU_XID:-}" ]; then
-            echo "| XID 错误 | ⚠️ 检出 XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行；来源: ${GPU_XID_SRC}）——$(xid_advice "${GPU_XID_CODES:-}")；逐条明细见 GPU 段 |"
+            _xl=$(xid_level "${GPU_XID_CODES:-}")
+            echo "| XID 错误 | $([ "$_xl" = "info" ] && echo "ℹ️" || echo "⚠️") XID ${GPU_XID_CODES:-?} × ${GPU_XID_TOTAL:-?} 条（${GPU_XID_DEVS:-?} 张卡 · ${GPU_XID_SRC}）→ 处置见 GPU 段 |"
         fi
     fi
 fi)
@@ -518,9 +519,24 @@ $(if [ -n "$gpu_details_md" ]; then
 fi)
 $(if [ -n "${GPU_XID:-}" ]; then
     echo ""
-    echo "> ⚠️ **GPU XID 错误历史（来源: ${GPU_XID_SRC}）** —— XID 是 NVIDIA 官方故障码，"
-    echo "> 常见含义：79=GPU 掉总线、48=ECC 双bit不可纠正、13/31=显存/指令异常、62=显存页退役、74=NVLink 错误。"
-    echo "> 以下为检出记录（去重）："
+    _xl2=$(xid_level "${GPU_XID_CODES:-}")
+    echo "> $([ "$_xl2" = "info" ] && echo "ℹ️" || echo "⚠️") **GPU XID 事件（来源: ${GPU_XID_SRC}）** —— $(xid_advice "${GPU_XID_CODES:-}")"
+    # v1.55.1：只列**本次命中**的码义（原先把 5 条码义常驻，多数与本次无关且拉宽版面）
+    _xid_mean=""
+    for _c in $(printf '%s' "${GPU_XID_CODES:-}" | tr ',;/ ' '\n\n\n\n'); do
+        case "$_c" in
+            149)  _xid_mean="${_xid_mean}XID 149=NVSwitch/NVLink Fabric 管理事件（Nonfatal，非卡故障）；" ;;
+            79)   _xid_mean="${_xid_mean}XID 79=GPU 掉出总线；" ;;
+            48)   _xid_mean="${_xid_mean}XID 48=ECC 双bit不可纠正；" ;;
+            63)   _xid_mean="${_xid_mean}XID 63=显存行重映射；" ;;
+            62)   _xid_mean="${_xid_mean}XID 62=显存页退役；" ;;
+            74)   _xid_mean="${_xid_mean}XID 74=NVLink 错误；" ;;
+            13|31) _xid_mean="${_xid_mean}XID ${_c}=显存/指令非法访问；" ;;
+            94|95) _xid_mean="${_xid_mean}XID ${_c}=已纠正 ECC；" ;;
+        esac
+    done
+    [ -n "$_xid_mean" ] && echo "> 本次命中含义：${_xid_mean}"
+    echo "> 检出记录（按卡去重；原始行见附录）"
     echo ""
     echo '```'
     printf '%s\n' "$GPU_XID"
@@ -971,7 +987,9 @@ $(
     # ─── v1.48.90：新增健康项（XID / MCE / IB 误码 / NVMe 错误 / RAID 缓存电池）───
     # 集中放在健康检查段：这五类都是「曾经出过事」的直接证据，客户/供应商谈判时最先看这里。
     if [ -n "${GPU_XID:-}" ]; then
-        echo "| ⚠️ GPU XID 错误 | XID ${GPU_XID_CODES:-?}（${GPU_XID_DEVS:-?} 张卡 / ${GPU_XID_TOTAL:-?} 条记录；来源: ${GPU_XID_SRC}）——$(xid_advice "${GPU_XID_CODES:-}")；逐条明细见 GPU 段 |"
+        # v1.55.1：这一行在报告末尾「健康检查」段，同样压短 + 按分档图标
+        _xl3=$(xid_level "${GPU_XID_CODES:-}")
+        echo "| $([ "$_xl3" = "info" ] && echo "ℹ️" || echo "⚠️") GPU XID | XID ${GPU_XID_CODES:-?} × ${GPU_XID_TOTAL:-?} 条（${GPU_XID_DEVS:-?} 张卡）→ 处置见 GPU 段 |"
     fi
     if [ -n "${MCE_HITS:-}" ]; then
         echo "| ⚠️ CPU MCE | 检出 ${MCE_COUNT} 条机器检查异常（来源: ${MCE_SRC}） |"

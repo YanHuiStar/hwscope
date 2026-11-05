@@ -173,3 +173,27 @@ xid_advice() {
     done
     printf '%s' "需确认对应卡是否异常（对照 NVIDIA XID 官方说明逐条核对），复采仍现则现场复核"
 }
+
+# ─── XID 严重度分档（v1.55.1）─────────────────────────────────────────────
+#   XID 149 属 NVLink/NVSwitch **Fabric 管理事件**（NETIR_MFDE_EVENT，Nonfatal），
+#   实测测试全过、不涉及卡与显存——按 WARN 计会把合格机判成「有条件通过」。
+#   分档：任一码属硬件类 → warn；全部属提示类（Fabric/已纠正） → info；未知码 → warn（保守，不错放）。
+xid_level() {
+    local codes="${1:-}" c lvl=""
+    for c in $(printf '%s' "$codes" | tr ',;/ ' '\n\n\n\n'); do
+        case "$c" in
+            ''|*[!0-9]*) continue ;;
+            # 已纠正类（不中断业务）：94/95 单比特已纠正、38 内存已纠正
+            94|95|38) lvl="${lvl}i" ;;
+            # Fabric / 管理事件类：149 NVSwitch/NVLink 管理事件、119 GSP 相关、120 显示上下文
+            149|119|120) lvl="${lvl}i" ;;
+            # 其余（48 双bit ECC、62 页退役、63 行重映射、74 NVLink 错、79 掉总线、13/31 非法访问…）
+            *) lvl="${lvl}w" ;;
+        esac
+    done
+    case "$lvl" in
+        *w*) printf 'warn' ;;
+        *i*) printf 'info' ;;
+        *)    printf 'warn' ;;
+    esac
+}
