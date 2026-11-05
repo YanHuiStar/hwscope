@@ -23,12 +23,24 @@ fi
 if [ -f "${block_devices_all}" ] && [ -n "$SYS_DISK" ]; then
     _sysrow=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1==sys {print; exit}')
     if [ -n "$_sysrow" ]; then
-        SYS_DISK_TRAN=$(printf '%s' "$_sysrow" | awk '{for(i=1;i<=NF;i++) if($i ~ /^(usb|sata|sas|nvme|mmc|iscsi|fc|spi|virtio|scsi)$/){print $i; exit}}')
+        # lsblk 列序 NAME MODEL SERIAL SIZE TRAN ROTA MOUNTPOINT FSTYPE TYPE，**空列会被省略**，
+        #   故不能按固定列号取（实测行尾空列不同导致 $(NF-5) 取到 NAME）。改用结构解析：
+        #   SIZE 是首个 ^[0-9.]+[KMGTP]$ 的令牌 → 其前一个令牌是 SERIAL、其后一个是 TRAN，
+        #   NAME 与 SERIAL 之间整体是 MODEL（MODEL 本身可含空格与容量字样，如 "PHILIPS FM60PS051S/93 512GB"）。
+        _sp=$(printf '%s' "$_sysrow" | awk '{
+            for (i = 2; i <= NF; i++) if ($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") { si = i; break }
+            if (!si) exit
+            mdl = ""
+            for (j = 2; j < si - 1; j++) mdl = mdl (mdl == "" ? "" : " ") $j
+            printf "%s\t%s\t%s", $(si-1), $(si+1), mdl
+        }')
+        _ser=$(printf '%s' "$_sp" | cut -f1)
+        SYS_DISK_TRAN=$(printf '%s' "$_sp" | cut -f2)
+        _mdl=$(printf '%s' "$_sp" | cut -f3)
+        # lsblk 的 MODEL 列常把出厂容量并入型号（实测 "PHILIPS FM60PS051S/93 512GB"），
+        #   与后面的 lsblk SIZE（476.9G，GiB 口径）并列会看成两个不同容量 → 去掉型号尾部的容量字样
+        _mdl=$(printf '%s' "$_mdl" | sed 's/[[:space:]]\{1,\}[0-9]\{1,\}\(GB\|TB\|MB\)$//')
         _sz=$(printf '%s' "$_sysrow" | awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B"){print $i; exit}}')
-        # 型号 = NAME 与 SERIAL 之间的字段。lsblk 列序 NAME MODEL SERIAL SIZE TRAN ROTA MOUNTPOINT FSTYPE TYPE
-        #   → SERIAL 固定为**从右数第 6 列**（MODEL 含空格，从左数不可靠；实测 PHILIPS FM60PS051S/93 512GB）
-        _ser=$(printf '%s' "$_sysrow" | awk '{print $(NF-5)}')
-        _mdl=$(printf '%s' "$_sysrow" | sed "s/^[^ ]*[ ]*//; s/[[:space:]]*${_ser}[[:space:]].*$//" | sed 's/[[:space:]]*$//')
         _tran_disp=""
         case "$SYS_DISK_TRAN" in
             usb)   _tran_disp="USB 接口"; SYS_DISK_EXT=1 ;;
