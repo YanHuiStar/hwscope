@@ -128,7 +128,7 @@ bash test/report.sh logs/test/<SN>/       # 由压测日志生成报告
 | `tools/agent/agent_sync.sh` | 开工同步：fetch + 远程/本地 HEAD、版本、ahead/behind 对比；维护 `AGENT_STATE.md`（gitignore） | `--mark` 提交后标记 · `--clear` 推送后清空 · `-h` |
 | `tools/agent/git_push.sh` | 一键推送：逐提交摘要审查 + 版本单调检查 + 直连重试 + 代理兜底 | `-y` / `--yes` · `--no-fetch` · `--dry-run` · `-q` / `--quiet`；状态行 `PUSH_STATUS=OK\|FAIL\|USER_ABORT\|NOOP\|DRY_RUN` |
 | `tools/agent/report_regression.sh` | 报告解析回归（固定样本重跑报告并与基线比对） | `<采集目录>` · `--all` · `--samples SN1,SN2` · `--update` · `--keep` |
-| `tools/agent/regen_reports.sh` | 批量重生成报告（agent 专用，样本自动发现） | `<目录...>` · `--samples` · `--regression` · `--update` · `--acceptance` |
+| `tools/agent/regen_reports.sh` | 批量重生成报告（agent 专用，样本自动发现；默认并行 nproc/2，`--regression` 自动串行） | `<目录...>` · `--samples` · `-j N` · `--regression` · `--update` · `--acceptance` |
 | `tools/agent/repo_realign.sh` | 仓库对齐（历史重写后修复分叉） | `--sync` · `--protect [--auto]` · `--no-fetch` |
 | `tools/agent/sn_check.sh` | 提交前 SN / MAC 自检（隐私红线兜底） | `--staged` · `--commit-msg <文件>` · `--install-hook` · `--all-history` · `--include-remotes` |
 | `tools/agent/bmc_pass_smoke.sh` | BMC 密码通道冒烟测试（tty / 管道 / sudo 三种条件组合） | 无参数；需真 bash（Linux / WSL），git-bash 结论不可用 |

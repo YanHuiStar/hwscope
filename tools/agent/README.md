@@ -13,7 +13,7 @@
 | `git_push.sh` | 一键推送：逐提交摘要审查 + 版本单调检查 + 版本三处一致 + SN 兜底 + 直连重试 + 代理兜底 + `[AI-ACTION]` 指引 | `-y` / `--yes` 跳过确认 · `--no-fetch` · `--dry-run` · `-q` / `--quiet` 机器可读 · `-h`；`GIT_PUSH_BYPASS_COOLDOWN=1` 绕过熔断 · `SKIP_SN_CHECK=1` 跳过 SN 检查 |
 | `git_push.bat` | Windows 双击启动器（自动定位 Git for Windows 的 `bash.exe`，参数 `%*` 透传给 `git_push.sh`） | 与 `git_push.sh` 同参数 |
 | `report_regression.sh` | 报告解析回归测试（改动解析 / 渲染后必跑） | `<采集目录>` · `--all` · `--samples SN1,SN2` · `--update` · `--keep` |
-| `regen_reports.sh` | 批量重生成报告（agent 调用，样本自动发现） | `<目录...>` · `--samples SN1,SN2` · `--regression` · `--update` · `--acceptance` |
+| `regen_reports.sh` | 批量重生成报告（agent 调用，样本自动发现；**默认并行** nproc/2） | `<目录...>` · `--samples SN1,SN2` · `-j N` · `--regression` · `--update` · `--acceptance` |
 | `sn_check.sh` | 提交前 SN / MAC 自检（隐私红线兜底，可装成 git hook） | 无参数（暂存区 + 待推送提交）· `--staged` · `--commit-msg <文件>` · `--install-hook` · `--all-history` · `--include-remotes` |
 | `repo_realign.sh` | 仓库对齐（历史被重写后其他机器分叉的恢复）；代理探测经 `lib_proxy.sh` | 体检无参数 · `--sync` · `--protect [--auto]` · `--no-fetch` |
 | `bmc_pass_smoke.sh` | BMC 密码通道冒烟测试（tty / 管道 / sudo 三种条件组合） | 无参数；需真 bash（Linux / WSL） |
