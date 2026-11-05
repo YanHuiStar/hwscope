@@ -268,6 +268,16 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **判 PCIe 降速：先看 `LnkCap` 还是 `LnkSta`，再用内核的 `limited by … link at <BDF>` 定位瓶颈端（v1.55.2 立规）**：
+  `LnkSta` 低于 `LnkCap` 才是**真降速**；两者相等（如 ConnectX-7 多 function 卡各 `16GT/s x2`）是**该设备能力本身如此**，
+  不算问题——报告端按 `cap==sta` 判满速是对的，别为了让数字"好看"把这类算成降级。
+  真正的定位手段是内核 dmesg 里这一行：
+  `pci 0000:ee:00.0: 252.056 Gb/s available PCIe bandwidth, limited by 32.0 GT/s PCIe x8 link at 0000:ec:01.0
+  (capable of 504.112 Gb/s with 32.0 GT/s PCIe x16 link)` —— **`at <BDF>` 就是瓶颈所在的上游端口**（多为
+  PEX 交换机的下行端口），据此可直接把"卡 / 槽 / riser / switch 端口"四者分开：两侧能力都 x16、实际 x8 且
+  无 AER 记录 → 优先查物理连接（未插到底、金手指脏、riser 只有 x8 走线），而不是先怀疑卡坏。
+  **影响评估要算带宽**：Gen5 x8 = 252 GB/s，400G IB 只需 ~50 GB/s，故对 IB 与 GPUDirect RDMA 吞吐无实际影响，
+  属"交付前应查清但不阻断交付"的项。
 - **XID 必须按码分档，Fabric 类事件不判警告（v1.55.1 立规，验收结论误判事故）**：XID 149 =
   `NETIR_MFDE_EVENT`，是 **NVSwitch/NVLink Fabric 管理事件**（Nonfatal），不涉及卡与显存——实测
   一台 8×A100 测试项全过、该事件记录 56 条，报告却按 WARN 计，整机结论从「合格」被拉成「有条件通过」。
