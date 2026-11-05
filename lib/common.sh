@@ -337,6 +337,14 @@ _rc_content_known_benign() {
     if grep -qiE "EEPROM" "$_lf" 2>/dev/null && grep -qiE "not supported|Operation not supported" "$_lf" 2>/dev/null; then
         return 0
     fi
+    # ── 用例⑥（v1.54.46）：`ethtool -m` 在**铜缆/背板/驱动不支持**时报其他文案 ──
+    #   实测 8×A100（Suite，ixgbe 网卡 enp45s0f0/f1）：
+    #     `netlink error: Input/output error`（exit=1）——该口为板载/铜缆形态，无模块 EEPROM 可读。
+    #   注意这是**按固定文案精确匹配**，不退化成"任何 ethtool 报错都放过"：
+    #   光纤口模块故障通常另伴随链路/误码异常，由 mlxlink/链路状态项体现。
+    if grep -qE "netlink error: Input/output error|Cannot get module EEPROM" "$_lf" 2>/dev/null; then
+        return 0
+    fi
     # ── 用例③（v1.53.37）：`ipmitool lan print <N>` 的通道不存在 ──
     #   实测该平台只有 1 个 LAN 通道，`lan print 2` 报 `Get Channel Info command failed: Destination unavailable`
     #   + `Invalid channel: 2` —— 平台形态，不是故障。
