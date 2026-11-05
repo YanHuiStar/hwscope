@@ -14,7 +14,7 @@ run_gpu_intel() {
         return 1
     fi
 
-    echo -e "${CYAN}[INFO] 检测到 Intel GPU（xpu-smi），走 Intel XPU 采集路径${NC}"
+    [ "${QUIET:-0}" -eq 1 ] 2>/dev/null || echo -e "${CYAN}[INFO] 检测到 Intel GPU（xpu-smi），走 Intel XPU 采集路径${NC}"
 
     local int_jobs=(
         "xpu-smi discovery"           "${dir}/gpu_intel_discovery.log"

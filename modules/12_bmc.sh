@@ -88,7 +88,7 @@ run_bmc() {
             if grep -q "Unable to establish IPMI" "$_log" 2>/dev/null; then
                 echo -e "${YELLOW}[WARN] $(basename "$_log") 仍无法建立 IPMI 会话（BMC 会话已满或凭据不可用）${NC}" >&2
             else
-                echo -e "${CYAN}[INFO] $(basename "$_log") 串行重试成功（原为并发抢占 BMC 会话）${NC}" >&2
+                [ "${QUIET:-0}" -eq 1 ] 2>/dev/null || echo -e "${CYAN}[INFO] $(basename "$_log") 串行重试成功（原为并发抢占 BMC 会话）${NC}" >&2
             fi
         }
         _bmc_retry_serial "${dir}/remote_bmc_mc.log"      "${ipmi_cmd} mc info"

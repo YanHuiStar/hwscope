@@ -15,7 +15,7 @@ run_gpu_ascend() {
         return 1
     fi
 
-    echo -e "${CYAN}[INFO] 检测到昇腾 GPU（npu-smi），走 Atlas 采集路径${NC}"
+    [ "${QUIET:-0}" -eq 1 ] 2>/dev/null || echo -e "${CYAN}[INFO] 检测到昇腾 GPU（npu-smi），走 Atlas 采集路径${NC}"
 
     # 全量落盘（并行；npu-smi 各子命令均为只读查询）
     local asc_jobs=(

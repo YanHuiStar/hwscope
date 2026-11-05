@@ -171,7 +171,7 @@ gpu_run_tool_adapter() {
         gpu_fallback_pci "$dir" "$prefix" "$tool" "$pat"
         return 1
     fi
-    echo -e "${CYAN}[INFO] 检测到 ${label}（${tool}），走厂商采集路径${NC}"
+    [ "${QUIET:-0}" -eq 1 ] 2>/dev/null || echo -e "${CYAN}[INFO] 检测到 ${label}（${tool}），走厂商采集路径${NC}"
     local jobs=()
     while [ $# -ge 2 ]; do
         jobs+=("$1" "${dir}/$2"); shift 2

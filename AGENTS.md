@@ -262,6 +262,11 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **模块内的 `[INFO]` 必须受 `--quiet` 约束，且不复述实现细节（v1.54.49 立规）**：实测 `--quiet`
+  下仍会刷出「DCMI 功耗读数复用 psu/ipmi_dcmi_power.log（复用同一采样值…）」这类内部提示——静默语义
+  被破坏；且该句"复用"重复出现两次，属自述实现。规则：① 模块内任何面向使用者的提示都要 `[ "${QUIET:-0}" -eq 1 ] || echo …`；
+  ② 提示只讲**结论/口径**（"DCMI 读数取自 psu/…（与 PSU 共用同一次采样）"），不复述"为避免两个瞬时值不一致"
+  这类实现缘由（缘由写进源码注释即可）。
 - **验收清单「验收信息」按「形态 / 范围 / N-A / 规则」分四行，不许塞一行（v1.54.47 立规）**：
   原实现把「形态标签 + 形态判定依据 + 固有 N/A 计数 + 判定项数」压在一行里，三层括号嵌套，
   且"判定依据不足"落在"验收口径"行——客户第一眼会怀疑验收结论是否可靠；同时**只报了固有 N/A、

@@ -63,7 +63,7 @@ run_gpu_amd() {
     { echo "# AMD GPU 采集工具"; echo "tool: ${amd_tool_kind}"; echo "path: ${amd_smi_cmd}"; \
       echo "json_option: ${JOPT}"; echo "version:"; "${amd_smi_cmd}" --version 2>&1 | head -3; } \
         > "${dir}/gpu_amd_tool.log"
-    echo -e "${CYAN}[INFO] 检测到 AMD GPU（${amd_smi_cmd} · ${amd_tool_kind} · $("${amd_smi_cmd}" --version 2>&1 | head -1)），走 ROCm 采集路径${NC}"
+    [ "${QUIET:-0}" -eq 1 ] 2>/dev/null || echo -e "${CYAN}[INFO] 检测到 AMD GPU（${amd_smi_cmd} · ${amd_tool_kind} · $("${amd_smi_cmd}" --version 2>&1 | head -1)），走 ROCm 采集路径${NC}"
 
     # 全量落盘（并行）
     local amd_jobs=()

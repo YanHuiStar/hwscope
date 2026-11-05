@@ -41,7 +41,10 @@ run_power() {
         local _psu_dcmi="${output_dir}/psu/ipmi_dcmi_power.log"
         if [ -f "$_psu_dcmi" ] && grep -qi "Instantaneous power reading" "$_psu_dcmi" 2>/dev/null; then
             cp "$_psu_dcmi" "${dir}/dcmi_power.log"
-            echo -e "${CYAN}[INFO] DCMI 功耗读数复用 psu/ipmi_dcmi_power.log（复用同一采样值，避免同一报告出现两个 DCMI 瞬时读数）${NC}"
+            # v1.54.49：① 原句"复用 …（复用同一采样值…）"重复用词；② 未受 QUIET 约束，
+            #   --quiet 下仍会打印（静默语义被破坏）。改为短句 + 静默模式抑制。
+            [ "${QUIET:-0}" -eq 1 ] 2>/dev/null || \
+                echo -e "${CYAN}[INFO] DCMI 读数取自 psu/ipmi_dcmi_power.log（与 PSU 模块共用同一次采样）${NC}"
         else
             run_and_log_parallel 2 \
                 "${ipmi_fast} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log"
