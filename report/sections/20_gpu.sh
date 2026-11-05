@@ -92,7 +92,7 @@ if [ "${HEAD_NODE:-0}" -eq 1 ] && [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null;
 fi
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
-    GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{n=$2; gsub(/^ +| +$/, "", n); last=""; while (match(n, /\[[^]]*\]/)) { last=substr(n, RSTART+1, RLENGTH-2); n=substr(n, RSTART+RLENGTH) }; if (last!="") print last; else print $2}' | sort -u | tr '\n' ',' | sed 's/,$//')
+    GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{n=$2; gsub(/^ +| +$/, "", n); last=""; while (match(n, /\[[^]]*\]/)) { last=substr(n, RSTART+1, RLENGTH-2); n=substr(n, RSTART+RLENGTH) }; if (last!="") print last; else print n}' | sort -u | tr '\n' ',' | sed 's/,$//')
     # 显存总量 / 功耗上限 / 温度
     # 显存总量（nvidia-smi memory.total，MiB→GiB 二进制换算，为可见值含 ECC 预留）
     # 动态匹配列名，避免硬编码位置

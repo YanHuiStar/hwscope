@@ -262,6 +262,12 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **验收清单「验收信息」按「形态 / 范围 / N-A / 规则」分四行，不许塞一行（v1.54.47 立规）**：
+  原实现把「形态标签 + 形态判定依据 + 固有 N/A 计数 + 判定项数」压在一行里，三层括号嵌套，
+  且"判定依据不足"落在"验收口径"行——客户第一眼会怀疑验收结论是否可靠；同时**只报了固有 N/A、
+  没报待启用/待配置 N/A**（表尾又列着后者），读起来像两套账。规则：① 平台形态（依据不足时在
+  行尾附「依据 X；缺失项」）；② 验收范围（判定项数 + 含条件项）；③ N/A 说明（**两类 N/A 一并给出**）；
+  ④ 判定规则（失败→不合格 / 警告→有条件通过 / 无数据≥4→数据不足 / 否则合格）。
 - **采集端「跳过」文案必须按平台形态分流，并让汇总表说真话（v1.54.45 立规）**：旧实现一句话
   「无 GPU（无 3D controller/加速卡设备）」覆盖四种完全不同的情形——SXM/OAM 模组机未装/未上电/采集过早
   是「未识别到」（state=unknown），PCIe 机型槽上无卡要提示复核插装（unknown），GPU 机头是「本机不含 GPU」

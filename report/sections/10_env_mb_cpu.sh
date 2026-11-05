@@ -145,7 +145,9 @@ load_manifest "${MB_DIR}" dmidecode_bios "dmidecode_bios.log"
 load_manifest "${MB_DIR}" dmidecode_chassis "dmidecode_chassis.log"
 load_manifest "${MB_DIR}" baseboard_summary "baseboard_summary.log"
 MB_MANUFACTURER=$(extract "Manufacturer" "${dmidecode_system}")
-MB_PRODUCT=$(extract "Product Name" "${dmidecode_system}")
+MB_PRODUCT=$(extract "Product Name" "${dmidecode_system}" | sed 's/[[:space:]]*-/-/g; s/^[[:space:]]*//; s/[[:space:]]*$//')
+# v1.54.47：SMBIOS 原值可能带多余空格（实测 Supermicro 写成 "AS -4124GO-NART"），
+#   展示层规范化为 "AS-4124GO-NART"；JSON 仍写入此规范化值（原值无独立字段，属厂商笔误）
 MB_SN=$(extract "Serial Number" "${dmidecode_system}")
 # 主板独立 SN（Base Board 与整机 System SN 是不同物理组件序列号，华硕 B300 实测三者各异）
 MB_BOARD_SN=$(extract "Serial Number" "${baseboard_summary}")

@@ -540,10 +540,10 @@ fi
 NIC_SRIOV_SUMMARY=""
 if [ $((NIC_SRIOV_ON+NIC_SRIOV_OFF)) -gt 0 ]; then
     if [ "$NIC_SRIOV_ON" -gt 0 ] && [ "$NIC_SRIOV_OFF" -gt 0 ]; then
-        NIC_SRIOV_SUMMARY="部分启用（${NIC_SRIOV_ON} 张启用 / ${NIC_SRIOV_OFF} 张关闭，最大 VF=${NIC_SRIOV_VF}）"
+        NIC_SRIOV_SUMMARY="部分启用（Mellanox 卡：${NIC_SRIOV_ON} 张启用 / ${NIC_SRIOV_OFF} 张关闭，最大 VF=${NIC_SRIOV_VF}）"
     elif [ "$NIC_SRIOV_ON" -gt 0 ]; then
-        NIC_SRIOV_SUMMARY="启用（${NIC_SRIOV_ON} 张卡，最大 VF=${NIC_SRIOV_VF}）"
+        NIC_SRIOV_SUMMARY="启用（${NIC_SRIOV_ON} 张 Mellanox 卡，最大 VF=${NIC_SRIOV_VF}；非 Mellanox 网卡不适用）"
     else
-        NIC_SRIOV_SUMMARY="关闭（${NIC_SRIOV_OFF} 张卡，VF=0）"
+        NIC_SRIOV_SUMMARY="关闭（${NIC_SRIOV_OFF} 张 Mellanox 卡，VF=0；非 Mellanox 网卡不适用）"
     fi
 fi

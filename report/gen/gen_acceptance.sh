@@ -771,7 +771,22 @@ gen_acceptance() {
         # v1.54.27：三条信息改两列表格（原先 bullet 长短不齐、冒号不对齐）
         echo "| 项 | 内容 |"
         echo "|----|------|"
-        echo "| 验收口径 | ${MACHINE_CLASS_LABEL:-N/A}${MACHINE_CLASS_NOTE:+（${MACHINE_CLASS_NOTE}）}（GPU 平台: ${GPU_PLATFORM:-none}；${_na_n:-0} 项平台固有 N/A 不适用，下表 ${n} 项为实际判定项） |"
+        # v1.54.47：原「验收口径」一行塞了四层信息（形态 + 形态判定依据 + 固有N/A 计数 + 判定项数），
+        #   三层括号嵌套且"判定依据不足"放错位置。拆成四行各司其职：
+        #     ① 平台形态（含判定依据，依据不足时才追加）
+        #     ② 验收范围（判定项数 + 是否含条件项）
+        #     ③ N/A 说明（**两类 N/A 一并给出**——原先只报固有 N/A，而表尾又列着待启用 N/A，像两套账）
+        #     ④ 判定规则（客户/监理要能自己算出结论）
+        _na_inc=$(printf '%s' "$NA_INHERENT" | sed 's/|$//; s/|/、/g')
+        _na_pend=$(printf '%s' "$NA_PENDING" | sed 's/|$//; s/|/、/g')
+        echo "| 平台形态 | ${MACHINE_CLASS_LABEL:-N/A}${MACHINE_CLASS_NOTE:+（${MACHINE_CLASS_NOTE}）} |"
+        echo "| 验收范围 | 逐项判定 ${n} 项（含仅在检出时才出现的条件项） |"
+        _na_line="${_na_n:-0} 项平台固有 N/A（不计入数据不足）"
+        if [ "${_na_p:-0}" -gt 0 ] 2>/dev/null; then
+            _na_line="${_na_line}；${_na_p} 项待启用/待配置 N/A（${_na_pend}，同样不计入数据不足）"
+        fi
+        echo "| N/A 说明 | ${_na_line} |"
+        echo "| 判定规则 | 有「失败」判不合格；有「警告」无「失败」判有条件通过；无数据项 ≥4 判数据不足；否则合格 |"
         echo "| 生成时间 | $(date '+%Y-%m-%d %H:%M:%S') |"
         echo "| 采集版本 / 报告版本 | ${VERSION:-unknown} / ${REPORT_VERSION:-unknown} |"
         echo ""

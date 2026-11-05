@@ -319,7 +319,7 @@ classify_machine() {
             nvidia|"") MACHINE_CLASS="server-nvidia-gpu" ;;
             *)   MACHINE_CLASS="server-gpu-other" ;;
         esac
-        MACHINE_CLASS_EVIDENCE="${_gpu_cnt} 张加速卡${_plat_sfx:+（${_plat_sfx} 模组形态）}"
+        MACHINE_CLASS_EVIDENCE="${_gpu_cnt} 张${_plat_sfx:+ ${_plat_sfx} 模组}加速卡"
     fi
 
     if [ "$MACHINE_CLASS" = "unknown" ]; then
@@ -394,10 +394,14 @@ classify_machine() {
         _miss="${_miss}${_miss:+、}无 BMC 数据（ipmitool 未安装或未配置）"
     fi
     if [ -n "$_miss" ]; then
+        # v1.54.47：原文案「判定依据不足：chassis 类型未提供（BIOS 填 Other / 无 dmidecode 数据）、
+        #   无 BMC 数据（ipmitool 未安装或未配置）；结论以 8 张加速卡（SXM 模组形态） 为主」——
+        #   三层括号 + 生硬。现压缩为「依据：<证据>；<缺失项>」，去掉嵌套括号与"结论以…为主"。
+        _note_items="$(printf '%s' "${_miss}" | sed 's/（[^）]*）//g; s/；$//')"
         if [ -n "${MACHINE_CLASS_EVIDENCE:-}" ]; then
-            MACHINE_CLASS_NOTE="判定依据不足：${_miss}；结论以 ${MACHINE_CLASS_EVIDENCE} 为主"
+            MACHINE_CLASS_NOTE="依据 ${MACHINE_CLASS_EVIDENCE}${_note_items:+；${_note_items}}"
         else
-            MACHINE_CLASS_NOTE="判定依据不足：${_miss}"
+            MACHINE_CLASS_NOTE="${_note_items}"
         fi
     fi
     # 中文标签（gen 渲染用；随 MACHINE_CLASS 同步计算，勿放 sections——那时 MACHINE_CLASS 未就绪）

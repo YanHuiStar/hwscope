@@ -217,12 +217,17 @@ gen_md() {
       if [ "${PSU_PIN_N:-0}" -ge 2 ] 2>/dev/null; then
           PWR_TABLE_MD="${PWR_TABLE_MD}| 各 PSU 输入功率合计 | ${PSU_PIN_SUM}W（${PSU_PIN_N} 颗有读数） | 逐颗「当前功耗」相加 |"$'\n'
       fi
+      # v1.54.47：该平台 BMC 未暴露 PSU 输入功率传感器时，逐颗「当前功耗」全为 —，
+      #   读者会以为是采集失败；此处显式说明原因，并指向整机功耗读数。
+      if [ "${PSU_PIN_N:-0}" -eq 0 ] 2>/dev/null && [ -n "${PSU_DETAILS:-}" ]; then
+          PWR_TABLE_MD="${PWR_TABLE_MD}| PSU 输入功率 | 未提供 | 该平台 BMC 未暴露 PSU 输入功率传感器；整机功耗见「BMC 总功率传感器」行 |"$'\n'
+      fi
       [ -n "${PSU_REDUNDANCY:-}" ] && PWR_TABLE_MD="${PWR_TABLE_MD}| 电源冗余 | ${PSU_REDUNDANCY} | 来自 BMC 冗余传感器（平台不暴露时不显示本行） |"$'\n'
     if [ -n "$PSU_DCMI" ]; then
         _dv="$(_ptrim "${PSU_DCMI#*: }")"; [ "$_dv" = "$PSU_DCMI" ] && _dv="$(_ptrim "$PSU_DCMI")"
         case "$_dv" in
             *"｜"*)
-                PWR_TABLE_MD="${PWR_TABLE_MD}| DCMI 平台功耗（瞬时） | $(_ptrim "${_dv%%｜*}") | dcmi power reading 瞬时值 |"$'\n'
+                PWR_TABLE_MD="${PWR_TABLE_MD}| DCMI 平台功耗（瞬时） | $(_ptrim "${_dv%%｜*}") | dcmi power reading 瞬时值；与上一行「BMC 总功率传感器」为两个独立读数，可互为校验 |"$'\n'
                 PWR_TABLE_MD="${PWR_TABLE_MD}| DCMI 窗口统计 | $(_ptrim "${_dv#*｜}") | BMC 采样窗口内 Min/Max/Avg |"$'\n'
                 ;;
             *)
@@ -290,13 +295,13 @@ gen_md() {
 ## 环境
 | 项 | 值 |
 |----|----|
-| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}}$(if [ -n "${MACHINE_CLASS_NOTE:-}" ]; then printf '（%s）' "${MACHINE_CLASS_NOTE}"; fi) |
+| 设备形态 | ${MACHINE_CLASS_LABEL:-${MACHINE_CLASS:-N/A}}$(if [ -n "${MACHINE_CLASS_NOTE:-}" ]; then printf ' ｜ %s' "${MACHINE_CLASS_NOTE}"; fi) |
 | OS | ${OS_NAME:-N/A} |
 | 内核 | ${KERNEL:-N/A} |
 | 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；${GPU_MODULE_REASON}）"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}，PCI 未枚举到加速卡）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
 | CUDA | ${GPU_CUDA:-N/A} |"; fi)$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then echo "
 | Compute Mode | ${DCGM_COMPUTE_MODE} |"; fi)$(if [ -n "${DCGM_ECC_MODE:-}" ]; then echo "
-| ECC Mode | ${DCGM_ECC_MODE}${DCGM_CONFIG_NOTE} |"; fi)
+| ECC Mode | ${DCGM_ECC_MODE} |"; fi)
 | 采集耗时 | ${TIMING_TOTAL:-N/A} |
 
 ## 主板
@@ -398,7 +403,7 @@ fi)
 ## 内存
 | 项 | 值 |
 |----|----|
-| 总量 | ${MEM_TOTAL_PHYS:-${MEM_TOTAL:-N/A}}/${MEM_TOTAL:-N/A} 可见 |
+| 总量 | ${MEM_TOTAL:-N/A}（检测）/ $(printf '%s' "${MEM_TOTAL_PHYS:-${MEM_TOTAL:-N/A}}" | sed 's/^[0-9.]*/& /; s/  */ /g' | sed 's/ $//')（额定） |
 | 插槽 | ${MEM_POPULATED:-0}/${MEM_SLOTS:-N/A} |
 | 类型 | ${MEM_TYPE:-N/A} |
 | 速率 | ${MEM_SPEED:-N/A} ${MEM_SPEED_NOTE:-} |
@@ -635,7 +640,7 @@ fi)
 ## 网络
 | 项 | 值 |
 |----|----|
-| 端口总览 | $(if [ "${NIC_PORT_TOTAL:-0}" -gt 0 ]; then printf '%s 口｜Up %s / Down %s%s' "${NIC_PORT_TOTAL}" "${NIC_PORT_UP:-0}" "${NIC_PORT_DOWN:-0}" "$([ "${IB_UNPLUGGED:-0}" -gt 0 ] 2>/dev/null && printf '（未插线缆 %s）' "$IB_UNPLUGGED")"; else printf '%s' "${IB_COUNT:-0} 个 CA（无端口级数据）"; fi) |
+| 端口总览 | $(if [ "${NIC_PORT_TOTAL:-0}" -gt 0 ]; then printf '%s 口｜Up %s / Down %s' "${NIC_PORT_TOTAL}" "${NIC_PORT_UP:-0}" "${NIC_PORT_DOWN:-0}"; _unp=${IB_UNPLUGGED:-0}; _oth=$(( ${NIC_PORT_DOWN:-0} - _unp )); if [ "$_unp" -gt 0 ] 2>/dev/null && [ "$_oth" -gt 0 ] 2>/dev/null; then printf '（未插线缆 %s，其余 %s 口未连通：以太口未接或 IB 未起）' "$_unp" "$_oth"; elif [ "$_unp" -gt 0 ] 2>/dev/null; then printf '（未插线缆 %s）' "$_unp"; elif [ "$_oth" -gt 0 ] 2>/dev/null; then printf '（%s 口未连通：以太口未接或 IB 未起）' "$_oth"; fi; else printf '%s' "${IB_COUNT:-0} 个 CA（无端口级数据）"; fi) |
 | 协议分布 | $(if [ -n "${NIC_LINKTYPE_SUMMARY:-}" ]; then printf '%s（按网卡固件 mlxconfig 统计，与上面接口数不同源）' "${NIC_LINKTYPE_SUMMARY}"; else printf '未识别（无 mlxconfig 数据）'; fi) |
 | 速率 | 额定 ${IB_NOMINAL:-N/A}${IB_ACTIVE_SPEED:+ · 协商 ${IB_ACTIVE_SPEED}} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)
 $(if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ]; then echo "| 计算网卡（GPU 直连） | ${ACC_NIC_IB_COUNT} 张 / ${ACC_NIC_IB_PORT} 口（与硬件概览同源口径） |"; fi)
@@ -731,7 +736,7 @@ $(rf_line=""
 if [ -n "$rf_line" ]; then echo "| Redfish 固件明细 | $(echo "$rf_line" | sed 's/, $//') |"; fi)
 | IP | $(if [ "${BMC_IP:-}" = "0.0.0.0" ]; then echo "0.0.0.0（未配置）"; else printf '%s' "${BMC_IP:-N/A}$([ -n "${BMC_IP_SRC:-}" ] && printf '（%s）' "${BMC_IP_SRC}")"; fi) |
 | MAC | ${BMC_MAC:-N/A} |
-| SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0}（未解除 Critical ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+，已自愈 $SEL_CRIT_RECOVERED}）"; else echo "⚠️ 数据不可用"; fi) |
+| SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} 条（未解除告警 ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+；已解除历史记录 $SEL_CRIT_RECOVERED}）"; else echo "⚠️ 数据不可用"; fi) |
 $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
     echo "> ⚠️ SEL 数据不可用（ipmitool 采集失败或无权限），事件列表不完整"
 elif [ -n "$SEL_DETAILS" ]; then
@@ -988,7 +993,7 @@ $(
                     if grep -qE 'Counter' "$_pqf" 2>/dev/null; then
                         echo "| IB 链路误码 | ✓ 性能计数器全部为 0 |"
                     else
-                        echo "| IB 链路误码 | N/A（未取到端口计数器——所有 IB 口 LID=65535，SM 未分配，链路未起） |"
+                        echo "| IB 链路误码 | N/A（IB 口未加入子网（LID=65535），链路未起，性能计数器不可读） |"
                     fi
                 fi
                 ;;
