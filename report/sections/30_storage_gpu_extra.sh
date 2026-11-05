@@ -11,11 +11,39 @@ load_manifest "${STO_DIR}" disk_inventory "disk_inventory.csv"
 STORAGE_COUNT=0; STORAGE_TOTAL="N/A"; STORAGE_MODELS=""
 # 系统盘识别：根文件系统 / 挂载所在的物理盘（lsblk 树形回溯父盘）
 SYS_DISK=""
+# v1.54.51：系统盘介质（TRAN）——实测有机器整机跑在 USB 盘上（PHILIPS FM60PS051S/93），
+#   原先只写盘名，客户看不出系统跑在外置介质；此处一并取出容量/型号/传输类型。
+SYS_DISK_TRAN=""; SYS_DISK_DISP=""; SYS_DISK_EXT=0
 if [ -f "${block_devices_all}" ]; then
     SYS_DISK=$(grep -v "^#" "${block_devices_all}" | awk '
         $1 ~ /^[a-zA-Z0-9_]+$/ {cur=$1}
         $0 ~ / \/ / && $0 !~ /\/boot/ {print cur; exit}
     ')
+fi
+if [ -f "${block_devices_all}" ] && [ -n "$SYS_DISK" ]; then
+    _sysrow=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1==sys {print; exit}')
+    if [ -n "$_sysrow" ]; then
+        SYS_DISK_TRAN=$(printf '%s' "$_sysrow" | awk '{for(i=1;i<=NF;i++) if($i ~ /^(usb|sata|sas|nvme|mmc|iscsi|fc|spi|virtio|scsi)$/){print $i; exit}}')
+        _sz=$(printf '%s' "$_sysrow" | awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B"){print $i; exit}}')
+        # 型号 = NAME 与 SERIAL 之间的字段。lsblk 列序 NAME MODEL SERIAL SIZE TRAN ROTA MOUNTPOINT FSTYPE TYPE
+        #   → SERIAL 固定为**从右数第 6 列**（MODEL 含空格，从左数不可靠；实测 PHILIPS FM60PS051S/93 512GB）
+        _ser=$(printf '%s' "$_sysrow" | awk '{print $(NF-5)}')
+        _mdl=$(printf '%s' "$_sysrow" | sed "s/^[^ ]*[ ]*//; s/[[:space:]]*${_ser}[[:space:]].*$//" | sed 's/[[:space:]]*$//')
+        _tran_disp=""
+        case "$SYS_DISK_TRAN" in
+            usb)   _tran_disp="USB 接口"; SYS_DISK_EXT=1 ;;
+            mmc)   _tran_disp="SD/eMMC"; SYS_DISK_EXT=1 ;;
+            iscsi) _tran_disp="iSCSI 网络盘"; SYS_DISK_EXT=1 ;;
+            sata)  _tran_disp="SATA 接口" ;;
+            sas)   _tran_disp="SAS 接口" ;;
+            nvme)  _tran_disp="NVMe" ;;
+            *)     [ -n "$SYS_DISK_TRAN" ] && _tran_disp="${SYS_DISK_TRAN} 接口" ;;
+        esac
+        SYS_DISK_DISP="$SYS_DISK"
+        [ -n "$_mdl" ] && SYS_DISK_DISP="$SYS_DISK_DISP — $_mdl"
+        [ -n "$_sz" ]  && SYS_DISK_DISP="$SYS_DISK_DISP $_sz"
+        [ -n "$_tran_disp" ] && SYS_DISK_DISP="$SYS_DISK_DISP，$_tran_disp"
+    fi
 fi
 if [ -f "${block_devices_all}" ]; then
     # 物理盘行遍历找 size 字段（model 可能含空格导致列偏移，不能用固定列）；默认排除系统盘

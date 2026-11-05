@@ -211,7 +211,9 @@ pass == 1 {
     print "<tr>"
     for (i = 1; i <= n; i++) {
         c = trim_cell(cells[i])
-        cls = cell_class(c)
+        # v1.54.51：**首列是标签，不做状态着色**——否则「N/A 说明」「判定规则」这类行名
+        #   会被当成状态值染色（实测「N/A 说明」标签被染灰）
+        cls = (i == 1) ? "" : cell_class(c)
         if (cls != "") print "<td class='" cls "'>" cell_br(inline_md(esc_html(c))) "</td>"
         else print "<td>" cell_br(inline_md(esc_html(c))) "</td>"
     }
@@ -330,11 +332,16 @@ function attr_esc(s) {
     return s
 }
 
-function cell_class(s) {
-    if (s ~ /FAIL|不合格|❌/) return "fail"
-    if (s ~ /WARN|⚠️/) return "warn"
-    if (s ~ /PASS|✅|合格/) return "pass"
-    if (s ~ /N\/A$|^—$|^无$|数据不足/) return "na"   # N/A 锚定结尾：匹配 "N/A" 与 "— N/A"，不误伤 "N/A（...）" 说明
+function cell_class(s,   t) {
+    # v1.54.51：状态词必须**出现在单元格开头**才算状态，不能全文搜索——
+    #   验收清单的「判定规则」行正文就是「有『失败』判不合格；有『警告』…；否则合格」，
+    #   全文搜索会命中「不合格」，把一条**规则说明**渲染成红色 FAIL，客户会以为该项不通过。
+    t = s
+    sub(/^[ \t]+/, "", t)
+    if (t ~ /^(FAIL|❌|不合格)/) return "fail"
+    if (t ~ /^(WARN|⚠|警告)/) return "warn"
+    if (t ~ /^(PASS|✅|合格|通过)/) return "pass"
+    if (t ~ /^(N\/A|[—-]+$|无$)/ || t ~ /^数据不足/) return "na"
     return ""
 }
 

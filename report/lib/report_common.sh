@@ -140,3 +140,36 @@ TIMESTAMP=$(grep -m1 "^Timestamp" "$SUMMARY" 2>/dev/null | cut -d':' -f2- | sed 
 
 # ─── 采集耗时（summary 耗时统计段） ───
 TIMING_TOTAL=$(grep -m1 "^总时长" "$SUMMARY" 2>/dev/null | awk '{print $3}')
+
+# ─── XID 处置建议（v1.54.52）──────────────────────────────────────────────
+#   XID 是 NVIDIA 官方故障码，不同码的处置**完全不同**：149 属 NVLink/Fabric 侧事件，
+#   更新固件即可；79/48 才是卡或显存硬件问题。原先一律输出"需确认对应卡是否异常"，
+#   客户看不出该报修还是该升级固件（实测 8×A100 机器 XID 149 被读成"显卡有故障"）。
+xid_advice() {
+    local codes="${1:-}"
+    local c
+    for c in $(printf '%s' "$codes" | tr ',;/ ' '\n\n\n\n'); do
+        case "$c" in
+            149|*149*)
+                printf '%s' "XID 149 = NETIR_MFDE_EVENT（NVLink/NVSwitch Fabric 管理事件，Nonfatal，非 GPU 卡故障）——建议将 GPU 与 NVSwitch 固件、驱动升级到厂商推荐版本后复采确认；该事件常见于旧固件，升级后一般不再出现"
+                return 0 ;;
+            79)
+                printf '%s' "XID 79 = GPU 已从总线脱落——先复核该卡供电/PCIe 连接/散热，复采仍现则按硬件故障报修"
+                return 0 ;;
+            48)
+                printf '%s' "XID 48 = 双比特 ECC（不可纠正）——显存硬件故障，建议报修，勿继续承载业务"
+                return 0 ;;
+            63)
+                printf '%s' "XID 63 = 行重映射事件——显存已发生重映射，观察计数是否继续增长，持续增长则报修"
+                return 0 ;;
+            94|95)
+                printf '%s' "XID 94/95 = 已纠正的 ECC 错误（单比特）——不中断业务，观察发生频率"
+                return 0 ;;
+            13|31)
+                printf '%s' "XID 13/31 = 显存非法访问/非法地址——先排查应用越界与驱动版本，复现则更换卡验证"
+                return 0 ;;
+            ''|*[!0-9]*) continue ;;
+        esac
+    done
+    printf '%s' "需确认对应卡是否异常（对照 NVIDIA XID 官方说明逐条核对），复采仍现则现场复核"
+}

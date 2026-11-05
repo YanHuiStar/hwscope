@@ -261,6 +261,9 @@ ${gpu_details_json}
     "total_capacity": "$(jesc "${STORAGE_TOTAL:-N/A}")",
     "disk_models": "$(jesc "${STORAGE_MODELS:-N/A}")",
     "system_disk_excluded": "$(jesc "${SYS_DISK:-N/A}")",
+    "system_disk_detail": "$(jesc "${SYS_DISK_DISP:-${SYS_DISK:-N/A}}")",
+    "system_disk_transport": "$(jesc "${SYS_DISK_TRAN:-N/A}")",
+    "system_disk_external": ${SYS_DISK_EXT:-0},
     "disks": [
 ${disk_details_json}
     ],

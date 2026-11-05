@@ -280,7 +280,14 @@ gen_md() {
     #      数据源：10 段从 lspci_all/lsusb 解析所得（零新采集）
     BOARD_IFACE_MD=""
     if [ -n "$BOARD_IFACE" ]; then
-        BOARD_IFACE_MD=$(printf '%s' "$BOARD_IFACE" | awk -F'|' 'NF >= 4 { printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }')
+        # v1.54.51：板载网口行与「网络适配器明细」会重复同一 BDF（实测 Intel X550 2d:00.0/2d:00.1
+        #   两段都列且名称不一致）——此处按 BDF 去重：已在网卡明细出现的 BDF 不再进板载表。
+        BOARD_IFACE_MD=$({ printf '%s\n' "${NIC_DETAILS:-}"; printf '%s' "$BOARD_IFACE"; } | awk -F'|' '
+            # NIC_DETAILS 字段序：1 接口 / 2 BDF / 3 MAC / 4 SN / 5 型号 …（见 60_nic_fan_temp.sh:492）
+            NF >= 8  { b = $2; gsub(/^[ \t]+|[ \t]+$/, "", b); if (b != "") nicbdf[b] = 1; next }
+            NF >= 4  { b = $3; gsub(/^[ \t]+|[ \t]+$/, "", b)
+                       if (b != "" && b != "—" && (b in nicbdf)) next
+                       printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4 }')
     fi
     BOARD_USB_MD=""
     if [ -n "$BOARD_USB_DEV" ]; then
@@ -299,9 +306,7 @@ gen_md() {
 | OS | ${OS_NAME:-N/A} |
 | 内核 | ${KERNEL:-N/A} |
 | 驱动 | $(if [ -n "${GPU_DRIVER:-}" ]; then echo "${GPU_DRIVER}"; elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；${GPU_MODULE_REASON}）"; elif [ "${HEAD_NODE:-0}" -eq 1 ] 2>/dev/null; then echo "N/A（未识别到 GPU 模组，驱动信息不可用；采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}，PCI 未枚举到加速卡）"; elif [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then echo "N/A（未检测到 GPU，驱动信息不适用）"; else echo "N/A（未取到驱动版本，见 GPU 段）"; fi) |$(if [ -n "${GPU_CUDA:-}" ] || [ "${GPU_PLATFORM:-}" = "nvidia" ] 2>/dev/null; then echo "
-| CUDA | ${GPU_CUDA:-N/A} |"; fi)$(if [ -n "${DCGM_COMPUTE_MODE:-}" ]; then echo "
-| Compute Mode | ${DCGM_COMPUTE_MODE} |"; fi)$(if [ -n "${DCGM_ECC_MODE:-}" ]; then echo "
-| ECC Mode | ${DCGM_ECC_MODE} |"; fi)
+| CUDA | ${GPU_CUDA:-N/A} |"; fi)
 | 采集耗时 | ${TIMING_TOTAL:-N/A} |
 
 ## 主板
@@ -455,6 +460,8 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
     echo "| 额定功耗 | ${GPU_POWER:-N/A} |"
     [ -n "${GPU_PL_MISMATCH:-}" ] && echo "| ⚠️ 功耗上限 | **被改过**：${GPU_PL_MISMATCH}<br>满载时这些卡只有相应比例的功耗预算（掉频、各卡算力不均）；若非刻意设置，执行 sudo nvidia-smi -pl ${GPU_PL_DEFAULT:-默认值} 恢复后复测 |"
     echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
+    # v1.54.51：Compute Mode 原在「环境」段——它描述 GPU 运行模式，与 ECC/功耗同段才读得通
+    [ -n "${DCGM_COMPUTE_MODE:-}" ] && echo "| Compute Mode | ${DCGM_COMPUTE_MODE} |"
     # v1.48.36: 厂商感知字段——NVIDIA 显示 ECC/退役行（nvidia-smi 字段），AMD 显示 RAS（ECC 对应物），其余平台隐藏（NVIDIA 专属概念）
     case "${GPU_PLATFORM:-}" in
         amd)
@@ -462,6 +469,7 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
             ;;
         nvidia)
             echo "| ECC | ${GPU_ECC:-N/A} |"
+    [ -n "${DCGM_ECC_MODE:-}" ] && echo "| ECC Mode | ${DCGM_ECC_MODE} |"
             echo "| 退役行 | ${GPU_REMAP:-N/A} |"
     echo "| 温度 | ${GPU_TEMP:-N/A} |"
             ;;
@@ -476,7 +484,7 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
             echo "| xGMI | ${GPU_XGMI_SUMMARY} |"
         fi
         if [ -n "${GPU_XID:-}" ]; then
-            echo "| XID 错误 | ⚠️ 检出 XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行；来源: ${GPU_XID_SRC}）——详见下方明细 |"
+            echo "| XID 错误 | ⚠️ 检出 XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行；来源: ${GPU_XID_SRC}）——$(xid_advice "${GPU_XID_CODES:-}")；逐条明细见 GPU 段 |"
         fi
     fi
 fi)
@@ -539,7 +547,7 @@ fi)
 | 盘数 | ${STORAGE_COUNT:-0} |
 | 总容量 | ${STORAGE_TOTAL:-N/A} |
 | 盘型号 | ${STORAGE_MODELS:-N/A} |
-| 系统盘(已排除) | ${SYS_DISK:-N/A} |
+| 系统盘(已排除) | ${SYS_DISK_DISP:-${SYS_DISK:-N/A}} |
 
 $(if [ -n "$(printf '%s' "$disk_details_md" | tr -d ' \n')" ]; then
     # v1.49.17：无数据盘（HGX 模组等）时整块不输出——原实现标题/表头/分隔行无条件渲染，
@@ -642,7 +650,7 @@ fi)
 |----|----|
 | 端口总览 | $(if [ "${NIC_PORT_TOTAL:-0}" -gt 0 ]; then printf '%s 口｜Up %s / Down %s' "${NIC_PORT_TOTAL}" "${NIC_PORT_UP:-0}" "${NIC_PORT_DOWN:-0}"; _unp=${IB_UNPLUGGED:-0}; _oth=$(( ${NIC_PORT_DOWN:-0} - _unp )); if [ "$_unp" -gt 0 ] 2>/dev/null && [ "$_oth" -gt 0 ] 2>/dev/null; then printf '（未插线缆 %s，其余 %s 口未连通：以太口未接或 IB 未起）' "$_unp" "$_oth"; elif [ "$_unp" -gt 0 ] 2>/dev/null; then printf '（未插线缆 %s）' "$_unp"; elif [ "$_oth" -gt 0 ] 2>/dev/null; then printf '（%s 口未连通：以太口未接或 IB 未起）' "$_oth"; fi; else printf '%s' "${IB_COUNT:-0} 个 CA（无端口级数据）"; fi) |
 | 协议分布 | $(if [ -n "${NIC_LINKTYPE_SUMMARY:-}" ]; then printf '%s（按网卡固件 mlxconfig 统计，与上面接口数不同源）' "${NIC_LINKTYPE_SUMMARY}"; else printf '未识别（无 mlxconfig 数据）'; fi) |
-| 速率 | 额定 ${IB_NOMINAL:-N/A}${IB_ACTIVE_SPEED:+ · 协商 ${IB_ACTIVE_SPEED}} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)
+| 速率 | ${IB_NOMINAL_BREAKDOWN:-额定 ${IB_NOMINAL:-N/A}}${IB_ACTIVE_SPEED:+ · 协商 ${IB_ACTIVE_SPEED}} |$(if [ -n "${IB_FW_INCONSISTENT}" ]; then printf '\n| IB 固件一致性 | ⚠️ 同型号卡固件版本不一致（仅供核对，非故障判定）：%s |' "${IB_FW_INCONSISTENT}"; fi)
 $(if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ]; then echo "| 计算网卡（GPU 直连） | ${ACC_NIC_IB_COUNT} 张 / ${ACC_NIC_IB_PORT} 口（与硬件概览同源口径） |"; fi)
 $(if [ -n "${NIC_SRIOV_SUMMARY:-}" ]; then echo "| SR-IOV | ${NIC_SRIOV_SUMMARY} |"; fi)
 $(net_extra_md)
@@ -963,7 +971,7 @@ $(
     # ─── v1.48.90：新增健康项（XID / MCE / IB 误码 / NVMe 错误 / RAID 缓存电池）───
     # 集中放在健康检查段：这五类都是「曾经出过事」的直接证据，客户/供应商谈判时最先看这里。
     if [ -n "${GPU_XID:-}" ]; then
-        echo "| ⚠️ GPU XID 错误 | XID ${GPU_XID_CODES:-?}（${GPU_XID_DEVS:-?} 张卡 / ${GPU_XID_TOTAL:-?} 条记录；来源: ${GPU_XID_SRC}）——详见 GPU 段明细 |"
+        echo "| ⚠️ GPU XID 错误 | XID ${GPU_XID_CODES:-?}（${GPU_XID_DEVS:-?} 张卡 / ${GPU_XID_TOTAL:-?} 条记录；来源: ${GPU_XID_SRC}）——$(xid_advice "${GPU_XID_CODES:-}")；逐条明细见 GPU 段 |"
     fi
     if [ -n "${MCE_HITS:-}" ]; then
         echo "| ⚠️ CPU MCE | 检出 ${MCE_COUNT} 条机器检查异常（来源: ${MCE_SRC}） |"
@@ -1025,7 +1033,7 @@ $(
 )
 $(if [ -n "${PSU_REDUNDANCY:-}" ]; then echo "| 电源冗余 | ${PSU_REDUNDANCY} |"; fi)
 $(if [ -n "${FAN_REDUNDANCY:-}" ]; then echo "| 风扇冗余 | ${FAN_REDUNDANCY} |"; fi)
-| SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条${SEL_PCIE_ERR_NOTE:-} |
+| SEL PCIe 错误 | ${SEL_PCIE_ERR:-0} 条${SEL_PCIE_ERR_NOTE:-} |$(if [ "${SYS_DISK_EXT:-0}" -eq 1 ] 2>/dev/null; then printf '\n| 启动介质 | 系统运行在外置介质（%s）——流动测试盘/临时装机常见做法，非故障；长期交付建议迁至内置盘（性能与可靠性更稳） |' "${SYS_DISK_DISP:-$SYS_DISK}"; fi)
 
 $(if [ -n "$TEST_DETAILS" ]; then
     echo ""

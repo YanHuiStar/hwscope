@@ -584,7 +584,7 @@ gen_acceptance() {
     #      是跟供应商谈判时最硬的证据，报告必须留痕。
     # 仅在检出时添加：无检出不加项，保证验收项数与既有基线一致。
     if [ -n "${GPU_XID:-}" ]; then
-        add_item "GPU XID 错误历史" "WARN" "XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行，来源 ${GPU_XID_SRC}）——需确认对应卡是否已更换/复位"
+        add_item "GPU XID 错误历史" "WARN" "XID ${GPU_XID_CODES:-?}：${GPU_XID_DEVS:-?} 张卡共 ${GPU_XID_TOTAL:-?} 条记录（去重 ${GPU_XID_COUNT} 行，来源 ${GPU_XID_SRC}）——$(xid_advice "${GPU_XID_CODES:-}")"
     fi
     if [ -n "${MCE_HITS:-}" ]; then
         add_item "CPU MCE" "WARN" "检出 ${MCE_COUNT} 条机器检查异常（来源 ${MCE_SRC}）——需复核 CPU/内存子系统"
@@ -788,7 +788,9 @@ gen_acceptance() {
         echo "| N/A 说明 | ${_na_line} |"
         echo "| 判定规则 | 有「失败」判不合格；有「警告」无「失败」判有条件通过；无数据项 ≥4 判数据不足；否则合格 |"
         echo "| 生成时间 | $(date '+%Y-%m-%d %H:%M:%S') |"
-        echo "| 采集版本 / 报告版本 | ${VERSION:-unknown} / ${REPORT_VERSION:-unknown} |"
+        # v1.54.52：拆成两行——两列版本号并排时列宽参差，且"采集版本/报告版本"作为行名过长
+        echo "| 采集版本 | ${VERSION:-unknown} |"
+        echo "| 报告版本 | ${REPORT_VERSION:-unknown} |"
         echo ""
         echo "## 验收项目"
         echo ""

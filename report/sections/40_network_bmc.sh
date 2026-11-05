@@ -110,7 +110,7 @@ fi
 # 额定速率（卡能力，无需接线）：解析 mlxlink Enabled Link Speed 位图，取最大速率族
 # Mellanox 位图: bit0=SDR(10G) bit1=DDR(20G) bit2=QDR(40G) bit3=FDR10(40G) bit4=FDR(56G)
 #                bit5=EDR(100G) bit6=HDR(200G) bit7=NDR(400G) bit8=XDR(800G) bit9=GDR(1600G)
-IB_NOMINAL="N/A"
+IB_NOMINAL="N/A"; IB_NOMINAL_BREAKDOWN=""
 _NOMINAL_SPEEDS=()
 # 只统计 IB HCA 口（ibdev2netdev 映射 hca → ibp* 接口；CX5 以太的 mlxlink Enabled Link Speed 宣传 NDR 位，
 # 混入会误判 400G NDR——v1.43.10 实测：mlx5_2/3=CX5 以太 0xf8f1f0d3 vs IB CX6 0x75）
@@ -149,6 +149,17 @@ if [ "${#_NOMINAL_SPEEDS[@]}" -gt 0 ]; then
         _cur=$(echo "$IB_NOMINAL" | grep -oE "^[0-9]+" || echo 0)
         [ "${_g:-0}" -gt "${_cur:-0}" ] 2>/dev/null && IB_NOMINAL="$_s"
     done
+    # v1.54.51：只报「最大额定」会误导混合卡型机型（实测 ConnectX-6 200G ×4 + ConnectX-5 100G ×2
+    #   + Intel X550 10G，写「额定 200G (HDR)」让客户以为全部端口都是 200G）
+    #   → 各口速率一致时报该值 + 口数；不一致时给按口分布。
+    _dist=$(printf '%s\n' "${_NOMINAL_SPEEDS[@]}" | sort -u | wc -l)
+    if [ "${_dist:-0}" -eq 1 ] 2>/dev/null; then
+        IB_NOMINAL_BREAKDOWN="额定 ${IB_NOMINAL}（${#_NOMINAL_SPEEDS[@]} 个 IB 口一致；以太/管理口另计）"
+    else
+        _brk=$(printf '%s\n' "${_NOMINAL_SPEEDS[@]}" | sort | uniq -c \
+            | awk '{c=$1; $1=""; sub(/^ +/,""); out = out (NR>1 ? " · " : "") $0 " ×" c} END{printf "%s", out}')
+        IB_NOMINAL_BREAKDOWN="按口分布：${_brk}（仅 IB 口；以太/管理口另计）"
+    fi
 fi
 ETH_LINK_UP=$(grep -h "Link detected: yes" "${NET_DIR}"/ethtool_*.log 2>/dev/null | wc -l)
 

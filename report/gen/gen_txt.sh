@@ -305,7 +305,7 @@ fi)
   盘数   : ${STORAGE_COUNT:-0}
   总容量 : ${STORAGE_TOTAL:-N/A}
   盘型号 : ${STORAGE_MODELS:-N/A}
-  系统盘 : ${SYS_DISK:-N/A} (已从统计排除)$(if [ -n "$(printf '%s' "$disk_details_txt" | tr -d ' \n')" ]; then printf '\n%s' "$disk_details_txt"; fi)$(if [ -n "$RAID_VD_DETAILS" ]; then
+  系统盘 : ${SYS_DISK_DISP:-${SYS_DISK:-N/A}} (已从统计排除)$(if [ -n "$(printf '%s' "$disk_details_txt" | tr -d ' \n')" ]; then printf '\n%s' "$disk_details_txt"; fi)$(if [ -n "$RAID_VD_DETAILS" ]; then
     printf '\n  RAID虚拟盘（逻辑盘）:\n'
     echo "$RAID_VD_DETAILS" | while IFS='|' read -r rvdname rvdmodel rvdsize rvdsn; do
         [ -z "$rvdname" ] && continue
