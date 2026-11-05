@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.54.47 (2026-10)
+# Version : 1.54.48 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.54.47"
+HWSCOPE_VERSION="v1.54.48"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -441,7 +441,16 @@ case "${_up_sec:-}" in
     ''|*[!0-9]*) : ;;
     # P3-4：阈值 180 秒，与报告端 report/sections/10_env_mb_cpu.sh 的 COLLECT_EARLY 判据保持一致
     #   （同一事实两处口径不同会让"报告说刚开机、采集器没提醒"对不上）
-    *) [ "$_up_sec" -lt 180 ] && echo -e "${YELLOW}[WARN] 系统已开机 ${_up_sec} 秒（<180 秒），GPU/网卡可能尚未枚举完成；建议开机 ≥180 秒后复采（本次继续）${NC}";;
+    *)
+        # v1.54.48：**只在"开机过短且确实没识别到 GPU"时才提示**。
+        #   原实现仅凭 uptime<180s 就无条件 WARN —— 实测一台 8×B200 在开机 95 秒采集，
+        #   平台判 x86_64_SXM、GPU 8 张全部枚举成功，仍照报"可能尚未枚举完成"，
+        #   与结果自相矛盾，属纯噪音（用户反馈"感觉跟噪音一样"）。
+        #   判据与报告端一致：报告的「采集时机」条也只有 COLLECT_EARLY=1 且 GPU_COUNT=0 才出现。
+        if [ "$_up_sec" -lt 180 ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+            echo -e "${YELLOW}[WARN] 系统已开机 ${_up_sec} 秒（<180 秒）且未识别到 GPU——GPU/网卡可能尚未枚举完成；建议开机 ≥180 秒后复采（本次继续）${NC}"
+        fi
+        ;;
 esac
 echo "输出: ${OUTPUT_BASE}"
 echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
