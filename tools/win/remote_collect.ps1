@@ -78,7 +78,7 @@ function Initialize-SshAskPass {
     if ($env:HWSCOPE_SSH_PASSWORD) { $pw = $env:HWSCOPE_SSH_PASSWORD }
     else {
         for ($i = 1; $i -le 3; $i++) {
-            $sec = Read-Host -AsSecureString "SSH 密码（$H，只输这一次）"
+            $sec = Read-Host -AsSecureString "SSH 密码（$H，本次运行仅输入一次）"
             $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
             try { $pw = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
             finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
@@ -165,6 +165,11 @@ function Invoke-SSHRetry {
     #   不再整类丢弃 stderr。v1.48.51 的 `-isnot [ErrorRecord]` 会把 stderr 全吞，
     #   而单次认证模式让 `bash hwscope.sh >&2` 走 stderr（避开 stdout 上的 tar 流），
     #   结果采集进度全部消失、只剩头尾几行（用户报"输出被吞"）。
+    # v1.54.45：主机密钥变更时 OpenSSH 会打印整段英文告警（@@@ / IT IS POSSIBLE / Someone could be
+    #   eavesdropping / Host key for ... has changed）。本工具已自动备份并更新 known_hosts、并会
+    #   自行打印新旧指纹，因此这段原始告警只造成误导（现场看起来像安全事故），统一过滤掉。
+    #   注意：过滤的是"告警文本"，指纹与结论仍由本工具自己的中文行给出。
+    $KeyNoisePat = '@{5,}|IT IS POSSIBLE THAT SOMEONE|Someone could be eavesdropping|It is also possible that a host key|The fingerprint for the|Please contact your system administrator|Add correct host key in|has changed and you have requested strict checking|^\s*SHA256:'
     $NoisePat = 'Permanently added|REMOTE HOST IDENTIFICATION|Host key verification failed|Offending (RSA|ED25519|ECDSA) key|NativeCommandError|^\s*\+\s*(CategoryInfo|FullyQualifiedErrorId)|^\s*\+ '
     $keyHandled = $false
     for ($i = 1; $i -le $MaxTries; $i++) {
@@ -175,13 +180,15 @@ function Invoke-SSHRetry {
         & { $ErrorActionPreference = "Continue"; & $Action 2>&1 } | ForEach-Object {
             $line = "$_"
             $out += $line
-            if ($_ -isnot [System.Management.Automation.ErrorRecord]) { $_ }        # stdout：原样显示
+            if ($_ -isnot [System.Management.Automation.ErrorRecord]) {             # stdout：原样显示
+                if ($line -notmatch $KeyNoisePat) { $_ }                          # 仅过滤主机密钥告警块
+            }
             else {
                 # v1.48.83：stderr 必须输出 Exception.Message（真实文本），不能输出 "$_"
                 #   ——ErrorRecord 字符串化对空消息返回类型名（System.Management.Automation.RemoteException），
                 #   会把远端 stderr 的空行刷成这串字（用户报"空行排版没了"）；Message 为空时输出单空格占位，
                 #   既不破坏管道流式又能保住原空行（空串会被 PowerShell 管道丢弃）
-                if ($line -notmatch $NoisePat) {
+                if (($line -notmatch $NoisePat) -and ($line -notmatch $KeyNoisePat)) {
                     $msg = $_.Exception.Message
                     # v1.49.16 排版修复：ssh 的密码提示写 /dev/tty（不经管道、无换行），而
                     #   `Permission denied` 走 stderr 被本函数捕获后重放 —— 直接输出会接在提示
@@ -206,26 +213,30 @@ function Invoke-SSHRetry {
             $keyHandled = $true
             $hkHost = ($HostName -replace '^[^@]+@', '')
             $kh = Join-Path $env:USERPROFILE ".ssh\known_hosts"
-            Write-Host "[WARN] $hkHost 的主机密钥已变化（重装系统/换盘）——自动处理中..." -ForegroundColor Yellow
+            Write-Host "[WARN] $hkHost 的主机密钥已变化（常见于重装系统或更换磁盘），开始自动更新 known_hosts" -ForegroundColor Yellow
             if (Test-Path $kh) {
                 $bak = "$kh.bak-$(Get-Date -Format 'yyyyMMddHHmmss')"
                 Copy-Item $kh $bak -Force
-                Write-Host "[INFO]   已备份 known_hosts → $(Split-Path $bak -Leaf)" -ForegroundColor Gray
+                Write-Host "[INFO] 已备份 known_hosts 为 $(Split-Path $bak -Leaf)" -ForegroundColor Gray
             }
             # 记录变更前指纹（供事后核对是否被真实替换）
             $oldFp = & ssh-keygen -F $hkHost 2>$null | Where-Object { $_ -and $_ -notmatch '^#' }
             if ($oldFp) {
                 $oldSum = ($oldFp | ssh-keygen -lf - 2>$null) -join ' / '
-                Write-Host "[INFO]   旧指纹: $oldSum" -ForegroundColor DarkGray
+                $oldSum = $oldSum -replace '^\d+\s+', ''
+                Write-Host "[INFO] 旧指纹：$oldSum" -ForegroundColor DarkGray
             }
             & ssh-keygen -R $hkHost 2>&1 | Out-Null
-            Write-Host "[INFO]   已清除旧记录，重新连接以接受新密钥（指纹如下，请核对是否为预期机器）" -ForegroundColor Gray
+            # v1.54.45：先取新指纹再宣告（原先常因 ssh-keyscan 无响应而只宣告不给指纹）
             $newFp = & ssh-keyscan -T 5 $hkHost 2>$null
             if ($newFp) {
                 $newSum = ($newFp | ssh-keygen -lf - 2>$null) -join ' / '
-                Write-Host "[INFO]   新指纹: $newSum" -ForegroundColor DarkGray
+                $newSum = $newSum -replace '^\d+\s+', ''
+                Write-Host "[INFO] 已移除旧记录，新指纹：$newSum（请核对是否为预期设备）" -ForegroundColor Gray
+            } else {
+                Write-Host "[INFO] 已移除旧记录；新指纹获取失败（ssh-keyscan 无响应），连接时将按首次连接方式接受" -ForegroundColor Gray
             }
-            Write-Host "[INFO]   重试 $Desc ..." -ForegroundColor Yellow
+            Write-Host "[INFO] 重试远程采集" -ForegroundColor Yellow
             $i--          # 本次不计入重试次数
             continue
         }
@@ -261,14 +272,14 @@ Write-Host "========================================" -ForegroundColor Cyan
 # v1.54.16：先问一次 SSH 密码，后续 ssh/scp 全靠 askpass 免交互（三步模式不再输 3 次）
 $UseAskPass = Initialize-SshAskPass
 if ($UseAskPass) {
-    Write-Host "[INFO] SSH 密码已缓存（本次运行内所有 ssh/scp 复用，不再打断）" -ForegroundColor Gray
+    Write-Host "[INFO] SSH 密码已缓存：本次运行内 ssh/scp 复用该密码，后续不再提示" -ForegroundColor Gray
 } else {
     Write-Host "[WARN] 未启用密码缓存（OpenSSH 不支持 SSH_ASKPASS 或密码为空）——按老行为逐条提示" -ForegroundColor Yellow
 }
 
 try {
     # ─── 1. 本地打包项目（PowerShell 直调 bsdtar；避免 cmd /c 管道引号地狱——cmd 会剥 ssh 命令引号并把 && 当本地分隔符） ───
-    Write-Host "[INFO] 打包项目..." -ForegroundColor Yellow
+    Write-Host "[INFO] 打包项目（tar.gz）" -ForegroundColor Yellow
     $pushFile = Join-Path $env:TEMP "hwscope_push_$TS.tgz"
     $hwArgs = ""
     if ($Modules) { $hwArgs = " --modules $Modules" }
@@ -301,7 +312,7 @@ try {
         #       交互输 sudo 密码，与 stdin 冲突 → 走下方原三步流程）。
         # 注意：远端脚本只用 ; 连接、不用 &&（cmd 会剥 ssh 命令引号并把 && 当本地分隔符）；
         #       双引号串内的 $? / $rc 必须用反引号转义，否则会被 PowerShell 本地展开。
-        Write-Host "[INFO] 单次认证模式：一次 ssh 完成 推送 → 采集 → 回拉（只需输 1 次密码）..." -ForegroundColor Yellow
+        Write-Host "[INFO] 单次认证模式：通过一次 ssh 连接完成推送、采集与回拉（仅需输入一次密码）" -ForegroundColor Yellow
         $preCmd = ""
         if ($InstallItems) {
             $preCmd = "bash tools/install_tool.sh -c $InstallItems -y; rc=`$?; if [ `$rc -ne 0 ]; then rm -rf $RemoteDir; exit `$rc; fi; "

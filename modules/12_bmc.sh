@@ -110,7 +110,7 @@ run_bmc() {
             echo -e "       ④ 对照测试：换一台主机用同账号同密码跑 ipmitool mc info，若成功即定位为本机↔BMC 通路" >&2
         fi
     else
-        echo -e "${YELLOW}[SKIP] Remote BMC not configured (BMC_IP is empty)${NC}"
+        echo -e "${YELLOW}[SKIP] 未配置带外 BMC 地址（BMC_IP 为空）${NC}"
     fi
 
     # ─── HGX 基板 BMC（独立管理 GPU/NVSwitch，加 8s 超时防卡死；仅配置了 HGX_BMC_IP 时启用） ───
@@ -126,7 +126,7 @@ run_bmc() {
             "${hgx_cmd} sensor list 2>&1" "${dir}/hgx_bmc_sensors.log" \
             "${hgx_cmd} sdr list 2>&1" "${dir}/hgx_bmc_sdr.log" 
     else
-        echo -e "${YELLOW}[SKIP] HGX Baseboard BMC not configured${NC}"
+        echo -e "${YELLOW}[SKIP] 未配置 HGX 基板 BMC 地址${NC}"
     fi
 
     # ─── Redfish 检查（如果装了 curl/jq；密码经 CURL_NETRC 临时文件传递，不落盘日志） ───

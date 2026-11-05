@@ -20,7 +20,7 @@ run_nvsm() {
     module_start "$MODULE_NAME"
 
     if ! check_cmd nvsm; then
-        echo -e "${YELLOW}[SKIP] nvsm not found (only on MGX certified systems)${NC}"
+        module_skip "未安装 nvsm（仅 MGX 认证平台提供）"
         module_end "$MODULE_NAME"
         return 0
     fi

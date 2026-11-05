@@ -49,7 +49,7 @@ run_raid() {
         for _cand in /opt/MegaRAID/storcli/storcli64 /opt/MegaRAID/perccli/perccli64 /usr/local/bin/storcli64; do
             [ -x "$_cand" ] && { STORCLI_BIN="$_cand"; break; }
         done
-        [ -n "$STORCLI_BIN" ] && echo -e "${YELLOW}[INFO] storcli64 不在 PATH，改用固定路径 ${STORCLI_BIN}${NC}"
+        [ -n "$STORCLI_BIN" ] && echo -e "${YELLOW}[INFO] PATH 中未找到 storcli64，改用固定路径 ${STORCLI_BIN}${NC}"
     fi
 
     local ctrl_count=0 hba_count=0 hba2_count=0 raid_buses=""

@@ -262,6 +262,19 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **采集端「跳过」文案必须按平台形态分流，并让汇总表说真话（v1.54.45 立规）**：旧实现一句话
+  「无 GPU（无 3D controller/加速卡设备）」覆盖四种完全不同的情形——SXM/OAM 模组机未装/未上电/采集过早
+  是「未识别到」（state=unknown），PCIe 机型槽上无卡要提示复核插装（unknown），GPU 机头是「本机不含 GPU」
+  （absent），传统服务器/虚拟机才真的是「无加速卡」（absent）。**规则**：① `PLATFORM` 由父进程
+  `export`（此前未导出，模块里恒为空）；② 04_gpu 按 `*_SXM/_OAM/_PCIe/_head/_none` 分流文案，并写
+  `gpu/gpu_module_state.txt`（`state=` / `reason=`）供报告端优先读取；③ 模块整模块跳过一律走 `module_skip`，
+  父进程据 `.${id}_skip` 在汇总表显示 `SKIP`——旧实现只按 WARN 数判定，模块被跳却显示 `OK`（实测机头
+  04/05/14 三项全错）；④ 阈值文案与判据数字必须一致（曾同时出现「不足 3 分钟」「≥2 分钟」，而代码是 180 秒）。
+- **`ethtool -m` 失败要按内容区分「不支持」与「真故障」（v1.54.45 立规）**：Intel X710（`i40e`）与
+  Broadcom（`bnxt_en`）不支持读取模块 EEPROM，`ethtool -m` 必然 exit=1。旧实现 `2>/dev/null` 把原因丢掉，
+  只剩「空日志 + exit=1」，只能一律记 WARN（实测同一批机器里 07_network 时 WARN 时 OK，同型号不一致）。
+  **规则**：采集端用 `2>&1` 保留 stderr，`_rc_content_known_benign` 里按「日志同时含 EEPROM 与
+  not supported」豁免为良性；空输出/超时**不**豁免（避免放过真故障）。
 - **`nvidia-smi -p 1` 可清 aggregate ECC 计数（v1.54.44 记录）**：实测 B200 + 驱动 580.65.06 上 `nvidia-smi -i <id> -p 1`（`reset-ecc-errors=AGGREGATE`）**确实生效**，把累计可纠正错误清成 0；此前「Ampere+ 数据中心卡不支持清 aggregate」的说法是错的。**清零属常规交付动作**（交付前把历史计数归零、报告呈现干净基线），项目不做限制，报告端也不检测它。两条注意：① 清零后 `aggregate=0` **不能推断**「这颗卡一直没出过错」——追溯历史以归档旧报告（`logs/report/<SN>-<TS>-report.tar.gz`）或厂商 FT 记录为准；② 判定「当前是否健康」仍只看 `volatile`。
 - **形态判定必须先看「模组形态/多卡」强信号，缺工具时只降级结论、不改事实（v1.54.41 立规）**：实测 Supermicro B200 SXM6×8 整机被 `classify_machine` 判成「工作站（服务器版）」——两个诱因叠加：① BIOS 把 SMBIOS Chassis Type 填成 `Other`（非 Rack Mount）；② 该机未装 `ipmitool` → 无任何 BMC 数据。chassis/BMC 两个信号同时不可用后，旧逻辑落到「ECC=1 → 工作站」那条。**规则**：`PLATFORM` 后缀为 `_SXM`/`_OAM` 或加速卡 ≥4 张时，直接判 GPU 服务器，**先于** chassis/BMC 判定，不因采集环境缺工具而降级；证据不足时由 `MACHINE_CLASS_NOTE` 在报告「设备形态」行与验收口径写明（如「chassis 类型未提供、无 BMC 数据；结论以 8 张加速卡（SXM 模组形态）为主」）——**不许把「证据不足」当结论交付，也不许因缺工具把服务器说成工作站**。
 - **`mlxlink -d mlx5_X` 失败先按 BDF 回退，再判「工具限制」（v1.54.39 立规）**：实测 B200/B300/Dell 三台不同厂商机器上失败恒为 `mlx5_5`/`mlx5_6`，`mlxlink` 与 `-m` 同时失败（`-E- ... ME_ICMD_BAD_PARAM`），同机其余 10 个 CA 正常 —— 跨厂商同名失败 = **工具侧别名解析不到设备**，不是某台机缺模块。规则：`07_network.sh` 遇到失败先用 `/sys/class/infiniband/<ca>/device` 取 BDF，查 `mst status -v` 得 `/dev/mst/<dev>` 重试一次，成功则覆盖原日志；仍失败汇总进 `network/mlxlink_failures.log`（报告正文不展示，JSON `network.cable_module` 留计数）。**别再把「读不到模块」当告警**——验收环境通常不插模块与线缆。

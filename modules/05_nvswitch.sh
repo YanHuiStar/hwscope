@@ -20,7 +20,7 @@ run_nvswitch() {
     #   summary 记 9 条 WARN，报告还会渲染「NVSwitch 域未建立：Fabric Manager 未运行」误导客户
     #   （实测 8×MI300X 整机即此情形）。按「平台无此能力」跳过，不计 WARN。
     if ! has_nvidia_gpu; then
-        echo -e "${YELLOW}[SKIP] NVSwitch 仅 NVIDIA 平台（本机无 NVIDIA GPU）${NC}"
+        module_skip "NVSwitch 仅适用于 NVIDIA 平台（本机未识别到 NVIDIA GPU）"
         { echo "# --- SKIP: 本机无 NVIDIA GPU（AMD/昇腾等平台无 NVSwitch/NVLink），模块按平台能力跳过 ---" ; } \
             > "${dir}/00_skip_no_nvidia_gpu.log"
         module_end "$MODULE_NAME"

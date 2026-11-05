@@ -20,7 +20,7 @@ run_dcgm() {
     #   对本机也是无意义——实测 8×MI300X 整机 dcgmi_config/diag 全部 exit≠0 记 WARN，
     #   报告还会出现「DCGM 诊断」行。按平台能力跳过。
     if ! has_nvidia_gpu; then
-        echo -e "${YELLOW}[SKIP] DCGM 仅 NVIDIA 平台（本机无 NVIDIA GPU）${NC}"
+        module_skip "DCGM 仅适用于 NVIDIA 平台（本机未识别到 NVIDIA GPU）"
         { echo "# --- SKIP: 本机无 NVIDIA GPU（DCGM 为 NVIDIA 工具），模块按平台能力跳过 ---" ; } \
             > "${dir}/00_skip_no_nvidia_gpu.log"
         module_end "$MODULE_NAME"
@@ -28,7 +28,7 @@ run_dcgm() {
     fi
 
     if ! check_cmd dcgmi; then
-        echo -e "${YELLOW}[SKIP] dcgmi not found (install datacenter-gpu-manager)${NC}"
+        module_skip "未安装 dcgmi（apt install datacenter-gpu-manager）"
         module_end "$MODULE_NAME"
         return 0
     fi
@@ -65,7 +65,7 @@ run_dcgm() {
             _i=$((_i+1))
         done
         PERSIST_TOUCHED=0
-        echo "[INFO] 已恢复 nvidia-persistenced 原状态（逐卡还原）"
+        echo "[INFO] 已还原 GPU persistence mode 原状态（逐卡）"
     }
     if check_cmd nvidia-smi; then
         while IFS= read -r _pmline; do
@@ -76,11 +76,11 @@ run_dcgm() {
         if [ "$_pm_off" -eq 1 ]; then
             if nvidia-smi -pm 1 >/dev/null 2>&1; then
                 PERSIST_TOUCHED=1
-                echo "[INFO] nvidia-persistenced 临时开启（DCGM 采集后恢复原状）"
+                echo "[INFO] 已临时启用 GPU persistence mode（nvidia-smi -pm 1），DCGM 采集结束后逐卡还原"
                 # 兜底：脚本被 kill/Ctrl-C 时 EXIT 触发恢复；函数正常路径恢复后 TOUCHED=0，trap 触发为空操作
                 trap '__dcgm_restore_persist' EXIT
             else
-                echo -e "${YELLOW}[WARN] nvidia-smi -pm 1 失败（无权限或平台不支持），DCGM 在无 persistence 下运行${NC}" >&2
+                echo -e "${YELLOW}[WARN] 启用 persistence mode 失败（nvidia-smi -pm 1 返回非 0：权限不足或平台不支持），DCGM 将在未启用状态下运行${NC}" >&2
             fi
             sleep 1
         fi

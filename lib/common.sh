@@ -328,6 +328,15 @@ _rc_content_known_benign() {
     if grep -qE "^[[:space:]]*MAC Address[[:space:]]*:" "$_lf" 2>/dev/null; then
         return 0
     fi
+    # ── 用例⑤（v1.54.45）：`ethtool -m` 对不支持模块 EEPROM 的网卡必然失败 ──
+    #   实测 Intel X710（i40e）与 Broadcom（bnxt_en，ens31f0np0）上 `ethtool -m` 退出 1，
+    #   同一份日志里既无模块字段也无其他错误 —— 属"该网卡本就不支持读取光模块 EEPROM"。
+    #   判据：日志同时出现 "EEPROM" 与 "not supported"（Broadcom/i40e 的报错文案）；
+    #   只有空输出或纯超时**不**豁免（避免放过真故障）。配套：07_network 的 ethtool -m
+    #   改为 2>&1 采集 stderr，否则失败原因是空日志、无从判定（v1.54.45 同步修改）。
+    if grep -qiE "EEPROM" "$_lf" 2>/dev/null && grep -qiE "not supported|Operation not supported" "$_lf" 2>/dev/null; then
+        return 0
+    fi
     # ── 用例③（v1.53.37）：`ipmitool lan print <N>` 的通道不存在 ──
     #   实测该平台只有 1 个 LAN 通道，`lan print 2` 报 `Get Channel Info command failed: Destination unavailable`
     #   + `Invalid channel: 2` —— 平台形态，不是故障。
@@ -398,10 +407,10 @@ run_and_log() {
         if [ "$ret" -eq 0 ]; then
             printf "${GREEN}%-6s${NC} %s  %s  [ %s ]\n" "[OK]" "$fname" "(exit=0)" "$fmt_elapsed"
         elif [ "$ret" -eq 1 ] && _rc_is_benign "$ret" "$cmd"; then
-            printf "%-6s %s  %s  [ %s ]\n" "[~]" "$fname" "(no match)" "$fmt_elapsed"
+            printf "%-6s %s  %s  [ %s ]\n" "[~]" "$fname" "(无匹配)" "$fmt_elapsed"
         elif _rc_content_known_benign "$logfile"; then
             # v1.52.21：命令确实非零退出，但日志内容命中已定性的误报文案（如 mlxconfig 的 MST 争用）
-            printf "%-6s %s  %s  [ %s ]\n" "[~]" "$fname" "(known benign)" "$fmt_elapsed"
+            printf "%-6s %s  %s  [ %s ]\n" "[~]" "$fname" "(已知良性)" "$fmt_elapsed"
         elif [ "$ret" -eq 127 ]; then
             printf "${YELLOW}%-6s${NC} %s  %s  [ %s ]\n" "[N/A]" "$fname" "(cmd not found)" "$fmt_elapsed"
         else
@@ -555,6 +564,20 @@ module_start() {
         echo -e "${CYAN}[$name] 开始采集...${NC}"
         echo -e "${CYAN}========================================${NC}"
     fi
+}
+
+# ─── 模块整模块跳过（v1.54.45）─────────────────────────────────────────────
+# 背景：04/05/13/14 等模块在平台不适用时直接 SKIP，但父进程的汇总表只按 WARN 数判定，
+#   于是「模块被跳过」在汇总表里显示成 OK（实测两台机头：04/gpu OK、05/nvswitch OK、
+#   14/dcgm OK，文件数 0/1），与日志自相矛盾。
+# 用法：module_skip "<面向使用者的原因>" —— 打印 [SKIP] 并落状态标记，随后照常 module_end。
+module_skip() {
+    local reason="$1"
+    echo -e "${YELLOW}[SKIP] ${reason}${NC}"
+    if [ -n "${MODULE_ID:-}" ] && [ -n "${OUTPUT_BASE:-}" ]; then
+        printf '%s\n' "$reason" > "${OUTPUT_BASE}/.${MODULE_ID}_skip" 2>/dev/null || true
+    fi
+    return 0
 }
 
 module_end() {

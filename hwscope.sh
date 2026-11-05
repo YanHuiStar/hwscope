@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.54.44 (2026-10)
+# Version : 1.54.45 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.54.44"
+HWSCOPE_VERSION="v1.54.45"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -352,7 +352,7 @@ _bmc_prompt_pass() {
             BMC_PASS)     BMC_IP="";     export BMC_IP ;;
             HGX_BMC_PASS) HGX_BMC_IP=""; export HGX_BMC_IP ;;
         esac
-        echo -e "${YELLOW}[INFO] 未输入 BMC 密码 — 跳过带外采集（只采带内）${NC}" >&2
+        echo -e "${YELLOW}[INFO] 未提供 BMC 密码，跳过带外采集（仅带内 KCS）${NC}" >&2
     else
         # v1.54.9：提示语用可读部件名——原写法 ${_var%%_PASS}_BMC 会拼成 "HGX_BMC_BMC"
         case "$_var" in HGX_BMC_PASS) _who="HGX 基板 BMC" ;; *) _who="BMC" ;; esac
@@ -388,7 +388,7 @@ if [ -z "${BMC_IP:-}" ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null && check_cmd i
         if [ "$BMC_AUTO_CHANNEL" = "1" ]; then
             echo -e "${CYAN}[INFO] 带内探测到 BMC 地址: ${BMC_IP}（通道 1，默认通道）${NC}"
         else
-            echo -e "${CYAN}[INFO] 通道 1 未配置有效地址（0.0.0.0 / 169.254）——继续查找，通道 ${BMC_AUTO_CHANNEL} 命中: ${BMC_IP}${NC}"
+            echo -e "${CYAN}[INFO] 通道 1 未配置有效地址（0.0.0.0 或 169.254.0.0/16）；继续探测，已选用通道 ${BMC_AUTO_CH}：${BMC_AUTO_IP}${NC}"
         fi
         _n=$(printf '%b' "$_cands" | grep -c .)
         if [ "$_n" -gt 1 ]; then
@@ -441,7 +441,7 @@ case "${_up_sec:-}" in
     ''|*[!0-9]*) : ;;
     # P3-4：阈值 180 秒，与报告端 report/sections/10_env_mb_cpu.sh 的 COLLECT_EARLY 判据保持一致
     #   （同一事实两处口径不同会让"报告说刚开机、采集器没提醒"对不上）
-    *) [ "$_up_sec" -lt 180 ] && echo -e "${YELLOW}[WARN] 系统开机仅 ${_up_sec} 秒（不足 3 分钟）——GPU/网卡可能尚未枚举完成，建议开机 ≥2 分钟后重新采集（本次仍继续）${NC}";;
+    *) [ "$_up_sec" -lt 180 ] && echo -e "${YELLOW}[WARN] 系统已开机 ${_up_sec} 秒（<180 秒），GPU/网卡可能尚未枚举完成；建议开机 ≥180 秒后复采（本次继续）${NC}";;
 esac
 echo "输出: ${OUTPUT_BASE}"
 echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -466,6 +466,7 @@ export NO_MODULE         # 跳光模块开关（--no-module 置 1；07_network �
 #   `<OUTPUT_BASE>/.ipmi_snapshot`（不存在）→ 清理恒为空操作、快照残留；TTL 3600s 内二次采集
 #   会**静默复用上一轮的 BMC 传感器数据**（写进新输出目录，报告当本次数据渲染）。
 export OUTPUT_BASE
+export PLATFORM          # v1.54.45：模块子进程按平台形态生成 GPU 跳过文案（此前未 export，模块内恒为空）
 # v1.54.3：BMC 参数必须 export（真机实测 2026-10-22 发现的 bug）
 #   模块全部在**独立 bash 子进程**执行，只拿到位置参数（输出目录）；父进程里
 #   `--bmc-ip` 解析出的 BMC_IP / BMC_USER / BMC_PASS 若不 export 就不进子进程环境，
@@ -479,7 +480,7 @@ check_cmd timeout || TIMEOUT_PREFIX=""
 
 if [ "$PARALLEL" -eq 1 ]; then
     # ═══════════════ 并行模式 ═══════════════
-    echo -e "${CYAN}[QUEUE]${NC} 并行启动所有模块..."
+    echo -e "${CYAN}[QUEUE]${NC} 并行启动全部模块"
 
     MODULE_INFO=()
     for mod_info in "${MODULES[@]}"; do
@@ -509,6 +510,8 @@ if [ "$PARALLEL" -eq 1 ]; then
             mkdir -p "${OUTPUT_BASE}/${id}"
             # 导出 OUTPUT_DIR 供 module_end 落盘 WARN 计数（跨进程读取）
             export OUTPUT_DIR="${OUTPUT_BASE}/${id}"
+            # v1.54.45：MODULE_ID 供 module_skip 落"整模块跳过"标记 → 汇总表显示 SKIP
+            export MODULE_ID="$id"
             (
                 start_ts=$(date +%s)
                 reset_warn_count
@@ -545,6 +548,7 @@ if [ "$PARALLEL" -eq 1 ]; then
                 IFS='|' read -r num id desc <<< "$info"
                 [ -f "${OUTPUT_BASE}/.${id}_done" ] && continue
                 echo -e "${YELLOW}[WARN] 模块 ${id} 未在时限内完成（子进程可能异常退出），跳过等待${NC}" >&2
+                export MODULE_ID="$id"
                 echo "0" > "${OUTPUT_BASE}/.${id}_warn" 2>/dev/null
                 find "${OUTPUT_BASE}/${id}" -type f 2>/dev/null | wc -l > "${OUTPUT_BASE}/.${id}_files" 2>/dev/null
                 touch "${OUTPUT_BASE}/.${id}_done" "${OUTPUT_BASE}/.${id}_printed"
@@ -593,9 +597,12 @@ if [ "$PARALLEL" -eq 1 ]; then
         summary_append "$SUMMARY_FILE" "${num}.${id} (${desc})" "${files} files, ${mtime}s, ${warn} WARN"
         MOD_TIMES="${MOD_TIMES}${num}.${id}|${mtime}"$'\n'
         TOTAL_COUNT=$((TOTAL_COUNT + 1))
-        _st="OK"; [ "${warn:-0}" -gt 0 ] 2>/dev/null && _st="WARN"
+        # v1.54.45：模块整体跳过时显示 SKIP（原先一律 OK，实测机头 04/05/14 被跳却显示 OK）
+        _st="OK"
+        [ -f "${OUTPUT_BASE}/.${id}_skip" ] && _st="SKIP"
+        [ "$_st" = "OK" ] && [ "${warn:-0}" -gt 0 ] 2>/dev/null && _st="WARN"
         SUMMARY_TABLE="${SUMMARY_TABLE}$(printf '%-14s %-5s %9s %7s' "${num}/${id}" "$_st" "${mtime}s" "${files}")"$'\n'
-        rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_files" "${OUTPUT_BASE}/.${id}_time" "${OUTPUT_BASE}/.${id}_done" "${OUTPUT_BASE}/.${id}_printed"
+        rm -f "${OUTPUT_BASE}/.${id}_log" "${OUTPUT_BASE}/.${id}_warn" "${OUTPUT_BASE}/.${id}_skip" "${OUTPUT_BASE}/.${id}_files" "${OUTPUT_BASE}/.${id}_time" "${OUTPUT_BASE}/.${id}_done" "${OUTPUT_BASE}/.${id}_printed"
     done
     if [ -n "$SUMMARY_TABLE" ]; then
         echo ""
@@ -639,6 +646,7 @@ else
             start_ts=$(date +%s); mkdir -p "${OUTPUT_BASE}/${id}"
             reset_warn_count
             export OUTPUT_DIR="${OUTPUT_BASE}/${id}"
+            export MODULE_ID="$id"        # v1.54.45：供 module_skip 落 SKIP 标记
             $TIMEOUT_PREFIX bash "${MODULE_SCRIPT}" "$OUTPUT_BASE" 2>&1
             mod_rc=$?
             warn_count=$(cat "${OUTPUT_BASE}/${id}/.warn_count" 2>/dev/null || echo 0)
@@ -655,8 +663,11 @@ else
             MOD_TIMES="${MOD_TIMES}${num}.${id}|${elapsed}"$'\n'
             TOTAL_COUNT=$((TOTAL_COUNT + 1))
             # v1.51.4：与并行分支一致，收集「按模块序号」的汇总表行（串行时顺序本就一致，表格仍便于纵览）
-            _st="OK"; [ "${warn_count:-0}" -gt 0 ] 2>/dev/null && _st="WARN"
+            _st="OK"
+            [ -f "${OUTPUT_BASE}/.${id}_skip" ] && _st="SKIP"     # v1.54.45：整模块跳过
+            [ "$_st" = "OK" ] && [ "${warn_count:-0}" -gt 0 ] 2>/dev/null && _st="WARN"
             SUMMARY_TABLE="${SUMMARY_TABLE}$(printf '%-14s %-5s %9s %7s' "${num}/${id}" "$_st" "${elapsed}s" "${mod_file_count}")"$'\n'
+            rm -f "${OUTPUT_BASE}/.${id}_skip"
         else
             echo -e "${RED}[ERROR] 函数 ${fn} 未在 ${MODULE_SCRIPT} 中定义${NC}"
         fi
@@ -711,7 +722,7 @@ TOTAL_ELAPSED=$(( $(date +%s) - START_TS ))
 
 echo ""
 echo "========================================"
-echo -e "${GREEN}采集完成！${NC}"; echo "输出目录: ${OUTPUT_BASE}"; echo "总日志数: ${FILE_COUNT}"; echo -e "${CYAN}总耗时: ${TOTAL_ELAPSED}s${NC}"
+echo -e "${GREEN}采集完成${NC}"; echo "输出目录: ${OUTPUT_BASE}"; echo "总日志数: ${FILE_COUNT}"; echo -e "${CYAN}总耗时: ${TOTAL_ELAPSED}s${NC}"
 echo "========================================"
 echo ""
 find "${OUTPUT_BASE}" -type d | sort | while read d; do

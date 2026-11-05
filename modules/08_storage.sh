@@ -93,7 +93,7 @@ run_storage() {
         fi
         fi  # IS_WSL
     else
-        echo -e "${YELLOW}[SKIP] smartctl not found (install smartmontools)${NC}"
+        echo -e "${YELLOW}[SKIP] 未安装 smartctl（apt install smartmontools）${NC}"
     fi
 
     # ─── SCSI/SAS 设备链路 + 磁盘分区和挂载（并行） ───

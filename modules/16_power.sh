@@ -41,7 +41,7 @@ run_power() {
         local _psu_dcmi="${output_dir}/psu/ipmi_dcmi_power.log"
         if [ -f "$_psu_dcmi" ] && grep -qi "Instantaneous power reading" "$_psu_dcmi" 2>/dev/null; then
             cp "$_psu_dcmi" "${dir}/dcmi_power.log"
-            echo -e "${CYAN}[INFO] DCMI 功耗读数复用 psu/ipmi_dcmi_power.log（避免同报告两个 DCMI 瞬时值不一致）${NC}"
+            echo -e "${CYAN}[INFO] DCMI 功耗读数复用 psu/ipmi_dcmi_power.log（复用同一采样值，避免同一报告出现两个 DCMI 瞬时读数）${NC}"
         else
             run_and_log_parallel 2 \
                 "${ipmi_fast} bash -c \"ipmitool dcmi power reading 2>&1\"" "${dir}/dcmi_power.log"
@@ -67,7 +67,7 @@ run_power() {
         rm -f "$NETRC_TMP"
         trap - EXIT INT TERM
     else
-        echo -e "${YELLOW}[SKIP] Redfish Power 未采集（BMC_IP 未配置或无 curl）${NC}"
+        echo -e "${YELLOW}[SKIP] Redfish Power 未采集（BMC_IP 未配置或缺少 curl）${NC}"
     fi
 
     # ─── 3. 能耗核算 ───

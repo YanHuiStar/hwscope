@@ -524,6 +524,19 @@ for _cand in "${_os_dir}/journal_xid.log" "${_os_dir}/journal_kernel_hw.log" \
 done
 
 # ─── v1.53.41：GPU **模组在场状态**（present / absent / unknown）───
+# v1.54.45：采集端（04_gpu.sh）在跳过 GPU 模块时会写 gpu_module_state.txt（state/reason），
+#   报告端优先采用它——采集端掌握 PLATFORM 与 PCI 枚举的一手判据，比报告端从日志反推更准；
+#   文件缺失（旧采集）时才走下面的日志推断，保持向后兼容。
+_statef="${GPU_DIR}/gpu_module_state.txt"
+_STATE_FROM_FILE=""; _REASON_FROM_FILE=""
+if [ -f "$_statef" ]; then
+    _cs=$(grep -m1 '^state=' "$_statef" 2>/dev/null | cut -d= -f2-)
+    _cr=$(grep -m1 '^reason=' "$_statef" 2>/dev/null | cut -d= -f2-)
+    case "$_cs" in
+        present|absent|unknown) _STATE_FROM_FILE="$_cs" ;;
+    esac
+    [ -n "$_cr" ] && _REASON_FROM_FILE="$_cr"
+fi
 # 起因（实测）：一台 8×MI300X 底座在**开机 13 秒**被采集——amdgpu 未加载、lspci 无加速卡，
 #   GPU 模块 SKIP；旧逻辑直接断言「无本地 GPU（机头形态）」，验收把 4 个 GPU 项按
 #   「平台固有 N/A」折叠（不计数据不足），于是报告看起来像「这台本来就没装模组」。
@@ -544,6 +557,11 @@ if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
         GPU_MODULE_STATE="absent"
         GPU_MODULE_REASON="开机正常且 PCI 未枚举到加速卡"
     fi
+fi
+# 采集端落盘的判定优先（04_gpu.sh v1.54.45 起写 gpu_module_state.txt，掌握 PLATFORM 一手判据）
+if [ -n "${_STATE_FROM_FILE:-}" ]; then
+    GPU_MODULE_STATE="$_STATE_FROM_FILE"
+    [ -n "${_REASON_FROM_FILE:-}" ] && GPU_MODULE_REASON="$_REASON_FROM_FILE"
 fi
 # ─── v1.54.25：GPU 功耗上限被改检测（Current ≠ Default）────────────────────
 #   实测 B200 交付批次两台：8 张卡里 3 张被设成 800W，默认/最大都是 1000W，而报告只写

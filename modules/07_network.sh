@@ -232,7 +232,10 @@ run_network() {
             local _nic_is_pci=0
             grep -q "^PCI_SLOT_NAME=" "/sys/class/net/${dev}/device/uevent" 2>/dev/null && _nic_is_pci=1
             if [ "$nic_drv" != "mlx5_core" ] && [ "$_nic_is_pci" -eq 1 ]; then
-                eth_jobs+=("ethtool -m '$dev' 2>/dev/null" "${dir}/ethtool_${safe_name}_module.log")
+                # v1.54.45：2>&1 采集失败原因——原先 2>/dev/null 丢掉了 stderr，
+                #   日志里只剩「exit=1 + 空输出」，无法区分「该网卡不支持模块 EEPROM」
+                #   （X710/i40e、bnxt_en 实测如此，属良性）与「真失败」，只能一律记 WARN。
+                eth_jobs+=("ethtool -m '$dev' 2>&1" "${dir}/ethtool_${safe_name}_module.log")
             fi
         done < <(printf '%s\n' "$eth_devs")
         [ "${#eth_jobs[@]}" -gt 0 ] && run_and_log_parallel 8 "${eth_jobs[@]}"
