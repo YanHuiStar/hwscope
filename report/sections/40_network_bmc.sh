@@ -242,7 +242,10 @@ load_manifest "${BMC_DIR}" ipmi_lan2 "ipmi_lan2.log"
 load_manifest "${BMC_DIR}" ipmi_lan_all "ipmi_lan_all.log"
 load_manifest "${BMC_DIR}" ipmi_sel_elist "ipmi_sel_elist.log"
 load_manifest "${BMC_DIR}" redfish_system "redfish_system.log"
-BMC_FRU=$(extract "Product Name|Product Part Number" "${ipmi_fru_summary}" | head -c 80)
+BMC_FRU=$(extract "Product Name|Product Part Number" "${ipmi_fru_summary}" | head -c 80 \
+    | sed 's/[[:space:]]*-/-/g; s/^[[:space:]]*//; s/[[:space:]]*$//')
+# v1.54.50：与主板型号同样规范化——FRU Product Name 亦可能带多余空格
+#   （实测 Supermicro 写成 "AS -4124GO-NART"），BMC 段因此与主板段显示不一致
 BMC_FW=$(extract "Firmware Revision" "${ipmi_mc}")
 # v1.48.46：Redfish FirmwareInventory——AMI BMC 固件完整版（ipmitool mc info 只给主次 1.01，
 # FirmwareInventory 给完整号如 1.01.00）；BIOS/CPLD/PSU 成员 Version 空 = AMI 实现不填——如实标注不伪造
