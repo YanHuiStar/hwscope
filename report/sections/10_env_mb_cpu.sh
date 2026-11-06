@@ -214,15 +214,44 @@ if [ -f "${cpufreq_policy}" ]; then
     _cfsmax=$(grep -m1 '^scaling_max_freq:' "${cpufreq_policy}" | awk -F': *' '{print $2}')
     _cfcmax=$(grep -m1 '^cpuinfo_max_freq:' "${cpufreq_policy}" | awk -F': *' '{print $2}')
     _cfboost=$(grep -m1 -i "Frequency boost" "${lscpu}" 2>/dev/null | awk '{print $NF}')
+    # v1.56.1：优先级 = 采集端直接读的 boost/cpb_boost/no_turbo（一手），退而用 lscpu 的 Frequency boost
+    #   AMD 的 acpi-cpufreq 把 scaling_max_freq 设成 _PSS 最高档（=基频），睿频在 P-state 之外，
+    #   所以「scaling_max < cpuinfo_max」不等于被限频——实测 EPYC 7763（2450 vs 3530）与
+    #   EPYC 9575F（3300 vs 3300）同驱动同 governor，一台被报一台不被报，判据本身不稳。
+    _cfboostfile=$(grep -m1 '^boost:' "${cpufreq_policy}" 2>/dev/null | awk -F': *' '{print $2}')
+    _cfcpb=$(grep -m1 '^cpb_boost:' "${cpufreq_policy}" 2>/dev/null | awk -F': *' '{print $2}')
+    _cfnoturbo=$(grep -m1 '^no_turbo:' "${cpufreq_policy}" 2>/dev/null | awk -F': *' '{print $2}')
     _cfboost_txt=""
     case "$_cfboost" in
         enabled)  _cfboost_txt="boost 启用" ;;
         disabled) _cfboost_txt="⚠️ boost 关闭" ;;
     esac
+    # boost 三态：on / off / unknown（一手文件优先）
+    _boost_state="unknown"
+    if [ "${_cfboostfile:-}" = "1" ] || [ "${_cfcpb:-}" = "1" ]; then
+        _boost_state="on"
+    elif [ "${_cfboostfile:-}" = "0" ] || [ "${_cfcpb:-}" = "0" ] || [ "${_cfnoturbo:-}" = "1" ]; then
+        _boost_state="off"
+    else
+        case "$_cfboost" in
+            enabled)  _boost_state="on" ;;
+            disabled) _boost_state="off" ;;
+        esac
+    fi
+    [ "$_boost_state" = "on" ]  && _cfboost_txt="boost 启用"
+    [ "$_boost_state" = "off" ] && _cfboost_txt="⚠️ boost 关闭"
     if echo "$_cfsmax" | grep -qE '^[0-9]+$' && echo "$_cfcmax" | grep -qE '^[0-9]+$'; then
         _smax_mhz=$((_cfsmax / 1000)); _cmax_mhz=$((_cfcmax / 1000))
         if [ "$_smax_mhz" -lt "$_cmax_mhz" ]; then
-            CPU_FREQ_POLICY="⚠️ **被限制**：当前上限 ${_smax_mhz} MHz < 硬件上限 ${_cmax_mhz} MHz（驱动 ${_cfdrv:-?}，governor ${_cfgov:-?}${_cfboost_txt:+，${_cfboost_txt}}）——压测性能偏低时先查 cpupower / BIOS 节能设置"
+            if [ "$_boost_state" = "off" ]; then
+                # boost 关掉 = 真限制：硬件睿频被禁，实际最高只能到 policy 上限
+                CPU_FREQ_POLICY="⚠️ **被限制**：当前上限 ${_smax_mhz} MHz < 硬件上限 ${_cmax_mhz} MHz，且 **boost 已关闭**（驱动 ${_cfdrv:-?}，governor ${_cfgov:-?}）——压测性能偏低时先查 cpupower / BIOS 节能设置"
+            elif [ "$_cfdrv" = "acpi-cpufreq" ]; then
+                # AMD/ACPI 路径：policy 上限即 _PSS 最高档（多为基频），睿频在 P-state 之外，不判限制
+                CPU_FREQ_POLICY="上限 ${_smax_mhz} MHz（= _PSS 最高档，多为基频）· 硬件睿频 ${_cmax_mhz} MHz · ${_cfboost_txt:-boost 未知} ｜ 驱动 ${_cfdrv} · governor ${_cfgov:-?}——acpi-cpufreq 的 policy 上限不含睿频档，不据此判限频；压测时用 turbostat/cpupower monitor 看实测频率"
+            else
+                CPU_FREQ_POLICY="⚠️ **被限制**：当前上限 ${_smax_mhz} MHz < 硬件上限 ${_cmax_mhz} MHz（驱动 ${_cfdrv:-?}，governor ${_cfgov:-?}${_cfboost_txt:+，${_cfboost_txt}}）——压测性能偏低时先查 cpupower / BIOS 节能设置"
+            fi
         else
             CPU_FREQ_POLICY="${_cfboost_txt:-boost 未知} ｜ 驱动 ${_cfdrv:-?} · governor ${_cfgov:-?} ｜ 上限 ${_smax_mhz} MHz = 硬件上限 ${_cmax_mhz} MHz（未被限制）"
         fi

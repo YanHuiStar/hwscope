@@ -50,7 +50,7 @@ run_cpu() {
         "cat /sys/devices/system/cpu/smt/active 2>/dev/null" "${dir}/smt_status.log" \
         "awk -F':[ \\t]*' '/cpu MHz/{s+=\$2; c++} END{if(c>0) printf \"Average: %.0f MHz, Total CPUs: %d\\n\", s/c, c; else print \"N/A (no cpu MHz in cpuinfo)\"}' /proc/cpuinfo 2>/dev/null" "${dir}/cpu_freq.log" \
         "LANG=C lscpu | grep --line-buffered -E 'CPU MHz|CPU max MHz|CPU min MHz'" "${dir}/cpu_freq_range.log" \
-        "for f in scaling_driver scaling_governor scaling_max_freq scaling_min_freq cpuinfo_max_freq cpuinfo_min_freq; do printf '%s: %s\n' \"\$f\" \"\$(cat /sys/devices/system/cpu/cpu0/cpufreq/\$f 2>/dev/null)\"; done" "${dir}/cpufreq_policy.log"
+        "for f in scaling_driver scaling_governor scaling_max_freq scaling_min_freq cpuinfo_max_freq cpuinfo_min_freq energy_performance_preference; do printf '%s: %s\n' \"\$f\" \"\$(cat /sys/devices/system/cpu/cpu0/cpufreq/\$f 2>/dev/null)\"; done; for b in /sys/devices/system/cpu/cpufreq/boost /sys/devices/system/cpu/cpufreq/policy0/cpb_boost /sys/devices/system/cpu/intel_pstate/no_turbo; do [ -f \"\$b\" ] && printf '%s: %s\n' \"\${b##*/}\" \"\$(cat \"\$b\" 2>/dev/null)\"; done; true" "${dir}/cpufreq_policy.log"
 
 write_manifest "${dir}/manifest.txt" \
         "dmidecode_processor" "dmidecode_processor.log" \

@@ -268,6 +268,17 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **CPU「频率策略被限频」不能只看 `scaling_max_freq < cpuinfo_max_freq`（v1.56.1 立规，AMD 误报）**：
+  AMD EPYC 走 `acpi-cpufreq` 时，`scaling_max_freq` 取的是 ACPI `_PSS` **最高档 = 基频**，睿频由
+  CPB/CPPC 在 P-state 表之外实现——所以「policy 上限 < cpuinfo 上限」在 AMD 上是**常态，不是限频**。
+  实测 EPYC 7763（2450 vs 3530，boost 启用）被报「⚠️ 被限制」，而同批 EPYC 9575F（3300 vs 3300）
+  报「未被限制」，两台同驱动同 governor，仅因内核是否把睿频值折进 `cpuinfo_max_freq` 就一台报一台不报。
+  **规则**：① boost **明确关闭**（`cpufreq/boost=0` / `cpb_boost=0` / `no_turbo=1`）→ 判限频（真限制）；
+  ② 驱动为 `acpi-cpufreq` 且 boost 未关闭 → **只陈述数值**（上限=基频/_PSS 最高档、硬件睿频、boost 状态），
+  不判限频，并提示压测时用 `turbostat`/`cpupower monitor` 看实测频率；③ 其他驱动（`intel_pstate` 等）
+  保留原比较。**采集端** `02_cpu.sh` 的 `cpufreq_policy.log` 必须补采 `boost`/`cpb_boost`/`no_turbo`/
+  `energy_performance_preference`（一层依据），末尾加 `; true` 保证「三个文件都不存在」时退出码仍为 0
+  （否则每次采集都记 exit=1 的 WARN）。
 - **内存「降速」要先问是不是 CPU 上限，PCIe「降速」要先问有没有槽位（v1.56.0 立规，7 台 Dell 误报）**：
   两个最容易误报的判据，共同点是**拿部件的额定值当基准，而平台根本没那个能力**。
   **① 内存速率**：基准必须是 `min(DIMM 额定, CPU 内存控制器上限)`——实测 Dell XE9680 + Xeon Platinum 8580
