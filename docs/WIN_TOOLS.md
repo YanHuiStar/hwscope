@@ -97,6 +97,10 @@ tools\win\remote_collect.bat -H root@<host> -BmcIp <BMC-IP> -HgxBmcIp <HGX-BMC-I
 #### BMC 密码通道（v1.54.4 起）
 
 - `-BmcIp` / `-BmcUser` / `-HgxBmcIp` / `-HgxBmcUser` 等价 Linux `--bmc-ip` / `--bmc-user` / `--hgx-bmc-ip` / `--hgx-bmc-user`。
+
+> **失败时只显示真报错**（v1.56.2）：远端执行或打包失败时，`[原因]` 会先滤掉 `tar` 的
+> `time stamp ... in the future` 这类无害噪音，再挑含 `unbound variable` / `ERROR` / `No such file`
+> 等关键字的行显示——此前按顺序抓前两行，一次时间戳刷屏就把真正的报错顶掉了（实测正是如此）。
 - 密码用 `Read-Host -AsSecureString` 运行时输入，经 **stdin** 送远端 `read` 后 export；不落盘、不进命令行 / 进程列表。
 - **回显密码形态**（v1.54.24）：接收后打印长度、`@` 个数与是否纯 ASCII，便于与实际密码核对。
 - `HWSCOPE_BMC_PASSWORD` 可用于无人值守预置。

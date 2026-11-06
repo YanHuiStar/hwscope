@@ -248,7 +248,16 @@ function Invoke-SSHRetry {
             # v1.48.51：非认证类失败（或重试用尽）时给出 stderr 摘要——平时抑制避免 NativeCommandError 红块，
             # 真失败时保留可诊断性（认证失败重试中不打印，最终失败才提示）
             if ($code -ne 0 -and $out.Count -gt 0) {
-                Write-Host "  [原因] $(($out | Where-Object { $_ } | Select-Object -First 2) -join ' / ')" -ForegroundColor DarkGray
+                # v1.56.2：失败原因要挑"像报错的"，不能按顺序抓前两行——tar 的
+                #   "time stamp ... in the future" 能刷 24 行，把真正的
+                #   "hwscope.sh: line 391: XXX: unbound variable" 挤掉，用户只看到 tar 噪音。
+                $noise = 'time stamp .* in the future|file changed as we read it|^tar: Removing leading'
+                $real = @($out | Where-Object { $_ -and $_ -notmatch $noise })
+                $pick = @($real | Where-Object { $_ -match 'unbound variable|syntax error|command not found|No such file|ERROR|错误|failed|FAIL' })
+                if ($pick.Count -eq 0) { $pick = $real }
+                if ($pick.Count -gt 0) {
+                    Write-Host "  [原因] $((($pick | Select-Object -First 2) -join ' / '))" -ForegroundColor DarkGray
+                }
             }
             # v1.49.16：连输 3 次多半不是手误——给出可操作排查方向
             if ($authFail -and $i -ge $MaxTries) {
@@ -292,7 +301,9 @@ try {
     if ($NeedBmcPipe) {
         Write-Host "[INFO] 检测到 BMC 参数：本次改用三步模式（单次认证模式的 stdin 被项目包占用，无法同时传 BMC 密码）" -ForegroundColor Gray
     }
-    $rcTar = Invoke-Native { & $TarExe czf $pushFile -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp . }
+    # --warning=no-timestamp：本机时钟略快于目标机时，每个目录一条 "time stamp ... in the future"
+    #   警告会灌满 stderr 并被当成失败原因打印（实测 24 行）——与 Linux 版 v1.48.10 对齐静音
+    $rcTar = Invoke-Native { & $TarExe czf $pushFile --warning=no-timestamp -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp . }
     if ($rcTar -ne 0) { Write-Host "[ERROR] 本地打包失败" -ForegroundColor Red; exit 1 }
 
     # ─── 2~4. 推送 + 远端执行 + 回拉（v1.48.63：root/免 sudo 走单次认证模式；普通用户 + sudo 保留原三步） ───
@@ -322,7 +333,7 @@ try {
         #   原写法 `-C $RemoteDir/output . -C $RemoteDir logs` 在 GNU tar 下报
         #   "-C ... has no effect / Exiting with failure status"（exit=2），**logs/ 根本没进包**
         #   （实测 291KB vs 607KB），而单次认证模式用 `exit $rc` 吞掉了这个错误码 → 静默丢日志包。
-        $rs = "cd /tmp; rm -rf $RemoteDir; mkdir -p $RemoteDir; tar xzf - -C $RemoteDir; cd $RemoteDir; ${preCmd}bash hwscope.sh$hwArgs >&2; rc=`$?; if [ `$rc -eq 0 ]; then mkdir -p $RemoteDir/.pack; cp -a $RemoteDir/output/. $RemoteDir/.pack/ 2>/dev/null; cp -a $RemoteDir/logs $RemoteDir/.pack/logs 2>/dev/null; tar czf - --warning=no-timestamp -C $RemoteDir/.pack .; fi; rm -rf $RemoteDir; exit `$rc"
+        $rs = "cd /tmp; rm -rf $RemoteDir; mkdir -p $RemoteDir; tar xzf - -C $RemoteDir 2>/dev/null; cd $RemoteDir; ${preCmd}bash hwscope.sh$hwArgs >&2; rc=`$?; if [ `$rc -eq 0 ]; then mkdir -p $RemoteDir/.pack; cp -a $RemoteDir/output/. $RemoteDir/.pack/ 2>/dev/null; cp -a $RemoteDir/logs $RemoteDir/.pack/logs 2>/dev/null; tar czf - --warning=no-timestamp -C $RemoteDir/.pack .; fi; rm -rf $RemoteDir; exit `$rc"
         $rc = Invoke-SSHRetry "远程采集" { & cmd /c ("ssh $SSHOpts -T $H `"$rs`" < `"$pushFile`" > `"$pullFile`"") } -HostName $H
         if ($rc -ne 0) {
             if ($InstallItems) { Write-Host "[ERROR] 远端安装/采集失败 (exit=$rc；安装失败请检查目标机包源可达性)" -ForegroundColor Red }

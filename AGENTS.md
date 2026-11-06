@@ -268,6 +268,14 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **`set -u` 下的新分支必须实跑一次，变量名写错就是「整机采集中断」（v1.56.2 立规，真机事故）**：
+  `hwscope.sh` 顶部是 `set -uo pipefail`，任何 `$未定义变量` 都会立刻 exit 1 导致采集中断——实测
+  BMC 地址自动探测里写了 `${BMC_AUTO_CH}` / `${BMC_AUTO_IP}`（真名是 `BMC_AUTO_CHANNEL` / `BMC_IP`），
+  只有「通道 1 无有效地址、后续通道命中」这一分支才会走到，而该分支改完当天从未跑过 → 远程采集
+  直接失败。**规则**：① 新增/修改带变量的分支，**构造证据把这条分支跑通一次**（如用假 `ipmitool`
+  让 ch1=0.0.0.0、ch8=真实 IP，`PATH=mock:$PATH bash hwscope.sh --modules os` 验退出码）；
+  ② 提交前用 `grep -o '\${[A-Z_]*}'` 对照赋值处粗筛「用了没定义」的大写变量（多赋值同行的要人工确认）；
+  ③ 失败信息若被 `tar` 的 `time stamp ... in the future` 刷屏顶掉，先滤噪音再挑关键字行（见 `tools/win/remote_collect.ps1`）。
 - **CPU「频率策略被限频」不能只看 `scaling_max_freq < cpuinfo_max_freq`（v1.56.1 立规，AMD 误报）**：
   AMD EPYC 走 `acpi-cpufreq` 时，`scaling_max_freq` 取的是 ACPI `_PSS` **最高档 = 基频**，睿频由
   CPB/CPPC 在 P-state 表之外实现——所以「policy 上限 < cpuinfo 上限」在 AMD 上是**常态，不是限频**。

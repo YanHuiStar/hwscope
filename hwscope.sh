@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.56.1 (2026-10)
+# Version : 1.56.2 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.56.1"
+HWSCOPE_VERSION="v1.56.2"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -388,7 +388,7 @@ if [ -z "${BMC_IP:-}" ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null && check_cmd i
         if [ "$BMC_AUTO_CHANNEL" = "1" ]; then
             echo -e "${CYAN}[INFO] 带内探测到 BMC 地址: ${BMC_IP}（通道 1，默认通道）${NC}"
         else
-            echo -e "${CYAN}[INFO] 通道 1 未配置有效地址（0.0.0.0 或 169.254.0.0/16）；继续探测，已选用通道 ${BMC_AUTO_CH}：${BMC_AUTO_IP}${NC}"
+            echo -e "${CYAN}[INFO] 通道 1 未配置有效地址（0.0.0.0 或 169.254.0.0/16）；继续探测，已选用通道 ${BMC_AUTO_CHANNEL}：${BMC_IP}${NC}"
         fi
         _n=$(printf '%b' "$_cands" | grep -c .)
         if [ "$_n" -gt 1 ]; then
