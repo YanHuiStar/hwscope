@@ -268,6 +268,13 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **无 BMC 平台不能被「带外地址补录」打断（v1.56.5 立规）**：BMC 自动探测的交互补录分支原先只判
+  `[ -r /dev/tty ]`，于是**没有 BMC 的机器**（甚至 `ipmitool` 未装）也会弹一次「请手输带外 BMC IP」，
+  20 秒超时才跳过——用户会以为"必须有 BMC 才能用"。规则：判据用**硬件存在性**（`/dev/ipmi*` 或
+  `/sys/class/ipmi` 非空）而不是 tty；没有就不问，只打一行 `[INFO] 未检测到本机 BMC 硬件…跳过带外，只采带内`。
+  **注意区分两种情形**：有 BMC 但 KCS 无响应（`ipmitool mc info` 失败）**仍应询问**，因为用户可能知道带外 IP。
+  另：无 BMC 的机器采集照常进行，BMC/IPMI 相关验收项按「平台固有 N/A」处理、不计入数据不足——
+  「没有 BMC 就用不了」是误解，核心采集（主板/CPU/内存/GPU/存储/网络/风扇/电源）全都不依赖 BMC。
 - **Windows 自带的是 bsdtar，不认 GNU tar 的选项（v1.56.4 立规，真实事故）**：`tools/win/*.ps1` 里本地打包走
   `tar.exe`（`C:\Windows\System32\tar.exe`，libarchive/bsdtar），**不支持** `--warning=no-timestamp` 这类
   GNU 扩展——加了会打印 `Option --warning=no-timestamp is not supported` + usage 并直接让打包失败

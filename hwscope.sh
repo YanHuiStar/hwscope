@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.56.4 (2026-10)
+# Version : 1.56.5 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.56.4"
+HWSCOPE_VERSION="v1.56.5"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -367,6 +367,19 @@ _bmc_prompt_pass() {
 #   ch7=169.254.x、ch8=真实管理口，故取第一个「非 0.0.0.0 / 非 169.254.x」的 IPv4，
 #   并把命中的通道号打印出来（1 命中时注明"默认通道"，非 1 时说明 1 为什么不可用）。
 BMC_AUTO_CHANNEL=""; BMC_PASS_FROM_AUTO=0; HGX_PASS_FROM_AUTO=0
+# v1.56.5：先判「本机到底有没有 BMC 硬件」——没有就**完全不问**带外地址。
+#   实测痛点：无 BMC 平台（或 ipmitool 未装）时，下面的交互补录分支照样弹一次
+#   「请手输带外 BMC IP」，20s 超时/需回车跳过，看着像"必须有 BMC 才能用"。
+#   判据用硬件存在性（KCS 字符设备 / sysfs 类），与"带内能不能读"分开：
+#   有 BMC 但 KCS 无响应的情况仍应询问（用户可能知道带外 IP）。
+BMC_HW_PRESENT=0
+[ -e /dev/ipmi0 ] && BMC_HW_PRESENT=1
+if [ "$BMC_HW_PRESENT" -eq 0 ]; then
+    for _f in /dev/ipmi*; do [ -e "$_f" ] && { BMC_HW_PRESENT=1; break; }; done 2>/dev/null
+fi
+if [ "$BMC_HW_PRESENT" -eq 0 ] && [ -d /sys/class/ipmi ]; then
+    [ -n "$(ls -A /sys/class/ipmi 2>/dev/null)" ] && BMC_HW_PRESENT=1
+fi
 #   能力探测代替 uid 判断：先用一条 `ipmitool mc info`（带内 KCS）确认带内可用——
 #   不可用就整块跳过（否则 14 个通道各等一次超时，白拖十几秒）。
 if [ -z "${BMC_IP:-}" ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null && check_cmd ipmitool \
@@ -395,7 +408,7 @@ if [ -z "${BMC_IP:-}" ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null && check_cmd i
             echo -e "${CYAN}[INFO] 共 ${_n} 个通道配了地址: $(printf '%b' "$_cands" | tr '\n' ' ')（已取通道 ${BMC_AUTO_CHANNEL}；要指定请用 --bmc-ip）${NC}"
         fi
         BMC_PASS_FROM_AUTO=1
-    elif [ -r /dev/tty ]; then
+    elif [ "$BMC_HW_PRESENT" -eq 1 ] && [ -r /dev/tty ]; then
         # 探测不到（未配置 / 全 0.0.0.0 / 无带内权限）→ 交互补录，超时不阻塞无人值守
         printf '[输入] 未从带内探测到 BMC IP（各通道均为 0.0.0.0 / 169.254 或未配置）。\n        请手输带外 BMC IP（直接回车 = 本次不采带外）: ' > /dev/tty
         _ans=""
@@ -424,6 +437,11 @@ if [ -z "${BMC_IP:-}" ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null && check_cmd i
             echo -e "${YELLOW}[INFO] 未提供 BMC IP — 本次只采带内（KCS），不做带外采集${NC}"
         fi
     fi
+fi
+
+# v1.56.5：没有 BMC 硬件时明确说一句（否则静默跳过会让人以为漏采了带外）
+if [ -z "${BMC_IP:-}" ] && [ "${BMC_HW_PRESENT:-0}" -eq 0 ] && [ "${BMC_AUTO:-1}" -eq 1 ] 2>/dev/null; then
+    [ "${QUIET:-0}" -eq 1 ] 2>/dev/null || echo -e "${CYAN}[INFO] 未检测到本机 BMC 硬件（无 /dev/ipmi*、/sys/class/ipmi 为空）——跳过带外，只采带内${NC}"
 fi
 
 [ -n "${BMC_IP:-}" ]     && _bmc_prompt_pass BMC_PASS     "BMC 密码"         "${BMC_PASS_FROM_AUTO:-0}"
