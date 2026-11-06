@@ -268,6 +268,13 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **Windows 自带的是 bsdtar，不认 GNU tar 的选项（v1.56.4 立规，真实事故）**：`tools/win/*.ps1` 里本地打包走
+  `tar.exe`（`C:\Windows\System32\tar.exe`，libarchive/bsdtar），**不支持** `--warning=no-timestamp` 这类
+  GNU 扩展——加了会打印 `Option --warning=no-timestamp is not supported` + usage 并直接让打包失败
+  （实测：`[ERROR] 本地打包失败`，一个字节都没推上去）。**规则**：① 本地（Windows）侧的 tar 只用
+  `czf -C --exclude .` 这套两边都认的参数；② 需要 GNU 专有选项（`--warning`、`--transform` 等）只能写在
+  **远端 Linux 命令**里；③ 改 `tools/win/` 的 native 调用必须在本机用 `C:\Windows\System32\tar.exe`
+  实跑一遍（退出码 + 产物大小 + stderr），别只跑 PowerShell 语法校验——语法校验查不出"参数不被支持"。
 - **`set -u` 下的新分支必须实跑一次，变量名写错就是「整机采集中断」（v1.56.2 立规，真机事故）**：
   `hwscope.sh` 顶部是 `set -uo pipefail`，任何 `$未定义变量` 都会立刻 exit 1 导致采集中断——实测
   BMC 地址自动探测里写了 `${BMC_AUTO_CH}` / `${BMC_AUTO_IP}`（真名是 `BMC_AUTO_CHANNEL` / `BMC_IP`），
