@@ -301,9 +301,10 @@ try {
     if ($NeedBmcPipe) {
         Write-Host "[INFO] 检测到 BMC 参数：本次改用三步模式（单次认证模式的 stdin 被项目包占用，无法同时传 BMC 密码）" -ForegroundColor Gray
     }
-    # --warning=no-timestamp：本机时钟略快于目标机时，每个目录一条 "time stamp ... in the future"
-    #   警告会灌满 stderr 并被当成失败原因打印（实测 24 行）——与 Linux 版 v1.48.10 对齐静音
-    $rcTar = Invoke-Native { & $TarExe czf $pushFile --warning=no-timestamp -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp . }
+    # 注意：**不要**给本地打包加 --warning=no-timestamp——Windows 自带的是 bsdtar(tar.exe)，
+    #   不认这个 GNU tar 选项，会报 "Option --warning=no-timestamp is not supported" 直接中断打包（v1.56.3 实测）。
+    #   时间戳噪音来自**远端 GNU tar 解包**，已在那条命令上 2>/dev/null 抑制；远端打包仍可保留该选项。
+    $rcTar = Invoke-Native { & $TarExe czf $pushFile -C $ProjectDir --exclude=output --exclude=logs --exclude=.git --exclude=*.tmp . }
     if ($rcTar -ne 0) { Write-Host "[ERROR] 本地打包失败" -ForegroundColor Red; exit 1 }
 
     # ─── 2~4. 推送 + 远端执行 + 回拉（v1.48.63：root/免 sudo 走单次认证模式；普通用户 + sudo 保留原三步） ───
