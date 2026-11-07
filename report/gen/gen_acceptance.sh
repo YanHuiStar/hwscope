@@ -534,7 +534,17 @@ gen_acceptance() {
     #     全 0                           → PASS
     #   背景：旧口径显示 "Enabled, errors: 48/0/849"，849 那台按旧读法像要坏了，
     #   实际 volatile 全为 0、真实情况是不可纠正累计 696 —— 混加会同时造成误读与误判。
-    if [ -n "${GPU_ECC_MODE:-}" ]; then
+    # v1.56.8：ECC **被关闭**必须单独判定——关闭后 volatile/aggregate 恒为 0，
+    #   原实现会落进「全 0 → PASS」，等于用"计数为 0"证明"没有错误"，逻辑不成立。
+    #   数据中心卡交付规格要求开启 ECC，关闭属配置异常（单比特错误失去纠正能力，
+    #   静默数据损坏风险上升）。
+    _ecc_disabled=0
+    case "$(printf '%s' "${GPU_ECC_MODE:-}" | tr 'A-Z' 'a-z')" in
+        *disabled*|*disable*|*"off"*) _ecc_disabled=1 ;;
+    esac
+    if [ "$_ecc_disabled" -eq 1 ]; then
+        add_item "GPU ECC" "WARN" "ECC 已关闭（Mode=Disabled）——计数恒为 0，无法反映显存健康<br>数据中心卡应开启 ECC 以纠正单比特错误；恢复：nvidia-smi -i <卡号> -e 1 后重启，再复采确认"
+    elif [ -n "${GPU_ECC_MODE:-}" ]; then
         if [ "${GPU_ECC_AMD_RAS:-0}" = "1" ]; then
             _ecc_desc="AMD RAS 单比特(CE) ${GPU_ECC_CORR_VOL:-?} / 双比特(UE) ${GPU_ECC_UNCORR_VOL:-?}（ROCm 口径，本次驱动加载以来）"
         else

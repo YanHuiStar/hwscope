@@ -304,7 +304,13 @@ if [ -f "$GPU_ECC_CSV" ]; then
     # 汇总串（兼容旧字段 GPU_ECC，供 JSON/其他消费点使用；语义已变为分类口径）
     # v1.54.29：去掉 volatile/aggregate 英文与重复的「可纠正/不可纠正」，改用 CE/UE 短标签
     #   （术语表已收录 CE/UE），单行长度从 ~90 字降到 ~45 字
-    GPU_ECC="${GPU_ECC_MODE} · 本次 CE ${GPU_ECC_CORR_VOL}/UE ${GPU_ECC_UNCORR_VOL} · 累计 CE ${GPU_ECC_CORR_AGG}/UE ${GPU_ECC_UNCORR_AGG}"
+    # v1.56.8：ECC 关闭时计数恒为 0，不能与「已开启且无错误」同形展示
+    case "$(printf '%s' "$GPU_ECC_MODE" | tr 'A-Z' 'a-z')" in
+        *disabled*|*disable*|*"off"*)
+            GPU_ECC="${GPU_ECC_MODE} · ⚠️ 计数恒为 0，不反映显存健康（数据中心卡应开启 ECC）" ;;
+        *)
+            GPU_ECC="${GPU_ECC_MODE} · 本次 CE ${GPU_ECC_CORR_VOL}/UE ${GPU_ECC_UNCORR_VOL} · 累计 CE ${GPU_ECC_CORR_AGG}/UE ${GPU_ECC_UNCORR_AGG}" ;;
+    esac
     [ "${_ecc_nbad:-0}" -gt 0 ] 2>/dev/null && GPU_ECC="${GPU_ECC} · ⚠️ UE 集中在 GPU${GPU_ECC_BADCARDS//,/,GPU}"
     # 判定（供验收清单消费）
     if   [ "${GPU_ECC_UNCORR_VOL:-0}" -gt 0 ] 2>/dev/null; then GPU_ECC_VERDICT="FAIL"

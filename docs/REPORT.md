@@ -239,7 +239,7 @@ bash report/report.sh <采集目录> --acceptance     # 生成 hwscope_acceptanc
 | CPU 配置一致 | 默认 | 多颗 CPU 型号/Stepping/核数不一致判 FAIL；单颗判 N/A |
 | 内存容量一致 | 默认 | 容量混插判 WARN（空槽不参与统计） |
 | 内存 ECC | 默认 | 有 ECC 纠错 PASS；无 ECC / 类型未知判 WARN |
-| GPU ECC | 默认 | 见 §8.8；AMD 无 RAS 数据判平台固有 N/A |
+| GPU ECC | 默认 | 见 §8.8；ECC 关闭判 WARN（计数失去意义）；AMD 无 RAS 数据判平台固有 N/A |
 | GPU 功耗上限 | 条件 | Current ≠ Default 时 WARN（见 §8.7） |
 | 采集时机 | 条件 | 开机不足 3 分钟且未发现 GPU 时 WARN（见 §8.6） |
 | PCIe AER 错误 | 条件 | 可纠正 WARN，不可纠正 FAIL |
@@ -468,12 +468,14 @@ SMBIOS 中存在地址未填充的槽位记录时，BIOS 写 `0000:00:00.0`，�
 
 | 条件 | 判定 |
 |------|------|
+| **`ECC Mode = Disabled`** | **WARN（优先于下述各档）**：关闭后计数恒为 0，不可作为健康依据；数据中心卡应开启 ECC。恢复方式：`nvidia-smi -i <卡号> -e 1` 后重启并复采 |
 | `volatile 不可纠正 > 0` | FAIL（需报修） |
 | `volatile 可纠正 > 0` | WARN |
 | `aggregate 不可纠正 > 0` 且 `volatile 不可纠正 = 0` | WARN（历史记录，建议跑一轮显存压力后复测 volatile 是否增长） |
 | 全 0 | PASS |
 
-混加会造成两种误导：分不清性质（可纠正与不可纠正同权）与分不清时机（历史累计被当作当前故障）。**`aggregate` 归零的含义**：该计数正常只增不减，同一台机器两次采集间归零说明换过卡或换过模组，此时旧记录不应作为当前状态依据，验收记录应留一句「模组已更换」的说明。
+混加会造成两种误导：分不清性质（可纠正与不可纠正同权）与分不清时机（历史累计被当作当前故障）。判定顺序为「ECC 是否开启 → 性质 → 时机」：ECC 关闭时四类计数恒为 0，若仍按「全 0 判 PASS」，
+等同于以「无计数」证明「无错误」，逻辑不成立，故该项独立判 WARN。**`aggregate` 归零的含义**：该计数正常只增不减，同一台机器两次采集间归零说明换过卡或换过模组，此时旧记录不应作为当前状态依据，验收记录应留一句「模组已更换」的说明。
 
 行重映射（`Remapped Rows`）与 Bank 余量在 `gpu_N_ecc.log` / `gpu_N_detail.log` 中可查，用于判断不可纠正错误是否已被硬件隔离（`Remapping Failure Occurred: No` 即正常）。
 
