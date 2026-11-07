@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.56.8 (2026-10)
+# Version : 1.56.9 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.56.8"
+HWSCOPE_VERSION="v1.56.9"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -349,8 +349,15 @@ _bmc_prompt_pass() {
         #   （v1.54.9 审查 P2：原来只清主 BMC，HGX 的 IP 留着 → 仍发 3 条必失败 lanplus + 刷 WARN）
         unset "$_var" 2>/dev/null || true
         case "$_var" in
-            BMC_PASS)     BMC_IP="";     export BMC_IP ;;
-            HGX_BMC_PASS) HGX_BMC_IP=""; export HGX_BMC_IP ;;
+            BMC_PASS)
+                # v1.56.9：清空 BMC_IP 前先记下"本次曾确定到地址"——否则模块侧只能笼统报
+                #   「未配置带外 BMC 地址（BMC_IP 为空）」，而控制台刚说过"已探测到地址"，
+                #   两处文案互相矛盾，现场容易误判为故障。
+                [ -n "${BMC_IP:-}" ] && { BMC_IP_DETECTED="$BMC_IP"; export BMC_IP_DETECTED; }
+                BMC_IP="";     export BMC_IP ;;
+            HGX_BMC_PASS)
+                [ -n "${HGX_BMC_IP:-}" ] && { HGX_BMC_IP_DETECTED="$HGX_BMC_IP"; export HGX_BMC_IP_DETECTED; }
+                HGX_BMC_IP=""; export HGX_BMC_IP ;;
         esac
         echo -e "${YELLOW}[INFO] 未提供 BMC 密码，跳过带外采集（仅带内 KCS）${NC}" >&2
     else

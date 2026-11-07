@@ -70,7 +70,13 @@ run_power() {
         rm -f "$NETRC_TMP"
         trap - EXIT INT TERM
     else
-        echo -e "${YELLOW}[SKIP] Redfish Power 未采集（BMC_IP 未配置或缺少 curl）${NC}"
+        if [ -n "${BMC_IP_DETECTED:-}" ] && ! command -v curl >/dev/null 2>&1; then
+            echo -e "${YELLOW}[SKIP] Redfish Power 未采集（缺少 curl）${NC}"
+        elif [ -n "${BMC_IP_DETECTED:-}" ]; then
+            echo -e "${YELLOW}[SKIP] 已探测到 BMC 地址 ${BMC_IP_DETECTED}，本次未提供密码——Redfish 功耗未采${NC}"
+        else
+            echo -e "${YELLOW}[SKIP] Redfish Power 未采集（BMC_IP 未配置或缺少 curl）${NC}"
+        fi
     fi
 
     # ─── 3. 能耗核算 ───

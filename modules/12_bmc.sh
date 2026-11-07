@@ -110,7 +110,13 @@ run_bmc() {
             echo -e "       ④ 对照测试：换一台主机用同账号同密码跑 ipmitool mc info，若成功即定位为本机↔BMC 通路" >&2
         fi
     else
-        echo -e "${YELLOW}[SKIP] 未配置带外 BMC 地址（BMC_IP 为空）${NC}"
+        # v1.56.9：区分两种情形——「本次探测到地址、但未提供密码」与「根本没有地址」，
+        #   否则与主流程「已探测到 BMC 地址 …」的提示互相矛盾
+        if [ -n "${BMC_IP_DETECTED:-}" ]; then
+            echo -e "${YELLOW}[SKIP] 已探测到 BMC 地址 ${BMC_IP_DETECTED}，本次未提供密码——带外未采（仅带内 KCS）${NC}"
+        else
+            echo -e "${YELLOW}[SKIP] 未配置带外 BMC 地址（BMC_IP 为空）${NC}"
+        fi
     fi
 
     # ─── HGX 基板 BMC（独立管理 GPU/NVSwitch，加 8s 超时防卡死；仅配置了 HGX_BMC_IP 时启用） ───
