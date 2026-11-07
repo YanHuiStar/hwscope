@@ -149,12 +149,12 @@ xid_advice() {
     # v1.56.6（代码审查低-2）：原先「首个命中就 return」，一台机同时有 149 + 79 时只会给
     #   79 的建议，149（Fabric 事件，升级固件即可）的处置信息直接丢失。改为**逐码拼装**：
     #   硬件类（48/63/79/13/31）置顶，其次 Fabric/已纠正类，多段用「；」分隔并去重。
-    local codes="${1:-}" c out="" hw="" ot="" n=0
+    local codes="${1:-}" c out="" hw="" ot="" n=0 seen=" "
     for c in $(printf '%s' "$codes" | tr ',;/ ' '\n\n\n\n'); do
         case "$c" in
             ''|*[!0-9]*) continue ;;
         esac
-        case " $out " in *" [$c] "*) continue ;; esac   # 同码只出一次
+        case " ${seen:- } " in *" ${c} "*) continue ;; esac   # 同码只出一次（自审修正：原写 [$c] 永不命中）
         case "$c" in
             48) hw="${hw:+$hw；}XID 48 = 双比特 ECC（不可纠正）→ 显存硬件故障，建议报修" ;;
             79) hw="${hw:+$hw；}XID 79 = GPU 掉出总线 → 先查供电/PCIe 连接/散热，复采仍现按硬件故障报修" ;;
@@ -164,6 +164,7 @@ xid_advice() {
             94|95) ot="${ot:+$ot；}XID ${c} = 已纠正的单比特 ECC → 不中断业务，观察频率" ;;
             *) ot="${ot:+$ot；}XID ${c} = 需对照 NVIDIA XID 官方说明逐条核对" ;;
         esac
+        seen="${seen}${c} "
         n=$((n+1))
     done
     out="${hw}${hw:+${ot:+；}}${ot}"       # 硬件类置顶，其余随后（同码已去重）
@@ -211,7 +212,9 @@ xid_level() {
 #   现按代际拆精确：65xx(EMR Gold)=5200 / 6[0-4]xx(SPR Gold)=4800，其余未命中即回退。
 cpu_mem_limit() {
     local m="${1:-}" u
-    u=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
+    # 自审修正：lscpu/dmidecode 里型号可能写成 "XEON-GOLD-6526Y"，原来只认空格分隔 →
+    #   连接符形式全部落到"未收录"。此处把 - _ 归一为空格，多空格压成单空格，再匹配。
+    u=$(printf '%s' "$m" | tr 'a-z' 'A-Z' | tr -- '-_' '  ' | tr -s ' ' | sed 's/^ *//; s/ *$//')
     case "$u" in
         # ── Intel 6 代至强（Granite Rapids，型号带 P 后缀）──
         *[[:space:]]6[0-9][0-9][0-9]"P"*)                              printf '6400'; return 0 ;;
@@ -236,6 +239,18 @@ cpu_mem_limit() {
         # ── AMD EPYC 7003/7002（Milan / Rome）──
         *EPYC*7[0-9][0-9]3*)                                           printf '3200'; return 0 ;;
         *EPYC*7[0-9][0-9]2*)                                           printf '3200'; return 0 ;;
+    esac
+    # 无厂商前缀的纯型号（如 lscpu 只给 "6526Y"）：按同一张表兜底匹配一次
+    case "$u" in
+        6[0-9][0-9][0-9]P) printf '6400'; return 0 ;;
+        6[0-9][0-9][0-9]E) printf '5600'; return 0 ;;
+        8[5-9][0-9][0-9]*)  printf '5600'; return 0 ;;
+        65[0-9][0-9]*)      printf '5200'; return 0 ;;
+        8[0-4][0-9][0-9]*)  printf '4800'; return 0 ;;
+        6[0-4][0-9][0-9]*)  printf '4800'; return 0 ;;
+        5[0-9][0-9][0-9]*)  printf '4800'; return 0 ;;
+        4[0-9][0-9][0-9]*)  printf '4800'; return 0 ;;
+        3[0-9][0-9][0-9]*)  printf '4800'; return 0 ;;
     esac
     # 未收录型号：返回空 → 调用方回退「按 DIMM 额定判」，宁可多报 WARN 也不猜
     printf ''

@@ -73,6 +73,8 @@ while [ $# -gt 0 ]; do
         -j|--jobs)    [ $# -ge 2 ] || { echo "[ERROR] -j 需要并行数（如 -j4）" >&2; exit 1; }; JOBS="$2"; shift 2 ;;
         # 兼容紧凑写法 -j4 / --jobs=4（实测漏了这条：-j1 被当目录名传下去 → 多算一份、报 FAIL）
         -j[0-9]*|--jobs=[0-9]*) JOBS="${1#-j}"; JOBS="${JOBS#--jobs=}"; shift ;;
+        # v1.56.7（自审）：-jabc 这类写法原来会被当作**目录名**继续执行（多算一份样本、报 basename 错）
+        -j*|--jobs=*) echo "[ERROR] 并行度需为正整数（如 -j4，范围 1..)" >&2; exit 1 ;;
         --samples)    [ $# -ge 2 ] || { echo "[ERROR] --samples 需要 SN 列表（如 --samples SN1,SN2）" >&2; exit 1; }; SAMPLES="$2"; shift 2 ;;
         -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) dirs+=("$1"); shift ;;
@@ -89,7 +91,12 @@ if [ -z "$JOBS" ]; then
     [ "$JOBS" -lt 2 ] 2>/dev/null && JOBS=2
     [ "$JOBS" -gt 6 ] 2>/dev/null && JOBS=6
 fi
-case "$JOBS" in ''|*[!0-9]*) echo "[ERROR] -j 需要正整数" >&2; exit 1 ;; esac
+case "$JOBS" in ''|*[!0-9]*) echo "[ERROR] 并行度需为正整数（如 -j4）" >&2; exit 1 ;; esac
+# 自审修正：-j0/-j00 会让横幅显示"并行度 0"且语义含糊 → 钳到 1 并说明
+if [ "$JOBS" -lt 1 ] 2>/dev/null; then
+    echo "[INFO] 并行度 ${JOBS} 无意义，按 1（串行）执行"
+    JOBS=1
+fi
 if [ "$REGRESSION" -eq 1 ] && [ "$JOBS" -gt 1 ]; then
     echo "[INFO] --regression/--update 共用基线文件，本次串行执行（-j1）"
     JOBS=1

@@ -165,6 +165,7 @@ hwscope/
 | `storcli /cN/bbu show all` + `/cN/cv show all` | 09_raid | RAID 缓存电池与写缓存策略，二者必须同看 |
 | 裸 `dmidecode`（覆盖全部 type） | 01_motherboard | 含 Type 27 冷却 / 28 温度 / 29 电流 / 26 电压 / 11 OEM Strings / 38 IPMI；各 type 专用文件保留 |
 | `energy_uj` 两次采样 | 10_psu | CPU RAPL：ΔE/Δt，可与 DCMI 交叉验证口径 |
+| `cpufreq` 属性组（driver / governor / scaling_{max,min}_freq / cpuinfo_{max,min}_freq / energy_performance_preference）＋ `boost` / `cpb_boost` / `no_turbo` | 02_cpu | 频率策略判定：`scaling_max_freq` 与 `cpuinfo_max_freq` 比对须叠加 boost 状态——AMD 走 `acpi-cpufreq` 时 policy 上限通常为基频，睿频经 CPB/CPPC 实现，缺 boost 字段会把正常机器判为限频（口径见 `docs/REPORT.md` §8.14） |
 | 裸 `nvidia-smi` | 04_gpu | 现场最常看的 `Pwr:Usage/Cap`、显存占用、利用率一屏形态（与 `-q`、`query-gpu` 并存） |
 
 ## 6. 输出结构
