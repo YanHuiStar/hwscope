@@ -28,7 +28,10 @@ if [ -f "${block_devices_all}" ] && [ -n "$SYS_DISK" ]; then
         #   SIZE 是首个 ^[0-9.]+[KMGTP]$ 的令牌 → 其前一个令牌是 SERIAL、其后一个是 TRAN，
         #   NAME 与 SERIAL 之间整体是 MODEL（MODEL 本身可含空格与容量字样，如 "PHILIPS FM60PS051S/93 512GB"）。
         _sp=$(printf '%s' "$_sysrow" | awk '{
-            for (i = 2; i <= NF; i++) if ($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") { si = i; break }
+            # v1.56.6（代码审查低-1）：SIZE 令牌必须在 NAME+MODEL 之后（si>=4）——
+            #   否则形如 "64G"/"512T" 的短序列号（廉价 U 盘常见）会先被当成容量，
+            #   导致 SERIAL/SIZE/TRAN 三字段错位，还可能把非 USB 盘误判成外置介质。
+            for (i = 4; i <= NF; i++) if ($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") { si = i; break }
             if (!si) exit
             mdl = ""
             for (j = 2; j < si - 1; j++) mdl = mdl (mdl == "" ? "" : " ") $j

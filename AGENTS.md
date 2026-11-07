@@ -268,6 +268,18 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
 - **WSL sudo 重置 PATH**：`sudo bash hwscope.sh` 会因 secure_path 不含 `/usr/lib/wsl/lib` 而检测不到 nvidia-smi → GPU 误判 0；common.sh 已内置 `/usr/lib/wsl/lib` 路径兜底，改 GPU 检测逻辑勿移除
 - **函数内 herestring 空读（MSYS bash quirk）**：`gen_json/gen_md/gen_txt` 等函数内 `while read ... done <<< "$VAR"` 在 MSYS/Git-Bash 下会空读（循环体不执行、明细数组全空）；统一用 `done < <(printf '%s\n' "$VAR")` 进程替换替代 herestring（v1.28.17 已全部替换，勿改回）
 - **命令替换剥尾换行**：`VAR=$(cmd)` 会剥离输出末尾换行，直接 `while read ... <<< "$VAR"`/`printf '%s' "$VAR"` 会导致最后一行 read 返回非零、循环体不执行（丢最后一条明细）；进程替换必须用 `printf '%s\n'` 补尾换行
+- **启发式型号表未命中必须回退从严，禁止按数字段猜代际（v1.56.6 立规，代码审查中-1）**：
+  `cpu_mem_limit()` 原先把 `空格+6xxx` 一律当 Sapphire Rapids（4800），但 Emerald Rapids 的
+  Gold 65xx 也是 6xxx —— Intel ARK 上 Gold 6526Y 是 **DDR5-5200**，被低估 400 MT/s 后，
+  「DIMM 5600 只跑 5200」的机器会被判成「已到 CPU 上限，属正常」，**把真降速洗白（漏报方向）**。
+  规则：① 型号族必须能区分代际才写进表（65xx=5200 / 6[0-4]xx=4800 / 8[5-9]xx=5600 / 8[0-4]xx=4800 /
+  6xxxP=6400 / 6xxxE=5600）；② **未命中一律返回空**，让调用方回退到旧判据（按额定比、判 WARN），
+  宁可多报也不猜；③ 注释里写明"只收能确认的族"，与实际实现一致。
+- **SMBIOS Type 9 不完整时不能据「无槽位声明」判板载（v1.56.6 立规，代码审查中-2）**：
+  板载低速位判定的前提是槽位表完整。白牌/ODM 机 Type 9 常只声明部分槽位，真插槽卡会因"无声明"
+  被归进板载、从 `PCIE_SLOW_COUNT` 剔除（**漏报方向**，最危险）。规则：**声明槽位 < 2 条 → 视为不可靠，
+  不启用板载判定**（清空 `PCIE_SLOT_BUSES`，回退为按插槽卡从严判）；报告端「板载低速位」说明附前提，
+  提醒白牌机人工复核。实测：把 25 条槽位截成 1 条后，同一台 Dell 由「降速 0 + 板载 1」变为「降速 1」。
 - **无 BMC 平台不能被「带外地址补录」打断（v1.56.5 立规）**：BMC 自动探测的交互补录分支原先只判
   `[ -r /dev/tty ]`，于是**没有 BMC 的机器**（甚至 `ipmitool` 未装）也会弹一次「请手输带外 BMC IP」，
   20 秒超时才跳过——用户会以为"必须有 BMC 才能用"。规则：判据用**硬件存在性**（`/dev/ipmi*` 或

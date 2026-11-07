@@ -59,6 +59,18 @@ _mb_dir="${OUT}/motherboard"   # MB_DIR 在本文件靠后才赋值，此处不�
         | awk -F: '{ bus = (NF >= 3) ? $2 : $1; sub(/^0+/, "", bus); if (bus == "") bus = "0"; print bus }' \
         | sort -u | tr '\n' ',' | sed 's/,$//')
 fi
+# v1.56.6（代码审查中-2）：Type 9 槽位表**不完整**时不能据此判"板载"——白牌机常常只声明部分槽位，
+#   真插槽卡会因"无声明"被归进板载、从降速统计里剔除（漏报方向，最危险）。
+#   判据：声明的槽位少于 2 条 → 视为不可靠，清空集合 → awk 侧回退为「按插槽卡从严判定」。
+PCIE_SLOT_TRUST=0
+if [ -n "${PCIE_SLOT_BUSES:-}" ]; then
+    _slot_n=$(grep -ciE 'Bus Address:' "${_mb_dir}/dmidecode_slot.log" 2>/dev/null || echo 0)
+    if [ "${_slot_n:-0}" -ge 2 ] 2>/dev/null; then
+        PCIE_SLOT_TRUST=1
+    else
+        PCIE_SLOT_BUSES=""      # 不可靠 → 不启用板载判定，宁可多报也不漏
+    fi
+fi
 if [ -f "${pcie_full}" ]; then
     PCIE_UP_CAP=$(awk '
         /^([0-9a-f]+:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]/ {

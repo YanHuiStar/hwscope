@@ -146,32 +146,32 @@ TIMING_TOTAL=$(grep -m1 "^总时长" "$SUMMARY" 2>/dev/null | awk '{print $3}')
 #   更新固件即可；79/48 才是卡或显存硬件问题。原先一律输出"需确认对应卡是否异常"，
 #   客户看不出该报修还是该升级固件（实测 8×A100 机器 XID 149 被读成"显卡有故障"）。
 xid_advice() {
-    local codes="${1:-}"
-    local c
+    # v1.56.6（代码审查低-2）：原先「首个命中就 return」，一台机同时有 149 + 79 时只会给
+    #   79 的建议，149（Fabric 事件，升级固件即可）的处置信息直接丢失。改为**逐码拼装**：
+    #   硬件类（48/63/79/13/31）置顶，其次 Fabric/已纠正类，多段用「；」分隔并去重。
+    local codes="${1:-}" c out="" hw="" ot="" n=0
     for c in $(printf '%s' "$codes" | tr ',;/ ' '\n\n\n\n'); do
         case "$c" in
-            149|*149*)
-                printf '%s' "XID 149 = NETIR_MFDE_EVENT（NVLink/NVSwitch Fabric 管理事件，Nonfatal，非 GPU 卡故障）——建议将 GPU 与 NVSwitch 固件、驱动升级到厂商推荐版本后复采确认；该事件常见于旧固件，升级后一般不再出现"
-                return 0 ;;
-            79)
-                printf '%s' "XID 79 = GPU 已从总线脱落——先复核该卡供电/PCIe 连接/散热，复采仍现则按硬件故障报修"
-                return 0 ;;
-            48)
-                printf '%s' "XID 48 = 双比特 ECC（不可纠正）——显存硬件故障，建议报修，勿继续承载业务"
-                return 0 ;;
-            63)
-                printf '%s' "XID 63 = 行重映射事件——显存已发生重映射，观察计数是否继续增长，持续增长则报修"
-                return 0 ;;
-            94|95)
-                printf '%s' "XID 94/95 = 已纠正的 ECC 错误（单比特）——不中断业务，观察发生频率"
-                return 0 ;;
-            13|31)
-                printf '%s' "XID 13/31 = 显存非法访问/非法地址——先排查应用越界与驱动版本，复现则更换卡验证"
-                return 0 ;;
             ''|*[!0-9]*) continue ;;
         esac
+        case " $out " in *" [$c] "*) continue ;; esac   # 同码只出一次
+        case "$c" in
+            48) hw="${hw:+$hw；}XID 48 = 双比特 ECC（不可纠正）→ 显存硬件故障，建议报修" ;;
+            79) hw="${hw:+$hw；}XID 79 = GPU 掉出总线 → 先查供电/PCIe 连接/散热，复采仍现按硬件故障报修" ;;
+            63) hw="${hw:+$hw；}XID 63 = 显存行重映射 → 观察计数是否继续增长，持续增长则报修" ;;
+            13|31) hw="${hw:+$hw；}XID ${c} = 显存/指令非法访问 → 先排查应用越界与驱动版本" ;;
+            149) ot="${ot:+$ot；}XID 149 = NVLink/NVSwitch Fabric 管理事件（Nonfatal，非卡故障）→ 升级 GPU/NVSwitch 固件与驱动后复采" ;;
+            94|95) ot="${ot:+$ot；}XID ${c} = 已纠正的单比特 ECC → 不中断业务，观察频率" ;;
+            *) ot="${ot:+$ot；}XID ${c} = 需对照 NVIDIA XID 官方说明逐条核对" ;;
+        esac
+        n=$((n+1))
     done
-    printf '%s' "需确认对应卡是否异常（对照 NVIDIA XID 官方说明逐条核对），复采仍现则现场复核"
+    out="${hw}${hw:+${ot:+；}}${ot}"       # 硬件类置顶，其余随后（同码已去重）
+    if [ -z "$out" ]; then
+        printf '%s' "需确认对应卡是否异常（对照 NVIDIA XID 官方说明逐条核对），复采仍现则现场复核"
+        return 0
+    fi
+    printf '%s' "$out"
 }
 
 # ─── XID 严重度分档（v1.55.1）─────────────────────────────────────────────
@@ -203,21 +203,29 @@ xid_level() {
 #   实测 Dell XE9680 + Xeon Platinum 8580（Emerald Rapids）：DIMM 额定 6400，
 #   Configured 5600 —— Intel 官方 8580 内存规格就是 DDR5 @ 5600 MT/s(1DPC)，BIOS 调不上去，
 #   旧判据按 DIMM 额定比 → 7 台同型号机全部误报「内存运行速率降速，建议核查 BIOS」。
-#   表按厂商公开规格整理，**只收已确认型号**；未命中返回空（回退旧行为，不臆测）。
+#   表按厂商公开规格整理（Intel ARK / AMD 官方），**只收能确认的型号族**；
+#   未命中返回空 → 回退旧判据（按 DIMM 额定比，从严判 WARN），**禁止按数字段猜代际**。
+#   v1.56.6（代码审查中-1）：原实现用 `空格+6xxx → 4800` 一概而论，把 Emerald Rapids 的
+#   Gold 65xx 也算成 4800 —— 而 ARK 上 Gold 6526Y 是 **DDR5-5200**（1DPC）。低估 400 MT/s 的方向
+#   是**漏报**：DIMM 5600 却只跑 5200 的机器会被判「已到 CPU 上限，属正常」，把真降速洗白。
+#   现按代际拆精确：65xx(EMR Gold)=5200 / 6[0-4]xx(SPR Gold)=4800，其余未命中即回退。
 cpu_mem_limit() {
     local m="${1:-}" u
     u=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
     case "$u" in
-        # ── Intel：6 代至强（Granite Rapids）──
-        *"XEON"*6[0-9][0-9][0-9]"P"*|*"PLATINUM 6"[0-9][0-9][0-9]"P"*) printf '6400'; return 0 ;;
+        # ── Intel 6 代至强（Granite Rapids，型号带 P 后缀）──
         *[[:space:]]6[0-9][0-9][0-9]"P"*)                              printf '6400'; return 0 ;;
-        # ── Intel：6 代 能效核（Sierra Forest, xxxxE）──
+        # ── Intel 6 代能效核（Sierra Forest，型号带 E 后缀）──
         *[[:space:]]6[0-9][0-9][0-9]"E"*)                              printf '5600'; return 0 ;;
-        # ── Intel：5 代至强（Emerald Rapids，85xx–89xx）──
+        # ── Intel 5 代 Platinum（Emerald Rapids 85xx–89xx）→ DDR5-5600 ──
         *[[:space:]]8[5-9][0-9][0-9]*)                                 printf '5600'; return 0 ;;
-        # ── Intel：4 代至强（Sapphire Rapids，80xx–84xx / 5xxx / 4xxx / 3xxx）──
+        # ── Intel 5 代 Gold（Emerald Rapids 65xx）→ DDR5-**5200**（ARK: Gold 6526Y）──
+        *[[:space:]]65[0-9][0-9]*)                                     printf '5200'; return 0 ;;
+        # ── Intel 4 代 Platinum（Sapphire Rapids 80xx–84xx，含 84xx+）→ DDR5-4800 ──
         *[[:space:]]8[0-4][0-9][0-9]*)                                 printf '4800'; return 0 ;;
-        *[[:space:]]6[0-9][0-9][0-9]*)                                 printf '4800'; return 0 ;;
+        # ── Intel 4 代 Gold（Sapphire Rapids 63xx/64xx）→ DDR5-4800 ──
+        *[[:space:]]6[0-4][0-9][0-9]*)                                 printf '4800'; return 0 ;;
+        # ── Intel 4 代 Gold 5xxx / Silver 4xxx / Bronze 3xxx → DDR5-4800 ──
         *[[:space:]]5[0-9][0-9][0-9]*)                                 printf '4800'; return 0 ;;
         *[[:space:]]4[0-9][0-9][0-9]*)                                 printf '4800'; return 0 ;;
         *[[:space:]]3[0-9][0-9][0-9]*)                                 printf '4800'; return 0 ;;
@@ -229,5 +237,6 @@ cpu_mem_limit() {
         *EPYC*7[0-9][0-9]3*)                                           printf '3200'; return 0 ;;
         *EPYC*7[0-9][0-9]2*)                                           printf '3200'; return 0 ;;
     esac
+    # 未收录型号：返回空 → 调用方回退「按 DIMM 额定判」，宁可多报 WARN 也不猜
     printf ''
 }

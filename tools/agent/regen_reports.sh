@@ -94,6 +94,14 @@ if [ "$REGRESSION" -eq 1 ] && [ "$JOBS" -gt 1 ]; then
     echo "[INFO] --regression/--update 共用基线文件，本次串行执行（-j1）"
     JOBS=1
 fi
+# v1.56.6（代码审查低-4）：wait -n 需 bash ≥ 4.3，CentOS 7（bash 4.2）上恒失败 →
+#   每轮回退整个 wait，实际退化成串行且无任何提示（结果对，只是慢一倍以上）。
+if [ "$JOBS" -gt 1 ] && ! ( wait -n 2>/dev/null; [ $? -ne 2 ] ) 2>/dev/null; then
+    if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] || { [ "${BASH_VERSINFO[0]:-0}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -lt 3 ]; }; then
+        echo "[INFO] 本机 bash ${BASH_VERSION:-?} 不支持 'wait -n'（需 ≥4.3），本次串行执行"
+        JOBS=1
+    fi
+fi
 
 # ─── 样本目录解析：参数目录 > --samples SN > 桌面默认（自动发现）───
 declare -a TARGETS=()
