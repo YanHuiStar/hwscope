@@ -307,8 +307,19 @@ load_manifest "${MEM_DIR}" proc_meminfo "proc_meminfo.log"
 load_manifest "${MEM_DIR}" dmidecode_memory_full "dmidecode_memory_full.log"
 MEM_TOTAL=$(grep -m1 "MemTotal" "${proc_meminfo}" 2>/dev/null | awk '{printf "%.1f GiB", $2/1024/1024}')
 # 速率：优先取实际运行速率（Configured Memory Speed），fallback 额定 Speed
-MEM_SPEED=$(extract "Configured Memory Speed" "${dmidecode_memory_full}")
+# v1.56.10：**只取在位内存条的值**——原实现 `extract` 抓文件里第一条匹配，
+#   而 dmidecode 会为每个空槽也输出一段（Speed / Configured Memory Speed 均为 `Unknown`），
+#   空槽在前时就把 "Unknown" 当成了现速 → 与额定 3200 不相等 → 误报「降速，建议核查 BIOS」。
+#   实测 DGX A100（16/32 槽在位）：16 条全部 3200/3200（额定即现速），却因空槽报 WARN。
+MEM_SPEED=$(awk '
+    /^Memory Device/ {in_d=1; next}
+    in_d && /^\S/ && !/^[[:space:]]/ {in_d=0}
+    in_d && /^[[:space:]]*Size:/ { sz=$0; sub(/^[[:space:]]*Size:[[:space:]]*/,"",sz); inst=(sz ~ /No Module|Not Installed|Unknown/) ? 0 : 1; next }
+    in_d && inst && /^[[:space:]]*Configured Memory Speed:/ { v=$0; sub(/.*Configured Memory Speed:[[:space:]]*/,"",v); if (v !~ /Unknown|N\/A/ && v != "") { print v; exit } }
+' "${dmidecode_memory_full}" 2>/dev/null)
+[ -z "$MEM_SPEED" ] && MEM_SPEED=$(extract "Configured Memory Speed" "${dmidecode_memory_full}")
 [ -z "$MEM_SPEED" ] && MEM_SPEED=$(extract "^[[:space:]]*Speed:" "${dmidecode_memory_full}")
+case "$MEM_SPEED" in Unknown*|"") MEM_SPEED="" ;; esac   # 兜底结果仍无效则留空，交由后续分支判 N/A
 MEM_SPEED_NOTE=""
 # 降速检测：额定 Speed 与运行速率不一致时提示（如 6400 额定 / 5200 实际）
 # v1.48.69 判据修正（用户口径）：降速是否正常取决于 DPC（每通道 DIMM 数），不是"是否插满"——

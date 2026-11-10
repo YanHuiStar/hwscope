@@ -356,6 +356,10 @@ N/A 是否计入「数据不足」按成因区分，不按同一标准一刀切�
 
 **注**：JEDEC SPD 的 `Module Revision Code` 可区分修订批次，但 `dmidecode` 不输出该字段，因此只能表述为「N 种不同料号」，不得臆断为「仅修订版本差异」。
 
+**空槽不参与取值**：`dmidecode` 会为每个空槽输出一段 `Memory Device`（`Size: No Module Installed`，且 `Speed` /
+`Configured Memory Speed` 为 `Unknown`）。速率与额定均**只在位内存条**取值，否则空槽在前时会把 `Unknown` 当成现速，
+与额定值不等 → 误报「降速，建议核查 BIOS」。实测 DGX A100（16/32 槽在位）16 条全部 3200/3200，即因该原因误报。
+
 **CPU 内存控制器上限（优先级 ⓪ 的依据）**：内存控制器位于 CPU 封装内（AMD Zen 在 I/O Die、Intel Xeon 在片内），
 因此 DDR 速率天花板是 CPU 规格属性，而非内存条属性。判定基准取 `min(DIMM 额定, CPU 上限)`：达到该基准即判 PASS。
 
@@ -604,3 +608,4 @@ logs/remote_logs/                           # 远程采集归档（独立）
 
 - **NVIDIA / AMD**：已由真机样本回归（B200 / B300 / A100 / MI300X 等）。
 - **昇腾 / Intel / 国产加速卡**：代码路径与工具探测已实现，尚无真机样本，型号识别与输出解析标注「待真机校准」；无工具时回落 lspci 通用兜底，加速卡不会从报告中丢失。
+
