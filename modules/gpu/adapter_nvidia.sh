@@ -34,12 +34,16 @@ run_gpu_nvidia() {
         "nvidia-smi -q"                                                              "${dir}/gpu_full.log"
         # v1.54.25：裸 nvidia-smi（默认表格）——Pwr:Usage/Cap / 显存占用 / 利用率一屏可见，
         #   是现场最常看的形态；此前只采了 -q 与 query-gpu，缺这一份。
+        # v1.56.12：两张 query-gpu 清单**屏蔽 stderr**（2>/dev/null）——run_and_log 会把 stderr
+        #   一并写进日志，而某张卡不可用时 nvidia-smi 打印 "Unable to determine the device handle
+        #   for GPUn: ..."，该行落在 CSV 首行会把表头挤下去，解析随之错位（实测 A100 掉卡机：
+        #   数量 8/7、型号串混入 "name"）。错误信息在 gpu_smi.log / gpu_full.log 中仍可查。
         "nvidia-smi"                                                                 "${dir}/gpu_smi.log"
-        "nvidia-smi --query-gpu=index,name,serial,pci.bus_id,gpu_uuid,memory.total,memory.used,power.limit,power.draw,temperature.gpu,utilization.gpu,clocks.current.graphics,clocks.current.memory,ecc.mode.current,pcie.link.gen.current,pcie.link.width.current,pcie.link.gen.max,pcie.link.width.max --format=csv" "${dir}/${inv_csv}"
+        "nvidia-smi --query-gpu=index,name,serial,pci.bus_id,gpu_uuid,memory.total,memory.used,power.limit,power.draw,temperature.gpu,utilization.gpu,clocks.current.graphics,clocks.current.memory,ecc.mode.current,pcie.link.gen.current,pcie.link.width.current,pcie.link.gen.max,pcie.link.width.max --format=csv 2>/dev/null" "${dir}/${inv_csv}"
         "nvidia-smi nvlink --status"                                                  "${dir}/gpu_nvlink_status.log"
         "nvidia-smi nvlink --capabilities"                                            "${dir}/gpu_nvlink_cap.log"
         "nvidia-smi -q -d ECC"                                                        "${dir}/gpu_ecc_full.log"
-        "nvidia-smi --query-gpu=index,name,ecc.mode.current,ecc.errors.corrected.volatile.total,ecc.errors.uncorrected.volatile.total,ecc.errors.corrected.aggregate.total,ecc.errors.uncorrected.aggregate.total --format=csv" "${dir}/gpu_ecc_inventory.csv"
+        "nvidia-smi --query-gpu=index,name,ecc.mode.current,ecc.errors.corrected.volatile.total,ecc.errors.uncorrected.volatile.total,ecc.errors.corrected.aggregate.total,ecc.errors.uncorrected.aggregate.total --format=csv 2>/dev/null" "${dir}/gpu_ecc_inventory.csv"
         "nvidia-smi pmon -c 1"                                                        "${dir}/gpu_pmon.log"
         "nvidia-smi --query-compute-apps=pid,process_name,used_memory,gpu_bus_id --format=csv" "${dir}/gpu_processes.csv"
         "nvidia-smi --query-gpu=driver_version --format=csv"                          "${dir}/gpu_driver_version.log"

@@ -460,6 +460,11 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
         echo "| 项 | 值 |"
     echo "|----|----|"
     echo "| 数量 | ${GPU_COUNT:-0} |"
+    # v1.56.12：PCI 枚举数与驱动可用数不一致时明确写出差额——实测 A100 掉卡机
+    #   PCI 仍枚举 8 张、nvidia-smi 只有 7 张，报告只写 7 会让读者以为平台就是 7 卡。
+    if [ "${GPU_PCI_PRESENT:-0}" -gt "${GPU_COUNT:-0}" ] 2>/dev/null; then
+        echo "| ⚠️ 数量差异 | PCI 枚举 ${GPU_PCI_PRESENT} 张，驱动可用 ${GPU_COUNT} 张——差额 $(( GPU_PCI_PRESENT - GPU_COUNT )) 张未接管（疑似掉卡/驱动未加载），见 XID 与 dmesg |"
+    fi
     echo "| 型号 | ${GPU_NAMES:-N/A} |"
     echo "| 显存总量 | ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）${GPU_MEM_SPEC_NOTE:+ ${GPU_MEM_SPEC_NOTE}} |"
     if [ -n "${GPU_AMD_SUSPECT:-}" ]; then

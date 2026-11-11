@@ -9,6 +9,13 @@ load_manifest "${GPU_DIR}" gpu_inventory "gpu_inventory.csv"
 load_manifest "${GPU_DIR}" gpu_ecc_inventory "gpu_ecc_inventory.csv"
 load_manifest "${GPU_DIR}" gpu_amd_ras "gpu_amd_ras.log"
 GPU_CSV="${gpu_inventory}"
+# v1.56.12：CSV **数据行**统一过滤——只认以「序号,」开头的行。
+#   背景：run_and_log 是 `bash -c "$cmd" >> log 2>&1`（stderr 一并落盘，便于排障），
+#   而 nvidia-smi 在某张卡不可用时会把 "Unable to determine the device handle for GPU2: ..."
+#   写到 stderr → 这行落在 CSV 第一行、表头被挤到第二行 → 原 `tail -n +2` 把**表头当成数据行**：
+#   实测该机（A100，1 张卡掉总线）报告出现 数量 8（实为 7）、型号 "NVIDIA A100-SXM4-80GB,name"、
+#   温度 N/A 等一连串错位。改为按数据行特征过滤，历史数据同样受益。
+_gpu_csv_body() { grep -v '^#' "$1" 2>/dev/null | grep -E '^[0-9]+,' ; }
 GPU_ECC_CSV="${gpu_ecc_inventory}"
 GPU_COUNT=0; GPU_NAMES=""; GPU_MEM=""; GPU_POWER=""; GPU_TEMP=""; GPU_ECC=""; GPU_DETAILS=""; GPU_DEGRADED=""; GPU_AMD_SUSPECT=""; GPU_RAS=""; GPU_ECC_AMD_RAS=0
 # v1.48.36/37: AMD RAS 解析（ECC 对应物——NVIDIA 的 ECC/退役行语义在 AMD 由 amd-smi ras/metric 承载；
@@ -91,8 +98,8 @@ if [ "${HEAD_NODE:-0}" -eq 1 ] && [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null;
     echo -e "${YELLOW}[WARN] 采集端平台标识为机头（_head），但 lspci 实有 ${GPU_PCI_PRESENT} 张加速卡 → 按 ${PLATFORM} 出报告（旧采集兜底，建议重采）${NC}" >&2
 fi
 if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
-    GPU_COUNT=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | wc -l)
-    GPU_NAMES=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -F',' '{n=$2; gsub(/^ +| +$/, "", n); last=""; while (match(n, /\[[^]]*\]/)) { last=substr(n, RSTART+1, RLENGTH-2); n=substr(n, RSTART+RLENGTH) }; if (last!="") print last; else print n}' | sort -u | tr '\n' ',' | sed 's/,$//')
+    GPU_COUNT=$(_gpu_csv_body "$GPU_CSV" | wc -l)
+    GPU_NAMES=$(_gpu_csv_body "$GPU_CSV" | awk -F',' '{n=$2; gsub(/^ +| +$/, "", n); last=""; while (match(n, /\[[^]]*\]/)) { last=substr(n, RSTART+1, RLENGTH-2); n=substr(n, RSTART+RLENGTH) }; if (last!="") print last; else print n}' | sort -u | tr '\n' ',' | sed 's/,$//')
     # 显存总量 / 功耗上限 / 温度
     # 显存总量（nvidia-smi memory.total，MiB→GiB 二进制换算，为可见值含 ECC 预留）
     # 动态匹配列名，避免硬编码位置
@@ -100,7 +107,7 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     power_col=$(get_csv_col_index "$GPU_CSV" "power.limit [W]")
     temp_col=$(get_csv_col_index "$GPU_CSV" "temperature.gpu")
 
-    GPU_MEM=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${mem_col:-6}" -F',' '{
+    GPU_MEM=$(_gpu_csv_body "$GPU_CSV" | awk -v col="${mem_col:-6}" -F',' '{
         v = $col; gsub(/ MiB/, "", v); gsub(/^ +| +$/, "", v)
         if (v ~ /^[0-9]+$/) sum += v; else na++
     } END{if (sum > 0) printf "%.0f GiB", sum/1024; else print "N/A"}')
@@ -110,8 +117,8 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     #   差值 < 3% → 匹配成功（额定 = 厂商值，如 H200 检测 143771MiB≈141GiB）
     #   全部不匹配 → ⚠️ 疑似魔改/伪装（如 RTX 2080Ti 魔改 22GB、低端卡刷 BIOS 伪装）
     # 多版本型号（A100 40/80GB、V100 16/32GB、RTX 3080 10/12GB）给候选列表，检测值自动选近者
-    GPU_MODEL_LINE=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f2)
-    GPU_MEM_DET_MIB=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | head -1 | cut -d',' -f6 | grep -oE "[0-9]+" | head -1)
+    GPU_MODEL_LINE=$(_gpu_csv_body "$GPU_CSV" | head -1 | cut -d',' -f2)
+    GPU_MEM_DET_MIB=$(_gpu_csv_body "$GPU_CSV" | head -1 | cut -d',' -f6 | grep -oE "[0-9]+" | head -1)
     GPU_MEM_SPEC=""
     GPU_MEM_SPEC_NOTE=""
     if [ -n "$GPU_MODEL_LINE" ] && [ -n "$GPU_MEM_DET_MIB" ] && command -v verify_gpu_mem >/dev/null 2>&1; then
@@ -129,11 +136,11 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
     fi
     # 功耗/温度数值守卫：非数值（[N/A]/空）不参与统计，防全部 N/A 输出 "0 W"/"0°C" 或均值被稀释
     # 注意：CSV 值带前导空格（" 700.00 W"），须先 trim 再校验（v1.33.4 修正）
-    GPU_POWER=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${power_col:-8}" -F',' '{
+    GPU_POWER=$(_gpu_csv_body "$GPU_CSV" | awk -v col="${power_col:-8}" -F',' '{
         v = $col; gsub(/^ +| +$/, "", v); gsub(/ W/, "", v)
         if(v ~ /^[0-9.]+$/) { if(v+0 > max+0) max = v; n++ }
     } END{if(n>0) printf "%.0f W", max; else print "N/A"}')
-    GPU_TEMP=$(grep -v "^#" "$GPU_CSV" | tail -n +2 | awk -v col="${temp_col:-9}" -F',' '{
+    GPU_TEMP=$(_gpu_csv_body "$GPU_CSV" | awk -v col="${temp_col:-9}" -F',' '{
         t = $col; gsub(/^ +| +$/, "", t)
         if(t ~ /^[0-9.]+$/) { sum += t; if(t+0 > tmax+0) tmax = t; n++ }
     } END{if(n>0) printf "%.0f°C (max %.0f)", sum/n, tmax; else print "N/A"}')
@@ -228,7 +235,7 @@ if [ -n "$GPU_CSV" ] && [ -f "$GPU_CSV" ]; then
         if [ -n "$gwidth" ] && [ -n "$gwidthmax" ] && [ "$gwidth" != "[N/A]" ] && [ "$gwidthmax" != "[N/A]" ] && [ "$gwidth" -lt "$gwidthmax" ] 2>/dev/null; then
             GPU_DEGRADED="${GPU_DEGRADED}GPU${gidx}: PCIe ${ggen}x${gwidth} (期望 ${ggenmax}x${gwidthmax}),"
         fi
-    done < <(grep -v '^#' "$GPU_CSV" | tail -n +2)
+    done < <(_gpu_csv_body "$GPU_CSV")
     # 逐卡魔改检测结果（覆盖仅第一卡的汇总警告：混插/伪装时列出具体卡）
     if [ -n "${GPU_MEM_MISMATCH_CARDS:-}" ]; then
         GPU_MEM_SPEC_NOTE="⚠️ ${GPU_MEM_MISMATCH_CARDS%,} 检测显存与额定不符（疑似显存魔改或伪装，需核实）"
@@ -286,7 +293,7 @@ fi
 #     aggregate uncorrected > 0 (vol=0) → WARN（历史记录，建议压测复测确认 volatile 不增长）
 #     全 0                             → PASS
 if [ -f "$GPU_ECC_CSV" ]; then
-    _ecc_stat=$(grep -v "^#" "$GPU_ECC_CSV" 2>/dev/null | tail -n +2 | awk -F',' '
+    _ecc_stat=$(_gpu_csv_body "$GPU_ECC_CSV" | awk -F',' '
         { for(i=1;i<=NF;i++){v=$i; gsub(/^ +| +$/,"",v); $i=v}
           mode=$3
           cv+=$4+0; uv+=$5+0; ca+=$6+0; ua+=$7+0
@@ -319,7 +326,7 @@ if [ -f "$GPU_ECC_CSV" ]; then
     else GPU_ECC_VERDICT="PASS"; fi
 fi
 # GPU 序列号列表（资产追踪；消费卡 serial=0 时忽略）
-GPU_SERIALS=$(grep -v "^#" "$GPU_CSV" 2>/dev/null | tail -n +2 | awk -F',' '{gsub(/^ +/,"",$3); gsub(/ +$/,"",$3); if($3!="" && $3!="0" && $3!="[N/A]") print $3}' | tr '\n' ',' | sed 's/,$//')
+GPU_SERIALS=$(_gpu_csv_body "$GPU_CSV" | awk -F',' '{gsub(/^ +/,"",$3); gsub(/ +$/,"",$3); if($3!="" && $3!="0" && $3!="[N/A]") print $3}' | tr '\n' ',' | sed 's/,$//')
 
 # ─── v1.48.24：从 pcie_full.log（lspci -vvv 全量）按 BDF 提取 GPU 卡 PCIe 协商链路 ───
 # 输出 "gen_cur|width_cur|gen_max|width_max"（N/A 缺省；2.5/5/8/16/32/64GT/s → Gen1-6）

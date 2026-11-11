@@ -47,7 +47,7 @@ Markdown 报告的章节顺序如下（`##` 级标题即 HTML 卡片与侧栏目
 | PCIe 拓扑与链路 | Fabric Switch 型号与端口数、链路统计、降速/降宽异常表 | 始终（无 `pcie_full` 数据时给 N/A 说明） |
 | CPU | 型号、插槽数、核心数、Stepping、频率、频率策略、处理器明细 | 始终 |
 | 内存 | 总量、插槽（已插/总数）、类型、速率、DIMM 明细 | 始终 |
-| GPU | 数量、型号、显存总量、额定功耗、功耗上限、VBIOS、ECC/RAS、退役行、温度、NVLink、xGMI、XID | 有 GPU 数据或有 GPU PCI 存在性 |
+| GPU | 数量（驱动可用数）、数量差异（PCI 枚举数与可用数不一致时出现）、型号、显存总量、额定功耗、功耗上限、VBIOS、ECC/RAS、退役行、温度、NVLink、xGMI、XID | 有 GPU 数据或有 GPU PCI 存在性 |
 | NVSwitch | 逐颗状态、温度、活动/总端口 | 有 NVSwitch 数据 |
 | NVSwitch 域（Fabric） | Fabric Manager 域配置与状态；机头形态说明「平台固有」 | 有 Fabric Manager / NVSwitch 数据（AMD、昇腾等平台无此数据） |
 | 存储 | 盘数、总容量、盘型号、系统盘（含型号/容量/传输类型）、盘明细、RAID 虚拟盘明细 | 始终 |
@@ -484,6 +484,22 @@ SMBIOS 中存在地址未填充的槽位记录时，BIOS 写 `0000:00:00.0`，�
 行重映射（`Remapped Rows`）与 Bank 余量在 `gpu_N_ecc.log` / `gpu_N_detail.log` 中可查，用于判断不可纠正错误是否已被硬件隔离（`Remapping Failure Occurred: No` 即正常）。
 
 **AMD 口径**：AMD 不生成 `gpu_ecc_inventory.csv`，采集端把 RAS 计数写入 `gpu/gpu_amd_ras.log`（`rocm-smi --showrasinfo` / `amd-smi metric -e` / `rocm-smi --query-ecc` 三级兜底）。报告端有数据即真判（单比特→可纠正、双比特→不可纠正；AMD 无 volatile/aggregate 之分，统一映射到 volatile），取不到数据判「平台固有 N/A」不计数。
+
+### 8.8.1 GPU 清单解析与掉卡识别
+
+`gpu_inventory.csv` 由 `nvidia-smi --query-gpu ...` 生成，采集层统一以 `bash -c "$cmd" >> log 2>&1` 落盘（stderr 一并保留，便于排障）。
+当某张卡不可用时，`nvidia-smi` 会把 `Unable to determine the device handle for GPUn: <BDF>: Unknown Error` 写到 stderr，
+该行位于 CSV 首行会把表头挤到第二行，按「首行是表头」解析即整体错位（实测某 8 卡机 1 张卡掉总线后出现
+数量 8（实为 7）、型号串混入表头字段 `name`、温度 N/A）。
+
+两条防线：
+
+1. **采集层**：两张 `query-gpu` 清单命令屏蔽 stderr（`2>/dev/null`）；错误文本在 `gpu_smi.log` / `gpu_full.log` 中仍可查。
+2. **报告层**：CSV 取数统一走 `_gpu_csv_body()`，只接受形如 `^[0-9]+,` 的数据行，跳过注释、表头与错误文本——历史数据同样受益。
+
+**掉卡识别**：`GPU 数量` 取驱动可用卡数（数据行数）；当 PCI 枚举数（`lspci` 3D controller）大于可用数时，
+GPU 段追加一行 `⚠️ 数量差异`，写明「PCI 枚举 N 张，驱动可用 M 张，差额 K 张未接管」，并与 XID / dmesg 交叉定位。
+不以「数量」隐去差额——否则读者会误认为该平台就是该卡数。
 
 ### 8.9 固件合规段
 
