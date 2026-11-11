@@ -131,11 +131,14 @@ run_os() {
         "dmesg_nvswitch" "dmesg_nvswitch.log" \
         "numa_hardware" "numa_hardware.log" \
         "numa_nodes" "numa_nodes.log" \
-        "pcie_aer" "pcie_aer.log" \
         "journal_kernel_hw" "journal_kernel_hw.log" \
         "journal_xid" "journal_xid.log" \
         "journal_mce" "journal_mce.log"
 
+    # v1.56.11：条件产出的文件改为**产出时才登记**（AGENTS v1.52.4）——
+    #   原实现把它们写在主 write_manifest 里，未产出时 manifest 指向不存在的文件，
+    #   「真没采到」与「本来就不产出」无法区分。判据与 07_network 的 mlxlink_failures 一致。
+    [ -f "${dir}/pcie_aer.log" ] && write_manifest --append "${dir}/manifest.txt" "pcie_aer" "pcie_aer.log"
     module_end "$MODULE_NAME"
 }
 

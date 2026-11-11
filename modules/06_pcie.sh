@@ -72,7 +72,6 @@ run_pcie() {
 
 # NOTE: gpu_pcie_N.log are generated per GPU bus (N=0,1,...)
     write_manifest "${dir}/manifest.txt" \
-        "skip_lspci" "00_skip_lspci.log" \
         "lspci_all" "lspci_all.log" \
         "lspci_tree" "lspci_tree.log" \
         "lspci_nvidia" "lspci_nvidia.log" \

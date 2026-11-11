@@ -7,6 +7,14 @@
 # ─── PSU 清单（ipmi_psu_fru.log：FRU 描述/型号/PN/SN） ───
 # 状态机：desc 行出现时输出上一个 FRU（PN/SN 在 Name 之后，须延迟一行）；
 # 只保留 PSU 行（PSU1_FRU/PSU4_FRU/Power Supply），过滤风扇/背板/PDB 等其他 FRU
+# v1.56.11：PSU FRU 占位词判定收敛为**文件级单一定义**——原先在「Handle 分支」与
+#   「文件尾最后一条记录」两处各写一份（v1.52.17 有意为之，避免上游未执行时函数缺失），
+#   但两份拷贝一旦不同步就会出现「同一台机 PSU1 已友好渲染、PSU2 仍堆叠占位词」的割裂。
+#   现定义在段首，两处分支共用。
+# v1.56.11：PSU FRU 占位词判定收敛为**文件级单一定义**——原先在「Handle 分支」与
+#   「文件尾最后一条记录」两处各写一份（v1.52.17 为免上游未执行时函数缺失），
+#   两份拷贝一旦不同步就会出现「同台机 PSU1 已友好渲染、PSU2 仍堆叠占位词」的割裂。
+_dph() { case "$1" in ""|"Not Specified"|"To Be Filled By O.E.M."|"To be filled by O.E.M."|"To Be Filled by O.E.M."|"Default string"|"System Product Name"|"UNKNOWN"|"Unknown"|"N/A") return 0 ;; *) return 1 ;; esac; }
 PSU_DIR="${OUT}/psu"
 load_manifest "${PSU_DIR}" ipmi_psu_fru "ipmi_psu_fru.log"
 load_manifest "${BMC_DIR}" ipmi_fru_all "ipmi_fru_all.log"
@@ -312,7 +320,6 @@ if [ -f "$_fru_src" ]; then
                         #   「To Be Filled By O.E.M. To Be Filled By O.E.M. Rev To Be Filled By O.E.M.」，
                         #   看着像采集坏了（而同机 IPMI 侧电源状态正常、容量 368W 是真实数据，故容量保留）。
                         #   判据不变：**三关键字段（Name/厂商/SN）全为占位或空** 才判「FRU 未读到」。
-                        _dph() { case "$1" in ""|"Not Specified"|"To Be Filled By O.E.M."|"To be filled by O.E.M."|"To Be Filled by O.E.M."|"Default string"|"System Product Name"|"UNKNOWN"|"Unknown"|"N/A") return 0 ;; *) return 1 ;; esac; }
                         _dempty=0
                         if _dph "$_dname" && _dph "$_dmfr" && _dph "$_dsn"; then _dempty=1; fi
                         if [ "$_dempty" -eq 1 ]; then
@@ -336,11 +343,8 @@ if [ -f "$_fru_src" ]; then
                 *)     _dnum="${_didx:-1}" ;;
             esac
             # v1.48.94：与 Handle 分支同一判据（见上）——最后一条记录若也是空字段，同样友好渲染
-            # v1.52.17：占位词集合必须与 Handle 分支**保持同步**（含 ASUS `To Be Filled By O.E.M.`、
-            #   AMI `Default string` 等）。两处不同步会出现割裂：实测同一台机上 PSU1 已友好渲染、
-            #   PSU2 仍在堆叠占位词——只改一处的典型症状。此处重复定义 `_dph` 是刻意的：
-            #   若上游循环未执行（无 Handle 行）则函数未定义，此处必需自足。
-            _dph() { case "$1" in ""|"Not Specified"|"To Be Filled By O.E.M."|"To be filled by O.E.M."|"To Be Filled by O.E.M."|"Default string"|"System Product Name"|"UNKNOWN"|"Unknown"|"N/A") return 0 ;; *) return 1 ;; esac; }
+            # v1.56.11：`_dph` 已在段首统一定义（原先此处与 Handle 分支各写一份，
+            #   两份拷贝不同步就会出现割裂：实测同一台机 PSU1 已友好渲染、PSU2 仍在堆叠占位词）。
             _dempty=0
             if _dph "$_dname" && _dph "$_dmfr" && _dph "$_dsn"; then _dempty=1; fi
             if [ "$_dempty" -eq 1 ]; then

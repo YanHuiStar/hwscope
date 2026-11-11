@@ -140,8 +140,11 @@ run_raid() {
     #       sas2_hbaH.log, sas2_hbaH_status.log, lspci_raid_N.log are generated per controller/device
     write_manifest "${dir}/manifest.txt" \
         "pci_raid_hba_list" "pci_raid_hba_list.log" \
-        "storcli_controllers" "storcli_controllers.log"
 
+    # v1.56.11：条件产出的文件改为**产出时才登记**（AGENTS v1.52.4）——
+    #   原实现把它们写在主 write_manifest 里，未产出时 manifest 指向不存在的文件，
+    #   「真没采到」与「本来就不产出」无法区分。判据与 07_network 的 mlxlink_failures 一致。
+    [ -f "${dir}/storcli_controllers.log" ] && write_manifest --append "${dir}/manifest.txt" "storcli_controllers" "storcli_controllers.log"
     module_end "$MODULE_NAME"
 }
 

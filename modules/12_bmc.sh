@@ -176,18 +176,21 @@ write_manifest "${dir}/manifest.txt" \
         "ipmi_sensors_fan" "ipmi_sensors_fan.log" \
         "ipmi_sensors_volt" "ipmi_sensors_volt.log" \
         "ipmi_sensors_power" "ipmi_sensors_power.log" \
-        "remote_bmc_fru" "remote_bmc_fru.log" \
-        "remote_bmc_mc" "remote_bmc_mc.log" \
-        "remote_bmc_sensors" "remote_bmc_sensors.log" \
-        "remote_bmc_sel" "remote_bmc_sel.log" \
-        "remote_bmc_chassis" "remote_bmc_chassis.log" \
-        "hgx_bmc_fru" "hgx_bmc_fru.log" \
-        "hgx_bmc_sensors" "hgx_bmc_sensors.log" \
-        "hgx_bmc_sdr" "hgx_bmc_sdr.log" \
-        "redfish_system" "redfish_system.log" \
-        "redfish_managers" "redfish_managers.log" \
-        "redfish_fw_versions" "redfish_fw_versions.log"
 
+    # v1.56.11：条件产出的文件改为**产出时才登记**（AGENTS v1.52.4）——
+    #   原实现把它们写在主 write_manifest 里，未产出时 manifest 指向不存在的文件，
+    #   「真没采到」与「本来就不产出」无法区分。判据与 07_network 的 mlxlink_failures 一致。
+    [ -f "${dir}/remote_bmc_fru.log" ] && write_manifest --append "${dir}/manifest.txt" "remote_bmc_fru" "remote_bmc_fru.log"
+    [ -f "${dir}/remote_bmc_mc.log" ] && write_manifest --append "${dir}/manifest.txt" "remote_bmc_mc" "remote_bmc_mc.log"
+    [ -f "${dir}/remote_bmc_sensors.log" ] && write_manifest --append "${dir}/manifest.txt" "remote_bmc_sensors" "remote_bmc_sensors.log"
+    [ -f "${dir}/remote_bmc_sel.log" ] && write_manifest --append "${dir}/manifest.txt" "remote_bmc_sel" "remote_bmc_sel.log"
+    [ -f "${dir}/remote_bmc_chassis.log" ] && write_manifest --append "${dir}/manifest.txt" "remote_bmc_chassis" "remote_bmc_chassis.log"
+    [ -f "${dir}/hgx_bmc_fru.log" ] && write_manifest --append "${dir}/manifest.txt" "hgx_bmc_fru" "hgx_bmc_fru.log"
+    [ -f "${dir}/hgx_bmc_sensors.log" ] && write_manifest --append "${dir}/manifest.txt" "hgx_bmc_sensors" "hgx_bmc_sensors.log"
+    [ -f "${dir}/hgx_bmc_sdr.log" ] && write_manifest --append "${dir}/manifest.txt" "hgx_bmc_sdr" "hgx_bmc_sdr.log"
+    [ -f "${dir}/redfish_system.log" ] && write_manifest --append "${dir}/manifest.txt" "redfish_system" "redfish_system.log"
+    [ -f "${dir}/redfish_managers.log" ] && write_manifest --append "${dir}/manifest.txt" "redfish_managers" "redfish_managers.log"
+    [ -f "${dir}/redfish_fw_versions.log" ] && write_manifest --append "${dir}/manifest.txt" "redfish_fw_versions" "redfish_fw_versions.log"
     module_end "$MODULE_NAME"
 }
 

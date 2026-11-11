@@ -80,7 +80,9 @@ run_nvswitch() {
         run_and_log "nv-fabricmanager --version 2>&1 || nvidia-fabricmanager --version 2>&1" "${dir}/fabricmanager_version.log"
     fi
     if check_cmd systemctl; then
-        run_and_log "systemctl status nvidia-fabricmanager 2>&1 | head -40" "${dir}/fabricmanager_service.log"
+        # v1.56.11：去掉 head -40——AGENTS v1.41.1 要求 systemctl status 采全量（99_os 的
+        #   service_* 已是全量），此处是同一规则漏改的调用点；截断会丢失败单元的上下文。
+        run_and_log "systemctl status nvidia-fabricmanager 2>&1" "${dir}/fabricmanager_service.log"
     fi
 
 # NOTE: nvswitch_audit*.log 为 NVSwitch 可达性矩阵（v1.51.3 起，替代不存在的 nvswitch CLI）

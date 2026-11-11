@@ -95,8 +95,11 @@ run_fan() {
         "ipmi_fan_status" "ipmi_fan_status.log" \
         "sensors_all" "sensors_all.log" \
         "sensors_fan" "sensors_fan.log" \
-        "acpi_fan" "acpi_fan.log"
 
+    # v1.56.11：条件产出的文件改为**产出时才登记**（AGENTS v1.52.4）——
+    #   原实现把它们写在主 write_manifest 里，未产出时 manifest 指向不存在的文件，
+    #   「真没采到」与「本来就不产出」无法区分。判据与 07_network 的 mlxlink_failures 一致。
+    [ -f "${dir}/acpi_fan.log" ] && write_manifest --append "${dir}/manifest.txt" "acpi_fan" "acpi_fan.log"
     module_end "$MODULE_NAME"
 }
 

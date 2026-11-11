@@ -210,7 +210,6 @@ run_storage() {
         "block_devices_by_type" "block_devices_by_type.log" \
         "drive_type_ssd_hdd" "drive_type_ssd_hdd.log" \
         "smart_scan" "smart_scan.log" \
-        "skip_smart_wsl" "00_skip_smart_wsl.log" \
         "lsscsi_all" "lsscsi_all.log" \
         "lsscsi_detail" "lsscsi_detail.log" \
         "df_h" "df_h.log" \
@@ -218,6 +217,10 @@ run_storage() {
         "proc_partitions" "proc_partitions.log" \
         "disk_inventory" "disk_inventory.csv"
 
+    # v1.56.11：条件产出的文件改为**产出时才登记**（AGENTS v1.52.4）——
+    #   原实现把它们写在主 write_manifest 里，未产出时 manifest 指向不存在的文件，
+    #   「真没采到」与「本来就不产出」无法区分。判据与 07_network 的 mlxlink_failures 一致。
+    [ -f "${dir}/00_skip_smart_wsl.log" ] && write_manifest --append "${dir}/manifest.txt" "skip_smart_wsl" "00_skip_smart_wsl.log"
     module_end "$MODULE_NAME"
 }
 
