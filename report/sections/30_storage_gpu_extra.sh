@@ -272,6 +272,11 @@ fi
 # v1.48.23：不再无条件重置——AMD 平台 GPU_VBIOS 已在 20_gpu 设置（SMC 固件一致性），
 # 仅 NVIDIA detail map 非空时聚合覆盖；AMD 平台走 20_gpu 的值（此处 N/A 覆盖会误清）
 GPU_VBIOS="${GPU_VBIOS:-N/A}"
+# v1.56.15：VBIOS 覆盖统计——可用卡里若有 detail 日志缺失（旧采集按 0..N-1 枚举，掉卡时会漏采
+#   最大索引那张），一致性结论只覆盖取到值的那几张，报告必须写明范围。
+GPU_VBIOS_COVER=${#GPU_VBIOS_MAP[@]}
+GPU_VBIOS_MISS=$(( ${GPU_COUNT:-0} - GPU_VBIOS_COVER ))
+[ "$GPU_VBIOS_MISS" -lt 0 ] 2>/dev/null && GPU_VBIOS_MISS=0
 if [ "${#GPU_VBIOS_MAP[@]}" -gt 0 ]; then
     _vbios_agg=$(for _k in "${!GPU_VBIOS_MAP[@]}"; do echo "${GPU_VBIOS_MAP[$_k]}"; done | sort | uniq -c | sort -rn)
     _vbios_uniq=$(printf '%s\n' "$_vbios_agg" | wc -l)

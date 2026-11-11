@@ -472,7 +472,9 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
     fi
     echo "| 额定功耗 | ${GPU_POWER:-N/A} |"
     [ -n "${GPU_PL_MISMATCH:-}" ] && echo "| ⚠️ 功耗上限 | **被改过**：${GPU_PL_MISMATCH}<br>满载时这些卡只有相应比例的功耗预算（掉频、各卡算力不均）；若非刻意设置，执行 sudo nvidia-smi -pl ${GPU_PL_DEFAULT:-默认值} 恢复后复测 |"
-    echo "| VBIOS | ${GPU_VBIOS:-N/A} |"
+    _vb_note=""
+    [ "${GPU_VBIOS_MISS:-0}" -gt 0 ] 2>/dev/null && _vb_note="（${GPU_VBIOS_COVER}/${GPU_COUNT:-0} 张取到值，${GPU_VBIOS_MISS} 张无 VBIOS 日志）"
+    echo "| VBIOS | ${GPU_VBIOS:-N/A}${_vb_note} |"
     # v1.54.51：Compute Mode 原在「环境」段——它描述 GPU 运行模式，与 ECC/功耗同段才读得通
     [ -n "${DCGM_COMPUTE_MODE:-}" ] && echo "| Compute Mode | ${DCGM_COMPUTE_MODE} |"
     # v1.48.36: 厂商感知字段——NVIDIA 显示 ECC/退役行（nvidia-smi 字段），AMD 显示 RAS（ECC 对应物），其余平台隐藏（NVIDIA 专属概念）

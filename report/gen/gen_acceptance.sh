@@ -238,7 +238,11 @@ gen_acceptance() {
     elif echo "$GPU_VBIOS" | grep -q "不一致"; then
         add_item "GPU VBIOS 版本一致" "WARN" "${GPU_VBIOS#⚠️ }"
     else
-        add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}"
+        _vb_scope=""
+        if [ "${GPU_VBIOS_MISS:-0}" -gt 0 ] 2>/dev/null; then
+            _vb_scope="<br>注：仅 ${GPU_VBIOS_COVER}/${GPU_COUNT:-0} 张取到 VBIOS（${GPU_VBIOS_MISS} 张无日志，见 GPU 段「数量差异」）"
+        fi
+        add_item "GPU VBIOS 版本一致" "PASS" "${GPU_VBIOS}${_vb_scope}"
     fi
     # v1.54.25：GPU 功耗上限被改（Current ≠ Default）——仅检出时追加，不改变无此项机器的项数
     if [ -n "${GPU_PL_MISMATCH:-}" ]; then

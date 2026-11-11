@@ -15,18 +15,30 @@ run_gpu_nvidia() {
     local _p=""
     [ -n "$prefix" ] && _p="${prefix}_"
 
-    # Phase 1: 串行获取 GPU 数量（后续命令依赖此值）
+    # Phase 1: 串行获取 GPU **索引列表**（后续命令依赖此值）
+    # v1.56.15：按 nvidia-smi 报告的实际 index 枚举，**不能**用 0..N-1——
+    #   某张卡掉总线时索引不连续（实测 8 卡机掉 GPU2 后可用索引为 0,1,3,4,5,6,7），
+    #   按数量循环会漏采最大索引那张（该卡 VBIOS/Inforom/功耗全成 N/A），
+    #   还会去采已掉卡的索引（必失败、白等超时）。
+    local gpu_idx_list
+    gpu_idx_list=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | tr -d ' ' | grep -E '^[0-9]+$')
     local gpu_count
-    gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+    gpu_count=$(printf '%s\n' "$gpu_idx_list" | grep -cE '^[0-9]+$')
 
     # Phase 2: 构建并行任务数组
     local gpu_jobs=()
     # 每 GPU 的 detail + ECC（mixed 模式带 prefix，与合并 CSV 行内 index 对应）
     local i
-    for ((i=0; i<gpu_count; i++)); do
+    for i in $gpu_idx_list; do
         gpu_jobs+=("nvidia-smi -i $i -q" "${dir}/gpu_${_p}${i}_detail.log")
         gpu_jobs+=("nvidia-smi -i $i -q -d ECC" "${dir}/gpu_${_p}${i}_ecc.log")
     done
+    # 索引连续性提示：不连续说明有卡未被驱动接管（掉卡/未加载），落盘供报告端引用
+    local _idx_gap=""
+    for ((i=0; i<gpu_count; i++)); do
+        printf '%s\n' "$gpu_idx_list" | grep -qx "$i" || _idx_gap="${_idx_gap}${i} "
+    done
+    [ -n "$_idx_gap" ] && echo "缺号索引: ${_idx_gap% }（驱动可用 $(printf '%s' "$gpu_idx_list" | tr '\n' ' ')）" > "${dir}/gpu_index_gap.txt"
     # 独立命令（不分设备）
     local inv_csv="gpu_inventory.csv"
     [ -n "$prefix" ] && inv_csv="gpu_inventory_${prefix}.csv"
