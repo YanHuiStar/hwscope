@@ -481,7 +481,9 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
             echo "| RAS | ${GPU_RAS:-N/A} |"
             ;;
         nvidia)
-            echo "| ECC | ${GPU_ECC:-N/A} |"
+            _ecc_note=""
+            [ "${GPU_PCI_PRESENT:-0}" -gt "${GPU_COUNT:-0}" ] 2>/dev/null && _ecc_note="（仅统计可用 ${GPU_COUNT} 张）"
+            echo "| ECC | ${GPU_ECC:-N/A}${_ecc_note} |"
     [ -n "${DCGM_ECC_MODE:-}" ] && echo "| ECC Mode | ${DCGM_ECC_MODE} |"
             echo "| 退役行 | ${GPU_REMAP:-N/A} |"
     echo "| 温度 | ${GPU_TEMP:-N/A} |"

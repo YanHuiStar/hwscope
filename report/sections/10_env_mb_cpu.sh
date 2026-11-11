@@ -134,7 +134,11 @@ if [ -f "${pcie_full}" ]; then
             # 故 bridge 一律不判异常（仅附录展示）；端点设备（NIC/GPU/RAID 卡）速率+宽度降均判异常
             } else if (!isbridge && (ssp < bases || swd < basew)) {
                 # v1.56.0：无 SMBIOS 槽位声明 = 板载设备，宽度由主板走线决定 → 单列「板载低速位」，不计异常
-                if (slotbuses != "" && !(devbus in SBS)) {
+                # v1.56.14：板载豁免**不适用于加速卡**——SXM/OAM 模组的 GPU 挂在 PCIe switch 下，
+                #   其 bus 天然不在 SMBIOS Type 9 槽位表（那是 CPU 直连槽位），于是掉到 Gen1 的 GPU
+                #   曾被归为「板载低速位」而免于告警（实测 A100 掉卡机 46:00.0 Gen4→Gen1）。
+                isaccel = (d ~ /3D controller|Processing accelerators|VGA compatible controller/) ? 1 : 0
+                if (slotbuses != "" && !(devbus in SBS) && !isaccel) {
                     verdict = "板载低速位"
                 } else {
                     verdict = (swd < basew && ssp < bases) ? "⚠️ 降宽+降速" : ((swd < basew) ? "⚠️ 降宽" : "⚠️ 降速")

@@ -132,7 +132,13 @@ gen_acceptance() {
     elif [ -n "$GPU_DEGRADED" ]; then
         add_item "GPU PCIe 链路完整" "FAIL" "${GPU_DEGRADED%%,}（期望最高速率）"
     else
-        add_item "GPU PCIe 链路完整" "PASS" "全部 GPU 处于最高 PCIe 速率"
+        # v1.56.14：有卡未被接管时，"全部 GPU 满速" 只代表**可用**那几张——必须写明范围，
+        #   否则与 XID/数量差异并列时会让人以为 8 张都正常（实测 A100 掉卡机）
+        _gpcie_scope=""
+        if [ "${GPU_PCI_PRESENT:-0}" -gt "${GPU_COUNT:-0}" ] 2>/dev/null; then
+            _gpcie_scope="（仅统计驱动可用的 ${GPU_COUNT} 张；另有 $(( GPU_PCI_PRESENT - GPU_COUNT )) 张未接管，见 GPU 段「数量差异」）"
+        fi
+        add_item "GPU PCIe 链路完整" "PASS" "全部 GPU 处于最高 PCIe 速率${_gpcie_scope}"
     fi
 
     # 2. NVLink 互联
@@ -178,7 +184,13 @@ gen_acceptance() {
     case "${DCGM_SUMMARY:-N/A}" in
         通过*) add_item "DCGM 诊断" "PASS" "${DCGM_SUMMARY}" ;;
         Fail*硬件:[1-9]*) add_item "DCGM 诊断" "FAIL" "${DCGM_SUMMARY}" ;;
-        配置项*Fail*|Fail*) add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）" ;;
+        配置项*Fail*|Fail*)
+            # v1.56.14：有卡未被驱动接管时，DCGM 失败是掉卡的必然结果，不能套「软件/配置类」的旧结论
+            if [ "${GPU_PCI_PRESENT:-0}" -gt "${GPU_COUNT:-0}" ] 2>/dev/null; then
+                add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（本机有 $(( GPU_PCI_PRESENT - GPU_COUNT )) 张卡未被驱动接管，DCGM 必然失败——先处理掉卡再复测）"
+            else
+                add_item "DCGM 诊断" "WARN" "${DCGM_SUMMARY}（软件/配置类，非硬件故障）"
+            fi ;;
         *)    case "${GPU_PLATFORM:-}" in
                   amd) add_item "DCGM 诊断" "N/A" "AMD 平台无 DCGM（ROCm 诊断：rocminfo + amd-smi ras 见 GPU 段附录）" 1 ;;
                   ascend) add_item "DCGM 诊断" "N/A" "昇腾平台无 DCGM（Atlas 诊断：npu-smi info / npu-smi health 见 GPU 段附录）" 1 ;;
@@ -556,10 +568,16 @@ gen_acceptance() {
             FAIL) add_item "GPU ECC" "FAIL" "${_ecc_desc}<br>⚠️ 本次运行检出不可纠正错误（volatile > 0），数据完整性受影响，需报修" ;;
             WARN) add_item "GPU ECC" "WARN" "${_ecc_desc}<br>当前无正在发生的错误，仅历史记录；建议跑显存压力后复测是否增长" ;;
             *)    # v1.54.28：全 0 时不必复述四组计数，一句话够用
+                  # v1.56.13：有卡未被驱动接管时注明统计范围——否则「PASS」会被读成"整机 GPU 都健康"，
+                  #   而掉卡那张根本没有读数（实测 A100 掉卡机 7/8 可用却全项 PASS）
+                  _ecc_scope=""
+                  if [ "${GPU_PCI_PRESENT:-0}" -gt "${GPU_COUNT:-0}" ] 2>/dev/null; then
+                      _ecc_scope="<br>注：仅统计驱动可用的 ${GPU_COUNT} 张卡；另有 $(( GPU_PCI_PRESENT - GPU_COUNT )) 张未接管（见 GPU 段「数量差异」）"
+                  fi
                   if echo "${GPU_ECC_CORR_VOL:-0}${GPU_ECC_UNCORR_VOL:-0}${GPU_ECC_CORR_AGG:-0}${GPU_ECC_UNCORR_AGG:-0}" | grep -qx '0000'; then
-                      add_item "GPU ECC" "PASS" "本次与累计均无错误（volatile 0 / aggregate 0）"
+                      add_item "GPU ECC" "PASS" "本次与累计均无错误（volatile 0 / aggregate 0）${_ecc_scope}"
                   else
-                      add_item "GPU ECC" "PASS" "${_ecc_desc}"
+                      add_item "GPU ECC" "PASS" "${_ecc_desc}${_ecc_scope}"
                   fi ;;
         esac
     elif [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
