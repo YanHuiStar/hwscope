@@ -254,10 +254,24 @@ show_script_help() {
     echo ""
     exit 0
 }
+# 语言归一：把 zh/cn/chinese/en/english 写进 HWSCOPE_LANG（空值不改动）
+hw_set_lang() {
+    case "${1:-}" in
+        zh|ZH|Zh|cn|CN|Cn|chinese|Chinese) HWSCOPE_LANG=zh; export HWSCOPE_LANG ;;
+        en|EN|En|english|English)          HWSCOPE_LANG=en; export HWSCOPE_LANG ;;
+    esac
+}
 # 统一帮助入口：脚本 source common.sh 后调用 `parse_help "$@"` 即可获得 -h/--help 支持
+#   v1.57.1：支持 `-h zh` / `--help zh` / `--help=zh` —— 直接在选择帮助时指定语言，
+#   比先 `--lang zh` 再 `--help` 少一个参数（用户口径：帮助语言应挂在帮助参数上）。
 parse_help() {
     case "${1:-}" in
-        -h|--help|-help) show_script_help ;;
+        -h|--help|-help)
+            hw_set_lang "${2:-}"
+            show_script_help ;;
+        --help=*)
+            hw_set_lang "${1#*=}"
+            show_script_help ;;
     esac
 }
 

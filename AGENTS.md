@@ -282,8 +282,8 @@ HwScope (Hardware Scope) — 服务器硬件一键巡检采集系统。逐件、
   提醒白牌机人工复核。实测：把 25 条槽位截成 1 条后，同一台 Dell 由「降速 0 + 板载 1」变为「降速 1」。
 - **帮助与启动横幅默认英文，中文可选（v1.57.0 立规，防终端乱码）**：Windows cmd/PowerShell 默认代码页、
   `LC_ALL=C`、部分跳板机审计终端都不是 UTF-8，中文帮助会显示成乱码，而帮助是使用者的第一手信息。
-  规则：① 面向用户的**帮助与横幅默认英文**（纯 ASCII），中文用 `--lang zh` 或 `HWSCOPE_LANG=zh`；
-  ② 语言判定收敛到 `lib/common.sh` 的 `hw_lang()` / `hw_t "中文" "English"`，禁止各脚本自写一份；
+  规则：① 面向用户的**帮助与横幅默认英文**（纯 ASCII），中文用 **`-h zh`**（推荐，等价 `--help zh` / `--help=zh`），整轮切换用 `--lang zh` 或 `HWSCOPE_LANG=zh`；
+  ② 语言判定与设置收敛到 `lib/common.sh` 的 `hw_lang()` / `hw_set_lang()` / `hw_t "中文" "English"`，禁止各脚本自写一份（不 source common.sh 的脚本如 `tools/remote_collect.sh` 需自带最小兜底）；
   ③ 走 `show_script_help` 的脚本，英文块写在头注释里并以 `#EN: ` 前缀标注（默认英文模式只打印该块，
   未标注的脚本自动回退中文，保证 `--help` 不空白）；有自有 `usage()` 的脚本（`tools/remote_collect.sh`）在函数开头按 `hw_lang` 分支；
   ④ **采集过程的运行日志语言不在该开关范围内**——模块内提示仍是中文，改动它们属大范围重构，需单独立项。

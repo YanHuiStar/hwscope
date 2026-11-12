@@ -23,7 +23,8 @@
 | `--bmc-ip <BMC-IP>` / `--bmc-user <用户名>` | BMC 地址与用户名（用户名默认 `admin`）|
 | `--hgx-bmc-ip <BMC-IP>` / `--hgx-bmc-user <用户名>` | HGX 基板 BMC 地址与用户名 |
 | `--bmc-auto` / `--no-bmc-auto` | 带内自动探测 BMC 地址的开关（默认开启）。探测顺序为通道 1–11，通道 1 有地址即用；**无 BMC 硬件的平台自动跳过且不提示输入**（平台固有形态，BMC 相关项按 N/A 处理，不计入数据不足）。若探测到地址但未提供密码，本次只采带内，并在 BMC / 电源模块的跳过说明中写明该地址，便于后续补采 |
-| `--lang en\|zh` | 帮助与启动横幅语言（默认 `en`；亦可用环境变量 `HWSCOPE_LANG=zh`） |
+| `-h [en\|zh]` / `--help [en\|zh]` | 显示帮助，可直接指定语言（默认 `en`；`-h zh` 看中文） |
+| `--lang en\|zh` | 整轮运行的语言（默认 `en`；等同持久形式，亦可用 `HWSCOPE_LANG=zh`） |
 | `-q` / `--quiet` | 静默模式，仅输出异常 |
 | `-h` / `--help`、`-v` / `--version` | 显示帮助、显示版本 |
 
@@ -32,9 +33,10 @@
 帮助与启动横幅**默认英文**（纯 ASCII），中文可用 `--lang zh` 或 `HWSCOPE_LANG=zh` 切换：
 
 ```bash
-bash hwscope.sh --help                 # 英文（默认）
-bash hwscope.sh --lang zh --help       # 中文
-HWSCOPE_LANG=zh bash hwscope.sh --help # 中文（环境变量）
+bash hwscope.sh -h                     # 英文（默认）
+bash hwscope.sh -h zh                  # 中文（推荐写法，等价 --help zh / --help=zh）
+bash hwscope.sh --help en              # 显式英文
+HWSCOPE_LANG=zh bash hwscope.sh        # 整轮运行用中文（含启动横幅）
 ```
 
 默认英文的原因：Windows cmd/PowerShell 默认代码页、`LC_ALL=C` 以及部分跳板机审计终端不是 UTF-8，

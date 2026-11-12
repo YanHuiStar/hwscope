@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.57.0 (2026-10)
+# Version : 1.57.1 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.57.0"
+HWSCOPE_VERSION="v1.57.1"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -119,9 +119,9 @@ usage() {
         echo "  --bmc-user <user>               BMC 用户名（默认 admin）"
         echo "  --hgx-bmc-ip <IP>               HGX 基板 BMC 地址"
         echo "  --hgx-bmc-user <user>           HGX 基板 BMC 用户名（默认 admin）"
-        echo "  --lang en|zh                    帮助与横幅语言（默认 en；也可用 HWSCOPE_LANG）"
+        echo "  --lang en|zh                    本次运行的语言（默认 en；等同 '-h zh' 的持久形式）"
         echo "  -q, --quiet                     静默模式（仅输出异常）"
-        echo "  -h, --help                      显示此帮助"
+        echo "  -h, --help [en|zh]              显示此帮助（默认英文；'-h zh' 看中文）"
         echo "  -v, --version                   显示版本"
         echo ""
         echo "可用模块:"
@@ -162,9 +162,9 @@ usage() {
     echo "  --bmc-user <user>               BMC user name (default admin)"
     echo "  --hgx-bmc-ip <IP>               HGX baseboard BMC address"
     echo "  --hgx-bmc-user <user>           HGX baseboard BMC user name (default admin)"
-    echo "  --lang en|zh                    language for help and banner (default en; or HWSCOPE_LANG)"
+    echo "  --lang en|zh                    session-wide language (default en; same as '-h zh' but persistent)"
     echo "  -q, --quiet                     quiet mode (warnings and errors only)"
-    echo "  -h, --help                      show this help"
+    echo "  -h, --help [en|zh]              show this help (default English; '-h zh' for Chinese)"
     echo "  -v, --version                   show version"
     echo ""
     echo "Modules:"
@@ -235,7 +235,9 @@ while [[ $# -gt 0 ]]; do
         --hgx-bmc-ip)      [ -n "${2:-}" ] || { echo -e "${RED}错误: --hgx-bmc-ip 需要 HGX 基板 BMC 地址${NC}"; exit 1; }; HGX_BMC_IP="$2"; shift 2 ;;
         --hgx-bmc-user)    [ -n "${2:-}" ] || { echo -e "${RED}错误: --hgx-bmc-user 需要用户名${NC}"; exit 1; }; HGX_BMC_USER="$2"; shift 2 ;;
         -q|--quiet) QUIET=1; shift ;;
-        -h|--help)  usage; exit 0 ;;
+        # v1.57.1：`-h zh` / `--help zh` / `--help=zh` 直接指定帮助语言（默认英文）
+        -h|--help)  hw_set_lang "${2:-}"; usage; exit 0 ;;
+        --help=*)   hw_set_lang "${1#*=}"; usage; exit 0 ;;
         # v1.57.0：帮助与横幅语言（默认英文，防非 UTF-8 终端乱码）
         --lang)   [ -n "${2:-}" ] || { echo "--lang requires en|zh" >&2; exit 1; }
                   case "$2" in zh*|ZH*|cn*|CN*) HWSCOPE_LANG=zh ;; *) HWSCOPE_LANG=en ;; esac

@@ -35,6 +35,15 @@
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# v1.57.1：本脚本不 source lib/common.sh，这里给一个最小语言设置兜底
+command -v hw_set_lang >/dev/null 2>&1 || hw_set_lang() {
+    case "${1:-}" in
+        zh|ZH|Zh|cn|CN|Cn|chinese|Chinese) HWSCOPE_LANG=zh ;;
+        en|EN|En|english|English)          HWSCOPE_LANG=en ;;
+    esac
+    export HWSCOPE_LANG
+}
+
 usage() {
     # v1.57.0：默认英文帮助（防非 UTF-8 终端乱码），HWSCOPE_LANG=zh 切中文
     if [ "$(hw_lang 2>/dev/null || echo en)" = "en" ] && [ "${HWSCOPE_LANG:-en}" != "zh" ]; then
@@ -52,7 +61,7 @@ Options:
   --hgx-bmc-ip <IP>  HGX baseboard BMC address
   --install <1,2>    install dependencies on the target first (install_tool.sh -c <list> -y)
   --modules / --skip / --quiet / --serial ...   forwarded to hwscope.sh
-  -h, --help         show this help
+  -h, --help [en|zh] show this help (default English; `-h zh` for Chinese)
 
 Notes:
   - SSH password is prompted interactively and reused via ControlMaster; never stored.
@@ -110,7 +119,9 @@ while [ $# -gt 0 ]; do
         --hgx-bmc-user) [ -n "${2:-}" ] || { echo -e "\033[0;31m[ERROR] --hgx-bmc-user 需要用户名\033[0m"; exit 1; }
                        HWARGS="${HWARGS:-} --hgx-bmc-user $2"; shift 2 ;;
         --interactive) : ;;   # 默认已支持交互密码（v1.31.4 起），保留参数兼容
-        -h|--help) usage; exit 0 ;;
+        # v1.57.1：`-h zh` / `--help zh` 直接看中文帮助
+        -h|--help) hw_set_lang "${2:-}"; usage; exit 0 ;;
+        --help=*)  hw_set_lang "${1#*=}"; usage; exit 0 ;;
         *) HWARGS="${HWARGS:-} $1"; shift ;;
     esac
 done
