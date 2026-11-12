@@ -227,11 +227,6 @@ hw_lang() {
         *)                                 printf 'en' ;;
     esac
 }
-# 双语选择：hw_t "<中文>" "<English>"
-hw_t() {
-    if [ "$(hw_lang)" = "zh" ]; then printf '%s' "${1:-}"; else printf '%s' "${2:-}"; fi
-}
-
 show_script_help() {
     # 默认英文：优先打印脚本头注释里的英文块（以 `#EN: ` 标注，见各脚本头部）；
     # 未标注英文块的脚本回退为原中文头注释（保证 --help 永不空白）。

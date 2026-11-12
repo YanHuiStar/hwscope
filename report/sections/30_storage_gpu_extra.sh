@@ -274,9 +274,16 @@ fi
 GPU_VBIOS="${GPU_VBIOS:-N/A}"
 # v1.56.15：VBIOS 覆盖统计——可用卡里若有 detail 日志缺失（旧采集按 0..N-1 枚举，掉卡时会漏采
 #   最大索引那张），一致性结论只覆盖取到值的那几张，报告必须写明范围。
-GPU_VBIOS_COVER=${#GPU_VBIOS_MAP[@]}
-GPU_VBIOS_MISS=$(( ${GPU_COUNT:-0} - GPU_VBIOS_COVER ))
-[ "$GPU_VBIOS_MISS" -lt 0 ] 2>/dev/null && GPU_VBIOS_MISS=0
+  # v1.57.2：覆盖统计**仅对 per-card detail 来源（NVIDIA）成立**——AMD 的 VBIOS 取自
+  #   gpu_amd_full.log（不进 map）、旧数据走 gpu_full 兜底，此时 COVER=0 会让注记误报
+  #   「0/8 张取到值」（实测 MI300X 样本），故 map 为空时不启用该注记。
+  if [ "${#GPU_VBIOS_MAP[@]}" -gt 0 ]; then
+      GPU_VBIOS_COVER=${#GPU_VBIOS_MAP[@]}
+      GPU_VBIOS_MISS=$(( ${GPU_COUNT:-0} - GPU_VBIOS_COVER ))
+      [ "$GPU_VBIOS_MISS" -lt 0 ] 2>/dev/null && GPU_VBIOS_MISS=0
+  else
+      GPU_VBIOS_COVER=0; GPU_VBIOS_MISS=0
+  fi
 if [ "${#GPU_VBIOS_MAP[@]}" -gt 0 ]; then
     _vbios_agg=$(for _k in "${!GPU_VBIOS_MAP[@]}"; do echo "${GPU_VBIOS_MAP[$_k]}"; done | sort | uniq -c | sort -rn)
     _vbios_uniq=$(printf '%s\n' "$_vbios_agg" | wc -l)

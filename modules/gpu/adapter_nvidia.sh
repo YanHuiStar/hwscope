@@ -38,7 +38,11 @@ run_gpu_nvidia() {
     for ((i=0; i<gpu_count; i++)); do
         printf '%s\n' "$gpu_idx_list" | grep -qx "$i" || _idx_gap="${_idx_gap}${i} "
     done
-    [ -n "$_idx_gap" ] && echo "缺号索引: ${_idx_gap% }（驱动可用 $(printf '%s' "$gpu_idx_list" | tr '\n' ' ')）" > "${dir}/gpu_index_gap.txt"
+    if [ -n "$_idx_gap" ]; then
+        echo "缺号索引: ${_idx_gap% }（驱动可用 $(printf '%s' "$gpu_idx_list" | tr '\n' ' ')）" > "${dir}/gpu_index_gap.txt"
+        # v1.57.2：产出即登记（AGENTS v1.52.4）
+        write_manifest --append "${dir}/manifest.txt" "gpu_index_gap" "gpu_index_gap.txt"
+    fi
     # 独立命令（不分设备）
     local inv_csv="gpu_inventory.csv"
     [ -n "$prefix" ] && inv_csv="gpu_inventory_${prefix}.csv"
