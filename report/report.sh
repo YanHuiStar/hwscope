@@ -1,5 +1,19 @@
 #!/bin/bash
 # =============================================================================
+#EN: Report generator for HwScope collection directories.
+#EN: Reads existing logs only; never re-collects.
+#EN: 
+#EN: Usage:
+#EN:   bash report/report.sh <collection-dir>                     # json + md + txt + html
+#EN:   bash report/report.sh <collection-dir> --acceptance         # acceptance sheet (separate run)
+#EN:   bash report/report.sh <collection-dir> --json|--md|--txt    # single format
+#EN:   bash report/report.sh <dir> --baseline <prev-dir>          # diff against a previous collection
+#EN:   bash report/report.sh <dir> --test-dir <logs/test/TS>      # attach stress-test results
+#EN:   bash report/report.sh <dir> --fld-dir <logs-TS>            # attach NVIDIA FLD diagnostics
+#EN:   bash report/report.sh <dir> --bmc-verify                   # OS vs BMC cross-check
+#EN: 
+#EN: Language: help follows HWSCOPE_LANG (default en; zh for Chinese).
+#EN: Note: --acceptance is a separate branch; regenerate both after any change.
 # HwScope — 报告生成器（薄入口）
 # report/report.sh
 # 用法: bash report/report.sh [output_dir] [--acceptance|--json|--md|--txt|--both] [--test-dir <path>] [--baseline <dir>] [--bmc-verify]

@@ -3,7 +3,7 @@
 # HwScope — Hardware Scope: Server Hardware Inspection & Data Collection System
 #
 # Author  : YanHui / Hermes Agent
-# Version : 1.56.15 (2026-10)
+# Version : 1.57.0 (2026-10)
 # License : Apache 2.0
 #
 # 要求：LANG=en_US.UTF-8 或 C.UTF-8（避免中文乱码）
@@ -85,7 +85,7 @@ MODULE_SWITCH[nvsm]="${MODULE_NVSM:-1}"; MODULE_SWITCH[dcgm]="${MODULE_DCGM:-1}"
 MODULE_SWITCH[firmware]="${MODULE_FIRMWARE:-1}"; MODULE_SWITCH[power]="${MODULE_POWER:-1}"
 MODULE_SWITCH[os]="${MODULE_OS:-1}"
 # ─── 版本声明 ───
-HWSCOPE_VERSION="v1.56.15"
+HWSCOPE_VERSION="v1.57.0"
 
 # ─── 命令行参数 ───
 SELECTED_MODULES=""; SKIP_MODULES=""; OUTPUT_BASE="${OUTPUT_BASE_DIR:-}"
@@ -94,46 +94,116 @@ FORCE_MODE="${FORCE:-0}"; STAMP_MODE=0; QUIET=0; PARALLEL=1; NO_MODULE=0; MODULE
 TEST_DIR=""
 
 usage() {
-    echo "用法: $0 [OPTIONS]"
-    echo "版本: ${HWSCOPE_VERSION} (2026-10)"
+    # v1.57.0：**默认英文**，`--lang zh` 或 `HWSCOPE_LANG=zh` 切中文。
+    #   原因：Windows cmd/PowerShell 默认代码页与部分运维终端非 UTF-8，中文帮助会乱码；
+    #   帮助是使用者的第一手信息，默认用纯 ASCII 更稳妥。
+    if [ "$(hw_lang)" = "zh" ]; then
+        echo "用法: $0 [OPTIONS]"
+        echo "版本: ${HWSCOPE_VERSION} (2026-10)"
+        echo ""
+        echo "选项:"
+        echo "  --modules gpu,storage           只采指定模块（逗号分隔）"
+        echo "  --skip dcgm,nvsm                跳过指定模块"
+        echo "  --parallel                      并行执行所有模块（默认开启）"
+        echo "  --serial                        串行执行（实时输出每模块结果）"
+        echo "  --no-parallel                   禁用模块内命令并行（降级为逐条执行）"
+        echo "  --module-timeout N              单模块超时秒数（默认 600）"
+        echo "  --sim [N]                       模拟模式：每模块等待 N 秒（默认 5）"
+        echo "  --no-module                     跳过光模块查询（仅影响 07_network 光模块部分）"
+        echo "  --test-dir /path/to/test         关联压测目录（logs/test/<SN>/），报告生成压测章节"
+        echo "  --output /path/to/dir           指定输出目录"
+        echo "  --force                         覆盖已有输出目录（默认即覆盖，保留兼容）"
+        echo "  --stamp                         输出目录加时间戳后缀（保留多版本）"
+        echo "  --bmc-ip <IP>                   BMC 地址（不给则从带内自动探测；密码交互输入，不落盘）"
+        echo "  --bmc-auto / --no-bmc-auto      自动探测开关（默认开：带内读通道 1–11，通道 1 优先）"
+        echo "  --bmc-user <user>               BMC 用户名（默认 admin）"
+        echo "  --hgx-bmc-ip <IP>               HGX 基板 BMC 地址"
+        echo "  --hgx-bmc-user <user>           HGX 基板 BMC 用户名（默认 admin）"
+        echo "  --lang en|zh                    帮助与横幅语言（默认 en；也可用 HWSCOPE_LANG）"
+        echo "  -q, --quiet                     静默模式（仅输出异常）"
+        echo "  -h, --help                      显示此帮助"
+        echo "  -v, --version                   显示版本"
+        echo ""
+        echo "可用模块:"
+        for mod_info in "${MODULES[@]}"; do
+            IFS=':' read -r num id fn desc <<< "$mod_info"
+            echo "  ${num}. ${id} - ${desc}"
+        done
+        echo ""
+        echo "示例:"
+        echo "  sudo bash $0                              # 全部采集（默认并行）"
+        echo "  sudo bash $0 --serial                     # 串行采集（实时输出）"
+        echo "  sudo bash $0 --quiet                      # 并行静默采集"
+        echo "  sudo bash $0 --modules gpu,storage        # 只采 GPU+存储"
+        echo "  sudo bash $0 --no-bmc-auto                # 只采带内（KCS），不探测、不采带外"
+        echo "  sudo bash $0 --bmc-ip 10.0.0.1            # 显式指定 BMC（会提示输入密码）"
+        echo "  sudo bash $0 --bmc-ip 10.0.0.1 --hgx-bmc-ip 10.0.0.2   # HGX 双 BMC"
+        return 0
+    fi
+
+    echo "Usage: $0 [OPTIONS]"
+    echo "Version: ${HWSCOPE_VERSION} (2026-10)"
     echo ""
-    echo "选项:"
-    echo "  --modules gpu,storage           只采指定模块（逗号分隔）"
-    echo "  --skip dcgm,nvsm                跳过指定模块"
-    echo "  --parallel                      并行执行所有模块（默认开启）"
-    echo "  --serial                        串行执行（实时输出每模块结果）"
-    echo "  --no-parallel                   禁用模块内命令并行（降级为逐条执行）"
-    echo "  --module-timeout N              单模块超时秒数（默认 600）"
-    echo "  --sim [N]                       模拟模式：每模块等待 N 秒（默认 5）"
-    echo "  --no-module                     跳过光模块查询（仅影响 07_network 光模块部分，缩短采集约 48s；不影响其他模块）"
-    echo "  --test-dir /path/to/test         关联压测目录（logs/test/<SN>/），报告生成压测章节"
-    echo "  --output /path/to/dir           指定输出目录"
-    echo "  --force                         覆盖已有输出目录（v1.45.6 起默认即覆盖，此参数保留兼容）"
-    echo "  --stamp                         输出目录加时间戳后缀（output/<SN>-<时间戳>/，保留多版本对比）"
-    echo "  --bmc-ip <IP>                   BMC 地址（不给则从带内自动探测；密码运行时交互输入，不落盘）"
-    echo "  --bmc-auto / --no-bmc-auto      自动探测开关（默认开：带内读通道 1–11，通道 1 优先）"
-    echo "  --bmc-user <user>               BMC 用户名（默认 admin）"
-    echo "  --hgx-bmc-ip <IP>               HGX 基板 BMC 地址（板载 GPU/NVSwitch 管理口）"
-    echo "  --hgx-bmc-user <user>           HGX 基板 BMC 用户名（默认 admin）"
-    echo "  -q, --quiet                     静默模式（仅输出异常）"
-    echo "  -h, --help                      显示此帮助"
-    echo "  -v, --version                   显示版本"
+    echo "Options:"
+    echo "  --modules gpu,storage           collect only the listed modules (comma separated)"
+    echo "  --skip dcgm,nvsm                skip the listed modules"
+    echo "  --parallel                      run all modules in parallel (default)"
+    echo "  --serial                        run modules serially (streams per-module output)"
+    echo "  --no-parallel                   disable per-module command parallelism"
+    echo "  --module-timeout N              per-module timeout in seconds (default 600)"
+    echo "  --sim [N]                       simulation mode: wait N seconds per module (default 5)"
+    echo "  --no-module                     skip optical-module queries (07_network only)"
+    echo "  --test-dir /path/to/test        attach a stress-test directory for the report chapter"
+    echo "  --output /path/to/dir           output directory"
+    echo "  --force                         overwrite existing output (already the default)"
+    echo "  --stamp                         append a timestamp to the output directory"
+    echo "  --bmc-ip <IP>                   BMC address (auto-detected in-band when omitted)"
+    echo "  --bmc-auto / --no-bmc-auto      toggle in-band BMC address detection (default on)"
+    echo "  --bmc-user <user>               BMC user name (default admin)"
+    echo "  --hgx-bmc-ip <IP>               HGX baseboard BMC address"
+    echo "  --hgx-bmc-user <user>           HGX baseboard BMC user name (default admin)"
+    echo "  --lang en|zh                    language for help and banner (default en; or HWSCOPE_LANG)"
+    echo "  -q, --quiet                     quiet mode (warnings and errors only)"
+    echo "  -h, --help                      show this help"
+    echo "  -v, --version                   show version"
     echo ""
-    echo "可用模块:"
+    echo "Modules:"
     for mod_info in "${MODULES[@]}"; do
         IFS=':' read -r num id fn desc <<< "$mod_info"
-        echo "  ${num}. ${id} - ${desc}"
+        case "$id" in
+            motherboard) en="board / BIOS / chassis (dmidecode)" ;;
+            cpu)         en="CPU model, cores, frequency policy" ;;
+            memory)      en="DIMM slots, capacity, speed, ECC" ;;
+            gpu)         en="GPUs via vendor tools (nvidia-smi / amd-smi / npu-smi / xpu-smi)" ;;
+            nvswitch)    en="NVSwitch audit and fabric state" ;;
+            pcie)        en="PCIe topology, links, LnkCap vs LnkSta" ;;
+            network)     en="network and InfiniBand ports, cables, firmware" ;;
+            storage)     en="storage devices, SMART, mount points" ;;
+            raid)        en="RAID controllers and HBAs" ;;
+            psu)         en="power supplies, per-PSU power, DCMI" ;;
+            fan)         en="fans and temperatures" ;;
+            bmc)         en="BMC/IPMI in-band and out-of-band" ;;
+            nvsm)        en="NVIDIA NVSM (MGX certified systems only)" ;;
+            dcgm)        en="DCGM diagnostics (level 1)" ;;
+            firmware)    en="firmware compliance (VBIOS/BMC/NIC/NVSwitch)" ;;
+            power)       en="power and energy accounting" ;;
+            os)          en="OS, kernel, persistent kernel logs (XID/MCE)" ;;
+            *)           en="$desc" ;;
+        esac
+        echo "  ${num}. ${id} - ${en}"
     done
     echo ""
-    echo "示例:"
-    echo "  sudo bash $0                              # 全部采集（默认并行）"
-    echo "  sudo bash $0 --serial                     # 串行采集（实时输出）"
-    echo "  sudo bash $0 --quiet                      # 并行静默采集"
-    echo "  sudo bash $0 --modules gpu,storage        # 只采 GPU+存储"
-    echo "  sudo bash $0                              # 不带参数=自动探测 BMC 地址后提示输入密码（回车跳过带外）"
-    echo "  sudo bash $0 --no-bmc-auto                # 只采带内（KCS），不探测、不采带外"
-    echo "  sudo bash $0 --bmc-ip 10.0.0.1            # 显式指定 BMC（会提示输入 BMC 密码）"
-    echo "  sudo bash $0 --bmc-ip 10.0.0.1 --hgx-bmc-ip 10.0.0.2   # HGX 双 BMC"
+    echo "Examples:"
+    echo "  sudo bash $0                              # full collection (parallel)"
+    echo "  sudo bash $0 --serial                     # serial, streams per-module output"
+    echo "  sudo bash $0 --quiet                      # parallel, warnings only"
+    echo "  sudo bash $0 --modules gpu,storage        # only GPU and storage"
+    echo "  sudo bash $0 --no-bmc-auto                # in-band only, no out-of-band"
+    echo "  sudo bash $0 --bmc-ip 10.0.0.1            # explicit BMC (password prompted)"
+    echo "  sudo bash $0 --bmc-ip 10.0.0.1 --hgx-bmc-ip 10.0.0.2   # two BMCs (host + HGX)"
+    echo ""
+    echo "Language: help and banner default to English (HWSCOPE_LANG=en); set --lang zh or"
+    echo "          HWSCOPE_LANG=zh for Chinese. Collection output itself is unchanged."
 }
 
 while [[ $# -gt 0 ]]; do
@@ -166,6 +236,12 @@ while [[ $# -gt 0 ]]; do
         --hgx-bmc-user)    [ -n "${2:-}" ] || { echo -e "${RED}错误: --hgx-bmc-user 需要用户名${NC}"; exit 1; }; HGX_BMC_USER="$2"; shift 2 ;;
         -q|--quiet) QUIET=1; shift ;;
         -h|--help)  usage; exit 0 ;;
+        # v1.57.0：帮助与横幅语言（默认英文，防非 UTF-8 终端乱码）
+        --lang)   [ -n "${2:-}" ] || { echo "--lang requires en|zh" >&2; exit 1; }
+                  case "$2" in zh*|ZH*|cn*|CN*) HWSCOPE_LANG=zh ;; *) HWSCOPE_LANG=en ;; esac
+                  export HWSCOPE_LANG; shift 2 ;;
+        --lang=*) case "${1#*=}" in zh*|ZH*|cn*|CN*) HWSCOPE_LANG=zh ;; *) HWSCOPE_LANG=en ;; esac
+                  export HWSCOPE_LANG; shift ;;
         -v|--version) echo "HwScope ${HWSCOPE_VERSION} (2026-10) — Hardware Scope"
                       echo "Author: YanHui / Hermes Agent · License: Apache 2.0"
                       echo "https://github.com/YanHuiStar/hwscope"
@@ -457,8 +533,14 @@ fi
 # ─── 模块执行 ───
 echo ""
 echo "========================================"
-echo -e "${BLUE}HwScope - 服务器硬件巡检采集${NC}  ${HWSCOPE_VERSION}"
-echo "平台: ${PLATFORM} (GPU: ${GPU_COUNT:-0})"
+# v1.57.0：横幅跟随帮助语言（默认英文，避免非 UTF-8 终端乱码）
+if [ "$(hw_lang)" = "zh" ]; then
+    echo -e "${BLUE}HwScope - 服务器硬件巡检采集${NC}  ${HWSCOPE_VERSION}"
+    echo "平台: ${PLATFORM} (GPU: ${GPU_COUNT:-0})"
+else
+    echo -e "${BLUE}HwScope - Server hardware inspection${NC}  ${HWSCOPE_VERSION}"
+    echo "Platform: ${PLATFORM} (GPU: ${GPU_COUNT:-0})"
+fi
 # v1.53.40：开机过短时提示（不阻止采集）——实测开机 13 秒采集会拿不到 AMD/NVIDIA GPU，
 #   平台因此判成「GPU 机头」，整套 GPU 结论失真；此处只提示，是否继续由用户决定。
 _up_sec=$(awk '{print $1}' /proc/uptime 2>/dev/null | cut -d. -f1)

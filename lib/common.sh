@@ -216,9 +216,37 @@ ipmi_snapshot_derive() {   # $1=源快照 $2=目标文件 $3=grep 模式（-iE�
 
 # ─── 脚本帮助（统一 -h/--help：打印脚本头部注释块） ───
 # 提取 $0 的注释头（跳过 shebang 与 ==== 装饰线），作为帮助文本；调用后 exit 0
+# ─── 帮助/提示语言（v1.57.0）──────────────────────────────────────────────
+#   默认 **英文**（en）：非 UTF-8 终端（Windows cmd/PowerShell 默认代码页、Linux C locale、
+#   跳板机审计终端）显示中文会乱码，帮助文本是给人的第一手信息，故默认用纯 ASCII 英文。
+#   需要中文：`HWSCOPE_LANG=zh bash hwscope.sh --help` 或 `bash hwscope.sh --lang zh --help`。
+hw_lang() {
+    local l="${HWSCOPE_LANG:-en}"
+    case "$l" in
+        zh*|ZH*|cn*|CN*|chinese*|Chinese*) printf 'zh' ;;
+        *)                                 printf 'en' ;;
+    esac
+}
+# 双语选择：hw_t "<中文>" "<English>"
+hw_t() {
+    if [ "$(hw_lang)" = "zh" ]; then printf '%s' "${1:-}"; else printf '%s' "${2:-}"; fi
+}
+
 show_script_help() {
+    # 默认英文：优先打印脚本头注释里的英文块（以 `#EN: ` 标注，见各脚本头部）；
+    # 未标注英文块的脚本回退为原中文头注释（保证 --help 永不空白）。
+    if [ "$(hw_lang)" = "en" ]; then
+        local _en
+        _en=$(awk '/^#EN: /{sub(/^#EN: /,""); print}' "$0")
+        if [ -n "$_en" ]; then
+            printf '%s\n' "$_en"
+            echo ""
+            exit 0
+        fi
+    fi
     awk '
         /^#!/ { next }
+        /^#EN: / { next }
         /^# ====+$/ { if (seen) exit; next }
         /^#/ { seen=1; sub(/^# ?/, ""); print; next }
         { exit }

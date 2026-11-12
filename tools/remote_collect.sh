@@ -1,5 +1,19 @@
 #!/bin/bash
 # =============================================================================
+#EN: Collect hardware inventory from a remote host over SSH.
+#EN: Packs the project, pushes it, runs hwscope.sh remotely, pulls results back, then cleans up.
+#EN: 
+#EN: Usage:
+#EN:   bash tools/remote_collect.sh -H user@host [hwscope options]
+#EN:   bash tools/remote_collect.sh -H root@host --modules gpu,cpu
+#EN:   bash tools/remote_collect.sh -H user@host --install 1,2      # install deps first
+#EN: 
+#EN: Behaviour:
+#EN:   - interactive SSH password (never written to disk), reused via ControlMaster
+#EN:   - results land in output/remote_output/<machine-id>/ and logs/remote_logs/
+#EN:   - BMC address is auto-detected in-band; a machine without BMC skips out-of-band silently
+#EN: 
+#EN: Language: help follows HWSCOPE_LANG (default en; zh for Chinese).
 # HwScope — SSH 远程采集
 # tools/remote_collect.sh
 # 用法: bash tools/remote_collect.sh -H root@10.0.0.1 [hwscope 参数...]
@@ -22,6 +36,33 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
+    # v1.57.0：默认英文帮助（防非 UTF-8 终端乱码），HWSCOPE_LANG=zh 切中文
+    if [ "$(hw_lang 2>/dev/null || echo en)" = "en" ] && [ "${HWSCOPE_LANG:-en}" != "zh" ]; then
+        cat <<'ENEOF'
+Remote collection for HwScope: pack the project, push over SSH, collect, pull results back.
+
+Usage:
+  bash tools/remote_collect.sh -H user@host [hwscope options]
+
+Options:
+  -H user@host       target host (SSH user@host)
+  --no-sudo          run as the current user instead of "sudo bash hwscope.sh"
+  --bmc-ip <IP>      host BMC address (passed through to hwscope.sh)
+  --bmc-user <user>  BMC user name (default admin)
+  --hgx-bmc-ip <IP>  HGX baseboard BMC address
+  --install <1,2>    install dependencies on the target first (install_tool.sh -c <list> -y)
+  --modules / --skip / --quiet / --serial ...   forwarded to hwscope.sh
+  -h, --help         show this help
+
+Notes:
+  - SSH password is prompted interactively and reused via ControlMaster; never stored.
+  - Results: output/remote_output/<machine-id>/ and archives under logs/remote_logs/.
+  - A host without BMC hardware skips out-of-band silently (in-band collection still runs).
+
+Language: help follows HWSCOPE_LANG (default en; set zh for Chinese).
+ENEOF
+        return 0
+    fi
     echo "用法: $0 -H user@host [hwscope 参数...]"
     echo "选项:"
     echo "  -H user@host       目标机（SSH 用户@主机）"
