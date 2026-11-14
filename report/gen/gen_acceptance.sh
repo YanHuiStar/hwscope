@@ -424,7 +424,9 @@ gen_acceptance() {
     elif [ "${SEL_CRIT_RECOVERED:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 事件" "WARN" "共 ${SEL_TOTAL:-0} 条 SEL，无未解除告警；其中 ${SEL_CRIT_RECOVERED} 条 Critical 已于 ${SEL_RECOVERED_WHEN:-N/A} 自愈（Asserted→Deasserted 成对，建议留意）"
     elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
-        add_item "SEL 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical/PCIe 错误（有历史事件）"
+        _sel_extra=""
+        [ -n "${SEL_NONCRIT_NOTES:-}" ] && _sel_extra="<br>${SEL_NONCRIT_NOTES}"
+        add_item "SEL 事件" "PASS" "${SEL_TOTAL} 条 SEL，无 Critical/PCIe 错误（有历史事件）${_sel_extra}"
     else
         add_item "SEL 事件" "PASS" "无 SEL 事件"
     fi

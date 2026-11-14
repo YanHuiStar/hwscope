@@ -232,7 +232,7 @@ bash report/report.sh <采集目录> --acceptance     # 生成 hwscope_acceptanc
 | SMART 健康状态 | 默认 | FAILED 判 FAIL；有警告判 WARN |
 | 电源状态 | 默认 | `PS*_Status` 非 `0x1` 判 FAIL；无状态传感器时按 SMBIOS 在位数量兜底 |
 | 整机温度正常 | 默认 | BMC 聚合值优先，其次 OS 侧 lm-sensors；无 BMC 判 N/A |
-| SEL 事件 | 默认 | 未解除 Critical 判 FAIL（全部落在断电时刻的判 WARN）；已自愈判 WARN；PCIe 记录按可纠正/不可纠正分级 |
+| SEL 事件 | 默认 | **严重级别以事件描述为准**：`Transition to Critical from less severe`、`Upper/Lower Critical` 才算 Critical；**`Transition to Non-critical from OK` 不计数**（它是「从 OK 降到非严重」，描述里含 critical 字样但级别属非严重——曾把两台 P9000G7 的 BMC 时间同步失败与插槽链路降级误判为「2 条 Critical 未解除」致整机不合格）；未解除 Critical 判 FAIL（全部落在断电时刻的判 WARN）；已自愈判 WARN；`BMC 时间同步失败`（无 NTP 属常态）与 `插槽/连接器链路状态降级` 单列说明、不参与判定；PCIe 记录按可纠正/不可纠正分级 |
 | 固件版本合规 | 默认 | 落后判 FAIL；格式无法比较判 WARN；未录基线判 N/A（不计入数据不足） |
 | OS-BMC 口径一致 | 默认 | 仅 `--bmc-verify` 启用后判定；未启用判 N/A 且不计入数据不足 |
 | PCIe 链路完整 | 默认 | 端点 LnkSta 低于 min(设备, 上游) 判降速并判 WARN；无 SMBIOS 槽位声明的板载设备单列「板载低速位」不计异常（见 §8.13）；无链路数据判 N/A |

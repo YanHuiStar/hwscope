@@ -777,7 +777,7 @@ $(rf_line=""
 if [ -n "$rf_line" ]; then echo "| Redfish 固件明细 | $(echo "$rf_line" | sed 's/, $//') |"; fi)
 | IP | $(if [ "${BMC_IP:-}" = "0.0.0.0" ]; then echo "0.0.0.0（未配置）"; else printf '%s' "${BMC_IP:-N/A}$([ -n "${BMC_IP_SRC:-}" ] && printf '（%s）' "${BMC_IP_SRC}")"; fi) |
 | MAC | ${BMC_MAC:-N/A} |
-| SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} 条（未解除告警 ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+；已解除历史记录 $SEL_CRIT_RECOVERED}）"; else echo "⚠️ 数据不可用"; fi) |
+| SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} 条（未解除告警 ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+$([ "${SEL_CRIT_RECOVERED}" -gt 0 ] 2>/dev/null && printf "；已解除历史记录 %s" "$SEL_CRIT_RECOVERED")}${SEL_NONCRIT_NOTES:+；$SEL_NONCRIT_NOTES}）"; else echo "⚠️ 数据不可用"; fi) |
 $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
     echo "> ⚠️ SEL 数据不可用（ipmitool 采集失败或无权限），事件列表不完整"
 elif [ -n "$SEL_DETAILS" ]; then

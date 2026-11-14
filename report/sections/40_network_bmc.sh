@@ -390,7 +390,13 @@ if ls "${BMC_DIR}"/ipmi_*.log >/dev/null 2>&1; then
         BMC_PRESENT=1
     fi
 fi
-SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -ciE "critical|fatal")
+# v1.57.3：**先剔除 `Non-critical` 再数 critical**——IPMI 事件描述里
+#   `Transition to Non-critical from OK`（从 OK 降到"非严重"）本身含 "critical" 字样，
+#   原实现直接 grep -ciE "critical|fatal" 会把它当作 Critical 告警：
+#   实测两台 P9000G7 的 SEL 全是 `Transition to Non-critical`（BMC 时间同步失败 / 插槽链路降级），
+#   却被判「2 条 / 1 条 Critical 未解除」→ 整机判不合格。
+SEL_CRIT=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" \
+    | sed -E 's/[Nn]on-[Cc]ritical//g; s/[Nn]on [Cc]ritical//g' | grep -ciE "critical|fatal")
 SEL_PCIE_ERR=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" | grep -viE "Version Change|Hardware change detected" \
         | grep -icE "pcie|aer|uncorrectable")
 
@@ -441,6 +447,21 @@ fi
 # 规则：Critical 级 Asserted 事件，若存在同键 Deasserted → 已自愈（SEL_CRIT_RECOVERED），
 #       否则视为当前仍未解除（SEL_CRIT_UNRESOLVED，才是真故障）。
 # 累积型事件（Uncorrectable ECC 等）天然没有 Deassert 配对，会自动落到 UNRESOLVED，规则自洽。
+# v1.57.3：两类**常见非严重** SEL 事件单独识别并如实说明（不参与 Critical 判定）：
+#   - BMCTimeSychFail：BMC 未与外部时间源同步（内网通常无 NTP）→ SEL 时间戳可能偏差
+#   - Slot/Connector Link/Health 的 "Transition to Non-critical/OK"：插槽/连接器链路状态变化
+SEL_NONCRIT_NOTES=""
+_sel_noncrit=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
+    | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" \
+    | grep -iE "non-critical" || true)
+if [ -n "$_sel_noncrit" ]; then
+    _n_ts=$(printf '%s\n' "$_sel_noncrit" | grep -ciE "TimeSychFail" || true)
+    _n_lk=$(printf '%s\n' "$_sel_noncrit" | grep -ciE "Link_Status|Health_Status" || true)
+    _n_ts=${_n_ts:-0}; _n_lk=${_n_lk:-0}
+    [ "$_n_ts" -gt 0 ] 2>/dev/null && SEL_NONCRIT_NOTES="BMC 时间同步失败 ${_n_ts} 次（BMC 未接外部时间源，内网无 NTP 时属常态；SEL 时间戳可能偏差，不影响硬件判定）"
+    [ "$_n_lk" -gt 0 ] 2>/dev/null && SEL_NONCRIT_NOTES="${SEL_NONCRIT_NOTES}${SEL_NONCRIT_NOTES:+<br>}插槽/连接器链路状态降级 ${_n_lk} 次（Transition to Non-critical，非 Critical；当前传感器状态见 SDR）"
+fi
+
 SEL_CRIT_UNRESOLVED=0
 SEL_CRIT_RECOVERED=0
 if [ -f "${ipmi_sel_elist}" ]; then
@@ -463,7 +484,11 @@ if [ -f "${ipmi_sel_elist}" ]; then
                 #   实测一台 B300 机 8 条未解除的风扇 Lower Critical 全部落在同一秒，
                 #   且该秒同时有 Power Supply AC lost（`Reading 0 < Threshold 609 RPM` 印证）。
                 if (tolower(s) ~ /power supply|power unit/ && tolower(e) ~ /ac lost|power off|power down/) pwr[ts]=1
-                if (tolower(e) !~ /critical|fatal|non-recoverable|nonrecoverable/) next
+                # v1.57.3：剔除 "Non-critical"（"Transition to Non-critical from OK" 属降级到非严重，
+                #   不是 Critical 告警）；non-recoverable 仍保留为严重级。
+                ee = tolower(e)
+                gsub(/non-critical|non critical/, "", ee)
+                if (ee !~ /critical|fatal|non-recoverable|nonrecoverable/) next
                 k=s"|"e
                 if (!(k in seen)) { seen[k]=1; order[++n]=k }
                 last[k]=st; lastts[k]=ts
