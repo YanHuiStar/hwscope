@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=218
+  table_rows=219
 [gpu]
   gpu_detail_rows=0
   model: N/A
@@ -30,10 +30,10 @@
 [html]
   html_table_open=28
   html_table_close=28
-  html_bytes=38102
+  html_bytes=38175
 [acceptance]
         6 N/A
-        9 PASS
+       10 PASS
 [acceptance_hw]
   准系统 | 台 | 1
   CPU | 颗 | 2

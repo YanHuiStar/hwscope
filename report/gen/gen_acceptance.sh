@@ -100,6 +100,7 @@ gen_acceptance() {
             # ③ 合规与一致性（跨部件）
             "固件版本合规")              echo 90 ;;
             "OS-BMC 口径一致")           echo 91 ;;
+            "FRU 完整性")                echo 92 ;;   # BMC 侧部件 FRU 读取，属"合规与一致性"（v1.58.0）
             # ④ 平台事件汇总（SEL 跨部件，作兜底收口）
             "SEL 事件")                 echo 95 ;;
             *)                          echo 200 ;;
@@ -390,6 +391,31 @@ gen_acceptance() {
         add_item "整机温度正常" "N/A" "无温度传感器数据"
     fi
 
+    # 10b. FRU 完整性（v1.58.0）
+    #    BMC 读不出某块板的 FRU EEPROM 时会置 `Management Subsys Health / FRU failure`，
+    #    并对该 FRU 只输出 `Unknown FRU header version 0x00`（块内无任何 SN/PN 字段）。
+    #    这不影响开机与计算（FRU 只是资产信息），但前面板故障灯会亮、客户会追问，
+    #    且交付后无法从 BMC 追溯该板 SN/PN —— 故判 WARN 并要求交付前处理。
+    if [ "${FRU_DATA_OK:-0}" -ne 1 ] 2>/dev/null; then
+        if [ "${BMC_LOG_EXISTS:-0}" -eq 1 ] && [ "${BMC_PRESENT:-0}" -eq 0 ]; then
+            # 与「整机温度正常」「OS-BMC 口径一致」同口径：平台无 BMC 属固有形态，不计入数据不足
+            add_item "FRU 完整性" "N/A" "平台无 BMC（IPMI 全部不可用），无 FRU 可读" 1
+        else
+            add_item "FRU 完整性" "N/A" "未取到 FRU 数据（ipmitool fru 采集失败或无权限）"
+        fi
+    elif [ "${FRU_BAD_N:-0}" -gt 0 ] 2>/dev/null && [ "${SEL_FRU_FAIL:-0}" -gt 0 ] 2>/dev/null; then
+        # BMC 自己也判了 FRU failure → 与前面板故障灯对应，必须交付前处理
+        add_item "FRU 完整性" "WARN" "**${FRU_BAD_N} 个 FRU 读不出**：${FRU_BAD_LIST}——BMC 同时报 \`FRU failure\` 并点亮前面板故障灯；FRU 仅存资产信息，不影响开机与计算，但交付后无法从 BMC 追溯该板 SN/PN。建议先 BMC 冷复位/断电重上，仍复现再查 FCB 与背板的 I2C 线缆、必要时换件"
+    elif [ "${FRU_BAD_N:-0}" -gt 0 ] 2>/dev/null; then
+        # **BMC 未报 FRU failure** → 多为该板本就不带 FRU（OEM GPU 基板常见）或仅 ipmitool 读不出，
+        #   不给它判 WARN（否则把一批正常机拉成"有条件通过"）；如实列出，交付前人工核对即可。
+        add_item "FRU 完整性" "INFO" "${FRU_BAD_N} 个 FRU 内容为空：${FRU_BAD_LIST}——BMC 未报 \`FRU failure\`（通常该板本就不带 FRU 或仅工具读不出），不影响判定，可向厂商核对是否应配置"
+    elif [ "${SEL_FRU_FAIL:-0}" -gt 0 ] 2>/dev/null; then
+        add_item "FRU 完整性" "WARN" "${FRU_POP_N} 个 FRU 内容均可读，但 SEL 中仍有 ${SEL_FRU_FAIL} 条 \`FRU failure\` 未解除——BMC 曾读失败，建议 BMC 冷复位后复查"
+    else
+        add_item "FRU 完整性" "PASS" "${FRU_POP_N} 个在位部件的 FRU 全部可读（SN/PN 完整）"
+    fi
+
     # 11. SEL 事件（v1.48.86：按「告警是否已解除」判，而非「是否出现过 Critical 字样」）
     #     旧实现只看 SEL_CRIT>0 → FAIL，而 SEL_CRIT 是 grep -ciE "critical|fatal" 的行数，
     #     连 Deasserted 行（描述里同样含 "Critical"）也计入 → 已自愈的历史事件被判 FAIL。
@@ -423,6 +449,13 @@ gen_acceptance() {
         fi
     elif [ "${SEL_CRIT_RECOVERED:-0}" -gt 0 ] 2>/dev/null; then
         add_item "SEL 事件" "WARN" "共 ${SEL_TOTAL:-0} 条 SEL，无未解除告警；其中 ${SEL_CRIT_RECOVERED} 条 Critical 已于 ${SEL_RECOVERED_WHEN:-N/A} 自愈（Asserted→Deasserted 成对，建议留意）"
+    elif [ "${SEL_FRU_FAIL:-0}" -gt 0 ] 2>/dev/null; then
+        # v1.58.0：`Management Subsys Health / FRU failure` 是 BMC 自判的部件读取异常，
+        #   级别为 warning（不含 critical 字样，旧的 Critical 计数看不到它），但会点亮
+        #   前面板故障灯——实测一台 P9000G7 全 SEL 只有这两条 warning，机器亮红灯而报告判合格。
+        _fru_hint=""
+        [ "${FRU_BAD_N:-0}" -gt 0 ] 2>/dev/null && _fru_hint="，读不出的是：${FRU_BAD_LIST}"
+        add_item "SEL 事件" "WARN" "共 ${SEL_TOTAL:-0} 条 SEL，无未解除 Critical；但有 ${SEL_FRU_FAIL} 条 \`FRU failure\`（BMC 读部件 FRU 失败，warning 级，会点亮前面板故障灯）${_fru_hint}"
     elif [ "${SEL_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
         _sel_extra=""
         [ -n "${SEL_NONCRIT_NOTES:-}" ] && _sel_extra="<br>${SEL_NONCRIT_NOTES}"

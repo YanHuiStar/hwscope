@@ -450,6 +450,75 @@ fi
 # v1.57.3：两类**常见非严重** SEL 事件单独识别并如实说明（不参与 Critical 判定）：
 #   - BMCTimeSychFail：BMC 未与外部时间源同步（内网通常无 NTP）→ SEL 时间戳可能偏差
 #   - Slot/Connector Link/Health 的 "Transition to Non-critical/OK"：插槽/连接器链路状态变化
+# v1.58.0：**FRU 读取完整性**——BMC 自身会用 `Management Subsys Health / FRU failure`
+#   点亮前面板故障灯（实测一台 P9000G7 137 条 SEL 里只有 2 条 warning，全是 FRU failure，
+#   其余全 ok，但机器亮红灯）。采集端 `ipmitool fru print` 遇到读不出的 FRU 会打印
+#   `Unknown FRU header version 0x00`，而该 FRU 的块内没有任何 Board/Product/Chassis 字段。
+#   判据：**块内无任何 SN/PN 字段且未标 `Device not present`** → 该 FRU 读不出；
+#   `Device not present` 是"槽位没装设备"（如未装网卡），不算故障。
+FRU_DATA_OK=0
+FRU_POP_N=0
+FRU_BAD_N=0
+FRU_BAD_LIST=""
+_fru_log="${BMC_DIR}/ipmi_fru.log"
+[ -s "$_fru_log" ] || _fru_log="${BMC_DIR}/ipmi_fru_all.log"
+if [ -s "$_fru_log" ] && grep -q 'FRU Device Description' "$_fru_log" 2>/dev/null; then
+    FRU_DATA_OK=1
+    _fru_stat=$(awk '
+        function flush() {
+            if (name == "") return
+            if (np)      { print "SKIP|" name; np=0 }
+            else if (rd) { print "OK|" name;   rd=0 }
+            else         { print "BAD|" name }
+            name=""
+        }
+        /^#/ { next }
+        /FRU Device Description/ {
+            flush()
+            name=$0
+            sub(/.*FRU Device Description[ ]*:[ ]*/, "", name)
+            sub(/[ ]*\(ID [0-9]+\)$/, "", name)
+            rd=0; np=0
+            next
+        }
+        {
+            if ($0 ~ /Device not present/) np=1
+            if ($0 ~ /(Board|Product|Chassis)[ ]+(Mfg|Manufacturer|Product|Part Number|Serial|Name|Type)/) rd=1
+        }
+        END { flush() }' "$_fru_log" 2>/dev/null)
+    if [ -n "$_fru_stat" ]; then
+        FRU_POP_N=$(printf '%s\n' "$_fru_stat" | grep -c '^OK|' || true)
+        FRU_BAD_N=$(printf '%s\n' "$_fru_stat" | grep -c '^BAD|' || true)
+        # 部件短名映射 + 用 bash 拼接（**不用 `paste -d'、'`**：paste 的 -d 只取单字节，
+        #   多字节分隔符会往文件里写坏字节，实测让生成的 md 被 grep 判成 binary）
+        FRU_BAD_LIST=""
+        while IFS= read -r _fn; do
+            [ -z "$_fn" ] && continue
+            case "$_fn" in
+                "Builtin FRU Device") _fl="主板 FRU" ;;
+                FCB_FRU)              _fl="FCB 风扇控制板" ;;
+                M2_BP_FRU)            _fl="M.2 背板" ;;
+                U2_BP0_FRU)           _fl="U.2 背板0" ;;
+                U2_BP1_FRU)           _fl="U.2 背板1" ;;
+                PCIE_RISER0_FRU)      _fl="后置 riser" ;;
+                SW89048CPU0_FRU)      _fl="PCIe 交换板0" ;;
+                SW89048CPU1_FRU)      _fl="PCIe 交换板1" ;;
+                *)                    _fl="$_fn" ;;
+            esac
+            FRU_BAD_LIST="${FRU_BAD_LIST}${FRU_BAD_LIST:+、}${_fl}"
+        done < <(printf '%s\n' "$_fru_stat" | grep '^BAD|' | sed 's/^BAD|//')
+        FRU_POP_N=${FRU_POP_N:-0}; FRU_BAD_N=${FRU_BAD_N:-0}
+    fi
+fi
+# SEL 侧的 `FRU failure`（BMC 自判，未解除才算当前故障）
+SEL_FRU_FAIL=0
+if [ -s "${ipmi_sel_elist}" ] 2>/dev/null; then
+    SEL_FRU_FAIL=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
+        | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" \
+        | grep -i "FRU failure" | grep -ci "asserted" || true)
+    SEL_FRU_FAIL=${SEL_FRU_FAIL:-0}
+fi
+
 SEL_NONCRIT_NOTES=""
 _sel_noncrit=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
     | grep -vE "Could not open|Unable|No such file|command failed|device at /dev" \
