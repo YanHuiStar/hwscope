@@ -1,6 +1,6 @@
 # HwScope — Server Hardware Inspection & Data Collection System
 
-![Version](https://img.shields.io/badge/Version-1.58.0-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
+![Version](https://img.shields.io/badge/Version-1.58.1-blue.svg) ![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-lightgrey.svg) ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg) ![GitHub](https://img.shields.io/badge/GitHub-YanHuiStar%2Fhwscope-181717.svg?logo=github) ![Last Commit](https://img.shields.io/github/last-commit/YanHuiStar/hwscope.svg)
 
 面向 AI 基础设施运维与交付场景的**服务器硬件巡检系统**。适用于 HGX 系列（H200/B200/B300）、PCIe GPU 服务器、AMD Instinct（ROCm）、华为昇腾（Atlas）及无 GPU 机头，按组件粒度采集硬件信息，自动生成结构化报告与验收清单，支持远程采集（Linux/Windows）与多机对比。
 
@@ -8,7 +8,7 @@
 
 - **组件级采集**：主板 / CPU / 内存 / GPU / NVSwitch / PCIe / 网络 / 存储（RAID/HBA）/ 电源 / 风扇 / BMC / NVSM / DCGM / 固件合规 / 能耗 / OS 共 17 个模块；自动识别平台形态（`x86_64_SXM`、`x86_64_OAM`、`x86_64_PCIe`、`x86_64_head`、`x86_64_none`）
 - **报告四件套**：JSON + Markdown + TXT + HTML（浏览器交付版，零依赖）
-- **验收清单**：默认判定项最多 17 项（按平台能力裁剪，无数据项不渲染），另有 6 项仅在检出时追加的条件项（采集时机 / PCIe AER 错误 / CPU MCE / GPU XID 错误历史 / GPU 功耗上限 / RAID 缓存电池）；平台固有 N/A 折叠为表尾汇总且不计入「数据不足」；硬件概览自动生成配置单
+- **验收清单**：默认判定项最多 17 项（按平台能力裁剪，无数据项不渲染），另有 5 项仅在检出时追加的条件项（PCIe AER 错误 / CPU MCE / GPU XID 错误历史 / GPU 功耗上限 / RAID 缓存电池）；平台固有 N/A 折叠为表尾汇总且不计入「数据不足」；硬件概览自动生成配置单
 - **GPU 魔改识别**：内置 60 余款型号的额定显存规格库，覆盖 NVIDIA、AMD Instinct 及昇腾 / Intel / 国产型号（后三类的厂商串待真机核对），检测值与额定值交叉验证，疑似魔改或伪装的卡标注 `⚠️`
 - **远程采集**：tar 推送执行回拉，Linux/WSL 与 Windows 原生环境均支持（交互式密码，不落盘）
 - **只读无害**：采集不写硬件，报告不重新采集；GPU 健康诊断按厂商分流——NVIDIA 用 DCGM Level 1、AMD 用 ROCm、昇腾用 `npu-smi`（适配器框架统一 CSV 输出）

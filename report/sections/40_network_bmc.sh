@@ -482,8 +482,11 @@ if [ -s "$_fru_log" ] && grep -q 'FRU Device Description' "$_fru_log" 2>/dev/nul
             next
         }
         {
+            # 「Device not present」= 槽位没装设备（如未装网卡），不算故障；
+            # 其余出现 **任意 "字段: 值" 行** 即视为该 FRU 内容可读——不枚举具体字段名，
+            # 免得 Board Extra / Asset Tag / Custom Field 这类少见字段被漏判成"读不出"。
             if ($0 ~ /Device not present/) np=1
-            if ($0 ~ /(Board|Product|Chassis)[ ]+(Mfg|Manufacturer|Product|Part Number|Serial|Name|Type)/) rd=1
+            else if ($0 ~ /^[ ]*[A-Za-z][A-Za-z0-9 .\/_-]*[ ]*:/) rd=1
         }
         END { flush() }' "$_fru_log" 2>/dev/null)
     if [ -n "$_fru_stat" ]; then

@@ -334,6 +334,10 @@ fi)
     "sel_critical": "${SEL_CRIT_UNRESOLVED:-0}",
     "sel_critical_recovered": "${SEL_CRIT_RECOVERED:-0}",
     "sel_critical_any": "${SEL_CRIT:-0}",
+    "sel_fru_failure": "${SEL_FRU_FAIL:-0}",
+    "fru_readable_count": "${FRU_POP_N:-0}",
+    "fru_unreadable_count": "${FRU_BAD_N:-0}",
+    "fru_unreadable": "$(jesc "${FRU_BAD_LIST:-}")",
     "sel_details": [
 $(if [ -n "$SEL_DETAILS" ]; then
     echo "$SEL_DETAILS" | while IFS='|' read -r sid sdate stime stype sdesc; do

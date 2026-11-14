@@ -255,7 +255,7 @@ $(printf '%s' "$dimms_txt")
 [GPU]
 $(if [ "$GPU_COUNT" -eq 0 ]; then
     if [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        echo "  ⚠️ 未识别到 GPU 模组（本次采集未枚举到加速卡：${GPU_MODULE_REASON}）——建议开机 ≥2 分钟后复采；如现场应有模组请核查在位/上电"
+        echo "  ⚠️ 未识别到 GPU 模组（本次采集未枚举到加速卡：${GPU_MODULE_REASON}）——如现场应有模组请核查在位/上电"
     elif [ "$HEAD_NODE" -eq 1 ]; then
         echo "  未识别到 GPU 模组（PCI 未枚举到加速卡，采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}）——如本机应有模组请现场核查在位/上电"
     elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
@@ -377,6 +377,7 @@ fi)
   固件   : ${BMC_FW:-N/A}
   IP     : ${BMC_IP:-N/A}${BMC_IP_SRC:+（${BMC_IP_SRC}）}
   MAC    : ${BMC_MAC:-N/A}
+  FRU    : $(if [ "${FRU_DATA_OK:-0}" -ne 1 ] 2>/dev/null; then echo "N/A（未取到 FRU 数据）"; elif [ "${FRU_BAD_N:-0}" -gt 0 ] 2>/dev/null; then if [ "${SEL_FRU_FAIL:-0}" -gt 0 ] 2>/dev/null; then echo "⚠️ ${FRU_BAD_N} 个读不出（${FRU_BAD_LIST}）——BMC 报 FRU failure"; else echo "ℹ️ ${FRU_BAD_N} 个内容为空（${FRU_BAD_LIST}）——BMC 未报 FRU failure"; fi; elif [ "${FRU_POP_N:-0}" -gt 0 ] 2>/dev/null; then echo "${FRU_POP_N} 个在位部件全部可读"; else echo "N/A（未枚举到在位部件）"; fi)
   SEL    : $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} (未解除 Critical ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+，已自愈 $SEL_CRIT_RECOVERED})"; else echo "⚠️ 数据不可用"; fi)
 $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
     echo "  ⚠️ SEL 数据不可用（ipmitool 采集失败或无权限），事件列表不完整"

@@ -523,7 +523,7 @@ done
 #   报告与验收按「GPU 机头」出一套文案，看起来像「机器没装 GPU」。
 #   这里把 uptime 解析出来，供报告在「无 GPU + 开机过短」时明确提示复核，
 #   避免把「采集过早」误读成「平台形态」。
-COLLECT_UPTIME_SEC=""; COLLECT_EARLY=0
+COLLECT_UPTIME_SEC=""
 if [ -f "${OS_DIR}/uptime.log" ]; then
     _up_line=$(grep -vE "^#" "${OS_DIR}/uptime.log" 2>/dev/null | head -1)
     _up_str=$(printf '%s' "$_up_line" | sed -n 's/.* up \(.*\)/\1/p' | cut -d, -f1 | sed 's/^ *//; s/ *$//')
@@ -542,10 +542,9 @@ if [ -f "${OS_DIR}/uptime.log" ]; then
     case "${COLLECT_UPTIME_SEC:-}" in
         ''|*[!0-9]*) COLLECT_UPTIME_SEC="" ;;
     esac
-    # P3-4：<180 秒视为「刚开机就采」——GPU/NIC 初始化常需数十秒（MI300X 八卡实测 >30s）。
-    #   采集端 hwscope.sh 的启动提示用同一阈值 180s；改这里必须同步改那里，否则
-    #   会出现"报告说刚开机、采集时却没提醒"的口径不一致。
-    [ -n "$COLLECT_UPTIME_SEC" ] && [ "$COLLECT_UPTIME_SEC" -lt 180 ] && COLLECT_EARLY=1
+    # v1.58.1：uptime 只作事实展示，**不再据此推导"采集过早"结论**——
+    #   PCI 枚举在 BIOS POST 阶段完成，开机 2 分钟时 PCI 上没有加速卡就是没有；
+    #   用它判 GPU 结论无效会在同批机器间凭空造出差异。uptime 只作为事实展示。
 fi
 # 友好显示（uptime 常是 `up 0 min`，直接写「0 秒」会让人以为是解析失败）
 COLLECT_UPTIME_DISP=""

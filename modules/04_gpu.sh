@@ -58,7 +58,7 @@ run_gpu() {
             *_SXM|*_OAM)
                 _gstate="unknown"
                 _greason="${PLATFORM##*_} 模组形态，但 PCI 未枚举到加速卡"
-                _gmsg="未识别到 GPU 模组：PCI 未枚举到加速卡（若现场应有模组，请开机 ≥180 秒后复采，并核查模组在位与供电）" ;;
+                _gmsg="未识别到 GPU 模组：PCI 未枚举到加速卡（若现场应有模组，请核查模组在位、供电与 PCIe 链路）" ;;
             *_head)
                 _greason="GPU 机头形态，本机不含 GPU"
                 _gmsg="GPU 机头形态：本机不含 GPU，模组由模组侧单独采集" ;;

@@ -438,17 +438,11 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
             # v1.53.41：读不到 GPU ≠ 没装模组——把「未知」如实说出来，别替客户下结论
             echo "| 项 | 值 |"
             echo "|----|----|"
-            echo "| 状态 | ⚠️ **未识别到 GPU 模组**：本次采集未枚举到任何加速卡（${GPU_MODULE_REASON}）——GPU 相关项无法判定。建议开机 ≥2 分钟后复采；若现场确应装有模组，请核查模组在位/上电/PCIe 链路 |"
-            if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null; then
-                echo "| ⚠️ 采集时机 | 采集时系统运行时间 ${COLLECT_UPTIME_DISP}（不足 3 分钟）——GPU/网卡可能**尚未枚举完成**，本次「无 GPU」不可作为平台形态结论；建议开机 ≥2 分钟后重采 |"
-            fi
+            echo "| 状态 | ⚠️ **未识别到 GPU 模组**：本次采集未枚举到任何加速卡（${GPU_MODULE_REASON}）——GPU 相关项无法判定；若现场确应装有模组，请核查模组在位/上电/PCIe 链路 |"
         elif [ "$HEAD_NODE" -eq 1 ]; then
         echo "| 项 | 值 |"
         echo "|----|----|"
-            echo "| 状态 | ⚠️ **未识别到 GPU 模组**：本次采集 PCI 未枚举到任何加速卡（采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}，不属采集过早）——如本机应有模组，请核查模组在位/上电/PCIe 链路；模组经 PCIe Fabric 接入时亦需单独采集 |"
-            if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null; then
-                echo "| ⚠️ 采集时机 | 采集时系统运行时间 ${COLLECT_UPTIME_DISP}（不足 3 分钟）——GPU/网卡可能**尚未枚举完成**，本次「无 GPU」不可作为平台形态结论；建议开机 ≥2 分钟后重采 |"
-            fi
+            echo "| 状态 | ⚠️ **未识别到 GPU 模组**：本次采集 PCI 未枚举到任何加速卡（采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}）——如本机应有模组，请核查模组在位/上电/PCIe 链路；模组经 PCIe Fabric 接入时亦需单独采集 |"
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
             echo "| 项 | 值 |"
             echo "|----|----|"
@@ -778,7 +772,7 @@ if [ -n "$rf_line" ]; then echo "| Redfish 固件明细 | $(echo "$rf_line" | se
 | IP | $(if [ "${BMC_IP:-}" = "0.0.0.0" ]; then echo "0.0.0.0（未配置）"; else printf '%s' "${BMC_IP:-N/A}$([ -n "${BMC_IP_SRC:-}" ] && printf '（%s）' "${BMC_IP_SRC}")"; fi) |
 | MAC | ${BMC_MAC:-N/A} |
 | SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} 条（未解除告警 ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+$([ "${SEL_CRIT_RECOVERED}" -gt 0 ] 2>/dev/null && printf "；已解除历史记录 %s" "$SEL_CRIT_RECOVERED")}${SEL_NONCRIT_NOTES:+；$SEL_NONCRIT_NOTES}）"; else echo "⚠️ 数据不可用"; fi) |
-| FRU 完整性 | $(if [ "${FRU_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then if [ "${FRU_BAD_N:-0}" -gt 0 ] 2>/dev/null; then if [ "${SEL_FRU_FAIL:-0}" -gt 0 ] 2>/dev/null; then echo "⚠️ ${FRU_BAD_N} 个读不出（${FRU_BAD_LIST}）——BMC 报 FRU failure，前面板故障灯可能点亮"; else echo "ℹ️ ${FRU_BAD_N} 个内容为空（${FRU_BAD_LIST}）——BMC 未报 FRU failure"; fi; else echo "${FRU_POP_N} 个在位部件全部可读"; fi; else echo "N/A（未取到 FRU 数据）"; fi) |
+| FRU 完整性 | $(if [ "${FRU_DATA_OK:-0}" -ne 1 ] 2>/dev/null; then echo "N/A（未取到 FRU 数据）"; elif [ "${FRU_BAD_N:-0}" -gt 0 ] 2>/dev/null; then if [ "${SEL_FRU_FAIL:-0}" -gt 0 ] 2>/dev/null; then echo "⚠️ ${FRU_BAD_N} 个读不出（${FRU_BAD_LIST}）——BMC 报 FRU failure，前面板故障灯可能点亮"; else echo "ℹ️ ${FRU_BAD_N} 个内容为空（${FRU_BAD_LIST}）——BMC 未报 FRU failure"; fi; elif [ "${FRU_POP_N:-0}" -gt 0 ] 2>/dev/null; then echo "${FRU_POP_N} 个在位部件全部可读"; else echo "N/A（未枚举到在位部件）"; fi) |
 $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
     echo "> ⚠️ SEL 数据不可用（ipmitool 采集失败或无权限），事件列表不完整"
 elif [ -n "$SEL_DETAILS" ]; then
@@ -1011,10 +1005,6 @@ $(
     fi
     if [ -n "${MCE_HITS:-}" ]; then
         echo "| ⚠️ CPU MCE | 检出 ${MCE_COUNT} 条机器检查异常（来源: ${MCE_SRC}） |"
-    fi
-    # v1.53.40：采集时机提示（仅在「开机 <3 分钟且未发现 GPU」时出这一行，不改变无故障机行数）
-    if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        echo "| ⚠️ 采集时机 | 采集时系统运行时间 ${COLLECT_UPTIME_DISP}——GPU 可能尚未枚举完成，「无 GPU」结论需开机 ≥2 分钟后复采确认 |"
     fi
     # v1.53.37：PCIe AER 可纠正/不可纠正错误（仅在检出时出这一行——不改变无故障机的行数）
     #   「GPU PCIe 链路」只判协商速率/宽度，看不到 AER 计数，单看那一行会漏掉持续纠错的链路。

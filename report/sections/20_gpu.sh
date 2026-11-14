@@ -556,14 +556,15 @@ fi
 #   但 OS 侧「没读到 GPU」**不能**证明「没装模组」——可能未上电、未枚举、驱动未加载、采集过早。
 # 判据（宁可判未知，不可替客户下结论）：
 #   present : 读到 GPU
-#   unknown : ① 采集过早（uptime <3 分钟）② PCI 有加速卡但管理工具无数据（驱动异常）
-#   absent  : 其余（开机正常、PCI 无加速卡）——仍按机头形态处理
+#   unknown : PCI 有加速卡但管理工具无数据（驱动异常/工具缺失）
+#   absent  : 其余（PCI 无加速卡）——按机头形态处理
+# v1.58.1：**不再用 uptime 判"采集过早"**——PCI 枚举在 BIOS POST 阶段已完成，
+#   系统已跑到 2 分钟时 PCI 上有什么就是有什么；实测三台同型号 AMD 机头
+#   state 全是 absent，只有开机 2 分钟那台因 uptime 阈值多出一项 WARN，
+#   同批报告平白产生差异（用户口径：没必要）。
 GPU_MODULE_STATE="present"; GPU_MODULE_REASON=""
 if [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-    if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null; then
-        GPU_MODULE_STATE="unknown"
-        GPU_MODULE_REASON="采集时系统运行时间 ${COLLECT_UPTIME_DISP:-不足 3 分钟}，GPU 可能尚未枚举完成"
-    elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
+    if [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
         GPU_MODULE_STATE="unknown"
         GPU_MODULE_REASON="PCI 上存在 ${GPU_PCI_PRESENT} 张加速卡（${GPU_PCI_VENDOR:-未知厂商}），但管理工具无数据（驱动未安装或异常）"
     else

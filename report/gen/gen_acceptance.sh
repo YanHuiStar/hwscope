@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # HwScope - 验收清单生成器 gen_acceptance（默认判定项 + 检出才追加的条件项 + 配置单）
-#   注：默认判定项 17 项（随平台能力裁剪），条件项 6 项（GPU 功耗上限 / 采集时机 / PCIe AER /
+#   注：默认判定项 17 项（随平台能力裁剪），条件项 5 项（GPU 功耗上限 / PCIe AER /
 #   GPU XID / CPU MCE / RAID 缓存电池）——
 #   仅检出时追加、不改变默认项数（v1.48.90 立规）；早期注释写的"18 项"从未与实现一致（v1.49.23 更正）
 # report/gen/gen_acceptance.sh
@@ -74,7 +74,6 @@ gen_acceptance() {
         #   它们只是"检出才出现"，不代表优先级低。
         case "$1" in
             # ⓪ 数据可信度（命中即解释后续 GPU 项为何全 N/A，必须最先看到）
-            "采集时机")                  echo 10 ;;
             # ① 平台通路
             "PCIe 链路完整")             echo 20 ;;
             "PCIe AER 错误")            echo 21 ;;   # 链路层错误，紧跟链路判定
@@ -112,9 +111,9 @@ gen_acceptance() {
     #   absent （开机正常、PCI 无加速卡）→ N/A 平台固有（原行为）
     _gpu_item_na() {   # $1=项名；其余参数忽略
         if [ "${GPU_MODULE_STATE:-present}" = "unknown" ]; then
-            add_item "$1" "N/A" "未识别到 GPU 模组（本次采集未枚举到加速卡：${GPU_MODULE_REASON}）——本项无法判定，计入数据不足；建议开机 ≥2 分钟后复采"
+            add_item "$1" "N/A" "未识别到 GPU 模组（本次采集未枚举到加速卡：${GPU_MODULE_REASON}）——本项无法判定，计入数据不足"
         else
-            add_item "$1" "N/A" "未识别到 GPU 模组（PCI 未枚举到加速卡；采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}，不属采集过早）——如本机应有模组请现场核查在位/上电；模组经 PCIe Fabric 接入时单独采集验收" 1
+            add_item "$1" "N/A" "未识别到 GPU 模组（PCI 未枚举到加速卡；采集时系统已运行 ${COLLECT_UPTIME_DISP:-较长时间}）——如本机应有模组请现场核查在位/上电；模组经 PCIe Fabric 接入时单独采集验收" 1
         fi
     }
 
@@ -412,8 +411,11 @@ gen_acceptance() {
         add_item "FRU 完整性" "INFO" "${FRU_BAD_N} 个 FRU 内容为空：${FRU_BAD_LIST}——BMC 未报 \`FRU failure\`（通常该板本就不带 FRU 或仅工具读不出），不影响判定，可向厂商核对是否应配置"
     elif [ "${SEL_FRU_FAIL:-0}" -gt 0 ] 2>/dev/null; then
         add_item "FRU 完整性" "WARN" "${FRU_POP_N} 个 FRU 内容均可读，但 SEL 中仍有 ${SEL_FRU_FAIL} 条 \`FRU failure\` 未解除——BMC 曾读失败，建议 BMC 冷复位后复查"
-    else
+    elif [ "${FRU_POP_N:-0}" -gt 0 ] 2>/dev/null; then
         add_item "FRU 完整性" "PASS" "${FRU_POP_N} 个在位部件的 FRU 全部可读（SN/PN 完整）"
+    else
+        # 日志里没有任何在位部件的 FRU 记录（只有 Device not present 或空文件）——属真缺数据
+        add_item "FRU 完整性" "N/A" "FRU 日志中未枚举到在位部件的记录"
     fi
 
     # 11. SEL 事件（v1.48.86：按「告警是否已解除」判，而非「是否出现过 Critical 字样」）
@@ -630,13 +632,6 @@ gen_acceptance() {
         else
             add_item "GPU ECC" "N/A" "无 ECC 数据（该采集版本未生成 gpu_ecc_inventory.csv）"
         fi
-    fi
-
-    # ── v1.53.40：采集时机（开机 <3 分钟且未发现 GPU）——条件项，仅检出才追加 ──
-    #   实测事故：开机 13 秒采集 → GPU 未枚举 → 平台判 GPU 机头、GPU 四类项判「平台固有 N/A」，
-    #   验收看似正常（合格/有条件通过），实则**根本没测到 GPU**。这种情况必须显式告警。
-    if [ "${COLLECT_EARLY:-0}" -eq 1 ] 2>/dev/null && [ "${GPU_COUNT:-0}" -eq 0 ] 2>/dev/null; then
-        add_item "采集时机" "WARN" "采集时系统运行时间 ${COLLECT_UPTIME_DISP}（<180 秒）且未识别到 GPU——GPU/网卡可能尚未枚举完成；本次 GPU 相关结论无效，请开机 ≥180 秒后复采"
     fi
 
     # ── v1.53.37：PCIe AER 错误（仅检出才追加项，不改变默认项数）──
