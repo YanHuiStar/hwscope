@@ -487,7 +487,7 @@ GLOSSARY_ENTRIES=(
     "SEL|System Event Log，BMC 记录的系统事件日志（含硬件告警）"
     "SXM|NVIDIA 数据中心 GPU 模块化形态（非 PCIe 插卡），如 B300 SXM6"
     "PSID|网卡产品 ID（Mellanox 卡标识，用于固件匹配）"
-    "退役行(Remapped Rows)|GPU 显存中检测到故障后自动重映射隐藏的行，计数>0 提示显存健康问题"
+    "退役行(Remapped Rows)|GPU 显存行出现错误后由固件永久重映射（遮蔽）隐藏的行数，**重启/重置驱动都不会清零**；有计数说明历史上发生过不可纠正（或大量可纠正）错误——不是当前故障，但属可靠性事件，需记录观察；重映射失败(Yes) 为厂商 RMA 条件"
     "ECC Mode|nvidia-smi 的 ECC 开关状态；`nvidia-smi -q -d ECC` 用 -g 0 查询时返回整个 GPU 组的汇总值，组内不一致时显示共识值"
     "CE/UE|ECC 计数口径：CE=可纠正错误（Correctable Error，可纠错恢复，属观察项）；UE=不可纠正错误（Uncorrectable Error，数据完整性受影响，需报修）"
     "volatile/aggregate|nvidia-smi 的 ECC 计数窗口：volatile=本次驱动加载以来（看当前是否有错）；aggregate=终身累计（含出厂测试，RMA 依据）"

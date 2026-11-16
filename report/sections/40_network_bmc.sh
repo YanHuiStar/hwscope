@@ -534,6 +534,22 @@ if [ -n "$_sel_noncrit" ]; then
     [ "$_n_lk" -gt 0 ] 2>/dev/null && SEL_NONCRIT_NOTES="${SEL_NONCRIT_NOTES}${SEL_NONCRIT_NOTES:+<br>}插槽/连接器链路状态降级 ${_n_lk} 次（Transition to Non-critical，非 Critical；当前传感器状态见 SDR）"
 fi
 
+# v1.59.0：**掉电/重启频次统计**——SEL 里 AC lost / Power off / warm reset 的数量能一眼看出
+#   这台机是否被反复断电（验收现场常见，非硬件故障但影响判断与交付记录）；旧报告只有 SEL 总数，
+#   215 条里 31 条 AC lost + 39 条 Power off 这种信息被埋没在事件列表里。
+SEL_AC_LOST=0; SEL_PWR_OFF=0; SEL_WARM_RESET=0; SEL_HW_CHANGE=0
+if [ -s "${ipmi_sel_elist}" ] 2>/dev/null; then
+    _sel_cnt=$(grep -v "^#" "${ipmi_sel_elist}" 2>/dev/null \
+        | grep -vE "Could not open|Unable|No such file|command failed|device at /dev")
+    SEL_AC_LOST=$(printf '%s\n' "$_sel_cnt" | grep -ciE 'power supply ac lost|ac lost' || true)
+    SEL_PWR_OFF=$(printf '%s\n' "$_sel_cnt" | grep -ciE 'power off/down|power unit.*power off' || true)
+    SEL_WARM_RESET=$(printf '%s\n' "$_sel_cnt" | grep -ciE 'warm reset|system reset|os initiated.*reset' || true)
+    SEL_HW_CHANGE=$(printf '%s\n' "$_sel_cnt" | grep -ciE 'hardware change detected' || true)
+    for _v in SEL_AC_LOST SEL_PWR_OFF SEL_WARM_RESET SEL_HW_CHANGE; do
+        eval "_n=\${$_v:-0}"; case "$_n" in ''|*[!0-9]*) eval "$_v=0" ;; esac
+    done
+fi
+
 SEL_CRIT_UNRESOLVED=0
 SEL_CRIT_RECOVERED=0
 if [ -f "${ipmi_sel_elist}" ]; then

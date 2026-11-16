@@ -460,7 +460,15 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
         echo "| ⚠️ 数量差异 | PCI 枚举 ${GPU_PCI_PRESENT} 张，驱动可用 ${GPU_COUNT} 张——差额 $(( GPU_PCI_PRESENT - GPU_COUNT )) 张未接管（疑似掉卡/驱动未加载），见 XID 与 dmesg |"
     fi
     echo "| 型号 | ${GPU_NAMES:-N/A} |"
-    echo "| 显存总量 | ${GPU_MEM:-N/A}/${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}（检测/额定${GPU_MEM_SPEC:+，${GPU_MEM_SPEC}}）${GPU_MEM_SPEC_NOTE:+ ${GPU_MEM_SPEC_NOTE}} |"
+    # v1.59.0：检测值与额定值分别标注单位，并说明 GiB/GB 是同一容量的两种口径——
+    #   原来「2149 GiB/2304GB」并排只标「检测/额定」，读者会以为检测比额定少了 155。
+    #   注意**不要**把 GiB 换算成 GB 再摆一起：换算得 2307 GB（nvidia-smi 自身按 268.6 GiB/卡取整），
+    #   与额定 2304 GB 差 3 GB，反而更像"容量不符"。
+    _gm_unit=""
+    case "${GPU_MEM:-}" in
+        *GiB*|*MiB*) case "${GPU_MEM_SPEC_TOTAL:-}" in *GB*|*"GB"*) _gm_unit="（GiB 与 GB 为同一容量的两种单位，1 GiB≈1.074 GB）" ;; esac ;;
+    esac
+    echo "| 显存总量 | 检测 ${GPU_MEM:-N/A} ｜ 额定 ${GPU_MEM_SPEC_TOTAL:-${GPU_MEM:-N/A}}${GPU_MEM_SPEC:+（${GPU_MEM_SPEC}）}${_gm_unit}${GPU_MEM_SPEC_NOTE:+ ${GPU_MEM_SPEC_NOTE}} |"
     if [ -n "${GPU_AMD_SUSPECT:-}" ]; then
         echo "| 显存异常 | ⚠️ ${GPU_AMD_SUSPECT%, }（疑似显存魔改或伪装，需核实） |"
     fi
@@ -481,7 +489,14 @@ $(if [ "$GPU_COUNT" -gt 0 ] || [ "$HEAD_NODE" -eq 1 ] || [ "${GPU_PCI_PRESENT:-0
             [ "${GPU_PCI_PRESENT:-0}" -gt "${GPU_COUNT:-0}" ] 2>/dev/null && _ecc_note="（仅统计可用 ${GPU_COUNT} 张）"
             echo "| ECC | ${GPU_ECC:-N/A}${_ecc_note} |"
     [ -n "${DCGM_ECC_MODE:-}" ] && echo "| ECC Mode | ${DCGM_ECC_MODE} |"
-            echo "| 退役行 | ${GPU_REMAP:-N/A} |"
+            # v1.59.0：退役行是**永久记录**（复位/重启不清零），与 volatile 计数语义不同；
+            #   任一卡有计数就加 ⚠️ 并在同一格点名，避免"整体 PASS + 一行 UE:1 无人看"。
+            if [ "${GPU_REMAP_UE:-0}" -gt 0 ] 2>/dev/null || [ "${GPU_REMAP_FAIL:-0}" -gt 0 ] 2>/dev/null \
+               || [ "${GPU_REMAP_PEND:-0}" -gt 0 ] 2>/dev/null || [ "${GPU_REMAP_CE:-0}" -gt 0 ] 2>/dev/null; then
+                echo "| 退役行 | ⚠️ ${GPU_REMAP:-N/A}（行已重映射隐藏，**永久记录、重启不清零**；含义见术语表） |"
+            else
+                echo "| 退役行 | ${GPU_REMAP:-N/A} |"
+            fi
     echo "| 温度 | ${GPU_TEMP:-N/A} |"
             ;;
     esac
@@ -773,6 +788,7 @@ if [ -n "$rf_line" ]; then echo "| Redfish 固件明细 | $(echo "$rf_line" | se
 | MAC | ${BMC_MAC:-N/A} |
 | SEL 事件 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then echo "${SEL_TOTAL:-0} 条（未解除告警 ${SEL_CRIT_UNRESOLVED:-0}${SEL_CRIT_RECOVERED:+$([ "${SEL_CRIT_RECOVERED}" -gt 0 ] 2>/dev/null && printf "；已解除历史记录 %s" "$SEL_CRIT_RECOVERED")}${SEL_NONCRIT_NOTES:+；$SEL_NONCRIT_NOTES}）"; else echo "⚠️ 数据不可用"; fi) |
 | FRU 完整性 | $(if [ "${FRU_DATA_OK:-0}" -ne 1 ] 2>/dev/null; then echo "N/A（未取到 FRU 数据）"; elif [ "${FRU_BAD_N:-0}" -gt 0 ] 2>/dev/null; then if [ "${SEL_FRU_FAIL:-0}" -gt 0 ] 2>/dev/null; then echo "⚠️ ${FRU_BAD_N} 个读不出（${FRU_BAD_LIST}）——BMC 报 FRU failure，前面板故障灯可能点亮"; else echo "ℹ️ ${FRU_BAD_N} 个内容为空（${FRU_BAD_LIST}）——BMC 未报 FRU failure"; fi; elif [ "${FRU_POP_N:-0}" -gt 0 ] 2>/dev/null; then echo "${FRU_POP_N} 个在位部件全部可读"; else echo "N/A（未枚举到在位部件）"; fi) |
+| 掉电/重启统计 | $(if [ "${SEL_DATA_VALID:-0}" -eq 1 ] 2>/dev/null; then _t=""; [ "${SEL_AC_LOST:-0}" -gt 0 ] 2>/dev/null && _t="${_t}AC 断电 ${SEL_AC_LOST} 次 ｜ "; [ "${SEL_PWR_OFF:-0}" -gt 0 ] 2>/dev/null && _t="${_t}关机 ${SEL_PWR_OFF} 次 ｜ "; [ "${SEL_WARM_RESET:-0}" -gt 0 ] 2>/dev/null && _t="${_t}重启 ${SEL_WARM_RESET} 次 ｜ "; [ "${SEL_HW_CHANGE:-0}" -gt 0 ] 2>/dev/null && _t="${_t}硬件变更记录 ${SEL_HW_CHANGE} 次 ｜ "; _t="${_t% ｜ }"; if [ -z "$_t" ]; then echo "无掉电/重启记录"; elif [ "${SEL_AC_LOST:-0}" -ge 3 ] 2>/dev/null; then echo "${_t}（AC 断电次数偏多，多为验收过程反复上下电，非硬件故障；建议交付记录中写明）"; else echo "$_t"; fi; else echo "N/A（SEL 不可用）"; fi) |
 $(if [ "${SEL_DATA_VALID:-0}" -eq 0 ] 2>/dev/null; then
     echo "> ⚠️ SEL 数据不可用（ipmitool 采集失败或无权限），事件列表不完整"
 elif [ -n "$SEL_DETAILS" ]; then

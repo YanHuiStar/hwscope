@@ -279,7 +279,12 @@ else
             ;;
         nvidia)
             echo "  ECC    : ${GPU_ECC:-N/A}"
-            echo "  退役行 : ${GPU_REMAP:-N/A}"
+            if [ "${GPU_REMAP_UE:-0}" -gt 0 ] 2>/dev/null || [ "${GPU_REMAP_FAIL:-0}" -gt 0 ] 2>/dev/null \
+               || [ "${GPU_REMAP_PEND:-0}" -gt 0 ] 2>/dev/null || [ "${GPU_REMAP_CE:-0}" -gt 0 ] 2>/dev/null; then
+                echo "  退役行 : ⚠️ ${GPU_REMAP:-N/A}（永久记录，重启不清零）"
+            else
+                echo "  退役行 : ${GPU_REMAP:-N/A}"
+            fi
             ;;
     esac
     echo "  VBIOS  : ${GPU_VBIOS:-N/A}"

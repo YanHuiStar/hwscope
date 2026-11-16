@@ -261,11 +261,53 @@ done
 NVME_CMD_ONLY=0
 [ "$NVME_ERR_CMD" -gt 0 ] && [ "$NVME_ERR_MEDIA" -eq 0 ] && [ "$NVME_ERR_SHUTDOWN" -eq 0 ] && NVME_CMD_ONLY=1
 
-# GPU 退役行数（gpu_remapped_rows.csv）
-GPU_REMAP="N/A"
+# GPU 退役行（gpu_remapped_rows.csv）——v1.59.0 重写：
+#   ① 旧实现把 pending/failure 两列（值是 No/Yes）当数字相加，`p+=$3` 永远得 0，
+#      **Remapping Failure Occurred=Yes（厂商 RMA 条件）在报告里恒显示 fail:0**；
+#   ② 旧实现只给整机汇总，看不出是哪张卡（实测某 B300 上 8 卡里仅 GPU6 有 UE:1）。
+#   现逐卡解析、分项计数，并点名有记录的卡。
+GPU_REMAP="N/A"; GPU_REMAP_OK=0
+GPU_REMAP_CE=0; GPU_REMAP_UE=0; GPU_REMAP_PEND=0; GPU_REMAP_FAIL=0
+GPU_REMAP_DETAIL=""; GPU_REMAP_BADCARDS=""
 load_manifest "${GPU_DIR}" gpu_remapped_rows "gpu_remapped_rows.csv"
 if [ -f "${gpu_remapped_rows}" ]; then
-    GPU_REMAP=$(grep -v "^#" "${gpu_remapped_rows}" | grep -v "^$" | awk -F',' '{gsub(/ /,"",$1); gsub(/ /,"",$2); gsub(/ /,"",$3); gsub(/ /,"",$4); c+=$1; u+=$2; p+=$3; f+=$4} END{if(NR>0) printf "CE:%d UE:%d pending:%d fail:%d", c, u, p, f; else print "N/A"}')
+    _rr=$(awk -F',' '
+        /^#/ { next }
+        /remapped_rows\.correctable/ { next }          # 表头行
+        {
+            for (i = 1; i <= 4; i++) gsub(/^ +| +$/, "", $i)
+            if ($1 == "" && $2 == "") next
+            idx++
+            ce = $1 + 0
+            ue = $2 + 0
+            pend = ($3 == "Yes") ? 1 : 0
+            fl   = ($4 == "Yes") ? 1 : 0
+            CE += ce; UE += ue; PEND += pend; FAIL += fl
+            if (ce > 0 || ue > 0 || pend || fl) {
+                bad = bad (bad == "" ? "" : "、") sprintf("GPU%d", idx - 1)
+                det = det (det == "" ? "" : "；") sprintf("GPU%d CE %d/UE %d%s%s", idx - 1, ce, ue,
+                        (pend ? " 待复位" : ""), (fl ? " **重映射失败**" : ""))
+            }
+        }
+        END { printf "%d %d %d %d|%s|%s", CE, UE, PEND, FAIL, det, bad }' "${gpu_remapped_rows}" 2>/dev/null)
+    if [ -n "$_rr" ]; then
+        GPU_REMAP_OK=1
+        GPU_REMAP_CE=${_rr%% *};            _rr2=${_rr#* }
+        GPU_REMAP_UE=${_rr2%% *};           _rr3=${_rr2#* }
+        GPU_REMAP_PEND=${_rr3%% *};         _rr4=${_rr3#* }
+        GPU_REMAP_FAIL=${_rr4%%|*};         _rr5=${_rr4#*|}
+        GPU_REMAP_DETAIL=${_rr5%%|*}
+        GPU_REMAP_BADCARDS=${_rr5#*|}
+        for _v in GPU_REMAP_CE GPU_REMAP_UE GPU_REMAP_PEND GPU_REMAP_FAIL; do
+            eval "_n=\${$_v:-0}"; case "$_n" in ''|*[!0-9]*) eval "$_v=0" ;; esac
+        done
+        if [ "${GPU_REMAP_CE}" -eq 0 ] 2>/dev/null && [ "${GPU_REMAP_UE}" -eq 0 ] 2>/dev/null \
+           && [ "${GPU_REMAP_PEND}" -eq 0 ] 2>/dev/null && [ "${GPU_REMAP_FAIL}" -eq 0 ] 2>/dev/null; then
+            GPU_REMAP="CE:0 UE:0 pending:0 fail:0"
+        else
+            GPU_REMAP="CE:${GPU_REMAP_CE} UE:${GPU_REMAP_UE} pending:${GPU_REMAP_PEND} fail:${GPU_REMAP_FAIL}<br>${GPU_REMAP_DETAIL}"
+        fi
+    fi
 fi
 
 # VBIOS 版本（每卡 detail 聚合去重；混插时标不一致而非只取第一张卡）

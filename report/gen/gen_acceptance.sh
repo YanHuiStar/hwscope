@@ -597,14 +597,36 @@ gen_acceptance() {
     esac
     if [ "$_ecc_disabled" -eq 1 ]; then
         add_item "GPU ECC" "WARN" "ECC 已关闭（Mode=Disabled）——计数恒为 0，无法反映显存健康<br>数据中心卡应开启 ECC 以纠正单比特错误；恢复：nvidia-smi -i <卡号> -e 1 后重启，再复采确认"
-    elif [ -n "${GPU_ECC_MODE:-}" ]; then
+    elif [ -n "${GPU_ECC_MODE:-}" ] || [ "${GPU_REMAP_FAIL:-0}" -gt 0 ] 2>/dev/null || [ "${GPU_REMAP_PEND:-0}" -gt 0 ] 2>/dev/null; then
         if [ "${GPU_ECC_AMD_RAS:-0}" = "1" ]; then
             _ecc_desc="AMD RAS 单比特(CE) ${GPU_ECC_CORR_VOL:-?} / 双比特(UE) ${GPU_ECC_UNCORR_VOL:-?}（ROCm 口径，本次驱动加载以来）"
         else
         # v1.54.29：短标签 + 去掉 volatile/aggregate 英文（术语表有）；结论与建议分两行
-        _ecc_desc="本次 CE ${GPU_ECC_CORR_VOL:-?} / UE ${GPU_ECC_UNCORR_VOL:-?}；累计 CE ${GPU_ECC_CORR_AGG:-?} / UE ${GPU_ECC_UNCORR_AGG:-?}"
+        if [ -n "${GPU_ECC_MODE:-}" ]; then
+            _ecc_desc="本次 CE ${GPU_ECC_CORR_VOL:-?} / UE ${GPU_ECC_UNCORR_VOL:-?}；累计 CE ${GPU_ECC_CORR_AGG:-?} / UE ${GPU_ECC_UNCORR_AGG:-?}"
+        else
+            # 走退役行分支进来时 ECC 计数本身没采到——不要把 ? 摆给客户看
+            _ecc_desc="本次/累计 ECC 计数未取到"
+        fi
         fi
         [ -n "${GPU_ECC_BADCARDS:-}" ] && _ecc_desc="${_ecc_desc}（UE 集中在 GPU${GPU_ECC_BADCARDS//,/,GPU}）"
+        # v1.59.0：**退役行（remapped rows）并入 ECC 判定**——它是永久记录，重启/重置驱动都不清零，
+        #   语义与 volatile/aggregate 计数不同（后者会归零，不能证明"从没出过错"）。
+        #   实测一台 B300：8 卡 volatile/aggregate 全 0 判 PASS，而 GPU6 退役行 UE=1（该行因不可纠正
+        #   错误被永久重映射）——报告里只有「退役行 CE:0 UE:1」一行数字，无人判、也看不出是哪张卡。
+        #   分档：重映射失败(Yes)=厂商 RMA 条件 → FAIL；待复位(pending)=重启后可清 → WARN；
+        #         UE>0 或 CE≥8 = 曾发生且已遮蔽 → WARN（记录并观察）；全 0 → 走原有 volatile 分档。
+        _remap_scope=""
+        if [ "${GPU_REMAP_BADCARDS:-}" != "" ] 2>/dev/null; then
+            _remap_scope="<br>退役行（永久，重启不清零）：${GPU_REMAP_DETAIL}"
+        fi
+        if [ "${GPU_REMAP_FAIL:-0}" -gt 0 ] 2>/dev/null; then
+            add_item "GPU ECC" "FAIL" "${_ecc_desc}${_remap_scope}<br>⚠️ 存在 **重映射失败**（Remapping Failure Occurred = Yes）——显存行无法被遮蔽，属厂商 RMA 条件，需报修换卡"
+        elif [ "${GPU_REMAP_PEND:-0}" -gt 0 ] 2>/dev/null; then
+            add_item "GPU ECC" "WARN" "${_ecc_desc}${_remap_scope}<br>有卡存在**待处理重映射**（pending = Yes）——重启后复查是否已处理；若持续 pending 需报修"
+        elif [ "${GPU_REMAP_UE:-0}" -gt 0 ] 2>/dev/null || [ "${GPU_REMAP_CE:-0}" -ge 8 ] 2>/dev/null; then
+            add_item "GPU ECC" "WARN" "${_ecc_desc}${_remap_scope}<br>当前计数虽已归零，但**退役行显示曾发生过不可纠正/大量可纠正错误**（行已被永久重映射）；属可靠性事件，建议记录到交付单并跑显存压力复测，看退役行是否继续增长"
+        else
         case "${GPU_ECC_VERDICT:-PASS}" in
             FAIL) add_item "GPU ECC" "FAIL" "${_ecc_desc}<br>⚠️ 本次运行检出不可纠正错误（volatile > 0），数据完整性受影响，需报修" ;;
             WARN) add_item "GPU ECC" "WARN" "${_ecc_desc}<br>当前无正在发生的错误，仅历史记录；建议跑显存压力后复测是否增长" ;;
@@ -616,11 +638,22 @@ gen_acceptance() {
                       _ecc_scope="<br>注：仅统计驱动可用的 ${GPU_COUNT} 张卡；另有 $(( GPU_PCI_PRESENT - GPU_COUNT )) 张未接管（见 GPU 段「数量差异」）"
                   fi
                   if echo "${GPU_ECC_CORR_VOL:-0}${GPU_ECC_UNCORR_VOL:-0}${GPU_ECC_CORR_AGG:-0}${GPU_ECC_UNCORR_AGG:-0}" | grep -qx '0000'; then
-                      add_item "GPU ECC" "PASS" "本次与累计均无错误（volatile 0 / aggregate 0）${_ecc_scope}"
+                      # 退役行是 NVIDIA 专属指标：AMD 平台根本不会生成该 CSV，
+                      #   对 AMD 提「退役行无数据」会被读成"采集漏了"，属误导（v1.59.0 修正）。
+                      _remap_tail=""
+                      if [ "${GPU_ECC_AMD_RAS:-0}" = "1" ] || [ "${GPU_PLATFORM:-}" = "amd" ]; then
+                          _remap_tail=""
+                      elif [ "${GPU_REMAP_OK:-0}" -eq 1 ] 2>/dev/null; then
+                          _remap_tail="，退役行全 0"
+                      else
+                          _remap_tail="（退役行无数据：本次采集未生成 gpu_remapped_rows.csv）"
+                      fi
+                      add_item "GPU ECC" "PASS" "本次与累计均无错误（volatile 0 / aggregate 0）${_remap_tail}${_ecc_scope}"
                   else
                       add_item "GPU ECC" "PASS" "${_ecc_desc}${_ecc_scope}"
                   fi ;;
         esac
+        fi
     elif [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
         # v1.52.15：区分「采集缺失」与「平台工具链限制」——
         #   NVIDIA 无 gpu_ecc_inventory.csv = 采集缺失（该文件必生成）→ N/A 计入数据不足；

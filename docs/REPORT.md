@@ -232,6 +232,7 @@ bash report/report.sh <采集目录> --acceptance     # 生成 hwscope_acceptanc
 | 电源状态 | 默认 | `PS*_Status` 非 `0x1` 判 FAIL；无状态传感器时按 SMBIOS 在位数量兜底 |
 | 整机温度正常 | 默认 | BMC 聚合值优先，其次 OS 侧 lm-sensors；无 BMC 判 N/A |
 | SEL 事件 | 默认 | **严重级别以事件描述为准**：`Transition to Critical from less severe`、`Upper/Lower Critical` 才算 Critical；**`Transition to Non-critical from OK` 不计数**（它是「从 OK 降到非严重」，描述里含 critical 字样但级别属非严重——曾把两台 P9000G7 的 BMC 时间同步失败与插槽链路降级误判为「2 条 Critical 未解除」致整机不合格）；未解除 Critical 判 FAIL（全部落在断电时刻的判 WARN）；已自愈判 WARN；`BMC 时间同步失败`（无 NTP 属常态）与 `插槽/连接器链路状态降级` 单列说明、不参与判定；**`Management Subsys Health / FRU failure`（warning 级）判 WARN** 并点明读不出的部件——它不含 critical 字样，旧的 Critical 计数看不到它（实测一台 P9000G7 全部 SEL 只有这 2 条 warning，机器亮红灯而报告判合格）；PCIe 记录按可纠正/不可纠正分级 |
+| 掉电/重启统计 | 默认（BMC 段，随 SEL） | 从 SEL 汇总 AC 断电 / 关机 / 重启 / 硬件变更记录次数；AC 断电 ≥3 次时附注「多为验收过程反复上下电，非硬件故障」——215 条 SEL 里 31 条 AC lost 这类信息原本埋在事件列表里 |
 | FRU 完整性 | 默认（有 BMC 数据时） | **两档判定**：① FRU 读不出且 BMC 同时报 `FRU failure` → **WARN**（与前面板红灯对应，交付前必须处理）；② FRU 内容为空但 BMC 未报 `FRU failure` → **ℹ️ 提示**（多为 OEM GPU 基板本就不带 FRU，不计入 WARN，交付前向厂商核对）。BMC 侧逐个 FRU 读取：块内无任何 SN/PN 字段且未标 `Device not present` → 该 FRU 读不出（日志里表现为 `Unknown FRU header version 0x00`）→ **WARN** 并列出部件（主板 FRU / FCB 风扇控制板 / M.2 背板 / U.2 背板 / riser / PCIe 交换板）；FRU 仅存资产信息，不影响开机与计算，但 BMC 会置 `Management Subsys Health / FRU failure` 并**点亮前面板故障灯**，交付后也无法从 BMC 追溯该板 SN/PN——交付前应处理 |
 | 固件版本合规 | 默认 | 落后判 FAIL；格式无法比较判 WARN；未录基线判 N/A（不计入数据不足） |
 | OS-BMC 口径一致 | 默认 | 仅 `--bmc-verify` 启用后判定；未启用判 N/A 且不计入数据不足 |
@@ -239,7 +240,7 @@ bash report/report.sh <采集目录> --acceptance     # 生成 hwscope_acceptanc
 | CPU 配置一致 | 默认 | 多颗 CPU 型号/Stepping/核数不一致判 FAIL；单颗判 N/A |
 | 内存容量一致 | 默认 | 容量混插判 WARN（空槽不参与统计） |
 | 内存 ECC | 默认 | 有 ECC 纠错 PASS；无 ECC / 类型未知判 WARN |
-| GPU ECC | 默认 | 见 §8.8；ECC 关闭判 WARN（计数失去意义）；AMD 无 RAS 数据判平台固有 N/A |
+| GPU ECC | 默认 | 分性质+时机判定：本次(volatile)不可纠正>0 → FAIL；可纠正>0 或 累计(aggregate)>0 → WARN；**退役行（remapped rows，永久记录、重启不清零）并入判定**：`Remapping Failure Occurred=Yes` → FAIL（厂商 RMA 条件）、`pending=Yes` → WARN（重启后复查）、UE>0 或 CE≥8 → WARN（曾发生并已遮蔽，记录并观察）；全 0 → PASS；ECC 被关闭(Mode=Disabled) → WARN（计数恒 0，无法反映显存健康）|
 | GPU 功耗上限 | 条件 | Current ≠ Default 时 WARN（见 §8.7） |
 | PCIe AER 错误 | 条件 | 可纠正 WARN，不可纠正 FAIL |
 | GPU XID 错误历史 | 条件 | 按码分档：硬件类（48/62/63/74/79/13/31）判 WARN；Fabric 与已纠正类（149/119/120/94/95/38）判「提示」，列出但不计入结论（见 §8.12） |
@@ -474,12 +475,15 @@ SMBIOS 中存在地址未填充的槽位记录时，BIOS 写 `0000:00:00.0`，�
 | `volatile 不可纠正 > 0` | FAIL（需报修） |
 | `volatile 可纠正 > 0` | WARN |
 | `aggregate 不可纠正 > 0` 且 `volatile 不可纠正 = 0` | WARN（历史记录，建议跑一轮显存压力后复测 volatile 是否增长） |
-| 全 0 | PASS |
+| **退役行 `Remapping Failure Occurred = Yes`** | **FAIL**——显存行无法被遮蔽，属 NVIDIA 厂商 RMA 条件 |
+| **退役行 `pending = Yes`** | **WARN**——待处理的页/行重映射，重启后复查是否已处理；持续 pending 需报修 |
+| **退役行 `UE > 0` 或 `CE ≥ 8`** | **WARN**——当前计数虽已归零，但历史上有行因不可纠正/大量可纠正错误被永久重映射（记录并观察，不卡交付） |
+| 全 0（含退役行全 0） | PASS |
 
 混加会造成两种误导：分不清性质（可纠正与不可纠正同权）与分不清时机（历史累计被当作当前故障）。判定顺序为「ECC 是否开启 → 性质 → 时机」：ECC 关闭时四类计数恒为 0，若仍按「全 0 判 PASS」，
 等同于以「无计数」证明「无错误」，逻辑不成立，故该项独立判 WARN。**`aggregate` 归零的含义**：该计数正常只增不减，同一台机器两次采集间归零说明换过卡或换过模组，此时旧记录不应作为当前状态依据，验收记录应留一句「模组已更换」的说明。
 
-行重映射（`Remapped Rows`）与 Bank 余量在 `gpu_N_ecc.log` / `gpu_N_detail.log` 中可查，用于判断不可纠正错误是否已被硬件隔离（`Remapping Failure Occurred: No` 即正常）。
+行重映射（`Remapped Rows`）数据源 `gpu/gpu_remapped_rows.csv`（`nvidia-smi --query-remapped-rows`，逐卡一行）。**语义与 ECC 计数不同**：它是**永久记录**——行被重映射后重启、重置驱动都不会清零，所以「volatile 全 0」不能证明「从没出过错」。报告在 GPU 段单列「退役行」一行，任一卡非零时加 ⚠️ 并**逐卡点名**（如 `GPU6 CE 0/UE 1`）；旧实现把 `pending`/`failure` 两列（值是 No/Yes）当数字求和，导致 `Remapping Failure Occurred=Yes` 在报告里恒显示 `fail:0`（v1.59.0 修正）。Bank 余量细节仍可在 `gpu_N_ecc.log` / `gpu_N_detail.log` 中查，
 
 **AMD 口径**：AMD 不生成 `gpu_ecc_inventory.csv`，采集端把 RAS 计数写入 `gpu/gpu_amd_ras.log`（`rocm-smi --showrasinfo` / `amd-smi metric -e` / `rocm-smi --query-ecc` 三级兜底）。报告端有数据即真判（单比特→可纠正、双比特→不可纠正；AMD 无 volatile/aggregate 之分，统一映射到 volatile），取不到数据判「平台固有 N/A」不计数。
 
