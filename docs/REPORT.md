@@ -134,7 +134,7 @@ Markdown 报告的章节顺序如下（`##` 级标题即 HTML 卡片与侧栏目
 | 协议分布 | `N 口 IB · M 口 ETH · K 口其他`，并标注「按网卡固件统计，与上面接口数不同源」 | `mlxconfig` 的 `LINK_TYPE_P1/P2` |
 | 速率 | `额定 <speed>`（卡能力，无需接线）+ `协商 <分布>`（IB 模式 Active 口的速率分布） | `mlxlink` 的 `Enabled Link Speed` 位图 / `ibstat` |
 | IB 固件一致性 | 同型号 + 同 PSID 分组内固件版本多于 1 种时提示，措辞为「建议核对」，不进验收判定 | `nic_inventory.csv` |
-| 计算网卡（GPU 直连） | `N 张 / M 口`，标注「与硬件概览同源口径」；**topo 拿不到 NIC 列时显示 `N/A——nvidia-smi topo -m 未列出 NIC 列`（不按接口名猜）**；无计算网卡时不显示本行 | `report/sections/65_nic_accounting.sh` |
+| 计算网卡（GPU 直连） | `N 张 / M 口`，标注「与硬件概览同源口径」；**topo 拿不到 NIC 列时先按可核对证据推断**：Mellanox 芯片 + PCIe ≥x8/≥16GT/s + **张数恰好等于 GPU 张数** → 报 `N 张 / M 口（GPU 直连，推断）` 并写明依据与「未经拓扑确认」；张数对不上则报 `未判定`（不硬凑）；无计算网卡时不显示本行 | `report/sections/65_nic_accounting.sh` |
 | SR-IOV | `启用（N 张卡，最大 VF=k）` / `部分启用（…）` / `关闭（N 张卡，VF=0）` | `mlxconfig` 的 `SRIOV_EN` / `NUM_OF_VFS` |
 | 模块信息 | 仅在 `mlxlink` 命令本身失败时出现的中性提示：`N 个设备中 M 个 mlxlink 读取失败（<dev>）——这几项无模块数据；未插线缆属常态，如本次要核对线缆请复采` | `mlxlink_*_module.log` 的 `-E-` 行或非零退出码 |
 | 线缆类型 / 线缆配对 | 有数据才显示（DAC / Optical / 原始串；同一 EEPROM serial 视为同一根线两端） | `mlxlink_*_module.log` |

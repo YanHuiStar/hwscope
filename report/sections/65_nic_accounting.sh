@@ -128,3 +128,34 @@ if [ -n "$NIC_DETAILS" ]; then
         fi
     done < <(printf '%s\n' "$NIC_DETAILS")
 fi
+
+# v1.60.4：topo 拿不到 GPU↔NIC 亲和时（no_nic / NVIDIA 缺 topo），改用**可核对的间接证据**推断计算网卡：
+#   判据 = Mellanox 芯片（`MT` 开头）+ PCIe 宽度 ≥ x8 + 速率 ≥ 16GT/s（够跑 200G/400G/800G 的插槽形态），
+#          且这些卡的**张数恰好等于 GPU 张数**（1:1 直连形态）。
+#   实测一台 P9000G7（B300-sample-f）：8 张 CX-8（64GT/s x16）+ 4 口 CX-7（16GT/s **x2**），GPU 8 张 →
+#   宽度判据把 x2 的四口卡排除，得 8 张/8 口，与同型号有 topo 的机器结论一致。
+#   张数对不上 GPU 数时**不采信**（宁可写未判定，不硬凑），也不覆盖正常 topo 判定。
+ACC_NIC_IB_INFERRED=0
+if [ "${ACC_NIC_IB_UNKNOWN:-0}" = "1" ] && [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null && [ -n "$NIC_DETAILS" ]; then
+    _inf_cards=0; _inf_ports=0; _inf_names=""
+    while IFS='|' read -r _innic _inbdf _inmac _insn _inpn _infw _inpcie _inpsid _ingd _inchip _inport _inlink _inloc; do
+        [ -z "$_innic" ] && continue
+        case "${_inchip:-}" in MT[0-9]*) : ;; *) continue ;; esac          # 只认 Mellanox 芯片
+        _iw=$(printf '%s' "${_inpcie:-}" | sed -n 's|.*/x\([0-9][0-9]*\).*|\1|p')
+        _is=$(printf '%s' "${_inpcie:-}" | sed -n 's|^\([0-9][0-9.]*\)GT/s.*|\1|p')
+        [ -n "$_iw" ] && [ "$_iw" -ge 8 ] 2>/dev/null || continue
+        [ -n "$_is" ] && [ "${_is%%.*}" -ge 16 ] 2>/dev/null || continue
+        _inf_ports=$((_inf_ports + 1))
+        if _nic_is_card_head "$_inport"; then
+            _inf_cards=$((_inf_cards + 1))
+            case "$_inf_names" in *"${_inpn}"*) : ;; *) _inf_names="${_inf_names}${_inf_names:+、}${_inpn}" ;; esac
+        fi
+    done < <(printf '%s\n' "$NIC_DETAILS")
+    if [ "$_inf_cards" -gt 0 ] 2>/dev/null && [ "$_inf_cards" -eq "${GPU_COUNT:-0}" ] 2>/dev/null; then
+        ACC_NIC_IB_COUNT=$_inf_cards
+        ACC_NIC_IB_PORT=$_inf_ports
+        ACC_NIC_IB_INFERRED=1
+        ACC_NIC_IB_UNKNOWN=0
+        [ -n "$_inf_names" ] && ACC_NIC_IB="$_inf_names"      # 型号列只放型号；依据写在报告的推断说明里
+    fi
+fi

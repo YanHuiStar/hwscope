@@ -813,7 +813,9 @@ gen_acceptance() {
         else
             echo "| GPU模组 | 未识别到（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
         fi
-        if [ "${ACC_NIC_IB_UNKNOWN:-0}" = "1" ] 2>/dev/null; then
+        if [ "${ACC_NIC_IB_INFERRED:-0}" = "1" ] 2>/dev/null; then
+            echo "| 计算网卡 | ${ACC_NIC_IB:-N/A}（GPU 直连，推断） | 张 | ${ACC_NIC_IB_COUNT}（共 ${ACC_NIC_IB_PORT} 口） ｜ 依据：Mellanox 卡且 PCIe ≥x8/≥16GT/s，张数与 GPU 数（${GPU_COUNT:-?}）一致；本次采集的 GPU 拓扑输出不含网卡列 |"
+        elif [ "${ACC_NIC_IB_UNKNOWN:-0}" = "1" ] 2>/dev/null; then
             # v1.59.1：topo 存在但无 NIC 列 → 计算网卡不可判定。宁可写 N/A + 原因，
             #   也不按接口名回退充数（同型号两台机会因此给出 9 张/12 口 vs 8 张/8 口两种结论）。
             # 口径：计算网卡 = GPU 直连网卡；本次采集拿不到 GPU↔网卡拓扑 → 不做推定（也不暗示硬件故障）
