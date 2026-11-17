@@ -239,12 +239,25 @@ show_script_help() {
             exit 0
         fi
     fi
+    # v1.60.1：修 `-h` 把「文件第 2 行的注释」当用法打印（nic_tool / cable_map / bmc_pass_smoke 实测
+    #   只输出 `# shellcheck disable=SC2010 ...` 一行就结束）。根因：旧 awk 见到任意 `#` 行就把 seen 置 1，
+    #   于是紧随其后的 `# ====` 开分隔线被当成**结束**分隔线 → 立刻 exit。
+    #   现改为「只有见到 `# ====` 开分隔线才开始收集」，并跳过 `# shellcheck` 指令；
+    #   对**没有** `# ====` 块的脚本回退为「打印开头连续注释」，保证 --help 永不空白。
     awk '
         /^#!/ { next }
         /^#EN: / { next }
-        /^# ====+$/ { if (seen) exit; next }
-        /^#/ { seen=1; sub(/^# ?/, ""); print; next }
+        /^# *shellcheck/ { next }
+        /^# ====+$/ { if (started) { printed = 1; exit } started = 1; next }
+        started && /^#/ { sub(/^# ?/, ""); print; n++; next }
+        started { exit }
+        /^#/ { blk[++m] = $0; next }
         { exit }
+        END {
+            if (!printed && n == 0 && m > 0) {
+                for (i = 1; i <= m; i++) { l = blk[i]; sub(/^# ?/, "", l); print l }
+            }
+        }
     ' "$0"
     echo ""
     exit 0

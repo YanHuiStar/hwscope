@@ -12,6 +12,19 @@
 #   故按「能取到哪个就取哪个」分层收集，全部失败才输出空（报告端据此隐藏该行）。
 # =============================================================================
 set -u
+# v1.60.1：补 -h/--help —— 原来 `-h` 会被当成 BMC_IP 传下去，只在 stderr 打一行用法就退出 1，
+#   与其它 tools 脚本（source common.sh + parse_help）不一致。
+case "${1:-}" in
+    -h|--help|--help=*|-help)
+        awk '
+            /^#!/ { next }
+            /^# ====+$/ { if (started) exit; started = 1; next }
+            started && /^#/ { sub(/^# ?/, ""); print; next }
+            started { exit }
+        ' "$0"
+        echo ""
+        exit 0 ;;
+esac
 IP="${1:-}"; NETRC="${2:-}"
 [ -n "$IP" ] && [ -n "$NETRC" ] || { echo "用法: $0 <BMC_IP> <NETRC_FILE>" >&2; exit 1; }
 
