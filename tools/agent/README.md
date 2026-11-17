@@ -16,7 +16,7 @@
 | `regen_reports.sh` | 批量重生成报告（agent 调用，样本自动发现；**默认并行** nproc/2） | `<目录...>` · `--samples SN1,SN2` · `-j N` · `--regression` · `--update` · `--acceptance` |
 | `sn_check.sh` | 提交前 SN / MAC 自检（隐私红线兜底，可装成 git hook） | 无参数（暂存区 + 待推送提交）· `--staged` · `--commit-msg <文件>` · `--install-hook` · `--all-history` · `--include-remotes` |
 | `repo_realign.sh` | 仓库对齐（历史被重写后其他机器分叉的恢复）；代理探测经 `lib_proxy.sh` | 体检无参数 · `--sync` · `--protect [--auto]` · `--no-fetch` |
-| `bmc_pass_smoke.sh` | BMC 密码通道冒烟测试（tty / 管道 / sudo 三种条件组合） | 无参数；需真 bash（Linux / WSL） |
+| `bmc_pass_smoke.sh` | BMC 密码通道冒烟测试（tty / 管道 / sudo 三种条件组合） | 无参数即跑全部用例；`-h` 只看帮助；需真 bash（Linux / WSL） |
 
 推送失败时按 AGENTS.md「推送失败处理纪律」执行：**停止自动重试 → 上报用户 → 等待指令**。
 网络不通属用户侧问题，重试只会空耗资源。
@@ -28,7 +28,8 @@ BMC 密码的读取与转发是**环境敏感**逻辑：tty 有无、stdin 是�
 终端时阻塞）。此类代码「验证过一次」不等于「在其他机器同样成立」，故用本地 bash 仿真各分支并断言变量终值。
 
 ```bash
-bash tools/agent/bmc_pass_smoke.sh
+bash tools/agent/bmc_pass_smoke.sh          # 跑全部用例
+bash tools/agent/bmc_pass_smoke.sh -h       # 只看帮助（v1.60.2 起；此前 -h 会被忽略并直接跑测试）
 ```
 
 - 覆盖 4 个分支：管道喂密码 / 无输入降级 / 已有密码不重复提示 / 不给参数不提示；每项断言**退出码非 124**

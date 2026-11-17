@@ -6,12 +6,36 @@
 #   （v1.53.45 就踩过：优先读 /dev/tty 在无交互终端时永久阻塞）。这类代码"验证过一次"
 #   不等于"在别的机器也对"，故用本地 bash 仿真各分支，断言变量最终值。
 #
-# 用法： bash tools/agent/bmc_pass_smoke.sh
+# 用法： bash tools/agent/bmc_pass_smoke.sh          （无参数 = 直接跑全部用例）
+#        bash tools/agent/bmc_pass_smoke.sh -h       （只打印本帮助，不跑测试）
 # 环境： Linux / WSL（需要真 bash。git-bash 的 /dev/tty 与管道语义不同，结论不可用）
 # 前提： 项目完整副本；脚本会在 $(mktemp -d) 下生成临时输出，不碰真实采集目录
 # 退出码： 0 全部通过 / 1 有失败项
 
 set -uo pipefail
+
+# -h/--help 只打印头部说明就退出——本脚本没有参数语义，若不拦，`-h` 会被无声忽略、
+#   直接把整套冒烟测试跑一遍（实测 `bash bmc_pass_smoke.sh -h` 直接输出 [PASS] 行）。
+#   头部注释没有 `# ====` 包裹，故这里打印「开头连续注释」而非走 show_script_help。
+_smoke_help() {
+    awk 'NR == 1 && /^#!/ { next }   # 跳过 shebang
+         /^#/ { sub(/^# ?/, ""); print; next }
+         { exit }' "$0"
+    echo ""
+}
+case "${1:-}" in
+    # 帮助：-h / -h zh / -h=zh / --help / --help=zh / -help —— 一律只打印头部，不跑测试
+    -h|-h=*|-help|--help|--help=*)
+        _smoke_help
+        exit 0 ;;
+    -?*)
+        # 其它未知选项：**不要再静默跑整套测试**（旧行为会让 `-x` 白等两分钟）。
+        #   打印帮助 + 一行提示，退出码 2（与"测试失败=1"区分开）。
+        _smoke_help
+        echo "[ERROR] 未识别参数: $1 —— 本脚本无参数，不带参数即跑全部用例" >&2
+        exit 2 ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "$ROOT" || { echo "[FAIL] 无法进入项目根目录"; exit 1; }
