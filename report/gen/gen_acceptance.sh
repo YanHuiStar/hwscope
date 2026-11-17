@@ -816,10 +816,11 @@ gen_acceptance() {
         if [ "${ACC_NIC_IB_UNKNOWN:-0}" = "1" ] 2>/dev/null; then
             # v1.59.1：topo 存在但无 NIC 列 → 计算网卡不可判定。宁可写 N/A + 原因，
             #   也不按接口名回退充数（同型号两台机会因此给出 9 张/12 口 vs 8 张/8 口两种结论）。
+            # 口径：计算网卡 = GPU 直连网卡；本次采集拿不到 GPU↔网卡拓扑 → 不做推定（也不暗示硬件故障）
             if [ "${GPU_TOPO_STATE:-none}" = "none" ]; then
-                echo "| 计算网卡 | N/A（无法判定 GPU 直连） | 张 | — ｜ 未取到 \`nvidia-smi topo -m\` 输出（采集失败），建议重采后复核 |"
+                echo "| 计算网卡 | N/A（未取得 GPU 拓扑信息，不推定） | 张 | — ｜ 本次未采集到 GPU 拓扑输出 |"
             else
-                echo "| 计算网卡 | N/A（无法判定 GPU 直连） | 张 | — ｜ \`nvidia-smi topo -m\` 未列出 NIC 列，建议核对 CX 卡驱动/固件或重采后复核 |"
+                echo "| 计算网卡 | N/A（未取得 GPU↔网卡拓扑，不推定） | 张 | — ｜ 本次采集的 GPU 拓扑输出不含网卡列 |"
             fi
         elif [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
             # v1.48.85：计算网卡改按 GPU 直连归类后，不能再标 "（IB …）"——直连与协议模式无关。

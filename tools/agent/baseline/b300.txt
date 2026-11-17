@@ -31,7 +31,7 @@
 [html]
   html_table_open=28
   html_table_close=28
-  html_bytes=55700
+  html_bytes=55666
 [acceptance]
         6 N/A
        14 PASS
@@ -40,7 +40,7 @@
   CPU | 颗 | 2
   内存 | 条 | 24
   GPU模组 | 张 | 8
-  计算网卡 | 张 | — ｜ `nvidia-smi topo -m` 未列出 NIC 列，建议核对 CX 卡驱动/固件或重采后复核
+  计算网卡 | 张 | — ｜ 本次采集的 GPU 拓扑输出不含网卡列
   网卡&端口 | 张 | 9（单口×8 + 四口×1，共 12 口）
   存储 | 块 | 0
   电源模块 | 个 | 8
