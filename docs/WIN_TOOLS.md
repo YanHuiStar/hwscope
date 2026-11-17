@@ -26,7 +26,7 @@
 | `dhcp_server.bat` | 全部（`%*` 透传） | |
 | `nic_switch.bat` | 全部（`%*` 透传） | 需管理员 |
 | `Launch-DeepSeekHarness.bat` | 全部（`%*` 透传） | |
-| `scan_ip.bat` | `[网段]` | 无参数 = 自动取本机网段 |
+| `scan_ip.bat` | 全部（`%*` 透传） | 无参数 = 自动取本机网段；端口识别默认开 |
 | `detect_bmc.bat` | `<IP1,IP2,...>` | 必填 |
 | `fetch_report.bat` | `<user@ip1,user@ip2,...>` | 必填 |
 | `remote_run.bat` | `<user@ip1,...> ["命令"]` | 命令省略时默认 `uptime` |
@@ -196,14 +196,33 @@ Linux 对应：`tools/sync_time.sh`。
 ### `scan_ip.ps1` — 网段扫描与设备定位
 
 ```powershell
-tools\win\scan_ip.bat
-tools\win\scan_ip.bat 192.168.1
+tools\win\scan_ip.bat                              # 扫本机网段（含端口识别）
+tools\win\scan_ip.bat 192.168.1                     # 指定网段
+tools\win\scan_ip.bat 192.168.22 -Range 1-64 -Csv scan.csv
+tools\win\scan_ip.bat 192.168.1 -NoPortScan         # 只找在线主机（快）
 ```
 
 | 参数 | 说明 |
 |------|------|
 | `-Subnet <前三段>` | 目标网段（默认自动取本机有线网卡所在网段） |
 | `-Range <起-止>` | 主机位范围（默认 `1-254`） |
+| `-Ports <列表>` | 端口探测清单（默认 `22,80,443,623,5900`） |
+| `-NoPortScan` | 关闭端口探测，退回纯 ping 扫描 |
+| `-PortTimeout <毫秒>` | 单端口超时（默认 `600`；内网直连可设 `300`） |
+| `-Csv <路径>` | 导出 `IP,MAC,TTL,端口,类型` 便于盘点留档 |
+
+**两阶段**：① 并发 ping（`SendPingAsync`）+ ARP 关联 MAC；② 对所有在线主机**并发**探测端口，再按端口判定设备类型：
+
+| 端口 | 含义 | 判定 |
+|------|------|------|
+| 22 | SSH | Linux/Unix 主机、服务器 OS |
+| 80 / 443 | Web 管理 | BMC 带外、交换机、存储等 |
+| 623 | IPMI（标准 UDP，此处 TCP 探活） | 带外 BMC 的标志性端口 |
+| 5900 | VNC/KVM | 远程控制台 |
+
+判型是**扣端口组合**而非猜型号：`623+22` → 服务器（BMC+SSH）、`623+Web` → 服务器带外 BMC、只有 22 → Linux 主机、
+只有 Web → Web 管理设备、全关 → 仅 ICMP（端口被过滤）。**623 走 UDP 是标准，TCP 探测连不上不代表没有 BMC**——
+确认 BMC 身份仍用 `detect_bmc.ps1`（读 IPMI/Redfish 指纹），扫描只做初筛。输出末尾附小结（带 623/22/443 各多少台）。
 
 并发 ping + ARP 表定位在线设备。v1.49.22 修正网段解析：原 `TrimEnd('/24')` 按字符集削尾，会把
 `192.168.2` 变成 `192.168.`、`192.168.12` 变成 `192.168.1`，自动检测时静默扫描 0 台。
