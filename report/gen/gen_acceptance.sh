@@ -813,7 +813,15 @@ gen_acceptance() {
         else
             echo "| GPU模组 | 未识别到（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
         fi
-        if [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+        if [ "${ACC_NIC_IB_UNKNOWN:-0}" = "1" ] 2>/dev/null; then
+            # v1.59.1：topo 存在但无 NIC 列 → 计算网卡不可判定。宁可写 N/A + 原因，
+            #   也不按接口名回退充数（同型号两台机会因此给出 9 张/12 口 vs 8 张/8 口两种结论）。
+            if [ "${GPU_TOPO_STATE:-none}" = "none" ]; then
+                echo "| 计算网卡 | N/A（无法判定 GPU 直连） | 张 | — ｜ 未取到 \`nvidia-smi topo -m\` 输出（采集失败），建议重采后复核 |"
+            else
+                echo "| 计算网卡 | N/A（无法判定 GPU 直连） | 张 | — ｜ \`nvidia-smi topo -m\` 未列出 NIC 列，建议核对 CX 卡驱动/固件或重采后复核 |"
+            fi
+        elif [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
             # v1.48.85：计算网卡改按 GPU 直连归类后，不能再标 "（IB …）"——直连与协议模式无关。
             # v1.49.8：单位由「口」改「张」——按物理卡计数（同卡多口只算一张），
             #   与配置单的「张」对得上；口数放括号内保留，因为线缆/端口数同样有意义。

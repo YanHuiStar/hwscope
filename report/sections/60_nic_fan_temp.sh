@@ -59,13 +59,26 @@ USB_NICS=""
 # NIC0..NICn 按 BDF 升序对应 nic_inventory 中的 PCIe 网卡
 declare -A GPU_DIRECT_NIC
 GPU_TOPO_FILE=""
+# v1.59.1：topo **有三种状态**，必须分开——旧实现只区分「有没有 NIC 列」，
+#   于是「topo 存在但没列出 NIC 列」被当成「没有 topo」，落到接口名回退（^ib）：
+#   实测两台同型号 P9000G7，一台 topo 列出 8 个 NIC 列（8 张/8 口），
+#   另一台 topo 只有 GPU 列 → 回退把 4 口 CX-7（PCIe x2、不在 GPU 域）也算成计算网卡 → 9 张/12 口，
+#   同型号两台机给出不同结论。回退只应在「压根没有 topo」（AMD/昇腾/无 nvidia-smi）时用。
+#   ok     = topo 有 NIC 列 → 按 PIX/PXB 权威映射
+#   no_nic = topo 存在但无 NIC 列（NVIDIA 平台拿不到 GPU↔NIC 亲和）→ **不可判定**，不回退
+#   none   = 没有任何 topo 文件 → 按接口名 ^ib 回退（AMD/昇腾等）
+GPU_TOPO_STATE="none"
 for _tf in "${GPU_DIR}/gpu_topo_nic.log" "${GPU_DIR}/gpu_topo.log"; do
     [ -f "$_tf" ] || continue
-    # 内容有效性：含 NIC 列且无 "-n" 语法报错
-    if grep -v "^#" "$_tf" 2>/dev/null | grep -qE "NIC[0-9]+" && ! grep -q "Option \"-n\"" "$_tf" 2>/dev/null; then
+    grep -q "Option \"-n\"" "$_tf" 2>/dev/null && continue
+    # 有任何 GPU 行才算"有 topo"
+    grep -v "^#" "$_tf" 2>/dev/null | grep -qE "^GPU[0-9]+" || continue
+    if grep -v "^#" "$_tf" 2>/dev/null | grep -qE "NIC[0-9]+"; then
         GPU_TOPO_FILE="$_tf"
+        GPU_TOPO_STATE="ok"
         break
     fi
+    GPU_TOPO_STATE="no_nic"
 done
 if [ -n "$GPU_TOPO_FILE" ]; then
     _nic_cols=()

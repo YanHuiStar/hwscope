@@ -44,6 +44,16 @@ _dist_str() {   # $1=ib|dpu|eth → "1口×8" / "2口×1+4口×1"（口数升序
 #   nport 为空（老采集/无该字段）时按单口卡处理，保持向后兼容。
 #   另累计 *口数* 供硬件概览显示「N 张（M 口）」。
 _nic_is_card_head() { case "${1:-1/1}" in 1/*|"") return 0 ;; *) return 1 ;; esac; }
+# v1.59.1：计算网卡归类**不可判定**的两种情形，都不许回退到接口名猜：
+#   ① topo 存在但无 NIC 列（no_nic）——NVML 没给 GPU↔NIC 亲和
+#   ② **NVIDIA 平台但 topo 文件缺失/为空**（none + GPU_PLATFORM=nvidia）——NVIDIA 一定有
+#      `nvidia-smi topo -m`，缺了就是采集失败，此时按接口名回退会把不在 GPU 域的 IB 口算成计算网卡
+#      （实测两台同型号 P9000G7 因此得出 9 张/12 口 vs 8 张/8 口）。AMD/昇腾确实没有该工具，仍回退。
+ACC_NIC_IB_UNKNOWN=0
+case "${GPU_TOPO_STATE:-none}" in
+    no_nic) ACC_NIC_IB_UNKNOWN=1 ;;
+    none)   [ "${GPU_PLATFORM:-none}" = "nvidia" ] && ACC_NIC_IB_UNKNOWN=1 ;;
+esac
 if [ -n "$NIC_DETAILS" ]; then
     while IFS='|' read -r nnic nnbdf nmac nsn npn nfw npcie npsid ngd nchip nport nlink nloc; do
         [ -z "$nnic" ] && continue
@@ -88,7 +98,7 @@ if [ -n "$NIC_DETAILS" ]; then
                 _cp=$(_card_ports "$nport"); _dist_add ib "$_cp"
                 [ "$ACC_NIC_IB" = "N/A" ] && ACC_NIC_IB="$_nm"
             fi
-        elif [ "${GPU_TOPO_AVAIL:-0}" != "1" ] && echo "$nnic" | grep -qE "^ib"; then
+        elif [ "${GPU_TOPO_STATE:-none}" = "none" ] && [ "${GPU_PLATFORM:-none}" != "nvidia" ] && echo "$nnic" | grep -qE "^ib"; then
             # v1.48.86 回退分支：**无 topo 数据时**按接口名判（IB 模式口 = 计算网卡，同旧实现）。
             #   必须保留这条——AMD/昇腾平台没有 nvidia-smi topo，GPU_DIRECT_NIC 恒为空，
             #   若不回退会把这类平台的计算网卡整批丢进「网卡&端口」：

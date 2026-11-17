@@ -134,7 +134,7 @@ Markdown 报告的章节顺序如下（`##` 级标题即 HTML 卡片与侧栏目
 | 协议分布 | `N 口 IB · M 口 ETH · K 口其他`，并标注「按网卡固件统计，与上面接口数不同源」 | `mlxconfig` 的 `LINK_TYPE_P1/P2` |
 | 速率 | `额定 <speed>`（卡能力，无需接线）+ `协商 <分布>`（IB 模式 Active 口的速率分布） | `mlxlink` 的 `Enabled Link Speed` 位图 / `ibstat` |
 | IB 固件一致性 | 同型号 + 同 PSID 分组内固件版本多于 1 种时提示，措辞为「建议核对」，不进验收判定 | `nic_inventory.csv` |
-| 计算网卡（GPU 直连） | `N 张 / M 口`，标注「与硬件概览同源口径」；无计算网卡时不显示本行 | `report/sections/65_nic_accounting.sh` |
+| 计算网卡（GPU 直连） | `N 张 / M 口`，标注「与硬件概览同源口径」；**topo 拿不到 NIC 列时显示 `N/A——nvidia-smi topo -m 未列出 NIC 列`（不按接口名猜）**；无计算网卡时不显示本行 | `report/sections/65_nic_accounting.sh` |
 | SR-IOV | `启用（N 张卡，最大 VF=k）` / `部分启用（…）` / `关闭（N 张卡，VF=0）` | `mlxconfig` 的 `SRIOV_EN` / `NUM_OF_VFS` |
 | 模块信息 | 仅在 `mlxlink` 命令本身失败时出现的中性提示：`N 个设备中 M 个 mlxlink 读取失败（<dev>）——这几项无模块数据；未插线缆属常态，如本次要核对线缆请复采` | `mlxlink_*_module.log` 的 `-E-` 行或非零退出码 |
 | 线缆类型 / 线缆配对 | 有数据才显示（DAC / Optical / 原始串；同一 EEPROM serial 视为同一根线两端） | `mlxlink_*_module.log` |
@@ -196,6 +196,7 @@ bash report/report.sh <采集目录> --acceptance     # 生成 hwscope_acceptanc
 由检测数据自动生成，可直接对照采购配置单核对，行序为：准系统（系统 SN / 机箱 SN / BIOS）、CPU、内存、GPU 模组、计算网卡、DPU、网卡&端口、存储、电源模块、风扇、系统管理（BMC 固件与管理地址）。
 
 - **计算网卡**：按「GPU 直连」归类（`PIX` / `PXB` + 卡型过滤），判的是物理直连而非当前运行协议；DPU（BlueField 系列）单列一行，判定顺序 DPU → GPU 直连 → 其余。数量单位为「张」（按物理卡计数，同卡多口只算一张），口数放括号内，如 `3（单口×1 + 双口×1，共 3 口）`。
+- **topo 三态**（v1.59.1 起）：有 NIC 列 → 按 PIX/PXB 权威映射；**有 topo 但无 NIC 列 → 判「无法判定」并写 N/A + 原因，不回退到接口名**（实测两台同型号 P9000G7，一台 topo 列出 8 个 NIC 列得 8 张/8 口，另一台无 NIC 列时按接口名回退把 x2 的 CX-7 四口也算进计算网卡，得出 9 张/12 口）；完全没有 topo 文件（AMD/昇腾/无 nvidia-smi）→ 才用接口名 `^ib` 兜底。
 - **存储**：按「型号 + 接口类型 + 单盘额定容量」分组计数渲染，如 `型号（NVMe 3.84TB）×8（共 28672 GiB）`，多组以 ` + ` 连接。三条口径：① 型号串已含容量时括号内不重复；② RAID 卡伪盘（`MR9xxx` / `PERC` / `MegaRAID` / `Smart Array` / `Adaptec`）与 16 进制伪「额定」值不计入分组；③ 分组数与块设备数不一致时数量列注明 `N（其中物理盘 M）`。无明细时回退为「首个型号 + 总容量」；本机仅有 USB / 虚拟盘时显示「无本地数据盘」，与「未采集到」区分。
 - **GPU 模组**：有卡给型号与数量；仅有 PCI 存在性时给检测数量；未识别到时写「未识别到（原因）」，单位与数量留空。
 - **系统管理**：无 BMC 的平台不显示该行；有 BMC 时附管理地址与来源（DHCP / 静态），地址全 0 时写「管理地址未配置」。
