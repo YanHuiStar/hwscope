@@ -60,13 +60,26 @@ esac
 #   于是硬件概览出现 8 张（计算）+ 9 张（其它网卡）= 17 张卡的假象（用户实测指出）。
 #   现在先判定哪些端口算计算网卡（写进 INFER_NIC 数组），再让主循环正常归类，只归一次。
 declare -A INFER_NIC=()
-ACC_NIC_IB_INFERRED=0
+ACC_NIC_IB_INFERRED=0; ACC_NIC_IB_NONE=0
 if [ "${ACC_NIC_IB_UNKNOWN:-0}" = "1" ] && [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null && [ -n "$NIC_DETAILS" ]; then
     _inf_cards=0
     while IFS='|' read -r _innic _inbdf _inmac _insn _inpn _infw _inpcie _inpsid _ingd _inchip _inport _inlink _inloc; do
         [ -z "$_innic" ] && continue
-        case "${_inchip:-}" in MT[0-9]*) : ;; *) continue ;; esac           # 只认 Mellanox 芯片
-        echo "${_inpn:-}" | grep -qE "ConnectX-[678]|BlueField" || continue   # 只认高速计算卡
+        # 只认 Mellanox **高速**计算卡（ConnectX-6/7/8、BlueField）：
+        #   ① 型号串明确写了 ConnectX-6/7/8 或 BlueField → 纳入
+        #   ② 明确是 ConnectX-1..5（如 MCX556A [ConnectX-5]）→ 排除（它们在 A100 机上做管理口，
+        #      若因"放宽"被算进候选，8 GPU + 6 CX-6 + 2 CX-5 会正好凑成 8 张而推断出错）
+        #   ③ 两者都判不出（老采集无 lspci 芯片、型号无 ConnectX 字样）时，用「芯片 MTxxxx 或型号含
+        #      MLX/MCX/MT」作保守纳入——否则会把"没数据"当成"没有卡"而误判为「无」。
+        _imn=$(printf '%s' "${_inpn:-}" | tr 'A-Z' 'a-z')
+        case "$_imn" in
+            *connectx-6*|*connectx-7*|*connectx-8*|*bluefield*) : ;;
+            *connectx-1*|*connectx-2*|*connectx-3*|*connectx-4*|*connectx-5*) continue ;;
+            *) case "${_inchip:-}" in
+                   MT[0-9]*) : ;;
+                   *) case "$_imn" in *mlx*|*mcx*|*mt[0-9]*) : ;; *) continue ;; esac ;;
+               esac ;;
+        esac
         _iw=$(printf '%s' "${_inpcie:-}" | sed -n 's|.*/x\([0-9][0-9]*\).*|\1|p')
         _is=$(printf '%s' "${_inpcie:-}" | sed -n 's|^\([0-9][0-9.]*\)GT/s.*|\1|p')
         [ -n "$_iw" ] && [ "$_iw" -ge 8 ] 2>/dev/null || continue             # 宽度 ≥ x8
@@ -78,7 +91,18 @@ if [ "${ACC_NIC_IB_UNKNOWN:-0}" = "1" ] && [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/nu
         ACC_NIC_IB_INFERRED=1
         ACC_NIC_IB_UNKNOWN=0        # 已可推断 → 不再走「未判定」文案
     else
-        INFER_NIC=()                # 张数对不上 GPU 数 → 不采信，保持未判定
+        # v1.61.4：**不成组就直接说"没有"**——原来一律写"未判定（未获取 GPU↔网卡拓扑，不推定）"，
+        #   既口语化又对客户没信息量（实测 Supermicro B200 8 卡机只有 1 张 CX-7 四口，
+        #   明显不是 1:1 直连形态，客户看到"无法判定"反而要追问）。
+        #   判据（仍然只用证据）：高速计算卡型张数 < GPU 张数的一半（含 0）→ 判「无 GPU 直连网卡」；
+        #   介于一半与 GPU 数之间（可能是部分直连/配置不全）→ 保留「未判定」。
+        if [ "${_inf_cards:-0}" -eq 0 ] 2>/dev/null || [ $(( _inf_cards * 2 )) -lt "${GPU_COUNT:-0}" ] 2>/dev/null; then
+            ACC_NIC_IB_NONE=1
+            ACC_NIC_IB_UNKNOWN=0
+            ACC_NIC_IB_COUNT=0
+            ACC_NIC_IB_PORT=0
+        fi
+        INFER_NIC=()
     fi
 fi
 
@@ -155,5 +179,12 @@ if [ -n "$NIC_DETAILS" ]; then
             fi
         fi
     done < <(printf '%s\n' "$NIC_DETAILS")
+fi
+
+# v1.61.4：**topo 权威且判定无直连网卡**时同样明确写「无」——
+#   原实现这种情况下整行不渲染，读者看不出"没有"还是"没采到"（实测 8 GPU + 通用网卡的机会命中）。
+if [ "${GPU_TOPO_STATE:-none}" = "ok" ] && [ "${ACC_NIC_IB_COUNT:-0}" -eq 0 ] 2>/dev/null \
+   && [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+    ACC_NIC_IB_NONE=1
 fi
 

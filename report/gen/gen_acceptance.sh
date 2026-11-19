@@ -853,7 +853,10 @@ gen_acceptance() {
         else
             echo "| GPU | 未识别到（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
         fi
-        if [ "${ACC_NIC_IB_INFERRED:-0}" = "1" ] 2>/dev/null; then
+        if [ "${ACC_NIC_IB_NONE:-0}" = "1" ] 2>/dev/null; then
+            # v1.61.4：明显不是直连形态 → 直接写「无」，不再是"未判定（不推定）"这类口语化解释
+            echo "| 计算网卡 | 无（本机网卡均为通用 PCIe 网卡） | 张 | 0 |"
+        elif [ "${ACC_NIC_IB_INFERRED:-0}" = "1" ] 2>/dev/null; then
             # 配置单是「项目/型号/单位/数量」四列，依据文字塞进数量格会让读者把 ≥x8、16GT/s、GPU 数（8）
             # 都当成卡数（实测被指出「别人还以为 17 张卡」）。依据一律挪到表下脚注。
             echo "| 计算网卡 | ${ACC_NIC_IB:-N/A}（GPU 直连） | 张 | ${ACC_NIC_IB_COUNT}（共 ${ACC_NIC_IB_PORT} 口） |"
@@ -861,10 +864,11 @@ gen_acceptance() {
             # v1.59.1：topo 存在但无 NIC 列 → 计算网卡不可判定。宁可写 N/A + 原因，
             #   也不按接口名回退充数（同型号两台机会因此给出 9 张/12 口 vs 8 张/8 口两种结论）。
             # 口径：计算网卡 = GPU 直连网卡；本次采集拿不到 GPU↔网卡拓扑 → 不做推定（也不暗示硬件故障）
+            # v1.61.4：措辞去口语化——只陈述事实（拓扑信息是否取得），不写「不推定」这类自我说明
             if [ "${GPU_TOPO_STATE:-none}" = "none" ]; then
-                echo "| 计算网卡 | N/A（未取得 GPU 拓扑信息，不推定） | 张 | — ｜ 本次未采集到 GPU 拓扑输出 |"
+                echo "| 计算网卡 | 待确认（本次未采集到 GPU 拓扑输出） | 张 | — |"
             else
-                echo "| 计算网卡 | N/A（未取得 GPU↔网卡拓扑，不推定） | 张 | — ｜ 本次采集的 GPU 拓扑输出不含网卡列 |"
+                echo "| 计算网卡 | 待确认（GPU 拓扑输出未含网卡列，无法判定直连关系） | 张 | — |"
             fi
         elif [ "${ACC_NIC_IB_COUNT:-0}" -gt 0 ] 2>/dev/null; then
             # v1.48.85：计算网卡改按 GPU 直连归类后，不能再标 "（IB …）"——直连与协议模式无关。
