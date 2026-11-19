@@ -905,7 +905,20 @@ $(
     if [ -n "$PSU_SLOT_TOTAL" ]; then
         _pn=${PSU_SENSOR_SEEN:-0}
         [ "$_pn" -eq 0 ] 2>/dev/null && _pn=${PSU_COUNT_DMI:-0}
-        if [ "$_pn" -gt 0 ] 2>/dev/null; then
+        # v1.61.2：三源冲突（SMBIOS/FRU 条数 ≠ IPMI 状态覆盖 ≠ 槽位字段）时不报「X / Y 在位」——
+        #   实测一台机 8 颗实装、状态传感器只覆盖 2 颗、槽位字段记 7 个，原逻辑按传感器数写「2 / 7 在位」，
+        #   与本段另一行「SMBIOS 确认 8 颗在位」自相矛盾。取 SMBIOS/FRU 条数为实装数，其余只作说明。
+        _slot_conflict=0
+        if [ "${PSU_COUNT_DMI:-0}" -gt 0 ] 2>/dev/null && [ "${PSU_COUNT_DMI}" -ne "${PSU_SENSOR_SEEN:-0}" ] 2>/dev/null; then
+            _pn=${PSU_COUNT_DMI}
+            if [ "${PSU_COUNT_DMI}" -gt "${PSU_SLOT_TOTAL}" ] 2>/dev/null; then
+                printf '**电源配置: %s 颗（SMBIOS/FRU 实装；槽位字段记 %s 个、IPMI 状态覆盖 %s 颗——来源不一致，建议现场核对）**\n' "$_pn" "$PSU_SLOT_TOTAL" "${PSU_SENSOR_SEEN:-0}"
+                _slot_conflict=1
+            fi
+        fi
+        if [ "$_slot_conflict" = "1" ]; then
+            :    # 已输出冲突说明，跳过比值
+        elif [ "$_pn" -gt 0 ] 2>/dev/null; then
             if [ "$_pn" -lt "$PSU_SLOT_TOTAL" ] 2>/dev/null; then
                 printf '**电源配置: %s / %s 个槽位在位**\n' "$_pn" "$PSU_SLOT_TOTAL"
                 printf '> ⚠️ 该机型共 %s 个电源槽位、当前 %s 个在位。若因场地供电限制（机柜单路/双路供电等）降配运行，请确认仍满足当前负载的冗余要求（N+1 / N+N），并在验收单备注\n' "$PSU_SLOT_TOTAL" "$_pn"

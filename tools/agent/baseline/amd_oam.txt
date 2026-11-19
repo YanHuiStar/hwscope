@@ -33,7 +33,7 @@
   html_table_close=32
   html_bytes=65427
 [acceptance]
-        6 N/A
+        5 N/A
        12 PASS
         2 WARN
 [acceptance_hw]

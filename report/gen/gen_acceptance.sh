@@ -357,7 +357,16 @@ gen_acceptance() {
     if [ -n "${PSU_SLOT_TOTAL:-}" ]; then
         _pn=${PSU_SENSOR_SEEN:-0}
         [ "$_pn" -eq 0 ] 2>/dev/null && _pn=${PSU_COUNT_DMI:-0}
-        if [ "$_pn" -gt 0 ] 2>/dev/null; then
+        # v1.61.2：三源冲突（SMBIOS/FRU 条数 ≠ IPMI 状态覆盖颗数 ≠ 槽位字段）时不报「在位 X/Y」——
+        #   实测一台机 8 颗实装、状态传感器只覆盖 2 颗、槽位字段记 7 个，原逻辑写「在位 2/7」
+        #   与本报告「SMBIOS 确认 8 颗」自相矛盾。以 SMBIOS/FRU 条数为实装数，其余只作说明。
+        if [ "${PSU_COUNT_DMI:-0}" -gt 0 ] 2>/dev/null && [ "${PSU_COUNT_DMI}" -ne "${PSU_SENSOR_SEEN:-0}" ] 2>/dev/null; then
+            if [ "${PSU_COUNT_DMI}" -le "${PSU_SLOT_TOTAL}" ] 2>/dev/null; then
+                _pwr_slot="；在位 ${PSU_COUNT_DMI}/${PSU_SLOT_TOTAL} 个电源槽位（IPMI 状态传感器覆盖 ${PSU_SENSOR_SEEN:-0} 颗）"
+            else
+                _pwr_slot="；实装 ${PSU_COUNT_DMI} 颗（SMBIOS/FRU），槽位字段记 ${PSU_SLOT_TOTAL} 个、IPMI 状态覆盖 ${PSU_SENSOR_SEEN:-0} 颗——来源不一致，建议现场核对"
+            fi
+        elif [ "$_pn" -gt 0 ] 2>/dev/null; then
             _pwr_slot="；在位 ${_pn}/${PSU_SLOT_TOTAL} 个电源槽位"
             [ "$_pn" -lt "$PSU_SLOT_TOTAL" ] 2>/dev/null && _pwr_slot="${_pwr_slot}（场地降配需确认冗余并在验收单备注）"   # v1.54.28 精简
         fi
@@ -720,6 +729,10 @@ gen_acceptance() {
     fi
     # v1.54.32：网卡归类统计已移至 report/sections/65_nic_accounting.sh（一处计算三端共用）
     ACC_PSU_MODEL="N/A"; ACC_PSU_CAP="N/A"; ACC_PSU_COUNT=0
+    # v1.61.2：**多规格电源按「型号（容量）×N」分组**——原实现只取第一颗的型号/容量，
+    #   实测一台机 8 颗里 6 颗 GWPST 3300W + 2 颗 Great 2000W，配置单只写「GWPST（3300W）｜个｜8」，
+    #   混插被完全藏起来（客户会以为 8 颗同规格）。
+    ACC_PSU_SPEC=""; ACC_PSU_SPEC_N=0
     if [ -n "$PSU_DETAILS" ]; then
         while IFS='|' read -r pdesc pmodel ppn psn pcap ppower; do
             [ -z "$pdesc" ] && continue
@@ -731,6 +744,33 @@ gen_acceptance() {
             _pcap_clean=$(printf '%s' "$pcap" | sed 's/^N\/A（.*）$/N\/A/')
             [ "$ACC_PSU_CAP" = "N/A" ] && [ "$_pcap_clean" != "N/A" ] && [ -n "$_pcap_clean" ] && ACC_PSU_CAP="$_pcap_clean"
         done < <(printf '%s\n' "$PSU_DETAILS")
+    fi
+    if [ -n "${PSU_DETAILS:-}" ]; then
+        ACC_PSU_SPEC=$(printf '%s\n' "$PSU_DETAILS" | awk -F'|' '
+            NF >= 4 {
+                m = $2; c = (NF >= 5 ? $5 : "")
+                gsub(/^[ \t]+|[ \t]+$/, "", m); gsub(/^[ \t]+|[ \t]+$/, "", c)
+                # 容量列可能带成因说明（如「N/A（该机 SMBIOS 无 Type 39 记录…）」）→ 归成空
+                if (c ~ /^N\/A/ || c == "—") c = ""
+                if (m == "" || m == "N/A") {
+                    # 型号缺失时用容量当标签（实测 DGX A100 的 Type 39 只有 3315W、无型号）
+                    if (c == "") next
+                    m = c; c = ""
+                }
+                k = m "\x1f" c
+                if (!(k in n)) { order[++no] = k }
+                n[k]++
+            }
+            END {
+                for (i = 1; i <= no; i++) {
+                    k = order[i]; split(k, p, "\x1f")
+                    spec = p[1]
+                    if (p[2] != "" && p[2] != "N/A") spec = spec "（" p[2] "）"
+                    spec = spec "×" n[k]
+                    printf "%s%s", (i > 1 ? " + " : ""), spec
+                }
+            }')
+        [ -n "$ACC_PSU_SPEC" ] && ACC_PSU_SPEC_N=$(printf '%s' "$ACC_PSU_SPEC" | grep -o '×[0-9]*' | tr -d '×' | awk '{s+=$1} END{print s+0}')
     fi
     ACC_DISK_MODEL="N/A"
     if [ -n "${STORAGE_MODELS:-}" ]; then
@@ -867,7 +907,16 @@ gen_acceptance() {
                 echo "| 硬盘 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
             fi
         fi
-        echo "| 电源 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
+        # v1.61.2：多规格时列全（型号（容量）×N），单规格保持原来的简洁写法
+        _psu_specs=$(printf '%s' "${ACC_PSU_SPEC:-}" | grep -o '×[0-9]*' | wc -l)
+        if [ "${_psu_specs:-0}" -ge 2 ] 2>/dev/null; then
+            echo "| 电源 | ${ACC_PSU_SPEC} | 个 | ${ACC_PSU_COUNT:-0} |"
+        elif [ -n "${ACC_PSU_SPEC:-}" ]; then
+            # 单一规格：去掉尾部「×N」（数量列已有颗数），型号缺失时也不会出现「N/A（3315W）」这种写法
+            echo "| 电源 | $(printf '%s' "${ACC_PSU_SPEC}" | sed 's/×[0-9][0-9]*$//') | 个 | ${ACC_PSU_COUNT:-0} |"
+        else
+            echo "| 电源 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
+        fi
         # v1.54.12：风扇补进概览——原来只在正文有，配置单/交接单上看不到。
         #   （阵列不进概览：硬件概览只列硬件部件，阵列属 RAID 段，有阵列卡时在 RAID 控制器段呈现。）
         if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then
@@ -893,6 +942,13 @@ gen_acceptance() {
         # v1.60.7：电源计数两处口径不一致时如实说明——实测一台 B300：PSU FRU 列 PSU0..PSU10（11 颗），
         #   而 SMBIOS Type 39 只记 10 条、电源风扇 10 组；配置单按 FRU 报 11、验收项按 SMBIOS 报 10，
         #   读者会觉得前后矛盾。这里不选边，摆出三个来源并建议现场核对。
+        # v1.61.2：多规格电源 → 表下说明混插事实与冗余条件（不判 WARN：混插本身不是故障）
+        _psu_kinds=$(printf '%s' "${ACC_PSU_SPEC:-}" | grep -o '×[0-9]*' | wc -l)
+        if [ "${_psu_kinds:-0}" -ge 2 ] 2>/dev/null; then
+            echo ""
+            _psu_pwr=$(printf '%s\n' "${PSU_DETAILS:-}" | awk -F'|' 'NF>=6 {p=$6; gsub(/[ \t]/,"",p); if (p!="" && p!="—" && p!="N/A") c++} END{print c+0}' 2>/dev/null)
+            echo "> 注：电源**混插 ${_psu_kinds} 种规格**——${ACC_PSU_SPEC}；N+N 冗余要求同容量、同型号成对配置，混插时冗余能力按较低规格那组计。${_psu_pwr:+当前 ${_psu_pwr} 颗有功耗读数，其余 $(( ACC_PSU_COUNT - _psu_pwr )) 颗平台侧未暴露功耗读数。}"
+        fi
         if [ "${ACC_PSU_COUNT:-0}" -gt 0 ] 2>/dev/null && [ "${PSU_COUNT_DMI:-0}" -gt 0 ] 2>/dev/null \
            && [ "${ACC_PSU_COUNT}" -ne "${PSU_COUNT_DMI}" ]; then
             echo ""
