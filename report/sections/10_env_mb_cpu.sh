@@ -211,6 +211,15 @@ fi
 CPU_STEPPING=$(grep -m1 "^Stepping" "${cpu_stepping}" 2>/dev/null | awk '{print $2}')
 [ -z "$CPU_STEPPING" ] && CPU_STEPPING=$(grep -m1 "Stepping:" "${lscpu}" 2>/dev/null | awk '{print $2}')
 CPU_MAX_SPEED=$(grep -m1 "Max Speed" "${dmidecode_processor}" 2>/dev/null | awk '{print $(NF-1)}')
+# v1.60.7：DMI 的 Max Speed 可能是 BIOS 乱填（实测 Xeon 6776P 报 25500 MHz ≈ 25.5GHz），
+#   明显不合理的值不能直接进配置单——超 10 GHz 或低于 400 MHz 一律改用 OS 侧 lscpu 的 CPU max MHz。
+case "${CPU_MAX_SPEED:-}" in
+    ''|*[!0-9]*) : ;;
+    *) if [ "$CPU_MAX_SPEED" -gt 10000 ] || [ "$CPU_MAX_SPEED" -lt 400 ]; then
+           _os_max=$(grep -m1 "CPU max MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}' | cut -d. -f1)
+           case "${_os_max:-}" in ''|*[!0-9]*) : ;; *) CPU_MAX_SPEED="$_os_max" ;; esac
+       fi ;;
+esac
 # "Max Speed: Unknown" 会取到 "Speed:"——非数字置空走 lscpu 回退
 echo "$CPU_MAX_SPEED" | grep -qE "^[0-9]+$" || CPU_MAX_SPEED=""
 [ -z "$CPU_MAX_SPEED" ] && CPU_MAX_SPEED=$(grep -m1 "CPU max MHz" "${lscpu}" 2>/dev/null | awk '{print $NF}')
@@ -292,7 +301,14 @@ if [ -f "${dmidecode_processor}" ]; then
             if(line ~ /Version:/) {sub(/.*: /,"",line); model=line}
             if(line ~ /Core Count:/) {sub(/.*: /,"",line); cores=line}
             if(line ~ /Thread Count:/) {sub(/.*: /,"",line); threads=line}
-            if(line ~ /Max Speed:/) {sub(/.*: /,"",line); maxspd=line}
+            # v1.60.7：单颗明细同样要挡 DMI 乱填值（实测 Xeon 6776P 报 25500 MHz）——
+            #   与上面 CPU_MAX_SPEED 的合理性判据保持一致：>10GHz 或 <400MHz 视为不可用，留空。
+            if(line ~ /Max Speed:/) {
+                sub(/.*: /,"",line)
+                v = line + 0
+                if (v >= 400 && v <= 10000) maxspd = line
+                else maxspd = "—"        # 明显不合理（BIOS 乱填）→ 显示占位，不把 25.5GHz 印进表
+            }
             if(line ~ /Current Speed:/) {sub(/.*: /,"",line); curspd=line}
             if(line ~ /Stepping:/) {sub(/.*: /,"",line); step=line}
             if(line ~ /Serial Number:/) {sub(/.*: /,"",line); sn=line}

@@ -13,7 +13,20 @@ BEGIN {
     print "<head>"
     print "<meta charset='UTF-8'>"
     print "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
-    print "<title>HwScope 硬件巡检报告</title>"
+    # v1.60.7：<title> 取 Markdown 的首个 H1 —— 原来写死「HwScope 硬件巡检报告」，
+    #   hwscope_acceptance.html 的标题因此与报告页一模一样（浏览器标签/打印页眉分不清哪份是哪份）。
+    #   注意 <head> 在 BEGIN 阶段就输出，等不到后面 pass 1 的收集 → 这里**先预读文件**取首个 H1。
+    DOC_TITLE = ""
+    while ((getline _tl < ARGV[1]) > 0) {
+        if (_tl ~ /^# /) {
+            _tl = substr(_tl, 3)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", _tl)
+            DOC_TITLE = _tl
+            break
+        }
+    }
+    close(ARGV[1])
+    print "<title>" (DOC_TITLE != "" ? DOC_TITLE : "HwScope 硬件巡检报告") "</title>"
     print "<style>"
     print "body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC',sans-serif;background:#eef1f6;color:#2d3748;margin:0;padding:24px 16px;}"
     print ".container{max-width:1280px;margin:0 auto;}"
@@ -126,7 +139,7 @@ BEGIN {
     print "</head>"
     # 两遍扫描：先收集 ## 段标题生成侧边目录，再输出正文（纯 awk，无外部依赖）
     ARGV[ARGC++] = ARGV[1]
-    pass = 0; ntoc = 0; nsec = 0; toc_done = 0
+    pass = 0; ntoc = 0; nsec = 0; toc_done = 0; DOC_TITLE = ""
     # v1.53.21：标题区（h1/副标题/采集信息行）先放进通栏 header，等第一个 ## 出现时再开 nav+main，
     #   这样侧边栏与右侧第一张卡片从同一行开始（原来侧边栏贴在页面最上方，与卡片错开一个标题区的高度）
     print "<body><div class='layout'><header class='pagehead'>"
@@ -141,6 +154,13 @@ FNR == 1 {
 
 # 第一遍：只收集 ## 标题，其余一律不输出
 pass == 1 {
+    # v1.60.7：第一遍顺带取首个 H1 作为文档标题（<title> 用），
+    #   否则验收清单的浏览器标签/打印页眉与报告页同名，分不清。
+    if (DOC_TITLE == "" && /^# /) {
+        t1 = substr($0, 3)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t1)
+        DOC_TITLE = t1
+    }
     if (/^## /) {
         t = substr($0, 4)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)

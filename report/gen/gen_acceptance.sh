@@ -786,7 +786,7 @@ gen_acceptance() {
     {
         echo "# HwScope 验收清单（Acceptance Checklist）"
         echo ""
-        echo "## 硬件概览（配置单，自动生成自检测数据）"
+        echo "## 硬件概览"      # v1.60.7：去掉「（配置单，自动生成自检测数据）」——交付文档不需要自述来源
         echo ""
         echo "| 项目 | 规格型号描述（含配置） | 单位 | 数量 |"
         echo "|------|------------------------|------|------|"
@@ -881,6 +881,15 @@ gen_acceptance() {
             _sm_val="${_sm_val}）"
             echo "| 系统管理 | ${_sm_val} | 套 | 1 |"
         fi
+        # v1.60.7：电源计数两处口径不一致时如实说明——实测一台 B300：PSU FRU 列 PSU0..PSU10（11 颗），
+        #   而 SMBIOS Type 39 只记 10 条、电源风扇 10 组；配置单按 FRU 报 11、验收项按 SMBIOS 报 10，
+        #   读者会觉得前后矛盾。这里不选边，摆出三个来源并建议现场核对。
+        if [ "${ACC_PSU_COUNT:-0}" -gt 0 ] 2>/dev/null && [ "${PSU_COUNT_DMI:-0}" -gt 0 ] 2>/dev/null \
+           && [ "${ACC_PSU_COUNT}" -ne "${PSU_COUNT_DMI}" ]; then
+            echo ""
+            echo "> 注：电源计数三个来源不一致——PSU FRU 列出 ${ACC_PSU_COUNT} 颗，SMBIOS Type 39 记录 ${PSU_COUNT_DMI} 颗；配置单按 FRU 计数，验收「电源状态」按 SMBIOS 计数。建议现场核对最后一颗（PSU$((ACC_PSU_COUNT-1))）是否实际在位。"
+        fi
+
         # v1.60.6：配置单表下的脚注——推断依据放这里，不进表格数量列
         if [ "${ACC_NIC_IB_INFERRED:-0}" = "1" ] 2>/dev/null; then
             echo ""
