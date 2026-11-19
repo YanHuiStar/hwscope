@@ -947,7 +947,17 @@ gen_acceptance() {
         if [ "${_psu_kinds:-0}" -ge 2 ] 2>/dev/null; then
             echo ""
             _psu_pwr=$(printf '%s\n' "${PSU_DETAILS:-}" | awk -F'|' 'NF>=6 {p=$6; gsub(/[ \t]/,"",p); if (p!="" && p!="—" && p!="N/A") c++} END{print c+0}' 2>/dev/null)
-            echo "> 注：电源**混插 ${_psu_kinds} 种规格**——${ACC_PSU_SPEC}；N+N 冗余要求同容量、同型号成对配置，混插时冗余能力按较低规格那组计。${_psu_pwr:+当前 ${_psu_pwr} 颗有功耗读数，其余 $(( ACC_PSU_COUNT - _psu_pwr )) 颗平台侧未暴露功耗读数。}"
+            # v1.61.3：**两种规格不是"混插"，而是按供电域分开设计**（用户口径：主板供电与模组供电分开）。
+            #   实测 P9000G7：6 颗 3300W 挂模组基板（BMC 侧 B_PSU0..5，B_PSU_Redundant ok），
+            #   2 颗 2000W 供主板（PS6/PS7，有输入/输出功率读数）。措辞不得再写"混插/按较低规格计 N+N"。
+            _bb=$(grep -cE '^B_PSU[0-9]+_Status' "${ipmi_sdr:-}" 2>/dev/null)
+            _hs=$(grep -cE '^PS[0-9]+_Status' "${ipmi_sdr:-}" 2>/dev/null)
+            _bb=${_bb:-0}; _hs=${_hs:-0}
+            if [ "${_bb:-0}" -gt 0 ] 2>/dev/null; then
+                echo "> 注：电源含 ${_psu_kinds} 种规格，**按供电域分列**（平台设计，非混插）——模组侧 ${_bb} 颗（BMC 传感器 B_PSU*，状态见「电源」段）＋主板侧 ${_hs:-0} 颗（PS*）。${_psu_pwr:+本机 BMC 仅对主板侧 ${_psu_pwr} 颗提供功耗读数，模组侧由基板 BMC 管理。}"
+            else
+                echo "> 注：电源含 ${_psu_kinds} 种规格——${ACC_PSU_SPEC}；不同规格对应不同供电域/槽位分组（平台设计），各自的在位与状态见「电源」段传感器明细。${_psu_pwr:+当前 ${_psu_pwr} 颗有功耗读数。}"
+            fi
         fi
         if [ "${ACC_PSU_COUNT:-0}" -gt 0 ] 2>/dev/null && [ "${PSU_COUNT_DMI:-0}" -gt 0 ] 2>/dev/null \
            && [ "${ACC_PSU_COUNT}" -ne "${PSU_COUNT_DMI}" ]; then
