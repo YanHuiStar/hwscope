@@ -824,6 +824,34 @@ if [ -n "${PSU_DETAILS:-}" ]; then
     fi
 fi
 
+# ─── v1.61.1：PSU 明细按 SN 去重（同一颗被 FRU 与 SMBIOS 各列一次）───
+#   实测一台 B300（B300-sample-f）：PSU FRU 给出 PSU0..PSU10 共 11 行，其中 PSU9 与 PSU10 的
+#   SN **只差尾部两个 #**（同一颗被两条 FRU 记录各列一次）；而 SMBIOS Type 39 只记 10 条、
+#   电源风扇也只有 10 组、机箱外部仅 10 个电源接口。不去重会让配置单报「电源 11」，
+#   并与验收「SMBIOS 确认 10 颗」矛盾。
+#   规则：SN 归一化（去尾部 #/*/空格、转大写）后相同即视为同一颗，保留信息更全的那行；
+#         SN 为 N/A/空 的行不参与去重（无法判定，宁多保留）。
+if [ -n "${PSU_DETAILS:-}" ]; then
+    PSU_DETAILS=$(printf '%s\n' "$PSU_DETAILS" | awk -F'|' 'BEGIN{OFS="|"}
+        {
+            sn = (NF >= 4 ? $4 : "")
+            gsub(/[#*[:space:]]+$/, "", sn); sn = toupper(sn)
+            if (sn == "" || sn == "N/A") { print; next }
+            if (sn in seen) {
+                # 已见过：若本行信息更多（非 N/A 字段数），替换已输出的那行
+                n = 0; for (i = 1; i <= NF; i++) if ($i != "N/A" && $i != "") n++
+                if (n > cnt[sn]) { line[sn] = $0; cnt[sn] = n }
+                next
+            }
+            seen[sn] = 1; cnt[sn] = 0
+            for (i = 1; i <= NF; i++) if ($i != "N/A" && $i != "") cnt[sn]++
+            order[++no] = sn; line[sn] = $0
+        }
+        END {
+            for (i = 1; i <= no; i++) print line[order[i]]
+        }')
+fi
+
 PSU_REDUNDANCY=""
 # ─── v1.54.26：PSU 冗余状态（平台暴露则显示，不暴露则整行不出现）──────────────
 #   覆盖率实测：DGX(REDUNDANCY_PSU)、Giga 系(Redundant_PSU/B_PSU_Redundant) 有；

@@ -849,10 +849,12 @@ gen_acceptance() {
         _stor_rows=$([ -f "${block_devices_all:-}" ] && grep -vcE '^#|^$' "${block_devices_all}" 2>/dev/null || echo 0)
         if [ "${STORAGE_COUNT:-0}" -eq 0 ] 2>/dev/null && [ "${_stor_rows:-0}" -gt 0 ] 2>/dev/null; then
             # v1.61.0：项目名「存储」→「硬盘（内置）」；USB/虚拟盘不并入
-            if [ -n "${USB_LIST:-}" ]; then
-                echo "| 硬盘（内置） | 无内置硬盘——系统运行于外置介质（${USB_LIST}） | 块 | 0 |"
+            # v1.61.1：配置单只说明「无内置硬盘」，不列外置盘清单——
+            #   设备名/容量/接口属于存储段「外置/USB 介质」那一行，塞进配置单又长又重复。
+            if [ -n "${USB_LIST:-}" ] || [ "${VIRT_DEV:-0}" -gt 0 ] 2>/dev/null; then
+                echo "| 硬盘 | 无内置硬盘（系统运行于外置介质，明细见「存储」段） | 块 | 0 |"
             else
-                echo "| 硬盘（内置） | 无内置硬盘（本机仅虚拟盘/未配数据盘） | 块 | 0 |"
+                echo "| 硬盘 | 无内置硬盘（未配内置盘） | 块 | 0 |"
             fi
         else
             if [ -n "${ACC_DISK_SPEC:-}" ]; then
@@ -860,9 +862,9 @@ gen_acceptance() {
                 if [ -n "${ACC_DISK_GRP_N:-}" ] && [ "${ACC_DISK_GRP_N}" != "${STORAGE_COUNT:-0}" ]; then
                     _cntcell="${STORAGE_COUNT:-0}（其中物理盘 ${ACC_DISK_GRP_N}）"
                 fi
-                echo "| 硬盘（内置） | ${ACC_DISK_SPEC}（共 ${STORAGE_TOTAL:-0}） | 块 | ${_cntcell} |"
+                echo "| 硬盘 | ${ACC_DISK_SPEC}（共 ${STORAGE_TOTAL:-0}） | 块 | ${_cntcell} |"
             else
-                echo "| 硬盘（内置） | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
+                echo "| 硬盘 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
             fi
         fi
         echo "| 电源 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
