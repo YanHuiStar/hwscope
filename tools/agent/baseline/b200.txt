@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=393
+  table_rows=394
 [gpu]
   gpu_detail_rows=8
   model: NVIDIA B200
@@ -25,13 +25,13 @@
   nic_rows=24
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | GPU直连 | 物理位置 |
 [json]
-  json_bytes=44645
+  json_bytes=44735
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=30
   html_table_close=30
-  html_bytes=63240
+  html_bytes=63423
 [acceptance]
         4 N/A
        16 PASS
@@ -40,12 +40,11 @@
   准系统 | 台 | 1
   CPU | 颗 | 2
   内存 | 条 | 16
-  GPU模组 | 张 | 8
+  GPU | 张 | 8
   计算网卡 | 张 | 8（单口×8，共 8 口）
-  网卡&端口 | 张 | 2（双口×1 + 四口×1，共 6 口）
-  存储 | 块 | 2
-  电源模块 | 个 | 12
+  其它网卡 | 张 | 2（双口×1 + 四口×1，共 6 口）
+  硬盘（内置） | 块 | 2
+  电源 | 个 | 12
   风扇 | 个 | 50
-  系统管理 | 套 | 1
 [source]
   source_fp_hash=0102b74a444c

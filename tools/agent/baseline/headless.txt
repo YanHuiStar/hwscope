@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=220
+  table_rows=221
 [gpu]
   gpu_detail_rows=0
   model: N/A
@@ -24,13 +24,13 @@
   nic_rows=11
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=19978
+  json_bytes=20090
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=28
   html_table_close=28
-  html_bytes=38450
+  html_bytes=38655
 [acceptance]
         6 N/A
        10 PASS
@@ -38,12 +38,11 @@
   准系统 | 台 | 1
   CPU | 颗 | 2
   内存 | 条 | 32
-  GPU模组 | — | —
+  GPU | — | —
   计算网卡 | 张 | 1（单口×1，共 1 口）
-  网卡&端口 | 张 | 3（双口×3，共 6 口）
-  存储 | 块 | 3（其中物理盘 2）
-  电源模块 | 个 | 6
+  其它网卡 | 张 | 3（双口×3，共 6 口）
+  硬盘（内置） | 块 | 3（其中物理盘 2）
+  电源 | 个 | 6
   风扇 | 个 | 25
-  系统管理 | 套 | 1
 [source]
   source_fp_hash=405443b27c5c

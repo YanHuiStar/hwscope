@@ -803,15 +803,15 @@ gen_acceptance() {
             fi
         fi
         if [ "${GPU_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "| GPU模组 | ${GPU_NAMES:-N/A}（${GPU_MEM_SPEC:-N/A}${ACC_GPU_MEMTYPE:+ ${ACC_GPU_MEMTYPE}}） | 张 | ${GPU_COUNT} |"
+            echo "| GPU | ${GPU_NAMES:-N/A}（${GPU_MEM_SPEC:-N/A}${ACC_GPU_MEMTYPE:+ ${ACC_GPU_MEMTYPE}}） | 张 | ${GPU_COUNT} |"
         elif [ "${GPU_PCI_PRESENT:-0}" -gt 0 ] 2>/dev/null; then
-            echo "| GPU模组 | 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} 加速卡（无对应管理工具，仅 PCI 存在性） | 张 | ${GPU_PCI_PRESENT} |"
+            echo "| GPU | 检测到 ${GPU_PCI_PRESENT} 个 ${GPU_PCI_VENDOR:-} 加速卡（无对应管理工具，仅 PCI 存在性） | 张 | ${GPU_PCI_PRESENT} |"
         elif [ "${GPU_MODULE_STATE:-present}" = "unknown" ] 2>/dev/null; then
             # v1.53.42：**未识别到**就写未识别到——不写「无」（会读成"确认没装"），
             #   也不写"可能装有"（那是猜）。原因放括号里，需要的动作写清楚。
-            echo "| GPU模组 | 未识别到（本次采集未枚举到加速卡：${GPU_MODULE_REASON}） | — | — |"
+            echo "| GPU | 未识别到（本次采集未枚举到加速卡：${GPU_MODULE_REASON}） | — | — |"
         else
-            echo "| GPU模组 | 未识别到（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
+            echo "| GPU | 未识别到（${MACHINE_CLASS_LABEL:-${PLATFORM_LABEL:-N/A}}） | — | — |"
         fi
         if [ "${ACC_NIC_IB_INFERRED:-0}" = "1" ] 2>/dev/null; then
             # 配置单是「项目/型号/单位/数量」四列，依据文字塞进数量格会让读者把 ≥x8、16GT/s、GPU 数（8）
@@ -839,7 +839,7 @@ gen_acceptance() {
         fi
         if [ "${ACC_NIC_ETH_COUNT:-0}" -gt 0 ] 2>/dev/null; then
             _ethd=$(_dist_str eth)
-            echo "| 网卡&端口 | ${ACC_NIC_ETH:-N/A} | 张 | ${ACC_NIC_ETH_COUNT}（${_ethd:-${ACC_NIC_ETH_PORT} 口}，共 ${ACC_NIC_ETH_PORT} 口） |"
+            echo "| 其它网卡 | ${ACC_NIC_ETH:-N/A} | 张 | ${ACC_NIC_ETH_COUNT}（${_ethd:-${ACC_NIC_ETH_PORT} 口}，共 ${ACC_NIC_ETH_PORT} 口） |"
         fi
 
         # v1.52.17：区分「平台无本地数据盘」与「采集失败」。实测一台 ASUS B300 本机只有
@@ -848,19 +848,24 @@ gen_acceptance() {
         #   判据：block_devices_all 有非注释数据行 → 采集本身成功。
         _stor_rows=$([ -f "${block_devices_all:-}" ] && grep -vcE '^#|^$' "${block_devices_all}" 2>/dev/null || echo 0)
         if [ "${STORAGE_COUNT:-0}" -eq 0 ] 2>/dev/null && [ "${_stor_rows:-0}" -gt 0 ] 2>/dev/null; then
-            echo "| 存储 | 无本地数据盘（本机仅 USB/虚拟盘，块设备记录 ${_stor_rows} 条） | 块 | 0 |"
+            # v1.61.0：项目名「存储」→「硬盘（内置）」；USB/虚拟盘不并入
+            if [ -n "${USB_LIST:-}" ]; then
+                echo "| 硬盘（内置） | 无内置硬盘——系统运行于外置介质（${USB_LIST}） | 块 | 0 |"
+            else
+                echo "| 硬盘（内置） | 无内置硬盘（本机仅虚拟盘/未配数据盘） | 块 | 0 |"
+            fi
         else
             if [ -n "${ACC_DISK_SPEC:-}" ]; then
                 _cntcell="${STORAGE_COUNT:-0}"
                 if [ -n "${ACC_DISK_GRP_N:-}" ] && [ "${ACC_DISK_GRP_N}" != "${STORAGE_COUNT:-0}" ]; then
                     _cntcell="${STORAGE_COUNT:-0}（其中物理盘 ${ACC_DISK_GRP_N}）"
                 fi
-                echo "| 存储 | ${ACC_DISK_SPEC}（共 ${STORAGE_TOTAL:-0}） | 块 | ${_cntcell} |"
+                echo "| 硬盘（内置） | ${ACC_DISK_SPEC}（共 ${STORAGE_TOTAL:-0}） | 块 | ${_cntcell} |"
             else
-                echo "| 存储 | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
+                echo "| 硬盘（内置） | ${ACC_DISK_MODEL:-N/A}（${STORAGE_TOTAL:-0}） | 块 | ${STORAGE_COUNT:-0} |"
             fi
         fi
-        echo "| 电源模块 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
+        echo "| 电源 | ${ACC_PSU_MODEL:-N/A}（${ACC_PSU_CAP:-N/A}） | 个 | ${ACC_PSU_COUNT:-0} |"
         # v1.54.12：风扇补进概览——原来只在正文有，配置单/交接单上看不到。
         #   （阵列不进概览：硬件概览只列硬件部件，阵列属 RAID 段，有阵列卡时在 RAID 控制器段呈现。）
         if [ "${FAN_DATA_OK:-0}" -eq 1 ] 2>/dev/null; then
@@ -879,7 +884,9 @@ gen_acceptance() {
                 _sm_val="${_sm_val} · 管理地址未配置"
             fi
             _sm_val="${_sm_val}）"
-            echo "| 系统管理 | ${_sm_val} | 套 | 1 |"
+            # v1.61.0：按用户口径**去掉「系统管理」行**——采购配置单不含 BMC（属主板集成），
+            #   BMC 固件与管理地址仍在报告「BMC」段与验收「OS-BMC 口径一致」项里可查。
+            : "${_sm_val}"
         fi
         # v1.60.7：电源计数两处口径不一致时如实说明——实测一台 B300：PSU FRU 列 PSU0..PSU10（11 颗），
         #   而 SMBIOS Type 39 只记 10 条、电源风扇 10 组；配置单按 FRU 报 11、验收项按 SMBIOS 报 10，

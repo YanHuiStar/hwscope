@@ -1,6 +1,6 @@
 # 报告解析回归指标（tools/agent/report_regression.sh）
 [table_columns]
-  table_rows=418
+  table_rows=419
 [gpu]
   gpu_detail_rows=8
   model: AMD Instinct MI300X
@@ -25,13 +25,13 @@
   nic_rows=19
   header: | # | 接口 | BDF | 端口 | MAC | SN | 型号 | 芯片 | 固件 | PCIe(协商) | PSID | Link 状态 | 物理位置 |
 [json]
-  json_bytes=45420
+  json_bytes=45530
         1 "disk_count"
         1 "platform"
 [html]
   html_table_open=32
   html_table_close=32
-  html_bytes=65224
+  html_bytes=65427
 [acceptance]
         6 N/A
        12 PASS
@@ -40,12 +40,11 @@
   准系统 | 台 | 1
   CPU | 颗 | 2
   内存 | 条 | 12
-  GPU模组 | 张 | 8
+  GPU | 张 | 8
   计算网卡 | 张 | 8（单口×8，共 8 口）
-  网卡&端口 | 张 | 1（双口×1，共 2 口）
-  存储 | 块 | 2
-  电源模块 | 个 | 8
+  其它网卡 | 张 | 1（双口×1，共 2 口）
+  硬盘（内置） | 块 | 2
+  电源 | 个 | 8
   风扇 | 个 | 38
-  系统管理 | 套 | 1
 [source]
   source_fp_hash=767341ae0a11

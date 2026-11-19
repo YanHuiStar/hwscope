@@ -61,16 +61,71 @@ if [ -f "${block_devices_all}" ] && [ -n "$SYS_DISK" ]; then
         [ -n "$_tran_disp" ] && SYS_DISK_DISP="$SYS_DISK_DISP，$_tran_disp"
     fi
 fi
+# ─── v1.61.0：USB / 外置介质判定 ───
+#   判据（任一命中即算外置）：① disk_inventory.csv 的 type 列是 USB（采集端按 lsblk TRAN 写入）
+#   ② block_devices_all.log 该盘行内出现独立单词 usb（旧采集兜底——那时 type 被误写成 SATA）
+#   外置介质**不计入「硬盘（内置）」**（盘数/总容量/型号/寿命判定），在存储段单列一行如实呈现。
+#   0B 的 BMC 虚拟介质（lsblk 显示 Virtual HDisk、removable=1）单独计数，不混进外置硬盘列表。
+declare -A USB_DEV=()
+USB_LIST=""
+VIRT_DEV=0
+if [ -f "${disk_inventory}" ]; then
+    while IFS='|' read -r _un _ut _ur; do
+        case "${_un:-}" in ''|'#'*) continue ;; esac
+        case "$(printf '%s' "${_ut:-}" | tr 'A-Z' 'a-z')" in usb) USB_DEV["$_un"]=1 ;; esac
+    done < <(grep -v "^#" "${disk_inventory}" 2>/dev/null)
+fi
+if [ -f "${block_devices_all}" ]; then
+    while IFS= read -r _bl; do
+        case "$_bl" in ''|'#'*) continue ;; esac
+        [ "$(printf '%s' "$_bl" | awk '{print $NF}')" = "disk" ] || continue
+        printf '%s' "$_bl" | grep -qw usb || continue
+        _bn=$(printf '%s' "$_bl" | awk '{print $1}')
+        USB_DEV["$_bn"]=1
+        # 容量取行内第一个「数字+单位」；0B 或 Virtual 型号 = BMC 虚拟介质
+        _bsz=$(printf '%s' "$_bl" | grep -oE '[0-9.]+[KMGTP]\b' | head -1)
+        case "$_bl" in *Virtual*) [ "${_bsz:-0B}" = "0B" ] && VIRT_DEV=$((VIRT_DEV+1)) ;; esac
+    done < <(grep -v "^#" "${block_devices_all}" 2>/dev/null)
+fi
+# 外置介质列表：只列**有容量的真实盘**（0B 虚拟介质单独说明）
+for _ud in $(printf '%s\n' "${!USB_DEV[@]}" | sort); do
+    _umdl=""; _usz=""
+    if [ -f "${disk_inventory}" ]; then
+        _uline=$(grep -m1 "^${_ud}|" "${disk_inventory}" 2>/dev/null)
+        [ -n "$_uline" ] && { _umdl=$(printf '%s' "$_uline" | awk -F'|' '{print $4}'); _usz=$(printf '%s' "$_uline" | awk -F'|' '{print $3}'); }
+    fi
+    if [ -z "$_usz" ] && [ -f "${block_devices_all}" ]; then
+        _uline=$(grep "^${_ud}[[:space:]]" "${block_devices_all}" 2>/dev/null | awk '$NF=="disk"' | head -1)
+        [ -n "$_uline" ] && _usz=$(printf '%s' "$_uline" | grep -oE '[0-9.]+[KMGTP]\b' | head -1)
+    fi
+    case "${_usz:-0B}" in 0B|"") continue ;; esac      # 0B 虚拟介质不进列表
+    [ "${_umdl:-N/A}" = "N/A" ] && _umdl=""
+    USB_LIST="${USB_LIST}${USB_LIST:+、}${_ud}（${_umdl:+${_umdl}，}${_usz}，USB）"
+done
+
 if [ -f "${block_devices_all}" ]; then
     # 物理盘行遍历找 size 字段（model 可能含空格导致列偏移，不能用固定列）；默认排除系统盘
-    STORAGE_COUNT=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") c++} END{print c+0}')
-    STORAGE_TOTAL=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {v=""; for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {v=$i; break}; \
-        if(v!=""){n=substr(v,1,length(v)-1); u=substr(v,length(v)); \
-        if(u=="T")s+=n*1024; else if(u=="G")s+=n; else if(u=="M")s+=n/1024; else if(u=="K")s+=n/1024/1024}} \
+    STORAGE_COUNT=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" -v usb="$(printf '%s\n' "${!USB_DEV[@]}")" '
+        BEGIN{n=split(usb,u,"\n"); for(i=1;i<=n;i++) U[u[i]]=1}
+        $NF=="disk" && $1 != sys && !($1 in U) {
+            hasusb=0; for(j=1;j<=NF;j++) if($j=="usb") hasusb=1
+            if(!hasusb) for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") c++
+        } END{print c+0}')
+    STORAGE_TOTAL=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" -v usb="$(printf '%s\n' "${!USB_DEV[@]}")" '
+        BEGIN{n=split(usb,u,"\n"); for(i=1;i<=n;i++) U[u[i]]=1}
+        $NF=="disk" && $1 != sys && !($1 in U) {
+            hasusb=0; for(j=1;j<=NF;j++) if($j=="usb") hasusb=1
+            if(hasusb) next
+            v=""; for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {v=$i; break}
+            if(v!=""){n2=substr(v,1,length(v)-1); uu=substr(v,length(v));
+                if(uu=="T")s+=n2*1024; else if(uu=="G")s+=n2; else if(uu=="M")s+=n2/1024; else if(uu=="K")s+=n2/1024/1024}
+        }
         END{printf "%.0f GiB", s}' 2>/dev/null)
     # 盘型号：从 disk_inventory.csv 取（MODEL/SERIAL 已分离）；排除系统盘（与盘数/容量口径一致）；回退 block_devices 提取
     if [ -f "${disk_inventory}" ]; then
-        STORAGE_MODELS=$(grep -v "^#" "${disk_inventory}" 2>/dev/null | awk -F'|' -v sys="$SYS_DISK" '$1!="" && $1!=sys && $4!="N/A" && $4!="" && $4 !~ /MegaRAID|MR[0-9][0-9][0-9]|PERC|Smart Array|Adaptec/ {print $4}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
+        STORAGE_MODELS=$(grep -v "^#" "${disk_inventory}" 2>/dev/null | awk -F'|' -v sys="$SYS_DISK" -v usb="$(printf '%s\n' "${!USB_DEV[@]}")" '
+            BEGIN{n=split(usb,u,"\n"); for(i=1;i<=n;i++) U[u[i]]=1}
+            $1!="" && $1!=sys && !($1 in U) && $4!="N/A" && $4!="" && $4 !~ /MegaRAID|MR[0-9][0-9][0-9]|PERC|Smart Array|Adaptec/ {print $4}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
     else
         STORAGE_MODELS=$(grep -v "^#" "${block_devices_all}" | awk -v sys="$SYS_DISK" '$NF=="disk" && $1 != sys {for(i=1;i<=NF;i++) if($i ~ /^[0-9.]+[KMGTP]$/ && $i != "0B") {print $(i-1); break}}' | sort -u | sed 's/\(^.\{40\}\).*/\1…/' | tr '\n' ',' | sed 's/,$//')
     fi
@@ -85,6 +140,7 @@ if [ -f "${disk_inventory}" ]; then
         [ -z "$dname" ] || [ "$dname" = "N/A" ] && continue
         [ "$dname" = "#" ] && continue
         [ "$dname" = "$SYS_DISK" ] && continue   # 默认排除系统盘
+        [ "${USB_DEV[$dname]:-0}" = "1" ] && continue   # v1.61.0：USB/外置介质不进「硬盘（内置）」明细
         # RAID 虚拟盘判定：型号是 RAID 卡型号（MegaRAID/MRxxxx/PERC/Smart Array/Adaptec）
         is_raid_vd=0
         case "$dmodel" in

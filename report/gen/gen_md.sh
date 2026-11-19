@@ -590,6 +590,7 @@ fi)
 | 总容量 | ${STORAGE_TOTAL:-N/A} |
 | 盘型号 | ${STORAGE_MODELS:-N/A} |
 | 系统盘(已排除) | ${SYS_DISK_DISP:-${SYS_DISK:-N/A}} |
+$(if [ -n "${USB_LIST:-}${VIRT_DEV:+x}" ]; then echo "| 外置/USB 介质 | ${USB_LIST:-无}${USB_LIST:+（不计入硬盘数量与寿命判定）}${VIRT_DEV:+${USB_LIST:+ · }另有 ${VIRT_DEV} 个 BMC 虚拟介质（0B，未接入实体盘）} |"; fi)
 
 $(if [ -n "$(printf '%s' "$disk_details_md" | tr -d ' \n')" ]; then
     # v1.49.17：无数据盘（HGX 模组等）时整块不输出——原实现标题/表头/分隔行无条件渲染，

@@ -311,6 +311,7 @@ fi)
   总容量 : ${STORAGE_TOTAL:-N/A}
   盘型号 : ${STORAGE_MODELS:-N/A}
   系统盘 : ${SYS_DISK_DISP:-${SYS_DISK:-N/A}} (已从统计排除)$(if [ -n "$(printf '%s' "$disk_details_txt" | tr -d ' \n')" ]; then printf '\n%s' "$disk_details_txt"; fi)$(if [ -n "$RAID_VD_DETAILS" ]; then
+$(if [ -n "${USB_LIST:-}" ]; then printf '  外置介质: %s (不计入硬盘数量与寿命判定)\n' "${USB_LIST}"; fi)$(if [ "${VIRT_DEV:-0}" -gt 0 ] 2>/dev/null; then printf '  虚拟介质: %s 个 BMC 虚拟盘（0B，未接入实体盘）\n' "${VIRT_DEV}"; fi)
     printf '\n  RAID虚拟盘（逻辑盘）:\n'
     echo "$RAID_VD_DETAILS" | while IFS='|' read -r rvdname rvdmodel rvdsize rvdsn; do
         [ -z "$rvdname" ] && continue

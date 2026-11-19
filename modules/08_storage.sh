@@ -172,6 +172,20 @@ run_storage() {
             local ssize
             ssize=$(lsblk -d -n -o SIZE "$sdev" 2>/dev/null | tr -d ' ')
             local smodel="" ssn="" sfw="" stype="SATA"
+            # v1.61.0：接口类型以 lsblk 的 TRAN 为准——原实现默认 SATA、只按 smartctl 文案区分 SATA/SAS，
+            #   于是 **USB 移动盘/U 盘被写成 SATA**（实测一台 B300 系统盘 TRAN=usb 被计成内置 SATA）。
+            local stype_tran=""
+            stype_tran=$(lsblk -d -n -o TRAN "/dev/${sname}" 2>/dev/null | xargs)
+            case "$(printf '%s' "$stype_tran" | tr 'A-Z' 'a-z')" in
+                usb) stype="USB" ;;
+                sas) stype="SAS" ;;
+                sata) stype="SATA" ;;
+                nvme) stype="NVMe" ;;
+            esac
+            # 无法从 TRAN 判定时再看 removable 位（U 盘常见 removable=1）
+            if [ -z "$stype_tran" ] && [ "$(cat "/sys/block/${sname}/removable" 2>/dev/null)" = "1" ]; then
+                stype="USB"
+            fi
             if check_cmd smartctl; then
                 local sinfo
                 sinfo=$(smartctl -i "$sdev" 2>/dev/null)
@@ -184,7 +198,9 @@ run_storage() {
                 [ -z "$sfw" ] && sfw=$(echo "$sinfo" | grep --line-buffered -iE "^Revision:" | cut -d: -f2- | xargs)
                 # 类型区分：SATA 盘有 "SATA Version is"；SAS 盘走 SCSI 格式（Product:/Serial number:）或 Transport protocol 明确为 SAS
                 # （注意：Transport protocol 行对 SATA 盘也输出 "Transport protocol: SATA"，必须值判断，勿无条件判 SAS）
-                if echo "$sinfo" | grep -qi "SATA Version is"; then stype="SATA"
+                # USB 盘也可能报 "SATA Version is"（桥接芯片），已判 USB 就不要被覆盖
+                if [ "$stype" = "USB" ]; then :
+                elif echo "$sinfo" | grep -qi "SATA Version is"; then stype="SATA"
                 elif echo "$sinfo" | grep -qiE "^Product:|^Serial number:" || echo "$sinfo" | grep -qi "Transport protocol:.*SAS"; then stype="SAS"; fi
             fi
             [ -z "$smodel" ] && smodel=$(cat "/sys/block/${sname}/device/model" 2>/dev/null | xargs)

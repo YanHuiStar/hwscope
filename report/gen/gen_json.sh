@@ -264,6 +264,8 @@ ${gpu_details_json}
     "system_disk_detail": "$(jesc "${SYS_DISK_DISP:-${SYS_DISK:-N/A}}")",
     "system_disk_transport": "$(jesc "${SYS_DISK_TRAN:-N/A}")",
     "system_disk_external": ${SYS_DISK_EXT:-0},
+    "external_media_count": "$(printf '%s' "${USB_LIST:-}" | awk -F'、' '{print ($0==""?0:NF)}')",
+    "external_media": "$(jesc "${USB_LIST:-}")",
     "disks": [
 ${disk_details_json}
     ],
